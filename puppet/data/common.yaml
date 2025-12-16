@@ -1,0 +1,20 @@
+---
+# Default Hiera data for openvox_webui module
+
+openvox_webui::ensure: present
+openvox_webui::service_ensure: running
+openvox_webui::service_enable: true
+
+openvox_webui::listen_address: '127.0.0.1'
+openvox_webui::listen_port: 3000
+openvox_webui::log_level: info
+
+openvox_webui::puppetdb_timeout: 30
+openvox_webui::jwt_expiry: '24h'
+openvox_webui::session_timeout: 3600
+
+openvox_webui::admin_username: admin
+
+openvox_webui::manage_package: true
+openvox_webui::manage_service: true
+openvox_webui::manage_config: true

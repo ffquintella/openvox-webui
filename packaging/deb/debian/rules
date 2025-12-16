@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build frontend
+	cd frontend && npm ci && npm run build
+	# Build backend
+	cargo build --release
+
+override_dh_auto_install:
+	# Install binary
+	install -D -m 755 target/release/openvox-webui \
+		debian/openvox-webui/usr/bin/openvox-webui
+
+	# Install frontend assets
+	mkdir -p debian/openvox-webui/usr/share/openvox-webui/static
+	cp -r frontend/dist/* debian/openvox-webui/usr/share/openvox-webui/static/
+
+	# Install configuration
+	install -D -m 644 config/config.example.yaml \
+		debian/openvox-webui/etc/openvox-webui/config.yaml
+
+	# Install systemd service
+	install -D -m 644 packaging/systemd/openvox-webui.service \
+		debian/openvox-webui/lib/systemd/system/openvox-webui.service
+
+override_dh_auto_clean:
+	cargo clean || true
+	rm -rf frontend/node_modules frontend/dist || true
+
+override_dh_auto_test:
+	# Skip tests during package build
+	true

@@ -1,0 +1,10 @@
+openvox-webui (0.1.0-1) unstable; urgency=medium
+
+  * Initial release
+  * Basic backend with Axum framework
+  * React frontend with TypeScript
+  * RBAC foundation with system roles
+  * PuppetDB integration support
+  * Node classification system
+
+ -- OpenVox Team <team@openvox.io>  Mon, 16 Dec 2024 00:00:00 +0000

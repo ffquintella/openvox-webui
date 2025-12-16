@@ -1,0 +1,28 @@
+# OpenVox WebUI Configuration
+# Copy this file to config.yaml and adjust settings for your environment
+
+# Server settings
+server:
+  host: "127.0.0.1"
+  port: 8080
+
+# PuppetDB connection settings
+puppetdb:
+  url: "http://localhost:8081"
+  timeout_secs: 30
+  ssl_verify: true
+  # Uncomment and set paths for SSL client authentication
+  # ssl_cert: "/etc/openvox-webui/ssl/client.pem"
+  # ssl_key: "/etc/openvox-webui/ssl/client.key"
+  # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
+
+# Authentication settings
+auth:
+  jwt_secret: "change-this-to-a-secure-random-string-in-production"
+  token_expiry_hours: 24
+  bcrypt_cost: 12
+
+# Database settings (SQLite for local storage)
+database:
+  url: "sqlite://data/openvox.db"
+  max_connections: 5

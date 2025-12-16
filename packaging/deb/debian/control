@@ -1,0 +1,33 @@
+Source: openvox-webui
+Section: admin
+Priority: optional
+Maintainer: OpenVox Team <team@openvox.io>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.70),
+               nodejs (>= 18),
+               npm,
+               libssl-dev,
+               libsqlite3-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/openvoxproject/openvox-webui
+Vcs-Browser: https://github.com/openvoxproject/openvox-webui
+Vcs-Git: https://github.com/openvoxproject/openvox-webui.git
+Rules-Requires-Root: no
+
+Package: openvox-webui
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         adduser,
+         libssl3,
+         libsqlite3-0
+Description: Web UI for OpenVox infrastructure management
+ OpenVox WebUI provides a modern web interface for managing and monitoring
+ OpenVox infrastructure. Features include:
+ .
+  * PuppetDB integration with graphical dashboards
+  * Node classification using dynamic groups
+  * Facter-based node management
+  * Role-based access control (RBAC)
+  * YAML-based configuration

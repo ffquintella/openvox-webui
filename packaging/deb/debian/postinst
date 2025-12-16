@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create openvox-webui user and group
+        if ! getent group openvox-webui >/dev/null; then
+            addgroup --system openvox-webui
+        fi
+
+        if ! getent passwd openvox-webui >/dev/null; then
+            adduser --system --ingroup openvox-webui \
+                --home /var/lib/openvox-webui \
+                --no-create-home \
+                --gecos "OpenVox WebUI service account" \
+                openvox-webui
+        fi
+
+        # Create data directory
+        if [ ! -d /var/lib/openvox-webui ]; then
+            mkdir -p /var/lib/openvox-webui
+            chown openvox-webui:openvox-webui /var/lib/openvox-webui
+            chmod 750 /var/lib/openvox-webui
+        fi
+
+        # Set config file permissions
+        if [ -f /etc/openvox-webui/config.yaml ]; then
+            chown root:openvox-webui /etc/openvox-webui/config.yaml
+            chmod 640 /etc/openvox-webui/config.yaml
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

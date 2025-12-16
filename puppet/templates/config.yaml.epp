@@ -1,0 +1,82 @@
+<%- |
+  Stdlib::Host $listen_address,
+  Stdlib::Port $listen_port,
+  Stdlib::Absolutepath $database_path,
+  Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level,
+  Optional[Stdlib::HTTPUrl] $puppetdb_url,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_cert,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_key,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_ca,
+  Integer $puppetdb_timeout,
+  String $jwt_secret,
+  String $jwt_expiry,
+  Integer $session_timeout,
+  String $admin_username,
+  Optional[Sensitive[String]] $admin_password,
+  Optional[String] $admin_email,
+| -%>
+# OpenVox WebUI Configuration
+# Managed by Puppet - DO NOT EDIT MANUALLY
+
+server:
+  host: "<%= $listen_address %>"
+  port: <%= $listen_port %>
+  workers: 4
+
+database:
+  url: "sqlite://<%= $database_path %>"
+  max_connections: 10
+
+logging:
+  level: "<%= $log_level %>"
+  format: "json"
+
+<% if $puppetdb_url { -%>
+puppetdb:
+  url: "<%= $puppetdb_url %>"
+  timeout: <%= $puppetdb_timeout %>
+<% if $puppetdb_ssl_cert { -%>
+  ssl:
+    cert_path: "<%= $puppetdb_ssl_cert %>"
+<% if $puppetdb_ssl_key { -%>
+    key_path: "<%= $puppetdb_ssl_key %>"
+<% } -%>
+<% if $puppetdb_ssl_ca { -%>
+    ca_path: "<%= $puppetdb_ssl_ca %>"
+<% } -%>
+    verify: true
+<% } -%>
+<% } else { -%>
+# puppetdb:
+#   url: "https://puppetdb.example.com:8081"
+#   timeout: 30
+#   ssl:
+#     cert_path: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
+#     key_path: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
+#     ca_path: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
+#     verify: true
+<% } -%>
+
+auth:
+  jwt_secret: "<%= $jwt_secret %>"
+  jwt_expiry: "<%= $jwt_expiry %>"
+  session_timeout: <%= $session_timeout %>
+  password_min_length: 8
+<% if $admin_username and $admin_password { -%>
+
+# Initial admin account (only used on first run)
+initial_admin:
+  username: "<%= $admin_username %>"
+  password: "<%= $admin_password.unwrap %>"
+<% if $admin_email { -%>
+  email: "<%= $admin_email %>"
+<% } -%>
+<% } -%>
+
+classification:
+  cache_ttl: 300
+  max_rules_per_group: 100
+
+facter:
+  templates_dir: "/etc/openvox-webui/templates"
+  output_format: "yaml"
