@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     if: false  # DISABLED - remove this line to enable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-action@stable
@@ -57,7 +57,7 @@ jobs:
     if: false  # DISABLED - remove this line to enable
     needs: rust-check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-action@stable
@@ -91,7 +91,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -124,7 +124,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     if: false  # DISABLED - remove this line to enable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-action@stable
@@ -178,7 +178,7 @@ jobs:
     if: false  # DISABLED - remove this line to enable
     needs: [rust-test, frontend-test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-action@stable
