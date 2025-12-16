@@ -178,6 +178,7 @@ impl IntoResponse for AuthError {
             error: "unauthorized".to_string(),
             message: message.to_string(),
             details: None,
+            code: None,
         };
 
         (status, Json(body)).into_response()

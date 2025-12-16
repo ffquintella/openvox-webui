@@ -16,29 +16,9 @@ use tower_http::{
 };
 use tracing::{info, Level};
 
-mod api;
-mod config;
-mod db;
-mod handlers;
-mod middleware;
-mod models;
-mod services;
-mod utils;
-
-use crate::config::{AppConfig, LogFormat};
-use crate::db::DbPool;
-use crate::services::puppetdb::PuppetDbClient;
-
-/// Application state shared across handlers
-#[derive(Clone)]
-pub struct AppState {
-    /// Application configuration
-    pub config: AppConfig,
-    /// Database connection pool
-    pub db: DbPool,
-    /// PuppetDB client (optional)
-    pub puppetdb: Option<Arc<PuppetDbClient>>,
-}
+use openvox_webui::{api, config, db, services, AppConfig, AppState};
+use config::LogFormat;
+use services::puppetdb::PuppetDbClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -174,8 +154,6 @@ fn create_router(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_ensure_data_directory_parsing() {
         // Test that we correctly parse the database URL

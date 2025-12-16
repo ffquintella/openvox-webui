@@ -1,26 +1,26 @@
 //! Report step definitions
 
 use cucumber::{given, then, when};
-use crate::features::TestWorld;
+use crate::features::support::{TestResponse, TestWorld};
 
 #[given(expr = "a report exists for node {string} with status {string}")]
-async fn report_exists(world: &mut TestWorld, _certname: String, _status: String) {
+async fn report_exists(_world: &mut TestWorld, _certname: String, _status: String) {
     // In real implementation, create test report data
 }
 
 #[when(expr = "I request reports for node {string}")]
-async fn request_node_reports(world: &mut TestWorld, certname: String) {
+async fn request_node_reports(world: &mut TestWorld, _certname: String) {
     // In real implementation, make API call to GET /api/v1/nodes/{certname}/reports
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([]),
     });
 }
 
 #[when(expr = "I request reports with status {string}")]
-async fn request_reports_by_status(world: &mut TestWorld, status: String) {
+async fn request_reports_by_status(world: &mut TestWorld, _status: String) {
     // In real implementation, make API call to GET /api/v1/reports?status={status}
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([]),
     });

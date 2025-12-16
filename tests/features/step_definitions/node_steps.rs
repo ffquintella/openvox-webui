@@ -1,7 +1,7 @@
 //! Node-related step definitions
 
 use cucumber::{given, then, when};
-use crate::features::TestWorld;
+use crate::features::support::{TestResponse, TestWorld};
 
 #[given(expr = "a node {string} exists")]
 async fn node_exists(world: &mut TestWorld, certname: String) {
@@ -27,7 +27,7 @@ async fn node_exists_with_facts(world: &mut TestWorld, certname: String, facts_j
 #[when(expr = "I request the node list")]
 async fn request_node_list(world: &mut TestWorld) {
     // In real implementation, make API call to GET /api/v1/nodes
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([]),
     });
@@ -37,14 +37,14 @@ async fn request_node_list(world: &mut TestWorld) {
 async fn request_node_details(world: &mut TestWorld, certname: String) {
     // In real implementation, make API call to GET /api/v1/nodes/{certname}
     if world.node_facts.contains_key(&certname) {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 200,
             body: serde_json::json!({
                 "certname": certname
             }),
         });
     } else {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 404,
             body: serde_json::json!({
                 "error": "not_found",
@@ -64,7 +64,7 @@ async fn response_contains_node(world: &mut TestWorld, certname: String) {
 }
 
 #[then(expr = "the node should have fact {string} with value {string}")]
-async fn node_has_fact(world: &mut TestWorld, fact_path: String, expected_value: String) {
+async fn node_has_fact(_world: &mut TestWorld, _fact_path: String, _expected_value: String) {
     // Verify fact value
     // In real implementation, check the response body
 }

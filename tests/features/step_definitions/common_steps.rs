@@ -1,7 +1,7 @@
 //! Common step definitions used across features
 
-use cucumber::{given, then, when};
-use crate::features::TestWorld;
+use cucumber::{given, then};
+use crate::features::support::TestWorld;
 
 #[given("I am authenticated as an admin")]
 async fn authenticated_as_admin(world: &mut TestWorld) {

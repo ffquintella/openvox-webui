@@ -1,14 +1,14 @@
 //! RBAC step definitions
 
 use cucumber::{given, then, when};
-use crate::features::TestWorld;
+use crate::features::support::{TestResponse, TestUser, TestWorld};
 
 // Role management steps
 
 #[when("I request the list of roles")]
 async fn request_role_list(world: &mut TestWorld) {
     // In real implementation, make API call to GET /api/v1/roles
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([
             {"name": "admin", "display_name": "Administrator", "is_system": true},
@@ -21,7 +21,7 @@ async fn request_role_list(world: &mut TestWorld) {
 #[when(expr = "I create a role with name {string} and display name {string}")]
 async fn create_role(world: &mut TestWorld, name: String, display_name: String) {
     // In real implementation, make API call to POST /api/v1/roles
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 201,
         body: serde_json::json!({
             "id": uuid::Uuid::new_v4().to_string(),
@@ -38,7 +38,7 @@ async fn try_delete_role(world: &mut TestWorld, name: String) {
     let is_system = matches!(name.as_str(), "admin" | "operator" | "viewer" | "group_admin" | "auditor");
 
     if is_system {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 403,
             body: serde_json::json!({
                 "error": "forbidden",
@@ -46,7 +46,7 @@ async fn try_delete_role(world: &mut TestWorld, name: String) {
             }),
         });
     } else {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 204,
             body: serde_json::json!(null),
         });
@@ -55,19 +55,19 @@ async fn try_delete_role(world: &mut TestWorld, name: String) {
 
 #[when(expr = "I delete the role {string}")]
 async fn delete_role(world: &mut TestWorld, _name: String) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 204,
         body: serde_json::json!(null),
     });
 }
 
 #[given(expr = "a custom role {string} exists")]
-async fn custom_role_exists(world: &mut TestWorld, _name: String) {
+async fn custom_role_exists(_world: &mut TestWorld, _name: String) {
     // Create custom role in test world
 }
 
 #[given(expr = "a role {string} with parent {string}")]
-async fn role_with_parent(world: &mut TestWorld, _name: String, _parent: String) {
+async fn role_with_parent(_world: &mut TestWorld, _name: String, _parent: String) {
     // Create role with parent in test world
 }
 
@@ -75,7 +75,7 @@ async fn role_with_parent(world: &mut TestWorld, _name: String, _parent: String)
 
 #[when(expr = "I assign permission {string} to role {string}")]
 async fn assign_permission_to_role(world: &mut TestWorld, permission: String, _role: String) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "permission": permission
@@ -85,7 +85,7 @@ async fn assign_permission_to_role(world: &mut TestWorld, permission: String, _r
 
 #[when("I request the list of resources")]
 async fn request_resources(world: &mut TestWorld) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([
             {"name": "nodes"},
@@ -100,7 +100,7 @@ async fn request_resources(world: &mut TestWorld) {
 
 #[when("I request the list of actions")]
 async fn request_actions(world: &mut TestWorld) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([
             {"name": "read"},
@@ -115,26 +115,26 @@ async fn request_actions(world: &mut TestWorld) {
 // User role assignment steps
 
 #[given(expr = "a user {string} exists")]
-async fn user_exists(world: &mut TestWorld, username: String) {
+async fn user_exists(_world: &mut TestWorld, _username: String) {
     // Add user to test world
 }
 
 #[when(expr = "I assign role {string} to user {string}")]
 async fn assign_role_to_user(world: &mut TestWorld, _role: String, _user: String) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({}),
     });
 }
 
 #[given(expr = "user {string} has role {string}")]
-async fn user_has_role(world: &mut TestWorld, _user: String, _role: String) {
+async fn user_has_role(_world: &mut TestWorld, _user: String, _role: String) {
     // Set up user with role in test world
 }
 
 #[when(expr = "I request effective permissions for user {string}")]
 async fn request_user_permissions(world: &mut TestWorld, _user: String) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "permissions": [
@@ -150,7 +150,7 @@ async fn request_user_permissions(world: &mut TestWorld, _user: String) {
 
 #[given(expr = "I am authenticated as a user with role {string}")]
 async fn authenticated_with_role(world: &mut TestWorld, role: String) {
-    world.current_user = Some(crate::features::support::world::TestUser {
+    world.current_user = Some(TestUser {
         username: "testuser".to_string(),
         role: role.clone(),
     });
@@ -165,12 +165,12 @@ async fn try_create_group(world: &mut TestWorld, _name: String) {
         .unwrap_or(false);
 
     if has_permission {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 201,
             body: serde_json::json!({}),
         });
     } else {
-        world.last_response = Some(crate::features::support::world::TestResponse {
+        world.last_response = Some(TestResponse {
             status: 403,
             body: serde_json::json!({
                 "error": "forbidden",
@@ -183,7 +183,7 @@ async fn try_create_group(world: &mut TestWorld, _name: String) {
 #[when(expr = "I try to update group {string}")]
 async fn try_update_group(world: &mut TestWorld, _name: String) {
     // In real implementation, check scoped permissions
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({}),
     });
@@ -192,18 +192,18 @@ async fn try_update_group(world: &mut TestWorld, _name: String) {
 // Scoped permission steps
 
 #[given(expr = "user {string} has environment-scoped permission {string}")]
-async fn user_has_env_scoped_permission(world: &mut TestWorld, _user: String, _env: String) {
+async fn user_has_env_scoped_permission(_world: &mut TestWorld, _user: String, _env: String) {
     // Set up environment-scoped permission
 }
 
 #[given(expr = "user {string} has group-scoped admin permission for {string}")]
-async fn user_has_group_scoped_permission(world: &mut TestWorld, _user: String, _group: String) {
+async fn user_has_group_scoped_permission(_world: &mut TestWorld, _user: String, _group: String) {
     // Set up group-scoped permission
 }
 
 #[when(expr = "I request nodes for environment {string}")]
 async fn request_nodes_for_env(world: &mut TestWorld, _env: String) {
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!([]),
     });
@@ -217,22 +217,22 @@ async fn response_contains_system_roles(world: &mut TestWorld, _r1: String, _r2:
 }
 
 #[then(expr = "the role {string} should exist")]
-async fn role_exists(world: &mut TestWorld, _name: String) {
+async fn role_exists(_world: &mut TestWorld, _name: String) {
     // Verify role exists
 }
 
 #[then(expr = "the role {string} should not exist")]
-async fn role_not_exists(world: &mut TestWorld, _name: String) {
+async fn role_not_exists(_world: &mut TestWorld, _name: String) {
     // Verify role doesn't exist
 }
 
 #[then(expr = "role {string} should have permission {string}")]
-async fn role_has_permission(world: &mut TestWorld, _role: String, _permission: String) {
+async fn role_has_permission(_world: &mut TestWorld, _role: String, _permission: String) {
     // Verify role has permission
 }
 
 #[then(expr = "user {string} should have role {string}")]
-async fn user_should_have_role(world: &mut TestWorld, _user: String, _role: String) {
+async fn user_should_have_role(_world: &mut TestWorld, _user: String, _role: String) {
     // Verify user has role
 }
 
@@ -254,16 +254,16 @@ async fn response_includes_permission(world: &mut TestWorld, permission: String)
 }
 
 #[then(expr = "the user should have all permissions from role {string}")]
-async fn user_has_all_role_permissions(world: &mut TestWorld, _role: String) {
+async fn user_has_all_role_permissions(_world: &mut TestWorld, _role: String) {
     // Verify inherited permissions
 }
 
 #[then(expr = "the response should contain resources:")]
-async fn response_contains_resources(world: &mut TestWorld, _table: String) {
+async fn response_contains_resources(_world: &mut TestWorld, _table: String) {
     // Verify resources in response
 }
 
 #[then(expr = "the response should contain actions:")]
-async fn response_contains_actions(world: &mut TestWorld, _table: String) {
+async fn response_contains_actions(_world: &mut TestWorld, _table: String) {
     // Verify actions in response
 }

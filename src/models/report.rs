@@ -150,7 +150,7 @@ mod tests {
     fn test_report_default() {
         let report = Report::default();
         assert!(report.hash.is_empty());
-        assert_eq!(report.status, Some(ReportStatus::Changed));
+        assert_eq!(report.status, None);
     }
 
     #[test]

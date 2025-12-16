@@ -1,10 +1,10 @@
 //! Classification step definitions
 
 use cucumber::{given, then, when};
-use crate::features::TestWorld;
+use crate::features::support::{TestResponse, TestWorld};
 
 #[given(expr = "a classification rule {string} on group {string}")]
-async fn add_classification_rule(world: &mut TestWorld, rule: String, _group: String) {
+async fn add_classification_rule(_world: &mut TestWorld, _rule: String, _group: String) {
     // Parse and store the rule
     // Format: "fact_path operator value" e.g., "os.family = RedHat"
 }
@@ -12,7 +12,7 @@ async fn add_classification_rule(world: &mut TestWorld, rule: String, _group: St
 #[when(expr = "I add a rule {string} to group {string}")]
 async fn add_rule_to_group(world: &mut TestWorld, rule: String, _group: String) {
     // In real implementation, make API call to POST /api/v1/groups/{id}/rules
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 201,
         body: serde_json::json!({
             "id": uuid::Uuid::new_v4().to_string(),
@@ -30,7 +30,7 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
         vec![]
     };
 
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "certname": certname,
@@ -44,7 +44,7 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
 #[when(expr = "I pin node {string} to group {string}")]
 async fn pin_node_to_group(world: &mut TestWorld, _certname: String, _group: String) {
     // In real implementation, make API call to add pinned node
-    world.last_response = Some(crate::features::support::world::TestResponse {
+    world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({}),
     });

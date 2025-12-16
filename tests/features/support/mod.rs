@@ -2,4 +2,4 @@
 
 mod world;
 
-pub use world::TestWorld;
+pub use world::{TestResponse, TestUser, TestWorld};

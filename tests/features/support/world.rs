@@ -66,7 +66,7 @@ impl TestWorld {
     }
 
     /// Create a test node group
-    pub async fn create_group(&mut self, name: &str) -> Result<String, String> {
+    pub async fn create_group(&mut self, _name: &str) -> Result<String, String> {
         // In real implementation, this would make an API call
         let group_id = uuid::Uuid::new_v4().to_string();
         self.created_groups.push(group_id.clone());
@@ -74,7 +74,7 @@ impl TestWorld {
     }
 
     /// Check if a group exists
-    pub async fn group_exists(&self, name: &str) -> bool {
+    pub async fn group_exists(&self, _name: &str) -> bool {
         // In real implementation, this would query the API
         !self.created_groups.is_empty()
     }
