@@ -5,62 +5,183 @@
 //! and facter generation.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::Router;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use tracing::info;
+use tower_http::{
+    compression::CompressionLayer,
+    cors::{Any, CorsLayer},
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+};
+use tracing::{info, Level};
 
 mod api;
 mod config;
 mod db;
 mod handlers;
+mod middleware;
 mod models;
 mod services;
 mod utils;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, LogFormat};
+use crate::db::DbPool;
+use crate::services::puppetdb::PuppetDbClient;
 
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
+    /// Application configuration
     pub config: AppConfig,
-    // TODO: Add database pool
-    // TODO: Add PuppetDB client
+    /// Database connection pool
+    pub db: DbPool,
+    /// PuppetDB client (optional)
+    pub puppetdb: Option<Arc<PuppetDbClient>>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "openvox_webui=debug,tower_http=debug".into()),
-        )
-        .init();
+    // Load configuration first (before logging, so we know log format)
+    let config = AppConfig::load().context("Failed to load configuration")?;
 
-    // Load configuration
-    let config = AppConfig::load()?;
+    // Initialize logging based on configuration
+    init_logging(&config);
+
+    info!("OpenVox WebUI starting up");
     info!("Configuration loaded successfully");
+
+    // Ensure data directory exists
+    ensure_data_directory(&config)?;
+
+    // Initialize database connection pool
+    info!("Initializing database connection");
+    let db = db::init_pool(&config.database)
+        .await
+        .context("Failed to initialize database")?;
+
+    // Initialize PuppetDB client if configured
+    let puppetdb = if let Some(ref puppetdb_config) = config.puppetdb {
+        info!("Initializing PuppetDB client: {}", puppetdb_config.url);
+        Some(Arc::new(
+            PuppetDbClient::new(puppetdb_config).context("Failed to initialize PuppetDB client")?,
+        ))
+    } else {
+        info!("PuppetDB not configured, skipping client initialization");
+        None
+    };
 
     // Create application state
     let state = AppState {
         config: config.clone(),
+        db,
+        puppetdb,
     };
 
     // Build the router
-    let app = Router::new()
-        .nest("/api/v1", api::routes())
-        .with_state(state)
-        .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+    let app = create_router(state);
 
     // Start the server
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.server.port));
-    info!("Starting server on {}", addr);
+    let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
+        .parse()
+        .context("Invalid server address configuration")?;
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    info!("Starting server on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .context("Failed to bind to address")?;
+
+    info!("Server is ready to accept connections");
+
+    axum::serve(listener, app)
+        .await
+        .context("Server error")?;
 
     Ok(())
+}
+
+/// Initialize the logging/tracing infrastructure
+fn init_logging(config: &AppConfig) {
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
+
+    let subscriber = tracing_subscriber::registry().with(env_filter);
+
+    match config.logging.format {
+        LogFormat::Json => {
+            subscriber
+                .with(fmt::layer().json().with_target(true))
+                .init();
+        }
+        LogFormat::Compact => {
+            subscriber
+                .with(fmt::layer().compact().with_target(false))
+                .init();
+        }
+        LogFormat::Pretty => {
+            subscriber
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_file(false)
+                        .with_line_number(false),
+                )
+                .init();
+        }
+    }
+}
+
+/// Ensure the data directory exists
+fn ensure_data_directory(config: &AppConfig) -> Result<()> {
+    // Extract directory from database URL
+    if let Some(path) = config.database.url.strip_prefix("sqlite://") {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .context("Failed to create data directory")?;
+                info!("Created data directory: {:?}", parent);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Create the application router with all routes and middleware
+fn create_router(state: AppState) -> Router {
+    // Configure CORS
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    // Configure tracing for HTTP requests
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+        .on_response(DefaultOnResponse::new().level(Level::INFO));
+
+    // Build the router
+    Router::new()
+        .nest("/api/v1", api::routes())
+        .with_state(state)
+        .layer(CompressionLayer::new())
+        .layer(trace_layer)
+        .layer(cors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ensure_data_directory_parsing() {
+        // Test that we correctly parse the database URL
+        let url = "sqlite://./data/test.db";
+        let path = url.strip_prefix("sqlite://").unwrap();
+        let parent = std::path::Path::new(path).parent().unwrap();
+        assert_eq!(parent, std::path::Path::new("./data"));
+    }
 }

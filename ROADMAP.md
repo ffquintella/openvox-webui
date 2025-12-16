@@ -16,20 +16,20 @@ Provide a modern, intuitive web interface for OpenVox that enables:
 
 ### 1.1 Project Setup
 - [x] Initialize repository with Apache 2.0 license
-- [ ] Configure Rust workspace with Axum framework
-- [ ] Set up React frontend with TypeScript
-- [ ] Configure development environment
-- [ ] Set up CI/CD pipeline (GitHub Actions) - But do not enable it.
-- [ ] Configure code quality tools (clippy, rustfmt, eslint, prettier)
-- [ ] Create package build scripts (RPM/DEB)
+- [x] Configure Rust workspace with Axum framework
+- [x] Set up React frontend with TypeScript
+- [x] Configure development environment
+- [x] Set up CI/CD pipeline (GitHub Actions) - Disabled by default
+- [x] Configure code quality tools (clippy, rustfmt, eslint, prettier)
+- [x] Create package build scripts (RPM/DEB)
 
 ### 1.2 Core Backend Architecture
-- [ ] Implement Axum server with basic routing
-- [ ] Set up configuration management (YAML-based)
-- [ ] Implement logging and tracing infrastructure
-- [ ] Create error handling framework
-- [ ] Set up database connection pooling (SQLx)
-- [ ] Implement authentication middleware (JWT)
+- [x] Implement Axum server with basic routing
+- [x] Set up configuration management (YAML-based)
+- [x] Implement logging and tracing infrastructure
+- [x] Create error handling framework
+- [x] Set up database connection pooling (SQLx)
+- [x] Implement authentication middleware (JWT)
 
 ### 1.3 RBAC Foundation (Early Implementation)
 - [ ] Design permission model (resources, actions, scopes)
