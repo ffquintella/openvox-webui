@@ -17,6 +17,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct FactsQuery {
     pub name: Option<String>,
     pub value: Option<String>,

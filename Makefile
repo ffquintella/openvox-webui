@@ -1,7 +1,7 @@
 # OpenVox WebUI Makefile
 # Development convenience targets
 
-.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup
+.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major
 
 # Default target
 help:
@@ -37,6 +37,12 @@ help:
 	@echo "  make package        - Build RPM and DEB packages"
 	@echo "  make package-rpm    - Build RPM package only"
 	@echo "  make package-deb    - Build DEB package only"
+	@echo ""
+	@echo "Versioning:"
+	@echo "  make version        - Show current version"
+	@echo "  make version-patch  - Bump patch version (0.1.0 -> 0.1.1)"
+	@echo "  make version-minor  - Bump minor version (0.1.0 -> 0.2.0)"
+	@echo "  make version-major  - Bump major version (0.1.0 -> 1.0.0)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean          - Remove build artifacts"
@@ -100,7 +106,11 @@ test-bdd:
 	cargo test --test cucumber
 
 test-frontend:
-	cd frontend && npm test -- --run
+	@if [ -d "frontend/node_modules" ]; then \
+		cd frontend && npm test -- --run; \
+	else \
+		echo "Skipping frontend tests (run 'make install-deps' first)"; \
+	fi
 
 test-coverage:
 	cargo llvm-cov --html
@@ -176,3 +186,24 @@ clean:
 clean-all: clean
 	rm -rf frontend/node_modules
 	rm -rf data/
+
+# =============================================================================
+# Versioning
+# =============================================================================
+
+# Get current version from Cargo.toml
+CURRENT_VERSION := $(shell grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+
+version:
+	@echo "Current version: $(CURRENT_VERSION)"
+	@echo "  Cargo.toml:         $$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
+	@echo "  frontend/package.json: $$(grep '"version"' frontend/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')"
+
+version-patch:
+	@./scripts/bump-version.sh patch
+
+version-minor:
+	@./scripts/bump-version.sh minor
+
+version-major:
+	@./scripts/bump-version.sh major

@@ -60,7 +60,10 @@ pub struct AuthUser {
     pub id: Uuid,
     pub username: String,
     pub email: String,
+    /// Role names (from JWT)
     pub roles: Vec<String>,
+    /// Role UUIDs (resolved from database)
+    pub role_ids: Vec<Uuid>,
 }
 
 impl TryFrom<Claims> for AuthUser {
@@ -73,7 +76,16 @@ impl TryFrom<Claims> for AuthUser {
             username: claims.username,
             email: claims.email,
             roles: claims.roles,
+            role_ids: vec![], // Will be populated by middleware
         })
+    }
+}
+
+impl AuthUser {
+    /// Create AuthUser with role IDs resolved from role names
+    pub fn with_role_ids(mut self, role_ids: Vec<Uuid>) -> Self {
+        self.role_ids = role_ids;
+        self
     }
 }
 
@@ -220,10 +232,18 @@ pub async fn auth_middleware(
     }
 
     // Convert claims to AuthUser
-    let auth_user: AuthUser = token_data
+    let mut auth_user: AuthUser = token_data
         .claims
         .try_into()
         .map_err(|_| AuthError::InvalidToken)?;
+
+    // Resolve role names to UUIDs using the RBAC service
+    let role_ids: Vec<Uuid> = auth_user
+        .roles
+        .iter()
+        .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
+        .collect();
+    auth_user.role_ids = role_ids;
 
     // Insert the authenticated user into request extensions
     request.extensions_mut().insert(auth_user);
@@ -250,7 +270,14 @@ pub async fn optional_auth_middleware(
         if let Some(token) = extract_bearer_token(auth_header) {
             if let Ok(token_data) = validate_token(token, &state.config.auth.jwt_secret) {
                 if token_data.claims.token_type == TokenType::Access {
-                    if let Ok(auth_user) = AuthUser::try_from(token_data.claims) {
+                    if let Ok(mut auth_user) = AuthUser::try_from(token_data.claims) {
+                        // Resolve role names to UUIDs
+                        let role_ids: Vec<Uuid> = auth_user
+                            .roles
+                            .iter()
+                            .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
+                            .collect();
+                        auth_user.role_ids = role_ids;
                         request.extensions_mut().insert(auth_user);
                     }
                 }
@@ -351,5 +378,22 @@ mod tests {
         assert_eq!(auth_user.id, user_id);
         assert_eq!(auth_user.username, "testuser");
         assert_eq!(auth_user.roles, vec!["admin".to_string()]);
+        assert!(auth_user.role_ids.is_empty()); // Role IDs are resolved by middleware
+    }
+
+    #[test]
+    fn test_auth_user_with_role_ids() {
+        let user_id = Uuid::new_v4();
+        let role_id = Uuid::new_v4();
+        let auth_user = AuthUser {
+            id: user_id,
+            username: "testuser".to_string(),
+            email: "test@example.com".to_string(),
+            roles: vec!["admin".to_string()],
+            role_ids: vec![],
+        };
+
+        let auth_user = auth_user.with_role_ids(vec![role_id]);
+        assert_eq!(auth_user.role_ids, vec![role_id]);
     }
 }

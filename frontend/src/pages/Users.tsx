@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, User, Shield, Trash2, Mail, ChevronRight } from 'lucide-react';
+import { Plus, User, Shield, Trash2, Mail, ChevronRight, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
+import type { Role } from '../types';
 
 interface UserData {
   id: string;
@@ -19,6 +20,7 @@ export default function Users() {
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [pendingRoleChanges, setPendingRoleChanges] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const { data: users = [], isLoading } = useQuery({
@@ -48,6 +50,21 @@ export default function Users() {
     },
   });
 
+  const assignRolesMutation = useMutation({
+    mutationFn: ({ userId, roleIds }: { userId: string; roleIds: string[] }) =>
+      api.assignUserRoles(userId, roleIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setPendingRoleChanges(new Set());
+      // Refresh selected user
+      if (selectedUser) {
+        api.getUser(selectedUser.id).then((user) => {
+          if (user) setSelectedUser(user as UserData);
+        });
+      }
+    },
+  });
+
   const resetForm = () => {
     setNewUsername('');
     setNewEmail('');
@@ -63,6 +80,53 @@ export default function Users() {
     });
   };
 
+  const handleSelectUser = (user: UserData) => {
+    setSelectedUser(user);
+    setPendingRoleChanges(new Set());
+  };
+
+  const handleRoleToggle = (roleId: string) => {
+    const newPending = new Set(pendingRoleChanges);
+    if (newPending.has(roleId)) {
+      newPending.delete(roleId);
+    } else {
+      newPending.add(roleId);
+    }
+    setPendingRoleChanges(newPending);
+  };
+
+  const getEffectiveRoles = (): Set<string> => {
+    if (!selectedUser) return new Set();
+
+    const currentRoles = new Set(selectedUser.roles?.map((r) => r.id) || []);
+    const effective = new Set(currentRoles);
+
+    // Toggle pending changes
+    pendingRoleChanges.forEach((roleId) => {
+      if (currentRoles.has(roleId)) {
+        effective.delete(roleId);
+      } else {
+        effective.add(roleId);
+      }
+    });
+
+    return effective;
+  };
+
+  const handleSaveRoles = () => {
+    if (!selectedUser || pendingRoleChanges.size === 0) return;
+
+    const effectiveRoles = getEffectiveRoles();
+    assignRolesMutation.mutate({
+      userId: selectedUser.id,
+      roleIds: Array.from(effectiveRoles),
+    });
+  };
+
+  const hasRoleChanged = (roleId: string): boolean => {
+    return pendingRoleChanges.has(roleId);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -70,6 +134,8 @@ export default function Users() {
       </div>
     );
   }
+
+  const effectiveRoles = getEffectiveRoles();
 
   return (
     <div>
@@ -170,7 +236,14 @@ export default function Users() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {users.map((user: UserData) => (
-              <tr key={user.id} className="hover:bg-gray-50">
+              <tr
+                key={user.id}
+                className={clsx(
+                  'hover:bg-gray-50 cursor-pointer',
+                  selectedUser?.id === user.id && 'bg-primary-50'
+                )}
+                onClick={() => handleSelectUser(user)}
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center mr-3">
@@ -186,7 +259,7 @@ export default function Users() {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {user.roles && user.roles.length > 0 ? (
                       user.roles.map((role) => (
                         <span
@@ -206,12 +279,7 @@ export default function Users() {
                   {new Date(user.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <button
-                    onClick={() => setSelectedUser(user)}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </td>
               </tr>
             ))}
@@ -228,16 +296,19 @@ export default function Users() {
 
       {/* User Detail Sidebar */}
       {selectedUser && (
-        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-xl z-50">
+        <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-xl z-50 border-l border-gray-200">
           <div className="h-full flex flex-col">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">User Details</h2>
                 <button
-                  onClick={() => setSelectedUser(null)}
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setPendingRoleChanges(new Set());
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  &times;
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -252,28 +323,79 @@ export default function Users() {
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="label">Assigned Roles</label>
-                  <div className="space-y-2">
-                    {roles.map((role: { id: string; display_name: string; name: string }) => (
+                <div className="flex items-center justify-between">
+                  <label className="label mb-0">Assigned Roles</label>
+                  {pendingRoleChanges.size > 0 && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setPendingRoleChanges(new Set())}
+                        className="text-sm text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveRoles}
+                        disabled={assignRolesMutation.isPending}
+                        className="btn btn-primary text-sm flex items-center"
+                      >
+                        {assignRolesMutation.isPending && (
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        )}
+                        Save
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {roles.map((role: Role) => {
+                    const isAssigned = effectiveRoles.has(role.id);
+                    const isChanged = hasRoleChanged(role.id);
+
+                    return (
                       <label
                         key={role.id}
-                        className="flex items-center p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100"
+                        className={clsx(
+                          'flex items-center p-3 rounded-lg cursor-pointer transition-all',
+                          isAssigned
+                            ? 'bg-primary-50 border border-primary-200'
+                            : 'bg-gray-50 border border-gray-200 hover:bg-gray-100',
+                          isChanged && 'ring-2 ring-amber-400'
+                        )}
                       >
                         <input
                           type="checkbox"
-                          checked={selectedUser.roles?.some((r) => r.id === role.id) || false}
-                          onChange={() => {
-                            // TODO: Implement role assignment
-                          }}
+                          checked={isAssigned}
+                          onChange={() => handleRoleToggle(role.id)}
                           className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                         />
-                        <div className="ml-3">
+                        <div className="ml-3 flex-1">
                           <p className="font-medium text-gray-900">{role.display_name}</p>
                           <p className="text-sm text-gray-500">{role.name}</p>
                         </div>
+                        {role.is_system && (
+                          <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
+                            System
+                          </span>
+                        )}
                       </label>
-                    ))}
+                    );
+                  })}
+                </div>
+
+                {/* Effective Permissions Summary */}
+                <div className="mt-6">
+                  <label className="label">Effective Permissions</label>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    {selectedUser.roles && selectedUser.roles.length > 0 ? (
+                      <p className="text-sm text-gray-600">
+                        User has {selectedUser.roles.length} role(s) with combined permissions.
+                        View individual roles for permission details.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-gray-500">
+                        No roles assigned. User has no permissions.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -282,9 +404,14 @@ export default function Users() {
             <div className="p-6 border-t border-gray-200">
               <button
                 onClick={() => deleteMutation.mutate(selectedUser.id)}
+                disabled={deleteMutation.isPending}
                 className="btn btn-danger w-full flex items-center justify-center"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
+                {deleteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
                 Delete User
               </button>
             </div>

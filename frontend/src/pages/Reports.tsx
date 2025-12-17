@@ -54,7 +54,7 @@ export default function Reports() {
           <div key={report.hash} className="card">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <div className="mr-4">{getStatusIcon(report.status)}</div>
+                <div className="mr-4">{getStatusIcon(report.status ?? undefined)}</div>
                 <div>
                   <h3 className="font-medium text-gray-900">{report.certname}</h3>
                   <p className="text-sm text-gray-500">

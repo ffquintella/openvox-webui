@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.1.0"
+version = "0.2.7"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -34,7 +34,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
 
 # Authentication
 jsonwebtoken = "9.3"
-argon2 = "0.5"
+argon2 = { version = "0.5", features = ["std"] }
+rand = "0.8"
 
 # Configuration
 config = "0.14"
@@ -66,6 +67,7 @@ tokio-test = "0.4"
 wiremock = "0.6"
 fake = { version = "3.0", features = ["derive"] }
 rstest = "0.23"
+bytes = "1.9"
 
 # Async testing
 async-trait = "0.1"

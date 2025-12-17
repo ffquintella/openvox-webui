@@ -284,6 +284,15 @@ pub struct PermissionCheck {
     pub reason: Option<String>,
 }
 
+/// Permission with its associated role information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionWithRole {
+    #[serde(flatten)]
+    pub permission: Permission,
+    pub role_id: Uuid,
+    pub role_name: String,
+}
+
 /// Built-in system roles
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemRole {

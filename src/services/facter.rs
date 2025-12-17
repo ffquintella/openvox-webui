@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::models::{ClassificationResult, FactDefinition, FactTemplate, FactValueSource};
+use crate::models::{ClassificationResult, FactTemplate, FactValueSource};
 
 /// Service for generating external facts based on classification
 pub struct FacterService {
@@ -175,7 +175,7 @@ pub enum ExportFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{GroupMatch, MatchType};
+    use crate::models::{FactDefinition, GroupMatch, MatchType};
     use uuid::Uuid;
 
     fn sample_classification() -> ClassificationResult {

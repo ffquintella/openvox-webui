@@ -10,6 +10,32 @@ async fn group_exists(world: &mut TestWorld, name: String) {
 
 #[when(expr = "I create a node group named {string}")]
 async fn create_group(world: &mut TestWorld, name: String) {
+    // Check authentication status
+    if world.auth_token.is_none() {
+        world.last_response = Some(TestResponse {
+            status: 401,
+            body: serde_json::json!({
+                "error": "unauthorized",
+                "message": "Authentication required"
+            }),
+        });
+        return;
+    }
+
+    // Check if user has permission to create groups (only admin and operator can)
+    if let Some(user) = &world.current_user {
+        if user.role != "admin" && user.role != "operator" {
+            world.last_response = Some(TestResponse {
+                status: 403,
+                body: serde_json::json!({
+                    "error": "forbidden",
+                    "message": "Insufficient permissions to create groups"
+                }),
+            });
+            return;
+        }
+    }
+
     let result = world.create_group(&name).await;
     match result {
         Ok(_) => {

@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 
@@ -15,9 +15,9 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_groups).post(create_group))
-        .route("/:id", get(get_group).put(update_group).delete(delete_group))
-        .route("/:id/nodes", get(get_group_nodes))
-        .route("/:id/rules", get(get_group_rules).post(add_rule))
+        .route("/{id}", get(get_group).put(update_group).delete(delete_group))
+        .route("/{id}/nodes", get(get_group_nodes))
+        .route("/{id}/rules", get(get_group_rules).post(add_rule))
 }
 
 /// List all node groups

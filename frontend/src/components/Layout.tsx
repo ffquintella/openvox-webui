@@ -9,6 +9,7 @@ import {
   Settings,
   Shield,
   Users,
+  Lock,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -27,6 +28,7 @@ const navigation = [
 const adminNavigation = [
   { name: 'Users', href: '/users', icon: Users },
   { name: 'Roles', href: '/roles', icon: Shield },
+  { name: 'Permissions', href: '/permissions', icon: Lock },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

@@ -1,0 +1,51 @@
+# Code coverage configuration for cargo-tarpaulin
+# Run with: cargo tarpaulin --config tarpaulin.toml
+
+[default]
+# Output directory for coverage reports
+output-dir = "target/coverage"
+
+# Output formats
+out = ["Html", "Xml", "Lcov"]
+
+# Skip files that shouldn't be included in coverage
+exclude-files = [
+    "tests/*",
+    "target/*",
+]
+
+# Include all source files
+all = true
+
+# Run with verbose output
+verbose = true
+
+# Timeout for each test in seconds
+timeout = 300
+
+# Number of test threads
+jobs = 4
+
+# Engine to use for coverage
+engine = "llvm"
+
+# Skip functions with these attributes
+ignore = [
+    "test",
+    "cfg(test)",
+]
+
+[ci]
+# CI-specific configuration
+output-dir = "target/coverage"
+out = ["Xml", "Lcov"]
+verbose = false
+jobs = 2
+timeout = 600
+
+[quick]
+# Quick coverage run for development
+out = ["Html"]
+verbose = false
+timeout = 120
+skip-clean = true

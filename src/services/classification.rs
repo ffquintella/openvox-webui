@@ -1,6 +1,5 @@
 //! Node classification service
 
-use anyhow::{Context, Result};
 use regex::Regex;
 use uuid::Uuid;
 

@@ -13,11 +13,12 @@ use crate::{models::Report, AppState};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(query_reports))
-        .route("/:hash", get(get_report))
-        .route("/:hash/events", get(get_report_events))
+        .route("/{hash}", get(get_report))
+        .route("/{hash}/events", get(get_report_events))
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct ReportsQuery {
     pub certname: Option<String>,
     pub status: Option<String>,

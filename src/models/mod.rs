@@ -1,15 +1,17 @@
 //! Data models
 
-mod node;
-mod group;
-mod report;
-mod fact;
 mod classification;
+mod fact;
+mod group;
+mod node;
 mod rbac;
+mod report;
+mod user;
 
-pub use node::*;
-pub use group::*;
-pub use report::*;
-pub use fact::*;
 pub use classification::*;
+pub use fact::*;
+pub use group::*;
+pub use node::*;
 pub use rbac::*;
+pub use report::*;
+pub use user::*;

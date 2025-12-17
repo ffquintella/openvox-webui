@@ -13,6 +13,10 @@ import type {
   EffectivePermissions,
   ResourceInfo,
   ActionInfo,
+  PermissionMatrix,
+  BulkPermissionRequest,
+  BulkPermissionResult,
+  CreatePermissionRequest,
 } from '../types';
 
 const client = axios.create({
@@ -209,5 +213,24 @@ export const api = {
   getActions: async (): Promise<ActionInfo[]> => {
     const response = await client.get('/permissions/actions');
     return response.data;
+  },
+
+  getPermissionMatrix: async (): Promise<PermissionMatrix> => {
+    const response = await client.get('/permissions/matrix');
+    return response.data;
+  },
+
+  bulkUpdatePermissions: async (request: BulkPermissionRequest): Promise<BulkPermissionResult> => {
+    const response = await client.post('/permissions/bulk', request);
+    return response.data;
+  },
+
+  addPermissionToRole: async (roleId: string, permission: CreatePermissionRequest): Promise<Role> => {
+    const response = await client.post(`/roles/${roleId}/permissions`, permission);
+    return response.data;
+  },
+
+  removePermissionFromRole: async (roleId: string, permissionId: string): Promise<void> => {
+    await client.delete(`/roles/${roleId}/permissions/${permissionId}`);
   },
 };

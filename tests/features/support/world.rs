@@ -22,12 +22,26 @@ pub struct TestWorld {
     /// Facts for test nodes
     pub node_facts: HashMap<String, serde_json::Value>,
 
+    /// User roles mapping (username -> list of roles)
+    pub user_roles: HashMap<String, Vec<String>>,
+
+    /// User scoped permissions (username -> list of scoped group names)
+    pub user_scoped_groups: HashMap<String, Vec<String>>,
+
+    /// User environment-scoped permissions (username -> list of environments)
+    pub user_scoped_environments: HashMap<String, Vec<String>>,
+
+    /// Custom roles with parent relationships (role_name -> parent_role_name)
+    pub role_parents: HashMap<String, String>,
+
     /// Base URL for API calls
+    #[allow(dead_code)]
     pub api_base_url: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct TestUser {
+    #[allow(dead_code)]
     pub username: String,
     pub role: String,
 }
@@ -40,6 +54,7 @@ pub struct TestResponse {
 
 impl TestWorld {
     /// Create a new test world
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             api_base_url: "http://localhost:8080".to_string(),
@@ -86,6 +101,7 @@ impl TestWorld {
     }
 
     /// Cleanup created resources
+    #[allow(dead_code)]
     pub async fn cleanup(&mut self) {
         // In real implementation, this would delete created resources
         self.created_groups.clear();

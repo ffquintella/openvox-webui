@@ -16,7 +16,7 @@ use tower_http::{
 };
 use tracing::{info, Level};
 
-use openvox_webui::{api, config, db, services, AppConfig, AppState};
+use openvox_webui::{api, config, db, services, AppConfig, AppState, DbRbacService, RbacService};
 use config::LogFormat;
 use services::puppetdb::PuppetDbClient;
 
@@ -51,11 +51,25 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Initialize RBAC service with default system roles
+    info!("Initializing RBAC service");
+    let rbac = Arc::new(RbacService::new());
+    info!(
+        "RBAC initialized with {} system roles",
+        rbac.get_roles().len()
+    );
+
+    // Initialize database-backed RBAC service
+    info!("Initializing database-backed RBAC service");
+    let rbac_db = Arc::new(DbRbacService::new(db.clone()));
+
     // Create application state
     let state = AppState {
         config: config.clone(),
         db,
         puppetdb,
+        rbac,
+        rbac_db,
     };
 
     // Build the router

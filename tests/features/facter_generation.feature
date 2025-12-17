@@ -1,3 +1,4 @@
+@wip
 Feature: Facter Generation
   As an infrastructure administrator
   I want to generate external facts based on classification

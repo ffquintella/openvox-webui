@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Shield, ChevronRight, Trash2, Users, Lock } from 'lucide-react';
+import { Plus, Shield, Trash2, Users, Lock, X } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
-import { Role } from '../types';
+import type { Role, ResourceInfo, Resource, Action, CreatePermissionRequest } from '../types';
 
 export default function Roles() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -11,11 +11,29 @@ export default function Roles() {
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDisplayName, setNewRoleDisplayName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
+  const [isAddPermissionOpen, setIsAddPermissionOpen] = useState(false);
+  const [newPermResource, setNewPermResource] = useState<Resource | ''>('');
+  const [newPermAction, setNewPermAction] = useState<Action | ''>('');
   const queryClient = useQueryClient();
 
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ['roles'],
     queryFn: api.getRoles,
+  });
+
+  const { data: resources = [] } = useQuery<ResourceInfo[]>({
+    queryKey: ['resources'],
+    queryFn: api.getResources,
+  });
+
+  const { data: usersWithRole = [] } = useQuery({
+    queryKey: ['roleUsers', selectedRole?.id],
+    queryFn: async () => {
+      if (!selectedRole) return [];
+      const users = await api.getUsers();
+      return users.filter((u) => u.roles?.some((r) => r.id === selectedRole.id));
+    },
+    enabled: !!selectedRole,
   });
 
   const createMutation = useMutation({
@@ -35,6 +53,30 @@ export default function Roles() {
     },
   });
 
+  const addPermissionMutation = useMutation({
+    mutationFn: ({ roleId, permission }: { roleId: string; permission: CreatePermissionRequest }) =>
+      api.addPermissionToRole(roleId, permission),
+    onSuccess: (updatedRole) => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+      setSelectedRole(updatedRole);
+      setIsAddPermissionOpen(false);
+      setNewPermResource('');
+      setNewPermAction('');
+    },
+  });
+
+  const removePermissionMutation = useMutation({
+    mutationFn: ({ roleId, permissionId }: { roleId: string; permissionId: string }) =>
+      api.removePermissionFromRole(roleId, permissionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+      // Refresh selected role
+      if (selectedRole) {
+        api.getRole(selectedRole.id).then((role) => setSelectedRole(role));
+      }
+    },
+  });
+
   const resetForm = () => {
     setNewRoleName('');
     setNewRoleDisplayName('');
@@ -48,6 +90,24 @@ export default function Roles() {
       display_name: newRoleDisplayName,
       description: newRoleDescription || undefined,
     });
+  };
+
+  const handleAddPermission = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole || !newPermResource || !newPermAction) return;
+
+    addPermissionMutation.mutate({
+      roleId: selectedRole.id,
+      permission: {
+        resource: newPermResource,
+        action: newPermAction,
+      },
+    });
+  };
+
+  const getAvailableActions = (resourceName: string): string[] => {
+    const resource = resources.find((r) => r.name === resourceName);
+    return resource?.available_actions || [];
   };
 
   if (isLoading) {
@@ -165,17 +225,20 @@ export default function Roles() {
                       <p className="text-sm text-gray-500">{role.name}</p>
                     </div>
                   </div>
-                  {role.is_system && (
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                      System
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">
+                      {role.permissions?.length || 0} perms
                     </span>
-                  )}
+                    {role.is_system && (
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                        System
+                      </span>
+                    )}
+                  </div>
                 </button>
               ))}
               {roles.length === 0 && (
-                <div className="p-4 text-center text-gray-500">
-                  No roles defined
-                </div>
+                <div className="p-4 text-center text-gray-500">No roles defined</div>
               )}
             </div>
           </div>
@@ -212,31 +275,128 @@ export default function Roles() {
 
               {/* Permissions */}
               <div className="mb-6">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
-                  <Lock className="w-4 h-4 mr-2" />
-                  Permissions
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center">
+                    <Lock className="w-4 h-4 mr-2" />
+                    Permissions
+                  </h3>
+                  {!selectedRole.is_system && (
+                    <button
+                      onClick={() => setIsAddPermissionOpen(true)}
+                      className="btn btn-secondary text-sm flex items-center"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Permission
+                    </button>
+                  )}
+                </div>
+
+                {/* Add Permission Form */}
+                {isAddPermissionOpen && (
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                    <form onSubmit={handleAddPermission} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="label">Resource</label>
+                          <select
+                            value={newPermResource}
+                            onChange={(e) => {
+                              setNewPermResource(e.target.value as Resource);
+                              setNewPermAction('');
+                            }}
+                            className="input"
+                            required
+                          >
+                            <option value="">Select resource...</option>
+                            {resources.map((r) => (
+                              <option key={r.name} value={r.name}>
+                                {r.display_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">Action</label>
+                          <select
+                            value={newPermAction}
+                            onChange={(e) => setNewPermAction(e.target.value as Action)}
+                            className="input"
+                            required
+                            disabled={!newPermResource}
+                          >
+                            <option value="">Select action...</option>
+                            {newPermResource &&
+                              getAvailableActions(newPermResource).map((a) => (
+                                <option key={a} value={a}>
+                                  {a}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddPermissionOpen(false);
+                            setNewPermResource('');
+                            setNewPermAction('');
+                          }}
+                          className="btn btn-secondary text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={addPermissionMutation.isPending}
+                          className="btn btn-primary text-sm"
+                        >
+                          {addPermissionMutation.isPending ? 'Adding...' : 'Add'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
                 <div className="bg-gray-50 rounded-lg p-4">
                   {selectedRole.permissions && selectedRole.permissions.length > 0 ? (
                     <div className="space-y-2">
-                      {selectedRole.permissions.map((perm, index) => (
+                      {selectedRole.permissions.map((perm) => (
                         <div
-                          key={index}
+                          key={perm.id}
                           className="flex items-center justify-between bg-white px-3 py-2 rounded border border-gray-200"
                         >
-                          <span className="font-medium text-gray-900">
-                            {perm.resource}
-                          </span>
-                          <span className="text-sm bg-primary-100 text-primary-700 px-2 py-1 rounded">
-                            {perm.action}
-                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium text-gray-900">{perm.resource}</span>
+                            <span className="text-sm bg-primary-100 text-primary-700 px-2 py-1 rounded">
+                              {perm.action}
+                            </span>
+                            {perm.scope && perm.scope.type !== 'all' && (
+                              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                {perm.scope.type}
+                                {'value' in perm.scope && `: ${perm.scope.value}`}
+                              </span>
+                            )}
+                          </div>
+                          {!selectedRole.is_system && (
+                            <button
+                              onClick={() =>
+                                removePermissionMutation.mutate({
+                                  roleId: selectedRole.id,
+                                  permissionId: perm.id,
+                                })
+                              }
+                              className="text-gray-400 hover:text-red-600"
+                              title="Remove permission"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-4">
-                      No permissions assigned
-                    </p>
+                    <p className="text-gray-500 text-center py-4">No permissions assigned</p>
                   )}
                 </div>
               </div>
@@ -245,12 +405,29 @@ export default function Roles() {
               <div>
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
                   <Users className="w-4 h-4 mr-2" />
-                  Users with this Role
+                  Users with this Role ({usersWithRole.length})
                 </h3>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-gray-500 text-center py-4">
-                    User assignment coming soon
-                  </p>
+                  {usersWithRole.length > 0 ? (
+                    <div className="space-y-2">
+                      {usersWithRole.map((user) => (
+                        <div
+                          key={user.id}
+                          className="flex items-center bg-white px-3 py-2 rounded border border-gray-200"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center mr-3">
+                            <Users className="w-4 h-4 text-primary-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{user.username}</p>
+                            <p className="text-sm text-gray-500">{user.email}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">No users have this role</p>
+                  )}
                 </div>
               </div>
             </div>

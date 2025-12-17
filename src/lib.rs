@@ -15,8 +15,12 @@ pub mod utils;
 
 pub use config::AppConfig;
 pub use db::DbPool;
-pub use middleware::{auth_middleware, AuthUser, Claims};
+pub use middleware::{
+    auth_middleware, check_permission, optional_auth_middleware, require_permission_middleware,
+    AuthUser, Claims, RbacError, RequirePermission,
+};
 use services::puppetdb::PuppetDbClient;
+pub use services::{DbRbacService, RbacService};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -27,4 +31,8 @@ pub struct AppState {
     pub db: DbPool,
     /// PuppetDB client (optional)
     pub puppetdb: Option<Arc<PuppetDbClient>>,
+    /// RBAC service for permission checking (in-memory, for middleware)
+    pub rbac: Arc<RbacService>,
+    /// Database-backed RBAC service (for API operations)
+    pub rbac_db: Arc<DbRbacService>,
 }

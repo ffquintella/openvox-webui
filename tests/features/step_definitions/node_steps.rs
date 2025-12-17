@@ -26,6 +26,18 @@ async fn node_exists_with_facts(world: &mut TestWorld, certname: String, facts_j
 
 #[when(expr = "I request the node list")]
 async fn request_node_list(world: &mut TestWorld) {
+    // Check authentication status
+    if world.auth_token.is_none() {
+        world.last_response = Some(TestResponse {
+            status: 401,
+            body: serde_json::json!({
+                "error": "unauthorized",
+                "message": "Authentication required"
+            }),
+        });
+        return;
+    }
+
     // In real implementation, make API call to GET /api/v1/nodes
     world.last_response = Some(TestResponse {
         status: 200,

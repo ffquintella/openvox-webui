@@ -6,6 +6,7 @@ use axum::{routing::get, Router};
 
 use crate::AppState;
 
+mod auth;
 mod facts;
 mod groups;
 mod health;
@@ -25,6 +26,8 @@ pub fn routes() -> Router<AppState> {
         .route("/health/detailed", get(health::health_check_detailed))
         .route("/health/live", get(health::liveness))
         .route("/health/ready", get(health::readiness))
+        // Authentication endpoints (no auth required)
+        .nest("/auth", auth::routes())
         // Resource endpoints
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())

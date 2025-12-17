@@ -12,9 +12,9 @@ use crate::{models::Node, AppState};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_nodes))
-        .route("/:certname", get(get_node))
-        .route("/:certname/facts", get(get_node_facts))
-        .route("/:certname/reports", get(get_node_reports))
+        .route("/{certname}", get(get_node))
+        .route("/{certname}/facts", get(get_node_facts))
+        .route("/{certname}/reports", get(get_node_reports))
 }
 
 /// List all nodes

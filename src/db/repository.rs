@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::models::NodeGroup;
 
 /// Repository for node group operations
+#[allow(dead_code)]
 pub struct GroupRepository<'a> {
     pool: &'a SqlitePool,
 }

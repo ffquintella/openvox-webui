@@ -1,15 +1,20 @@
 //! User management API endpoints
+//!
+//! Provides user CRUD operations and role/permission management.
 
 use axum::{
     extract::{Path, State},
-    routing::{get, post, put, delete},
+    http::StatusCode,
+    routing::get,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    models::{AssignRolesRequest, EffectivePermissions, Role, UserWithRoles},
+    models::{AssignRolesRequest, EffectivePermissions, Role, UserPublic},
+    services::AuthService,
+    utils::error::ErrorResponse,
     AppState,
 };
 
@@ -17,19 +22,9 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users).post(create_user))
-        .route("/:id", get(get_user).put(update_user).delete(delete_user))
-        .route("/:id/roles", get(get_user_roles).put(assign_user_roles))
-        .route("/:id/permissions", get(get_user_permissions))
-}
-
-/// User response (without sensitive data)
-#[derive(Debug, Serialize)]
-pub struct UserResponse {
-    pub id: Uuid,
-    pub username: String,
-    pub email: String,
-    pub role: String,
-    pub created_at: String,
+        .route("/{id}", get(get_user).put(update_user).delete(delete_user))
+        .route("/{id}/roles", get(get_user_roles).put(assign_user_roles))
+        .route("/{id}/permissions", get(get_user_permissions))
 }
 
 /// Create user request
@@ -38,6 +33,7 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub password: String,
+    pub role: Option<String>,
     pub role_ids: Option<Vec<Uuid>>,
 }
 
@@ -47,91 +43,440 @@ pub struct UpdateUserRequest {
     pub username: Option<String>,
     pub email: Option<String>,
     pub password: Option<String>,
+    pub role: Option<String>,
+}
+
+/// User response with roles
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct UserWithRolesResponse {
+    #[serde(flatten)]
+    pub user: UserPublic,
+    pub roles: Vec<Role>,
 }
 
 /// List all users
-async fn list_users(State(_state): State<AppState>) -> Json<Vec<UserResponse>> {
-    // TODO: Implement database query
-    Json(vec![])
+///
+/// GET /api/v1/users
+async fn list_users(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<UserPublic>>, (StatusCode, Json<ErrorResponse>)> {
+    let auth_service = AuthService::new(state.db.clone());
+
+    let users = auth_service.list_users().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch users: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    Ok(Json(users))
 }
 
 /// Create a new user
+///
+/// POST /api/v1/users
 async fn create_user(
-    State(_state): State<AppState>,
-    Json(_payload): Json<CreateUserRequest>,
-) -> Json<UserResponse> {
-    // TODO: Implement
-    Json(UserResponse {
-        id: Uuid::new_v4(),
-        username: String::new(),
-        email: String::new(),
-        role: "user".to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-    })
+    State(state): State<AppState>,
+    Json(payload): Json<CreateUserRequest>,
+) -> Result<(StatusCode, Json<UserPublic>), (StatusCode, Json<ErrorResponse>)> {
+    // Validate input
+    if payload.username.len() < 3 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "Username must be at least 3 characters".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    if payload.password.len() < 8 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "Password must be at least 8 characters".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    if !payload.email.contains('@') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "Invalid email address".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    let auth_service = AuthService::new(state.db.clone());
+    let role = payload.role.as_deref().unwrap_or("viewer");
+
+    let user = auth_service
+        .create_user(&payload.username, &payload.email, &payload.password, role)
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("already exists") {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "conflict".to_string(),
+                        message,
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal_error".to_string(),
+                        message: format!("Failed to create user: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            }
+        })?;
+
+    // Assign roles if provided
+    if let Some(role_ids) = payload.role_ids {
+        if !role_ids.is_empty() {
+            state
+                .rbac_db
+                .assign_roles(&user.id, &role_ids)
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "internal_error".to_string(),
+                            message: format!("Failed to assign roles: {}", e),
+                            details: None,
+                            code: None,
+                        }),
+                    )
+                })?;
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(user.into())))
 }
 
 /// Get a specific user
+///
+/// GET /api/v1/users/:id
 async fn get_user(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-) -> Json<Option<UserResponse>> {
-    // TODO: Implement
-    Json(None)
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
+    let auth_service = AuthService::new(state.db.clone());
+
+    let user = auth_service
+        .get_user_by_id(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch user: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "User not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    Ok(Json(user.into()))
 }
 
 /// Update a user
+///
+/// PUT /api/v1/users/:id
 async fn update_user(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-    Json(_payload): Json<UpdateUserRequest>,
-) -> Json<UserResponse> {
-    // TODO: Implement
-    Json(UserResponse {
-        id: Uuid::new_v4(),
-        username: String::new(),
-        email: String::new(),
-        role: "user".to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-    })
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateUserRequest>,
+) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
+    let auth_service = AuthService::new(state.db.clone());
+
+    let user = auth_service
+        .update_user(
+            &id,
+            payload.username.as_deref(),
+            payload.email.as_deref(),
+            payload.password.as_deref(),
+            payload.role.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("not found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "not_found".to_string(),
+                        message: "User not found".to_string(),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else if message.contains("already exists") {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "conflict".to_string(),
+                        message,
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal_error".to_string(),
+                        message: format!("Failed to update user: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            }
+        })?;
+
+    Ok(Json(user.into()))
 }
 
 /// Delete a user
+///
+/// DELETE /api/v1/users/:id
 async fn delete_user(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-) -> Json<bool> {
-    // TODO: Implement
-    Json(false)
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let auth_service = AuthService::new(state.db.clone());
+
+    let deleted = auth_service.delete_user(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to delete user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ))
+    }
 }
 
 /// Get roles assigned to a user
+///
+/// GET /api/v1/users/:id/roles
 async fn get_user_roles(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-) -> Json<Vec<Role>> {
-    // TODO: Implement
-    Json(vec![])
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Role>>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify user exists
+    let auth_service = AuthService::new(state.db.clone());
+    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    let roles = state.rbac_db.get_user_roles(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user roles: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    Ok(Json(roles))
 }
 
 /// Assign roles to a user
+///
+/// PUT /api/v1/users/:id/roles
 async fn assign_user_roles(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-    Json(_payload): Json<AssignRolesRequest>,
-) -> Json<Vec<Role>> {
-    // TODO: Implement
-    Json(vec![])
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<AssignRolesRequest>,
+) -> Result<Json<Vec<Role>>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify user exists
+    let auth_service = AuthService::new(state.db.clone());
+    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    state
+        .rbac_db
+        .assign_roles(&id, &payload.role_ids)
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("not found") {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "bad_request".to_string(),
+                        message: format!("Role not found: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal_error".to_string(),
+                        message: format!("Failed to assign roles: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            }
+        })?;
+
+    // Fetch and return updated roles
+    let roles = state.rbac_db.get_user_roles(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user roles: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    Ok(Json(roles))
 }
 
 /// Get effective permissions for a user
+///
+/// GET /api/v1/users/:id/permissions
 async fn get_user_permissions(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-) -> Json<EffectivePermissions> {
-    // TODO: Implement
-    Json(EffectivePermissions {
-        user_id: Uuid::nil(),
-        permissions: vec![],
-        roles: vec![],
-    })
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EffectivePermissions>, (StatusCode, Json<ErrorResponse>)> {
+    // Verify user exists
+    let auth_service = AuthService::new(state.db.clone());
+    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    let permissions = state
+        .rbac_db
+        .get_effective_permissions(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch permissions: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    Ok(Json(permissions))
 }

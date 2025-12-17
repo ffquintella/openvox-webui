@@ -2074,13 +2074,14 @@ dependencies = [
 
 [[package]]
 name = "openvox-webui"
-version = "0.1.0"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "argon2",
  "async-trait",
  "axum",
  "axum-extra",
+ "bytes",
  "chrono",
  "config",
  "cucumber",
@@ -2091,6 +2092,7 @@ dependencies = [
  "jsonwebtoken",
  "num_cpus",
  "once_cell",
+ "rand 0.8.5",
  "regex",
  "reqwest",
  "rstest",

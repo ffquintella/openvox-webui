@@ -9,6 +9,7 @@ import Facts from './pages/Facts';
 import Settings from './pages/Settings';
 import Roles from './pages/Roles';
 import Users from './pages/Users';
+import Permissions from './pages/Permissions';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="/facts" element={<Facts />} />
         <Route path="/roles" element={<Roles />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/permissions" element={<Permissions />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

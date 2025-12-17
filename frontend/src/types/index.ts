@@ -233,3 +233,57 @@ export interface ActionInfo {
   display_name: string;
   description: string;
 }
+
+// Permission Matrix types
+export interface RoleInfo {
+  id: string;
+  name: string;
+  display_name: string;
+  is_system: boolean;
+}
+
+export interface ResourceWithActions {
+  name: string;
+  display_name: string;
+  actions: string[];
+}
+
+export interface PermissionMatrix {
+  roles: RoleInfo[];
+  resources: ResourceWithActions[];
+  matrix: Record<string, Record<string, Record<string, boolean>>>;
+}
+
+// Bulk permission operations
+export type BulkOperationType = 'add' | 'remove' | 'replace';
+
+export interface CreatePermissionRequest {
+  resource: Resource;
+  action: Action;
+  scope?: Scope;
+}
+
+export interface BulkOperation {
+  op: BulkOperationType;
+  role_id: string;
+  permission?: CreatePermissionRequest;
+  permissions?: CreatePermissionRequest[];
+}
+
+export interface BulkPermissionRequest {
+  operations: BulkOperation[];
+}
+
+export interface BulkOperationResult {
+  index: number;
+  success: boolean;
+  error?: string;
+  role?: Role;
+}
+
+export interface BulkPermissionResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkOperationResult[];
+}
