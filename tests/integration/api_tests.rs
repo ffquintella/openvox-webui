@@ -67,14 +67,21 @@ async fn test_reports_endpoint_without_puppetdb() {
 }
 
 #[tokio::test]
-async fn test_groups_endpoint_returns_empty_list() {
+async fn test_groups_endpoint_returns_default_group() {
     let app = TestApp::new().await;
     let response = app.get("/api/v1/groups").await;
 
     response.assert_ok();
 
     let json: Vec<serde_json::Value> = response.json();
-    assert!(json.is_empty());
+    // Should contain the default "All Nodes" group from migrations
+    assert!(!json.is_empty(), "Should have at least the default group");
+
+    // Check that "All Nodes" group exists
+    let has_all_nodes = json
+        .iter()
+        .any(|g| g.get("name").and_then(|n| n.as_str()) == Some("All Nodes"));
+    assert!(has_all_nodes, "Should have 'All Nodes' group");
 }
 
 #[tokio::test]

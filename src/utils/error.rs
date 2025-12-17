@@ -60,6 +60,53 @@ pub enum AppError {
     ServiceUnavailable(String),
 }
 
+impl AppError {
+    /// Create a not found error
+    pub fn not_found(message: impl Into<String>) -> Self {
+        AppError::NotFound(message.into())
+    }
+
+    /// Create a bad request error
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        AppError::BadRequest(message.into())
+    }
+
+    /// Create an unauthorized error
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        AppError::Unauthorized(message.into())
+    }
+
+    /// Create a forbidden error
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        AppError::Forbidden(message.into())
+    }
+
+    /// Create a conflict error
+    pub fn conflict(message: impl Into<String>) -> Self {
+        AppError::Conflict(message.into())
+    }
+
+    /// Create a validation error
+    pub fn validation(message: impl Into<String>) -> Self {
+        AppError::ValidationError(message.into())
+    }
+
+    /// Create an internal server error
+    pub fn internal(message: impl Into<String>) -> Self {
+        AppError::Internal(message.into())
+    }
+
+    /// Create a database error
+    pub fn database(message: impl Into<String>) -> Self {
+        AppError::Database(message.into())
+    }
+
+    /// Create a service unavailable error
+    pub fn service_unavailable(message: impl Into<String>) -> Self {
+        AppError::ServiceUnavailable(message.into())
+    }
+}
+
 /// Error response body
 #[derive(Serialize, Debug)]
 pub struct ErrorResponse {

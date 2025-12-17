@@ -506,20 +506,41 @@ Then the classification should include class "{class}"
 - Multiple groups matching same node
 - Rule match types: ALL vs ANY
 
-### 4.2 Node Groups Management
-- [ ] Create node group data model
-- [ ] Implement group hierarchy (parent/child)
-- [ ] Dynamic group membership based on rules
-- [ ] Static (pinned) node assignment
-- [ ] Group inheritance for classes and parameters
-- [ ] **RBAC: Group-level permissions**
+### 4.2 Node Groups Management UI
+- [x] Two-column layout with groups list and detail panel
+- [x] Group hierarchy visualization with parent/child relationships
+- [x] Create/Edit group modal with all settings
+- [x] Classification rules editor (add/remove rules with all operators)
+- [x] Pinned nodes management (add/remove from available nodes)
+- [x] Puppet classes editor (add/remove classes)
+- [x] Class parameters editor (add/remove key-value parameters)
+- [x] Matched nodes display count
+- [x] Tabbed interface for rules/pinned/classes management
+- [ ] **RBAC: Group-level permissions** (backend integration pending)
 
-### 4.3 API Endpoints
-- [ ] CRUD /api/v1/groups - Node groups management
-- [ ] GET /api/v1/groups/:id/nodes - Get nodes in group
-- [ ] POST /api/v1/groups/:id/rules - Add classification rules
-- [ ] GET /api/v1/nodes/:certname/groups - Get node's groups
-- [ ] POST /api/v1/classify/:certname - Classify a node
+### 4.3 API Endpoints (Backend Implementation) - COMPLETE
+- [x] CRUD /api/v1/groups - Node groups management (fully implemented)
+- [x] GET /api/v1/groups/:id - Get group with rules and pinned nodes
+- [x] PUT /api/v1/groups/:id - Update group (partial updates supported)
+- [x] DELETE /api/v1/groups/:id - Delete group (cascades to rules/pinned)
+- [x] GET /api/v1/groups/:id/nodes - Get nodes in group (returns pinned nodes)
+- [x] GET /api/v1/groups/:id/rules - Get classification rules
+- [x] POST /api/v1/groups/:id/rules - Add classification rule
+- [x] DELETE /api/v1/groups/:id/rules/:ruleId - Delete classification rule
+- [x] POST /api/v1/groups/:id/pinned - Add pinned node
+- [x] DELETE /api/v1/groups/:id/pinned/:certname - Remove pinned node
+
+**Backend implementation includes:**
+- `GroupRepository` with full CRUD for groups, rules, and pinned nodes
+- SQLite database storage for all group data
+- Default "All Nodes" group created by migration
+- `AppError` helper methods for consistent error responses
+- All 10 rule operators supported (=, !=, ~, !~, >, >=, <, <=, in, not_in)
+- Request types: `CreateGroupRequest`, `UpdateGroupRequest`, `CreateRuleRequest`, `AddPinnedNodeRequest`
+
+**Future enhancements (requires PuppetDB):**
+- GET /api/v1/nodes/:certname/groups - Get node's groups (needs fact data)
+- POST /api/v1/classify/:certname - Classify a node (needs fact data)
 
 ## Phase 5: Facter Integration
 

@@ -48,6 +48,27 @@ export interface CreateGroupRequest {
   environment?: string;
   rule_match_type?: RuleMatchType;
   classes?: string[];
+  parameters?: Record<string, unknown>;
+}
+
+export interface UpdateGroupRequest {
+  name?: string;
+  description?: string;
+  parent_id?: string | null;
+  environment?: string | null;
+  rule_match_type?: RuleMatchType;
+  classes?: string[];
+  parameters?: Record<string, unknown>;
+}
+
+export interface CreateRuleRequest {
+  fact_path: string;
+  operator: RuleOperator;
+  value: unknown;
+}
+
+export interface AddPinnedNodeRequest {
+  certname: string;
 }
 
 // Report types

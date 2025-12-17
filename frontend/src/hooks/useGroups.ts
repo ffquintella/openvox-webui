@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { CreateGroupRequest } from '../types';
+import type { CreateGroupRequest, UpdateGroupRequest, CreateRuleRequest } from '../types';
 
 export function useGroups() {
   return useQuery({
@@ -32,10 +32,11 @@ export function useUpdateGroup() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: CreateGroupRequest }) =>
+    mutationFn: ({ id, data }: { id: string; data: UpdateGroupRequest }) =>
       api.updateGroup(id, data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group', variables.id] });
     },
   });
 }
@@ -56,5 +57,67 @@ export function useGroupNodes(id: string | undefined) {
     queryKey: ['group-nodes', id],
     queryFn: () => api.getGroupNodes(id!),
     enabled: !!id,
+  });
+}
+
+export function useGroupRules(id: string | undefined) {
+  return useQuery({
+    queryKey: ['group-rules', id],
+    queryFn: () => api.getGroupRules(id!),
+    enabled: !!id,
+  });
+}
+
+export function useAddGroupRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ groupId, rule }: { groupId: string; rule: CreateRuleRequest }) =>
+      api.addGroupRule(groupId, rule),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: ['group-rules', variables.groupId] });
+    },
+  });
+}
+
+export function useDeleteGroupRule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ groupId, ruleId }: { groupId: string; ruleId: string }) =>
+      api.deleteGroupRule(groupId, ruleId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
+      queryClient.invalidateQueries({ queryKey: ['group-rules', variables.groupId] });
+    },
+  });
+}
+
+export function useAddPinnedNode() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ groupId, certname }: { groupId: string; certname: string }) =>
+      api.addPinnedNode(groupId, certname),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
+    },
+  });
+}
+
+export function useRemovePinnedNode() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ groupId, certname }: { groupId: string; certname: string }) =>
+      api.removePinnedNode(groupId, certname),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group', variables.groupId] });
+    },
   });
 }

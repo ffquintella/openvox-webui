@@ -105,20 +105,33 @@ SQLite with migrations in `migrations/`. Key tables:
 ## API Endpoints
 
 ```
+# Health
 GET  /api/v1/health
+
+# Nodes (PuppetDB integration)
 GET  /api/v1/nodes
 GET  /api/v1/nodes/:certname
 GET  /api/v1/nodes/:certname/facts
 GET  /api/v1/nodes/:certname/reports
-GET  /api/v1/groups
-POST /api/v1/groups
-GET  /api/v1/groups/:id
-PUT  /api/v1/groups/:id
+
+# Groups (full CRUD)
+GET    /api/v1/groups
+POST   /api/v1/groups
+GET    /api/v1/groups/:id
+PUT    /api/v1/groups/:id
 DELETE /api/v1/groups/:id
-GET  /api/v1/groups/:id/nodes
-POST /api/v1/groups/:id/rules
+GET    /api/v1/groups/:id/nodes
+GET    /api/v1/groups/:id/rules
+POST   /api/v1/groups/:id/rules
+DELETE /api/v1/groups/:id/rules/:ruleId
+POST   /api/v1/groups/:id/pinned
+DELETE /api/v1/groups/:id/pinned/:certname
+
+# Facts
 GET  /api/v1/facts
 GET  /api/v1/facts/names
+
+# Reports
 GET  /api/v1/reports
 GET  /api/v1/reports/:hash
 ```

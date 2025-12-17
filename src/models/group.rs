@@ -74,6 +74,33 @@ pub struct CreateGroupRequest {
     pub environment: Option<String>,
     pub rule_match_type: Option<RuleMatchType>,
     pub classes: Option<Vec<String>>,
+    pub parameters: Option<serde_json::Value>,
+}
+
+/// Request to update an existing node group
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateGroupRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub parent_id: Option<Uuid>,
+    pub environment: Option<String>,
+    pub rule_match_type: Option<RuleMatchType>,
+    pub classes: Option<Vec<String>>,
+    pub parameters: Option<serde_json::Value>,
+}
+
+/// Request to create a classification rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateRuleRequest {
+    pub fact_path: String,
+    pub operator: RuleOperator,
+    pub value: serde_json::Value,
+}
+
+/// Request to add a pinned node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddPinnedNodeRequest {
+    pub certname: String,
 }
 
 /// Classification rule for matching nodes to groups

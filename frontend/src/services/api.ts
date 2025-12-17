@@ -4,6 +4,9 @@ import type {
   NodeGroup,
   Report,
   CreateGroupRequest,
+  UpdateGroupRequest,
+  CreateRuleRequest,
+  ClassificationRule,
   Role,
   Permission,
   CreateRoleRequest,
@@ -79,7 +82,7 @@ export const api = {
     return response.data;
   },
 
-  updateGroup: async (id: string, data: CreateGroupRequest): Promise<NodeGroup> => {
+  updateGroup: async (id: string, data: UpdateGroupRequest): Promise<NodeGroup> => {
     const response = await client.put(`/groups/${id}`, data);
     return response.data;
   },
@@ -92,6 +95,30 @@ export const api = {
   getGroupNodes: async (id: string): Promise<string[]> => {
     const response = await client.get(`/groups/${id}/nodes`);
     return response.data;
+  },
+
+  // Group Rules
+  getGroupRules: async (id: string): Promise<ClassificationRule[]> => {
+    const response = await client.get(`/groups/${id}/rules`);
+    return response.data;
+  },
+
+  addGroupRule: async (id: string, rule: CreateRuleRequest): Promise<ClassificationRule> => {
+    const response = await client.post(`/groups/${id}/rules`, rule);
+    return response.data;
+  },
+
+  deleteGroupRule: async (groupId: string, ruleId: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/rules/${ruleId}`);
+  },
+
+  // Pinned Nodes
+  addPinnedNode: async (groupId: string, certname: string): Promise<void> => {
+    await client.post(`/groups/${groupId}/pinned`, { certname });
+  },
+
+  removePinnedNode: async (groupId: string, certname: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/pinned/${encodeURIComponent(certname)}`);
   },
 
   // Facts
