@@ -13,6 +13,8 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: String,
+    #[serde(default)]
+    pub force_password_change: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -27,6 +29,7 @@ impl User {
             email,
             password_hash,
             role,
+            force_password_change: false,
             created_at: now,
             updated_at: now,
         }
@@ -40,6 +43,8 @@ pub struct UserPublic {
     pub username: String,
     pub email: String,
     pub role: String,
+    #[serde(default)]
+    pub force_password_change: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -51,6 +56,7 @@ impl From<User> for UserPublic {
             username: user.username,
             email: user.email,
             role: user.role,
+            force_password_change: user.force_password_change,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }

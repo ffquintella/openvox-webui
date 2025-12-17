@@ -16,9 +16,10 @@ use tower_http::{
 };
 use tracing::{info, Level};
 
-use openvox_webui::{api, config, db, services, AppConfig, AppState, DbRbacService, RbacService};
+use openvox_webui::{api, config, db, middleware, services, AppConfig, AppState, DbRbacService, RbacService};
 use config::LogFormat;
 use services::puppetdb::PuppetDbClient;
+use tower::ServiceBuilder;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -172,7 +173,15 @@ fn create_router(state: AppState) -> Router {
     // Build the router
     Router::new()
         .nest("/api/v1", api::routes())
-        .with_state(state)
+        .with_state(state.clone())
+        .layer(
+            ServiceBuilder::new()
+                .layer(axum::middleware::from_fn_with_state(
+                    state,
+                    middleware::auth::auth_middleware,
+                ))
+                .into_inner(),
+        )
         .layer(CompressionLayer::new())
         .layer(trace_layer)
         .layer(cors)

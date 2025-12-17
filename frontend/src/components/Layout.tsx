@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { ReactNode, useState, useRef, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Server,
@@ -12,8 +12,12 @@ import {
   Shield,
   Users,
   Lock,
+  User,
+  LogOut,
+  ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useAuthStore } from '../stores/authStore';
 
 interface LayoutProps {
   children: ReactNode;
@@ -38,6 +42,28 @@ const adminNavigation = [
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -106,9 +132,47 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </nav>
 
-          {/* Footer */}
-          <div className="p-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500">OpenVox WebUI v0.1.0</p>
+          {/* User Menu */}
+          <div className="p-4 border-t border-gray-200" ref={userMenuRef}>
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-primary-600" />
+                  </div>
+                  <span className="ml-3 truncate">{user?.username || 'User'}</span>
+                </div>
+                <ChevronDown className={clsx(
+                  'w-4 h-4 text-gray-400 transition-transform',
+                  userMenuOpen && 'rotate-180'
+                )} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {userMenuOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-md shadow-lg border border-gray-200 py-1">
+                  <Link
+                    to="/profile"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <User className="w-4 h-4 mr-3" />
+                    Profile
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <LogOut className="w-4 h-4 mr-3" />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+            <p className="mt-3 text-xs text-gray-500">OpenVox WebUI v0.1.0</p>
           </div>
         </div>
       </aside>

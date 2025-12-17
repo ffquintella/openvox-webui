@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Rust clippy lint fixes across config, middleware, models, and services
+- Auth middleware now applied globally via ServiceBuilder in main router to ensure all protected routes have access to authentication context
+
+### Fixed
+- 401 Unauthorized on protected auth endpoints (change-password, me) - auth middleware now properly applied to all routes via ServiceBuilder
 
 ### Deprecated
 - Nothing yet

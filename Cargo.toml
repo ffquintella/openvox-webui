@@ -57,6 +57,7 @@ dotenvy = "0.15"
 num_cpus = "1.16"
 dirs = "5.0"
 urlencoding = "2.1"
+async-trait = "0.1"
 
 # Validation
 validator = { version = "0.19", features = ["derive"] }
@@ -69,9 +70,6 @@ wiremock = "0.6"
 fake = { version = "3.0", features = ["derive"] }
 rstest = "0.23"
 bytes = "1.9"
-
-# Async testing
-async-trait = "0.1"
 
 [[test]]
 name = "cucumber"

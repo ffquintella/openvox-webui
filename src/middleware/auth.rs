@@ -3,8 +3,8 @@
 //! This module provides JWT-based authentication for the API.
 
 use axum::{
-    extract::{Request, State},
-    http::{header::AUTHORIZATION, StatusCode},
+    extract::{FromRequestParts, Request, State},
+    http::{header::AUTHORIZATION, request::Parts, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
@@ -86,6 +86,35 @@ impl AuthUser {
     pub fn with_role_ids(mut self, role_ids: Vec<Uuid>) -> Self {
         self.role_ids = role_ids;
         self
+    }
+
+    /// Get the user ID
+    pub fn user_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// Extractor for AuthUser from request extensions
+///
+/// This allows using AuthUser as a handler parameter after auth middleware has run.
+impl<S> FromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, Json<ErrorResponse>);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts.extensions.get::<AuthUser>().cloned().ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "unauthorized".to_string(),
+                    message: "Authentication required".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })
     }
 }
 

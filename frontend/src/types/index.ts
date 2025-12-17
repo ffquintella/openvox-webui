@@ -139,11 +139,21 @@ export interface User {
   username: string;
   email: string;
   role: 'admin' | 'user' | 'viewer';
+  force_password_change?: boolean;
 }
 
 export interface AuthResponse {
   token: string;
   user: User;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
+
+export interface ChangePasswordResponse {
+  message: string;
 }
 
 // RBAC types
@@ -219,6 +229,7 @@ export interface UserResponse {
   username: string;
   email: string;
   role: string;
+  force_password_change?: boolean;
   roles?: Array<{ id: string; name: string; display_name: string }>;
   created_at: string;
 }

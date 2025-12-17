@@ -5,13 +5,13 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
 
 use crate::{
-    middleware::auth::{create_access_token, create_refresh_token, validate_token, TokenType},
+    middleware::auth::{create_access_token, create_refresh_token, validate_token, AuthUser, TokenType},
     models::{AuthResponse, LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
     services::AuthService,
     utils::error::ErrorResponse,
@@ -20,13 +20,22 @@ use crate::{
 
 /// Create routes for authentication endpoints
 pub fn routes() -> Router<AppState> {
-    Router::new()
+    // Public routes (no authentication required)
+    let public_routes = Router::new()
         .route("/login", post(login))
         .route("/refresh", post(refresh_token))
         .route("/logout", post(logout))
         .route("/register", post(register))
         .route("/forgot-password", post(forgot_password))
-        .route("/reset-password", post(reset_password))
+        .route("/reset-password", post(reset_password));
+
+    // Protected routes (authentication required)
+    // These routes require authentication via AuthUser extractor
+    let protected_routes = Router::new()
+        .route("/change-password", post(change_password))
+        .route("/me", get(get_current_user));
+
+    public_routes.merge(protected_routes)
 }
 
 /// Login request body for registration
@@ -468,4 +477,121 @@ async fn reset_password(
             }),
         ))
     }
+}
+
+/// Change password request
+#[derive(Debug, serde::Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+/// Change password response
+#[derive(Debug, Serialize)]
+pub struct ChangePasswordResponse {
+    pub message: String,
+}
+
+/// Change password for the authenticated user
+///
+/// POST /api/v1/auth/change-password
+async fn change_password(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> Result<Json<ChangePasswordResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if payload.new_password.len() < 8 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "New password must be at least 8 characters".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    if payload.current_password == payload.new_password {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "New password must be different from current password".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    let auth_service = AuthService::new(state.db.clone());
+
+    let success = auth_service
+        .change_password(&auth_user.id, &payload.current_password, &payload.new_password)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to change password: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    if success {
+        Ok(Json(ChangePasswordResponse {
+            message: "Password changed successfully".to_string(),
+        }))
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "unauthorized".to_string(),
+                message: "Current password is incorrect".to_string(),
+                details: None,
+                code: None,
+            }),
+        ))
+    }
+}
+
+/// Get current authenticated user profile
+///
+/// GET /api/v1/auth/me
+async fn get_current_user(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
+    let auth_service = AuthService::new(state.db.clone());
+
+    let user = auth_service
+        .get_user_by_id(&auth_user.id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch user: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "User not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    Ok(Json(user.into()))
 }

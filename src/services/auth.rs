@@ -385,6 +385,75 @@ impl AuthService {
         Ok(result.rows_affected())
     }
 
+    /// Change password for a user (requires current password verification)
+    ///
+    /// This also clears the force_password_change flag.
+    pub async fn change_password(
+        &self,
+        user_id: &Uuid,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<bool> {
+        // Get user to verify current password
+        let user = self
+            .get_user_by_id(user_id)
+            .await?
+            .context("User not found")?;
+
+        // Verify current password
+        if !Self::verify_password(current_password, &user.password_hash)? {
+            return Ok(false);
+        }
+
+        // Update to new password and clear force_password_change flag
+        let new_password_hash = Self::hash_password(new_password)?;
+        let user_id_str = user_id.to_string();
+        let updated_at = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query(
+            "UPDATE users SET password_hash = ?, force_password_change = 0, updated_at = ? WHERE id = ?",
+        )
+        .bind(&new_password_hash)
+        .bind(&updated_at)
+        .bind(&user_id_str)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update password")?;
+
+        Ok(true)
+    }
+
+    /// Clear the force_password_change flag for a user
+    pub async fn clear_force_password_change(&self, user_id: &Uuid) -> Result<()> {
+        let user_id_str = user_id.to_string();
+        let updated_at = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query("UPDATE users SET force_password_change = 0, updated_at = ? WHERE id = ?")
+            .bind(&updated_at)
+            .bind(&user_id_str)
+            .execute(&self.pool)
+            .await
+            .context("Failed to clear force_password_change flag")?;
+
+        Ok(())
+    }
+
+    /// Set the force_password_change flag for a user
+    pub async fn set_force_password_change(&self, user_id: &Uuid, force: bool) -> Result<()> {
+        let user_id_str = user_id.to_string();
+        let updated_at = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query("UPDATE users SET force_password_change = ?, updated_at = ? WHERE id = ?")
+            .bind(force)
+            .bind(&updated_at)
+            .bind(&user_id_str)
+            .execute(&self.pool)
+            .await
+            .context("Failed to update force_password_change flag")?;
+
+        Ok(())
+    }
+
     /// Hash a reset token using SHA-256 for storage
     fn hash_reset_token(token: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
@@ -401,6 +470,7 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
     let id_str: String = row.get("id");
     let created_at_str: String = row.get("created_at");
     let updated_at_str: String = row.get("updated_at");
+    let force_password_change: bool = row.try_get("force_password_change").unwrap_or(false);
 
     User {
         id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::nil()),
@@ -408,6 +478,7 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         email: row.get("email"),
         password_hash: row.get("password_hash"),
         role: row.get("role"),
+        force_password_change,
         created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now()),

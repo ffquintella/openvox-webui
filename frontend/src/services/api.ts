@@ -63,6 +63,7 @@ interface LoginResponse {
     username: string;
     email: string;
     role: string;
+    force_password_change?: boolean;
   };
 }
 
@@ -85,6 +86,19 @@ export const api = {
 
   refreshToken: async (refreshToken: string): Promise<RefreshResponse> => {
     const response = await client.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+    const response = await client.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+
+  getCurrentUser: async (): Promise<UserResponse> => {
+    const response = await client.get('/auth/me');
     return response.data;
   },
 
