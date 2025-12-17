@@ -7,7 +7,7 @@ export default function Facts() {
   const [search, setSearch] = useState('');
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
 
-  const { data: factNames = [], isLoading: namesLoading } = useQuery({
+  const { data: factNames = [], isLoading: namesLoading, isError: namesError, error: namesErrorData } = useQuery({
     queryKey: ['fact-names'],
     queryFn: api.getFactNames,
   });
@@ -26,6 +26,27 @@ export default function Facts() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+      </div>
+    );
+  }
+
+  if (namesError) {
+    const errorMessage = (namesErrorData as Error)?.message || 'Unknown error';
+    const isPuppetDBUnavailable = errorMessage.includes('503') || errorMessage.includes('Service Unavailable') || errorMessage.includes('PuppetDB');
+
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <Database className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            {isPuppetDBUnavailable ? 'PuppetDB Not Available' : 'Error Loading Facts'}
+          </h2>
+          <p className="text-gray-500">
+            {isPuppetDBUnavailable
+              ? 'PuppetDB is not configured. Configure PuppetDB connection in settings to view facts.'
+              : errorMessage}
+          </p>
+        </div>
       </div>
     );
   }

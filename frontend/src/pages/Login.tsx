@@ -4,11 +4,13 @@ import { useMutation } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, User, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import { usePermissionsStore } from '../stores/permissionsStore';
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const login = useAuthStore((state) => state.login);
+  const fetchPermissions = usePermissionsStore((state) => state.fetchPermissions);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -19,7 +21,7 @@ export default function Login() {
 
   const loginMutation = useMutation({
     mutationFn: () => api.login(username, password),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       login(
         {
           id: data.user.id,
@@ -29,6 +31,8 @@ export default function Login() {
         },
         data.access_token
       );
+      // Fetch user permissions after successful login
+      await fetchPermissions(data.user.id);
       navigate(from, { replace: true });
     },
     onError: (err: Error) => {

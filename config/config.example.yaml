@@ -4,7 +4,7 @@
 # Server settings
 server:
   host: "127.0.0.1"
-  port: 8080
+  port: 5051
   # workers: 4  # Number of worker threads (defaults to CPU count)
   # request_timeout_secs: 30  # Request timeout in seconds
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '../types';
+import { usePermissionsStore } from './permissionsStore';
 
 interface AuthState {
   user: User | null;
@@ -24,6 +25,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('auth_token');
+        // Clear permissions when logging out
+        usePermissionsStore.getState().clearPermissions();
         set({ user: null, token: null, isAuthenticated: false });
       },
     }),
