@@ -671,27 +671,32 @@ npm run test:coverage # Coverage report
 
 ## Phase 7: Configuration Management
 
-### 7.1 YAML Configuration System
-- [ ] Application configuration schema
-- [ ] PuppetDB connection settings
-- [ ] Authentication configuration
-- [ ] Node group definitions
-- [ ] Classification rules definitions
-- [ ] Dashboard layout preferences
-- [ ] **RBAC configuration in YAML**
+### 7.1 YAML Configuration System - COMPLETE
+- [x] Application configuration schema (JSON Schema in config/schema/)
+- [x] PuppetDB connection settings (PuppetDbConfig with SSL support)
+- [x] Authentication configuration (AuthConfig with JWT, bcrypt settings)
+- [x] Node group definitions (GroupsConfig, NodeGroupDefinition)
+- [x] Classification rules definitions (ClassificationRuleDefinition)
+- [x] Dashboard layout preferences (DashboardConfig with widgets, theme, pagination)
+- [x] **RBAC configuration in YAML** (RbacConfig with roles, permissions, lockout)
 
-### 7.x Testing Requirements
-**Unit tests to add:**
-- `src/config/mod.rs` - Configuration parsing, validation, defaults
-- `src/config/schema.rs` - Schema validation
+**Implementation includes:**
+- JSON Schema validation files: `config/schema/config.schema.json`, `config/schema/groups.schema.json`
+- DashboardConfig: time range, refresh interval, pagination, theme, widget configuration
+- RbacConfig: default role, session timeout, failed login lockout, custom role definitions
+- GroupsConfig: separate file loading for node group definitions
+- WidgetConfig: type-safe widget configuration with position and settings
+- 13 unit tests covering all configuration parsing and validation
 
-**Integration tests to add:**
-- Configuration loading from files
-- Environment variable overrides
-- Invalid configuration handling
-- Configuration hot-reload (if implemented)
+### 7.x Testing Requirements - COMPLETE
+**Unit tests added:**
+- [x] `src/config/mod.rs` - Configuration parsing, validation, defaults (13 tests)
+- [x] Dashboard config defaults and parsing tests
+- [x] RBAC config defaults and parsing tests
+- [x] Groups config parsing tests
+- [x] Widget types parsing tests
 
-**Test configurations to create:**
+**Test configurations created:**
 ```
 tests/fixtures/configs/
 ├── valid_minimal.yaml      # Minimum required config
@@ -701,11 +706,35 @@ tests/fixtures/configs/
 └── puppetdb_variants.yaml  # Various PuppetDB configs
 ```
 
-### 7.2 Configuration UI
-- [ ] Settings management interface
-- [ ] YAML editor with validation
-- [ ] Configuration import/export
-- [ ] Configuration versioning
+### 7.2 Configuration UI - COMPLETE
+- [x] Settings management interface (tabbed: General, Dashboard, RBAC, Import/Export, Server Info)
+- [x] YAML editor with validation (textarea with monospace font, syntax checking)
+- [x] Configuration import/export (export to YAML, upload file, download config)
+- [x] Configuration versioning (history display with timestamp, user, action)
+- [x] Server information display (version, uptime, features, git commit)
+- [x] Dashboard preferences editor (time range, refresh interval, pagination, theme)
+- [x] RBAC configuration viewer (default role, session timeout, lockout settings)
+- [x] Configuration validation with warnings (dry run, semantic validation)
+
+**API Endpoints:**
+- GET /api/v1/settings - Get all settings (sanitized)
+- GET /api/v1/settings/dashboard - Get dashboard config
+- PUT /api/v1/settings/dashboard - Update dashboard config
+- GET /api/v1/settings/rbac - Get RBAC config
+- GET /api/v1/settings/export - Export config as YAML
+- POST /api/v1/settings/import - Import config (supports dry run)
+- POST /api/v1/settings/validate - Validate YAML config
+- GET /api/v1/settings/history - Get config change history
+- GET /api/v1/settings/server - Get server info
+
+**Frontend Components:**
+- Settings.tsx - Main tabbed interface
+- useSettings.ts - React Query hooks for settings API
+- GeneralSettingsTab - View all current config sections
+- DashboardSettingsTab - Edit dashboard preferences with unsaved changes indicator
+- RbacSettingsTab - View RBAC config and configured roles
+- ImportExportTab - YAML editor, validation, import/export with history
+- ServerInfoTab - Server version, uptime, features display
 
 ## Phase 8: Advanced Features
 

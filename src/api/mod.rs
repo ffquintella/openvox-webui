@@ -17,6 +17,7 @@ mod permissions;
 mod query;
 mod reports;
 mod roles;
+mod settings;
 mod users;
 
 pub use health::*;
@@ -40,6 +41,7 @@ pub fn routes() -> Router<AppState> {
         .nest("/roles", roles::routes())
         .nest("/users", users::routes())
         .nest("/permissions", permissions::routes())
+        .nest("/settings", settings::routes())
         // PQL query endpoint
         .nest("/query", query::routes())
         // CA management endpoints

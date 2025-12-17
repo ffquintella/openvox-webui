@@ -26,6 +26,14 @@ import type {
   GenerateFactsRequest,
   GeneratedFacts,
   ExportFormat,
+  SettingsResponse,
+  DashboardConfig,
+  RbacConfigResponse,
+  ExportConfigResponse,
+  ImportConfigResponse,
+  ValidateConfigResponse,
+  ConfigHistoryEntry,
+  ServerInfoResponse,
 } from '../types';
 
 const client = axios.create({
@@ -336,6 +344,52 @@ export const api = {
     const response = await client.get(`/facter/export/${encodeURIComponent(certname)}`, {
       params: { template, format },
     });
+    return response.data;
+  },
+
+  // Settings
+  getSettings: async (): Promise<SettingsResponse> => {
+    const response = await client.get('/settings');
+    return response.data;
+  },
+
+  getDashboardConfig: async (): Promise<DashboardConfig> => {
+    const response = await client.get('/settings/dashboard');
+    return response.data;
+  },
+
+  updateDashboardConfig: async (config: Partial<DashboardConfig>): Promise<DashboardConfig> => {
+    const response = await client.put('/settings/dashboard', config);
+    return response.data;
+  },
+
+  getRbacConfig: async (): Promise<RbacConfigResponse> => {
+    const response = await client.get('/settings/rbac');
+    return response.data;
+  },
+
+  exportConfig: async (): Promise<ExportConfigResponse> => {
+    const response = await client.get('/settings/export');
+    return response.data;
+  },
+
+  importConfig: async (content: string, dryRun: boolean = false): Promise<ImportConfigResponse> => {
+    const response = await client.post('/settings/import', { content, format: 'yaml', dry_run: dryRun });
+    return response.data;
+  },
+
+  validateConfig: async (content: string): Promise<ValidateConfigResponse> => {
+    const response = await client.post('/settings/validate', { content, format: 'yaml' });
+    return response.data;
+  },
+
+  getConfigHistory: async (): Promise<ConfigHistoryEntry[]> => {
+    const response = await client.get('/settings/history');
+    return response.data;
+  },
+
+  getServerInfo: async (): Promise<ServerInfoResponse> => {
+    const response = await client.get('/settings/server');
     return response.data;
   },
 };

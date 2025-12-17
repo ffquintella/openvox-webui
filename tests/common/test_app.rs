@@ -13,7 +13,10 @@ use uuid::Uuid;
 
 use openvox_webui::{
     api,
-    config::{AppConfig, AuthConfig, CacheConfig, DatabaseConfig, LoggingConfig, ServerConfig},
+    config::{
+        AppConfig, AuthConfig, CacheConfig, DashboardConfig, DatabaseConfig, LoggingConfig,
+        RbacConfig, ServerConfig,
+    },
     db,
     middleware::auth::{Claims, TokenType},
     AppState, DbRbacService, RbacService,
@@ -246,6 +249,9 @@ pub fn test_config() -> AppConfig {
             enabled: false, // Disable cache in tests
             ..CacheConfig::default()
         },
+        dashboard: DashboardConfig::default(),
+        rbac: RbacConfig::default(),
+        groups_config_path: None,
     }
 }
 

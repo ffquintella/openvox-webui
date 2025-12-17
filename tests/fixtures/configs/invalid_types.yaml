@@ -1,0 +1,23 @@
+# Invalid configuration - wrong types for fields
+
+server:
+  host: 12345  # Should be string
+  port: "not-a-number"  # Should be integer
+  workers: "four"  # Should be integer
+
+auth:
+  jwt_secret: "short"  # Too short (must be >= 32 chars)
+  token_expiry_hours: "24"  # Should be integer
+  bcrypt_cost: "high"  # Should be integer
+
+database:
+  url: ""  # Empty URL not allowed
+  max_connections: -5  # Should be positive
+
+logging:
+  level: 123  # Should be string
+  format: "unknown"  # Invalid format option
+
+cache:
+  enabled: "yes"  # Should be boolean
+  node_ttl_secs: "five minutes"  # Should be integer

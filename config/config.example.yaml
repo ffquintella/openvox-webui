@@ -5,8 +5,10 @@
 server:
   host: "127.0.0.1"
   port: 8080
+  # workers: 4  # Number of worker threads (defaults to CPU count)
+  # request_timeout_secs: 30  # Request timeout in seconds
 
-# PuppetDB connection settings
+# PuppetDB connection settings (optional)
 puppetdb:
   url: "http://localhost:8081"
   timeout_secs: 30
@@ -16,7 +18,7 @@ puppetdb:
   # ssl_key: "/etc/openvox-webui/ssl/client.key"
   # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
 
-# Puppet CA connection settings
+# Puppet CA connection settings (optional)
 puppet_ca:
   url: "https://localhost:8140"
   timeout_secs: 30
@@ -30,9 +32,102 @@ puppet_ca:
 auth:
   jwt_secret: "change-this-to-a-secure-random-string-in-production"
   token_expiry_hours: 24
+  refresh_token_expiry_days: 7
   bcrypt_cost: 12
+  password_min_length: 8
 
 # Database settings (SQLite for local storage)
 database:
   url: "sqlite://data/openvox.db"
-  max_connections: 5
+  max_connections: 10
+  min_connections: 1
+  connect_timeout_secs: 30
+  idle_timeout_secs: 600
+
+# Logging configuration
+logging:
+  level: "info"  # trace, debug, info, warn, error
+  format: "pretty"  # pretty, json, compact
+  # file: "/var/log/openvox-webui/app.log"  # Optional log file
+
+# Cache configuration for PuppetDB data
+cache:
+  enabled: true
+  node_ttl_secs: 300      # 5 minutes
+  fact_ttl_secs: 300      # 5 minutes
+  report_ttl_secs: 60     # 1 minute (reports change frequently)
+  resource_ttl_secs: 600  # 10 minutes
+  catalog_ttl_secs: 600   # 10 minutes
+  max_entries: 10000
+  sync_interval_secs: 0   # 0 = disabled, set to positive value for background sync
+
+# Dashboard layout and display preferences
+dashboard:
+  default_time_range: "24h"  # 1h, 6h, 12h, 24h, 7d, 30d
+  refresh_interval_secs: 60  # 0 to disable auto-refresh
+  nodes_per_page: 50
+  reports_per_page: 25
+  show_inactive_nodes: true
+  inactive_threshold_hours: 24
+  theme: "light"  # light, dark, system
+
+  # Dashboard widgets configuration (optional)
+  # widgets:
+  #   - id: "node-status-1"
+  #     type: "node_status"
+  #     title: "Node Overview"
+  #     enabled: true
+  #     position:
+  #       row: 0
+  #       col: 0
+  #       width: 6
+  #       height: 2
+  #   - id: "activity-1"
+  #     type: "recent_activity"
+  #     title: "Recent Activity"
+  #     enabled: true
+  #     position:
+  #       row: 0
+  #       col: 6
+  #       width: 6
+  #       height: 2
+
+# Role-based access control configuration
+rbac:
+  default_role: "viewer"           # Default role for new users
+  session_timeout_minutes: 480     # 8 hours
+  max_failed_logins: 5
+  lockout_duration_minutes: 30
+
+  # Custom role definitions (in addition to built-in roles)
+  # Built-in roles: admin, operator, viewer, group_admin, auditor
+  # roles:
+  #   - name: "developer"
+  #     display_name: "Developer"
+  #     description: "Read access to nodes and reports, write access to facter templates"
+  #     permissions:
+  #       - resource: "nodes"
+  #         action: "read"
+  #         scope: "all"
+  #       - resource: "reports"
+  #         action: "read"
+  #         scope: "all"
+  #       - resource: "facter_templates"
+  #         action: "admin"
+  #         scope: "all"
+  #   - name: "env_admin"
+  #     display_name: "Environment Admin"
+  #     description: "Full access to production environment only"
+  #     permissions:
+  #       - resource: "nodes"
+  #         action: "admin"
+  #         scope: "environment"
+  #         scope_value: "production"
+  #       - resource: "groups"
+  #         action: "admin"
+  #         scope: "environment"
+  #         scope_value: "production"
+
+# Path to separate groups configuration file (optional)
+# If not specified, groups are managed only via database/API
+# groups_config_path: "/etc/openvox-webui/groups.yaml"

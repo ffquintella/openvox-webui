@@ -354,3 +354,163 @@ export interface GeneratedFacts {
 }
 
 export type ExportFormat = 'json' | 'yaml' | 'shell';
+
+// Settings types
+export interface ServerSettings {
+  host: string;
+  port: number;
+  workers: number;
+}
+
+export interface PuppetDbSettings {
+  url: string;
+  timeout_secs: number;
+  ssl_verify: boolean;
+  ssl_configured: boolean;
+}
+
+export interface PuppetCASettings {
+  url: string;
+  timeout_secs: number;
+  ssl_verify: boolean;
+  ssl_configured: boolean;
+}
+
+export interface AuthSettings {
+  token_expiry_hours: number;
+  refresh_token_expiry_days: number;
+  password_min_length: number;
+}
+
+export interface DatabaseSettings {
+  url_masked: string;
+  max_connections: number;
+  min_connections: number;
+}
+
+export interface LoggingSettings {
+  level: string;
+  format: string;
+  file?: string | null;
+}
+
+export interface CacheSettings {
+  enabled: boolean;
+  node_ttl_secs: number;
+  fact_ttl_secs: number;
+  report_ttl_secs: number;
+  max_entries: number;
+}
+
+export interface DashboardConfig {
+  default_time_range: string;
+  refresh_interval_secs: number;
+  nodes_per_page: number;
+  reports_per_page: number;
+  show_inactive_nodes: boolean;
+  inactive_threshold_hours: number;
+  theme: string;
+  widgets: WidgetConfig[];
+}
+
+export interface WidgetConfig {
+  id: string;
+  type: string;
+  title?: string;
+  enabled: boolean;
+  position?: WidgetPosition;
+  config?: Record<string, unknown>;
+}
+
+export interface WidgetPosition {
+  row: number;
+  col: number;
+  width: number;
+  height: number;
+}
+
+export interface RbacSettings {
+  default_role: string;
+  session_timeout_minutes: number;
+  max_failed_logins: number;
+  lockout_duration_minutes: number;
+  custom_roles_count: number;
+}
+
+export interface SettingsResponse {
+  server: ServerSettings;
+  puppetdb?: PuppetDbSettings | null;
+  puppet_ca?: PuppetCASettings | null;
+  auth: AuthSettings;
+  database: DatabaseSettings;
+  logging: LoggingSettings;
+  cache: CacheSettings;
+  dashboard: DashboardConfig;
+  rbac: RbacSettings;
+}
+
+export interface RbacConfigResponse {
+  default_role: string;
+  session_timeout_minutes: number;
+  max_failed_logins: number;
+  lockout_duration_minutes: number;
+  roles: RoleDefinition[];
+}
+
+export interface RoleDefinition {
+  name: string;
+  display_name?: string;
+  description?: string;
+  is_system: boolean;
+  permissions: PermissionDefinition[];
+}
+
+export interface PermissionDefinition {
+  resource: string;
+  action: string;
+  scope: string;
+  scope_value?: string;
+}
+
+export interface ExportConfigResponse {
+  content: string;
+  format: string;
+  timestamp: string;
+}
+
+export interface ImportConfigResponse {
+  success: boolean;
+  message: string;
+  validation_errors: string[];
+  dry_run: boolean;
+}
+
+export interface ValidationError {
+  path: string;
+  message: string;
+  line?: number | null;
+}
+
+export interface ValidateConfigResponse {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings: string[];
+}
+
+export interface ConfigHistoryEntry {
+  id: string;
+  timestamp: string;
+  user: string;
+  action: string;
+  changes_summary: string;
+}
+
+export interface ServerInfoResponse {
+  version: string;
+  rust_version: string;
+  build_timestamp?: string | null;
+  git_commit?: string | null;
+  uptime_secs: number;
+  config_file_path?: string | null;
+  features: string[];
+}

@@ -4,6 +4,9 @@
 //! - Environment variable overrides
 //! - Multiple configuration file locations
 //! - Default values for all settings
+//! - Dashboard layout preferences
+//! - RBAC configuration
+//! - Node group definitions (loaded from separate file)
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -23,6 +26,13 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub cache: CacheConfig,
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
+    #[serde(default)]
+    pub rbac: RbacConfig,
+    /// Path to groups configuration file (optional, groups can also be in database)
+    #[serde(default)]
+    pub groups_config_path: Option<PathBuf>,
 }
 
 /// Server configuration
@@ -239,6 +249,302 @@ impl Default for CacheConfig {
     }
 }
 
+/// Dashboard layout and display preferences
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DashboardConfig {
+    /// Default time range for charts (1h, 6h, 12h, 24h, 7d, 30d)
+    #[serde(default = "default_time_range")]
+    pub default_time_range: String,
+    /// Auto-refresh interval in seconds (0 to disable)
+    #[serde(default = "default_refresh_interval")]
+    pub refresh_interval_secs: u64,
+    /// Number of nodes per page in listings
+    #[serde(default = "default_nodes_per_page")]
+    pub nodes_per_page: usize,
+    /// Number of reports per page in listings
+    #[serde(default = "default_reports_per_page")]
+    pub reports_per_page: usize,
+    /// Show nodes that haven't reported recently
+    #[serde(default = "default_show_inactive")]
+    pub show_inactive_nodes: bool,
+    /// Hours after which a node is considered inactive
+    #[serde(default = "default_inactive_threshold")]
+    pub inactive_threshold_hours: u64,
+    /// UI theme (light, dark, system)
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// Dashboard widgets configuration
+    #[serde(default)]
+    pub widgets: Vec<WidgetConfig>,
+}
+
+fn default_time_range() -> String {
+    "24h".to_string()
+}
+
+fn default_refresh_interval() -> u64 {
+    60
+}
+
+fn default_nodes_per_page() -> usize {
+    50
+}
+
+fn default_reports_per_page() -> usize {
+    25
+}
+
+fn default_show_inactive() -> bool {
+    true
+}
+
+fn default_inactive_threshold() -> u64 {
+    24
+}
+
+fn default_theme() -> String {
+    "light".to_string()
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            default_time_range: default_time_range(),
+            refresh_interval_secs: default_refresh_interval(),
+            nodes_per_page: default_nodes_per_page(),
+            reports_per_page: default_reports_per_page(),
+            show_inactive_nodes: default_show_inactive(),
+            inactive_threshold_hours: default_inactive_threshold(),
+            theme: default_theme(),
+            widgets: Vec::new(),
+        }
+    }
+}
+
+/// Dashboard widget configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WidgetConfig {
+    /// Unique widget identifier
+    pub id: String,
+    /// Widget type
+    #[serde(rename = "type")]
+    pub widget_type: WidgetType,
+    /// Widget display title
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Whether widget is visible
+    #[serde(default = "default_widget_enabled")]
+    pub enabled: bool,
+    /// Widget position on grid
+    #[serde(default)]
+    pub position: Option<WidgetPosition>,
+    /// Widget-specific configuration
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+fn default_widget_enabled() -> bool {
+    true
+}
+
+/// Widget position on dashboard grid
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WidgetPosition {
+    pub row: usize,
+    pub col: usize,
+    #[serde(default = "default_widget_width")]
+    pub width: usize,
+    #[serde(default = "default_widget_height")]
+    pub height: usize,
+}
+
+fn default_widget_width() -> usize {
+    6
+}
+
+fn default_widget_height() -> usize {
+    2
+}
+
+/// Widget types available for dashboard
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WidgetType {
+    NodeStatus,
+    ReportTimeline,
+    FactDistribution,
+    GroupMembership,
+    ActivityHeatmap,
+    InfrastructureTopology,
+    QuickSearch,
+    RecentActivity,
+}
+
+/// RBAC configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RbacConfig {
+    /// Default role for new users
+    #[serde(default = "default_role")]
+    pub default_role: String,
+    /// Session timeout in minutes
+    #[serde(default = "default_session_timeout")]
+    pub session_timeout_minutes: u64,
+    /// Maximum failed login attempts before lockout
+    #[serde(default = "default_max_failed_logins")]
+    pub max_failed_logins: u32,
+    /// Account lockout duration in minutes
+    #[serde(default = "default_lockout_duration")]
+    pub lockout_duration_minutes: u64,
+    /// Custom role definitions (in addition to built-in roles)
+    #[serde(default)]
+    pub roles: Vec<RoleDefinition>,
+}
+
+fn default_role() -> String {
+    "viewer".to_string()
+}
+
+fn default_session_timeout() -> u64 {
+    480 // 8 hours
+}
+
+fn default_max_failed_logins() -> u32 {
+    5
+}
+
+fn default_lockout_duration() -> u64 {
+    30
+}
+
+impl Default for RbacConfig {
+    fn default() -> Self {
+        Self {
+            default_role: default_role(),
+            session_timeout_minutes: default_session_timeout(),
+            max_failed_logins: default_max_failed_logins(),
+            lockout_duration_minutes: default_lockout_duration(),
+            roles: Vec::new(),
+        }
+    }
+}
+
+/// Role definition for YAML-based RBAC configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RoleDefinition {
+    /// Role name (lowercase, alphanumeric with underscores)
+    pub name: String,
+    /// Human-readable role name
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// Role description
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Whether this is a system role (cannot be deleted)
+    #[serde(default)]
+    pub is_system: bool,
+    /// Role permissions
+    pub permissions: Vec<PermissionDefinition>,
+}
+
+/// Permission definition for YAML-based RBAC configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PermissionDefinition {
+    /// Resource type
+    pub resource: String,
+    /// Action type
+    pub action: String,
+    /// Permission scope
+    #[serde(default = "default_permission_scope")]
+    pub scope: String,
+    /// Scope value (e.g., environment name, group ID)
+    #[serde(default)]
+    pub scope_value: Option<String>,
+}
+
+fn default_permission_scope() -> String {
+    "all".to_string()
+}
+
+/// Node groups configuration (loaded from separate file)
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct GroupsConfig {
+    /// List of node group definitions
+    #[serde(default)]
+    pub groups: Vec<NodeGroupDefinition>,
+}
+
+/// Node group definition for YAML configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NodeGroupDefinition {
+    /// Unique group identifier (UUID format)
+    pub id: String,
+    /// Group name
+    pub name: String,
+    /// Group description
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Parent group ID
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// Puppet environment for this group
+    #[serde(default)]
+    pub environment: Option<String>,
+    /// How rules should be matched (all or any)
+    #[serde(default = "default_rule_match_type")]
+    pub rule_match_type: String,
+    /// Puppet classes to apply
+    #[serde(default)]
+    pub classes: Vec<String>,
+    /// Class parameters
+    #[serde(default)]
+    pub parameters: serde_json::Value,
+    /// Classification rules
+    #[serde(default)]
+    pub rules: Vec<ClassificationRuleDefinition>,
+    /// Pinned nodes
+    #[serde(default)]
+    pub pinned_nodes: Vec<String>,
+}
+
+fn default_rule_match_type() -> String {
+    "all".to_string()
+}
+
+/// Classification rule definition
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClassificationRuleDefinition {
+    /// Fact path to match (dot notation)
+    pub fact_path: String,
+    /// Comparison operator
+    pub operator: String,
+    /// Value to compare against
+    pub value: serde_json::Value,
+}
+
+impl GroupsConfig {
+    /// Load groups configuration from file
+    pub fn load(path: &PathBuf) -> Result<Self> {
+        let contents = std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read groups config file: {:?}", path))?;
+        serde_yaml::from_str(&contents)
+            .with_context(|| format!("Failed to parse groups config file: {:?}", path))
+    }
+
+    /// Find groups configuration file in standard locations
+    pub fn find_config_file() -> Option<PathBuf> {
+        let paths = [
+            PathBuf::from("groups.yaml"),
+            PathBuf::from("config/groups.yaml"),
+            PathBuf::from("/etc/openvox-webui/groups.yaml"),
+            dirs::config_dir()
+                .map(|p| p.join("openvox-webui/groups.yaml"))
+                .unwrap_or_default(),
+        ];
+
+        paths.into_iter().find(|p| p.exists())
+    }
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -268,7 +574,7 @@ impl Default for AppConfig {
                 request_timeout_secs: None,
             },
             puppetdb: None,
-                        puppet_ca: None,
+            puppet_ca: None,
             auth: AuthConfig {
                 jwt_secret: "change-me-in-production-minimum-32-characters-long".to_string(),
                 token_expiry_hours: default_token_expiry(),
@@ -285,6 +591,9 @@ impl Default for AppConfig {
             },
             logging: LoggingConfig::default(),
             cache: CacheConfig::default(),
+            dashboard: DashboardConfig::default(),
+            rbac: RbacConfig::default(),
+            groups_config_path: None,
         }
     }
 }
@@ -494,5 +803,189 @@ database:
 "#;
         let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.puppetdb.is_none());
+    }
+
+    #[test]
+    fn test_dashboard_config_defaults() {
+        let config = DashboardConfig::default();
+        assert_eq!(config.default_time_range, "24h");
+        assert_eq!(config.refresh_interval_secs, 60);
+        assert_eq!(config.nodes_per_page, 50);
+        assert_eq!(config.reports_per_page, 25);
+        assert!(config.show_inactive_nodes);
+        assert_eq!(config.inactive_threshold_hours, 24);
+        assert_eq!(config.theme, "light");
+        assert!(config.widgets.is_empty());
+    }
+
+    #[test]
+    fn test_dashboard_config_parsing() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 3000
+auth:
+  jwt_secret: "test-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://test.db"
+dashboard:
+  default_time_range: "7d"
+  refresh_interval_secs: 120
+  nodes_per_page: 100
+  theme: "dark"
+  widgets:
+    - id: "status-widget"
+      type: "node_status"
+      title: "Node Status"
+      enabled: true
+"#;
+        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.dashboard.default_time_range, "7d");
+        assert_eq!(config.dashboard.refresh_interval_secs, 120);
+        assert_eq!(config.dashboard.nodes_per_page, 100);
+        assert_eq!(config.dashboard.theme, "dark");
+        assert_eq!(config.dashboard.widgets.len(), 1);
+        assert_eq!(config.dashboard.widgets[0].id, "status-widget");
+        assert_eq!(config.dashboard.widgets[0].widget_type, WidgetType::NodeStatus);
+    }
+
+    #[test]
+    fn test_rbac_config_defaults() {
+        let config = RbacConfig::default();
+        assert_eq!(config.default_role, "viewer");
+        assert_eq!(config.session_timeout_minutes, 480);
+        assert_eq!(config.max_failed_logins, 5);
+        assert_eq!(config.lockout_duration_minutes, 30);
+        assert!(config.roles.is_empty());
+    }
+
+    #[test]
+    fn test_rbac_config_parsing() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 3000
+auth:
+  jwt_secret: "test-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://test.db"
+rbac:
+  default_role: "operator"
+  session_timeout_minutes: 240
+  max_failed_logins: 3
+  lockout_duration_minutes: 60
+  roles:
+    - name: "developer"
+      display_name: "Developer"
+      description: "Developer role"
+      permissions:
+        - resource: "nodes"
+          action: "read"
+          scope: "all"
+        - resource: "facter_templates"
+          action: "admin"
+          scope: "all"
+"#;
+        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.rbac.default_role, "operator");
+        assert_eq!(config.rbac.session_timeout_minutes, 240);
+        assert_eq!(config.rbac.max_failed_logins, 3);
+        assert_eq!(config.rbac.roles.len(), 1);
+        assert_eq!(config.rbac.roles[0].name, "developer");
+        assert_eq!(config.rbac.roles[0].permissions.len(), 2);
+        assert_eq!(config.rbac.roles[0].permissions[0].resource, "nodes");
+        assert_eq!(config.rbac.roles[0].permissions[0].action, "read");
+    }
+
+    #[test]
+    fn test_groups_config_parsing() {
+        let yaml = r#"
+groups:
+  - id: "00000000-0000-0000-0000-000000000001"
+    name: "All Nodes"
+    description: "Root group"
+    rule_match_type: "all"
+    classes:
+      - "profile::base"
+    parameters:
+      monitoring: true
+    rules: []
+  - id: "00000000-0000-0000-0000-000000000002"
+    name: "Production"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    environment: "production"
+    rule_match_type: "all"
+    classes:
+      - "profile::production"
+    rules:
+      - fact_path: "trusted.extensions.pp_environment"
+        operator: "="
+        value: "production"
+"#;
+        let groups_config: GroupsConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(groups_config.groups.len(), 2);
+        assert_eq!(groups_config.groups[0].name, "All Nodes");
+        assert!(groups_config.groups[0].parent_id.is_none());
+        assert_eq!(groups_config.groups[1].name, "Production");
+        assert_eq!(
+            groups_config.groups[1].parent_id,
+            Some("00000000-0000-0000-0000-000000000001".to_string())
+        );
+        assert_eq!(groups_config.groups[1].rules.len(), 1);
+        assert_eq!(groups_config.groups[1].rules[0].fact_path, "trusted.extensions.pp_environment");
+        assert_eq!(groups_config.groups[1].rules[0].operator, "=");
+    }
+
+    #[test]
+    fn test_widget_types_parsing() {
+        let yaml = r#"
+widgets:
+  - id: "w1"
+    type: "node_status"
+  - id: "w2"
+    type: "report_timeline"
+  - id: "w3"
+    type: "fact_distribution"
+  - id: "w4"
+    type: "group_membership"
+  - id: "w5"
+    type: "activity_heatmap"
+  - id: "w6"
+    type: "infrastructure_topology"
+  - id: "w7"
+    type: "quick_search"
+  - id: "w8"
+    type: "recent_activity"
+"#;
+        #[derive(Deserialize)]
+        struct TestWidgets {
+            widgets: Vec<WidgetConfig>,
+        }
+        let parsed: TestWidgets = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.widgets.len(), 8);
+        assert_eq!(parsed.widgets[0].widget_type, WidgetType::NodeStatus);
+        assert_eq!(parsed.widgets[1].widget_type, WidgetType::ReportTimeline);
+        assert_eq!(parsed.widgets[2].widget_type, WidgetType::FactDistribution);
+        assert_eq!(parsed.widgets[3].widget_type, WidgetType::GroupMembership);
+        assert_eq!(parsed.widgets[4].widget_type, WidgetType::ActivityHeatmap);
+        assert_eq!(parsed.widgets[5].widget_type, WidgetType::InfrastructureTopology);
+        assert_eq!(parsed.widgets[6].widget_type, WidgetType::QuickSearch);
+        assert_eq!(parsed.widgets[7].widget_type, WidgetType::RecentActivity);
+    }
+
+    #[test]
+    fn test_full_config_serialization() {
+        let config = AppConfig::default();
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+
+        // Verify all sections are preserved
+        assert_eq!(parsed.server.port, config.server.port);
+        assert_eq!(parsed.database.url, config.database.url);
+        assert_eq!(parsed.auth.jwt_secret, config.auth.jwt_secret);
+        assert_eq!(parsed.logging.level, config.logging.level);
+        assert_eq!(parsed.cache.enabled, config.cache.enabled);
+        assert_eq!(parsed.dashboard.default_time_range, config.dashboard.default_time_range);
+        assert_eq!(parsed.rbac.default_role, config.rbac.default_role);
     }
 }

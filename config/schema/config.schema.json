@@ -1,0 +1,512 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openvox.io/schemas/config.schema.json",
+  "title": "OpenVox WebUI Configuration",
+  "description": "Configuration schema for OpenVox WebUI application",
+  "type": "object",
+  "required": ["auth", "database"],
+  "properties": {
+    "server": {
+      "$ref": "#/definitions/ServerConfig"
+    },
+    "puppetdb": {
+      "$ref": "#/definitions/PuppetDbConfig"
+    },
+    "puppet_ca": {
+      "$ref": "#/definitions/PuppetCAConfig"
+    },
+    "auth": {
+      "$ref": "#/definitions/AuthConfig"
+    },
+    "database": {
+      "$ref": "#/definitions/DatabaseConfig"
+    },
+    "logging": {
+      "$ref": "#/definitions/LoggingConfig"
+    },
+    "cache": {
+      "$ref": "#/definitions/CacheConfig"
+    },
+    "dashboard": {
+      "$ref": "#/definitions/DashboardConfig"
+    },
+    "rbac": {
+      "$ref": "#/definitions/RbacConfig"
+    }
+  },
+  "definitions": {
+    "ServerConfig": {
+      "type": "object",
+      "description": "Server configuration settings",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Server bind address",
+          "default": "127.0.0.1",
+          "examples": ["0.0.0.0", "127.0.0.1", "localhost"]
+        },
+        "port": {
+          "type": "integer",
+          "description": "Server port number",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 3000
+        },
+        "workers": {
+          "type": "integer",
+          "description": "Number of worker threads (defaults to CPU count)",
+          "minimum": 1
+        },
+        "request_timeout_secs": {
+          "type": "integer",
+          "description": "Request timeout in seconds",
+          "minimum": 1
+        }
+      }
+    },
+    "PuppetDbConfig": {
+      "type": "object",
+      "description": "PuppetDB connection settings",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "PuppetDB API URL",
+          "examples": ["http://localhost:8081", "https://puppetdb.example.com:8081"]
+        },
+        "timeout_secs": {
+          "type": "integer",
+          "description": "Connection timeout in seconds",
+          "minimum": 1,
+          "default": 30
+        },
+        "ssl_verify": {
+          "type": "boolean",
+          "description": "Verify SSL certificates",
+          "default": true
+        },
+        "ssl_cert": {
+          "type": "string",
+          "description": "Path to SSL client certificate"
+        },
+        "ssl_key": {
+          "type": "string",
+          "description": "Path to SSL client key"
+        },
+        "ssl_ca": {
+          "type": "string",
+          "description": "Path to SSL CA certificate"
+        }
+      }
+    },
+    "PuppetCAConfig": {
+      "type": "object",
+      "description": "Puppet CA connection settings",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Puppet CA API URL",
+          "examples": ["https://puppet.example.com:8140"]
+        },
+        "timeout_secs": {
+          "type": "integer",
+          "description": "Connection timeout in seconds",
+          "minimum": 1,
+          "default": 30
+        },
+        "ssl_verify": {
+          "type": "boolean",
+          "description": "Verify SSL certificates",
+          "default": true
+        },
+        "ssl_cert": {
+          "type": "string",
+          "description": "Path to SSL client certificate"
+        },
+        "ssl_key": {
+          "type": "string",
+          "description": "Path to SSL client key"
+        },
+        "ssl_ca": {
+          "type": "string",
+          "description": "Path to SSL CA certificate"
+        }
+      }
+    },
+    "AuthConfig": {
+      "type": "object",
+      "description": "Authentication settings",
+      "required": ["jwt_secret"],
+      "properties": {
+        "jwt_secret": {
+          "type": "string",
+          "description": "JWT signing secret (minimum 32 characters)",
+          "minLength": 32
+        },
+        "token_expiry_hours": {
+          "type": "integer",
+          "description": "Access token expiry in hours",
+          "minimum": 1,
+          "default": 24
+        },
+        "refresh_token_expiry_days": {
+          "type": "integer",
+          "description": "Refresh token expiry in days",
+          "minimum": 1,
+          "default": 7
+        },
+        "bcrypt_cost": {
+          "type": "integer",
+          "description": "Bcrypt cost factor for password hashing",
+          "minimum": 4,
+          "maximum": 31,
+          "default": 12
+        },
+        "password_min_length": {
+          "type": "integer",
+          "description": "Minimum password length",
+          "minimum": 1,
+          "default": 8
+        }
+      }
+    },
+    "DatabaseConfig": {
+      "type": "object",
+      "description": "Database connection settings",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Database connection URL",
+          "examples": ["sqlite://./data/openvox.db", "postgres://user:pass@localhost/openvox"]
+        },
+        "max_connections": {
+          "type": "integer",
+          "description": "Maximum connection pool size",
+          "minimum": 1,
+          "default": 10
+        },
+        "min_connections": {
+          "type": "integer",
+          "description": "Minimum connection pool size",
+          "minimum": 0,
+          "default": 1
+        },
+        "connect_timeout_secs": {
+          "type": "integer",
+          "description": "Connection timeout in seconds",
+          "minimum": 1,
+          "default": 30
+        },
+        "idle_timeout_secs": {
+          "type": "integer",
+          "description": "Idle connection timeout in seconds",
+          "minimum": 0,
+          "default": 600
+        }
+      }
+    },
+    "LoggingConfig": {
+      "type": "object",
+      "description": "Logging settings",
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "Log level",
+          "enum": ["trace", "debug", "info", "warn", "error"],
+          "default": "info"
+        },
+        "format": {
+          "type": "string",
+          "description": "Log format",
+          "enum": ["pretty", "json", "compact"],
+          "default": "pretty"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to log file (optional)"
+        }
+      }
+    },
+    "CacheConfig": {
+      "type": "object",
+      "description": "PuppetDB data cache settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable caching",
+          "default": true
+        },
+        "node_ttl_secs": {
+          "type": "integer",
+          "description": "Node cache TTL in seconds",
+          "minimum": 0,
+          "default": 300
+        },
+        "fact_ttl_secs": {
+          "type": "integer",
+          "description": "Fact cache TTL in seconds",
+          "minimum": 0,
+          "default": 300
+        },
+        "report_ttl_secs": {
+          "type": "integer",
+          "description": "Report cache TTL in seconds",
+          "minimum": 0,
+          "default": 60
+        },
+        "resource_ttl_secs": {
+          "type": "integer",
+          "description": "Resource cache TTL in seconds",
+          "minimum": 0,
+          "default": 600
+        },
+        "catalog_ttl_secs": {
+          "type": "integer",
+          "description": "Catalog cache TTL in seconds",
+          "minimum": 0,
+          "default": 600
+        },
+        "max_entries": {
+          "type": "integer",
+          "description": "Maximum cache entries per type",
+          "minimum": 1,
+          "default": 10000
+        },
+        "sync_interval_secs": {
+          "type": "integer",
+          "description": "Background sync interval (0 to disable)",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "DashboardConfig": {
+      "type": "object",
+      "description": "Dashboard layout and display preferences",
+      "properties": {
+        "default_time_range": {
+          "type": "string",
+          "description": "Default time range for charts",
+          "enum": ["1h", "6h", "12h", "24h", "7d", "30d"],
+          "default": "24h"
+        },
+        "refresh_interval_secs": {
+          "type": "integer",
+          "description": "Auto-refresh interval in seconds (0 to disable)",
+          "minimum": 0,
+          "default": 60
+        },
+        "nodes_per_page": {
+          "type": "integer",
+          "description": "Number of nodes per page in listings",
+          "minimum": 10,
+          "maximum": 500,
+          "default": 50
+        },
+        "reports_per_page": {
+          "type": "integer",
+          "description": "Number of reports per page in listings",
+          "minimum": 10,
+          "maximum": 500,
+          "default": 25
+        },
+        "show_inactive_nodes": {
+          "type": "boolean",
+          "description": "Show nodes that haven't reported recently",
+          "default": true
+        },
+        "inactive_threshold_hours": {
+          "type": "integer",
+          "description": "Hours after which a node is considered inactive",
+          "minimum": 1,
+          "default": 24
+        },
+        "widgets": {
+          "type": "array",
+          "description": "Dashboard widgets configuration",
+          "items": {
+            "$ref": "#/definitions/WidgetConfig"
+          }
+        },
+        "theme": {
+          "type": "string",
+          "description": "UI theme",
+          "enum": ["light", "dark", "system"],
+          "default": "light"
+        }
+      }
+    },
+    "WidgetConfig": {
+      "type": "object",
+      "description": "Dashboard widget configuration",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique widget identifier"
+        },
+        "type": {
+          "type": "string",
+          "description": "Widget type",
+          "enum": [
+            "node_status",
+            "report_timeline",
+            "fact_distribution",
+            "group_membership",
+            "activity_heatmap",
+            "infrastructure_topology",
+            "quick_search",
+            "recent_activity"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "description": "Widget display title"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether widget is visible",
+          "default": true
+        },
+        "position": {
+          "type": "object",
+          "description": "Widget position on grid",
+          "properties": {
+            "row": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "col": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "description": "Widget-specific configuration"
+        }
+      }
+    },
+    "RbacConfig": {
+      "type": "object",
+      "description": "Role-based access control configuration",
+      "properties": {
+        "default_role": {
+          "type": "string",
+          "description": "Default role for new users",
+          "default": "viewer"
+        },
+        "session_timeout_minutes": {
+          "type": "integer",
+          "description": "Session timeout in minutes",
+          "minimum": 1,
+          "default": 480
+        },
+        "max_failed_logins": {
+          "type": "integer",
+          "description": "Maximum failed login attempts before lockout",
+          "minimum": 1,
+          "default": 5
+        },
+        "lockout_duration_minutes": {
+          "type": "integer",
+          "description": "Account lockout duration in minutes",
+          "minimum": 1,
+          "default": 30
+        },
+        "roles": {
+          "type": "array",
+          "description": "Role definitions",
+          "items": {
+            "$ref": "#/definitions/RoleDefinition"
+          }
+        }
+      }
+    },
+    "RoleDefinition": {
+      "type": "object",
+      "description": "Role definition with permissions",
+      "required": ["name", "permissions"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Role name",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable role name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Role description"
+        },
+        "is_system": {
+          "type": "boolean",
+          "description": "Whether this is a system role (cannot be deleted)",
+          "default": false
+        },
+        "permissions": {
+          "type": "array",
+          "description": "Role permissions",
+          "items": {
+            "$ref": "#/definitions/PermissionDefinition"
+          }
+        }
+      }
+    },
+    "PermissionDefinition": {
+      "type": "object",
+      "description": "Permission definition",
+      "required": ["resource", "action"],
+      "properties": {
+        "resource": {
+          "type": "string",
+          "description": "Resource type",
+          "enum": [
+            "nodes",
+            "groups",
+            "reports",
+            "facts",
+            "users",
+            "roles",
+            "settings",
+            "audit_logs",
+            "facter_templates",
+            "api_keys",
+            "ca"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "description": "Action type",
+          "enum": ["read", "create", "update", "delete", "admin", "classify", "generate", "export"]
+        },
+        "scope": {
+          "type": "string",
+          "description": "Permission scope",
+          "enum": ["all", "owned", "specific", "environment", "group"],
+          "default": "all"
+        },
+        "scope_value": {
+          "type": "string",
+          "description": "Scope value (e.g., environment name, group ID)"
+        }
+      }
+    }
+  }
+}

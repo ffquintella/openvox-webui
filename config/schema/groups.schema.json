@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openvox.io/schemas/groups.schema.json",
+  "title": "OpenVox Node Groups Configuration",
+  "description": "Configuration schema for node group definitions and classification rules",
+  "type": "object",
+  "required": ["groups"],
+  "properties": {
+    "groups": {
+      "type": "array",
+      "description": "List of node group definitions",
+      "items": {
+        "$ref": "#/definitions/NodeGroup"
+      }
+    }
+  },
+  "definitions": {
+    "NodeGroup": {
+      "type": "object",
+      "description": "Node group definition",
+      "required": ["name", "id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique group identifier (UUID format)",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Group name",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "description": "Group description"
+        },
+        "parent_id": {
+          "type": "string",
+          "description": "Parent group ID (UUID format)",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "environment": {
+          "type": "string",
+          "description": "Puppet environment for this group",
+          "examples": ["production", "staging", "development"]
+        },
+        "rule_match_type": {
+          "type": "string",
+          "description": "How rules should be matched",
+          "enum": ["all", "any"],
+          "default": "all"
+        },
+        "classes": {
+          "type": "array",
+          "description": "Puppet classes to apply to nodes in this group",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(::[a-z][a-z0-9_]*)*$"
+          },
+          "default": []
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Class parameters (key-value pairs)",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "rules": {
+          "type": "array",
+          "description": "Classification rules",
+          "items": {
+            "$ref": "#/definitions/ClassificationRule"
+          },
+          "default": []
+        },
+        "pinned_nodes": {
+          "type": "array",
+          "description": "List of node certnames pinned to this group",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "ClassificationRule": {
+      "type": "object",
+      "description": "Classification rule definition",
+      "required": ["fact_path", "operator", "value"],
+      "properties": {
+        "fact_path": {
+          "type": "string",
+          "description": "Fact path to match (dot notation for nested facts)",
+          "examples": ["os.family", "trusted.extensions.pp_role", "networking.ip"]
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator",
+          "enum": ["=", "!=", "~", "!~", ">", ">=", "<", "<=", "in", "not_in"]
+        },
+        "value": {
+          "description": "Value to compare against",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "number" }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

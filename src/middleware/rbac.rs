@@ -143,7 +143,7 @@ pub fn check_permission(
 /// use std::sync::Arc;
 /// use axum::{Router, routing::get};
 /// use openvox_webui::{AppState, require_permission_middleware};
-/// use openvox_webui::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig, CacheConfig, LoggingConfig};
+/// use openvox_webui::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig, CacheConfig, LoggingConfig, DashboardConfig, RbacConfig};
 /// use openvox_webui::models::Resource;
 /// use openvox_webui::middleware::rbac::RequirePermission;
 /// use openvox_webui::{DbRbacService, RbacService};
@@ -168,6 +168,9 @@ pub fn check_permission(
 ///     puppet_ca: None,
 ///     logging: LoggingConfig::default(),
 ///     cache: CacheConfig::default(),
+///     dashboard: DashboardConfig::default(),
+///     rbac: RbacConfig::default(),
+///     groups_config_path: None,
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
