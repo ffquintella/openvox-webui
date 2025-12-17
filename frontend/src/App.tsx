@@ -6,6 +6,7 @@ import NodeDetail from './pages/NodeDetail';
 import Groups from './pages/Groups';
 import Reports from './pages/Reports';
 import Facts from './pages/Facts';
+import FacterTemplates from './pages/FacterTemplates';
 import Settings from './pages/Settings';
 import Roles from './pages/Roles';
 import Users from './pages/Users';
@@ -21,6 +22,7 @@ function App() {
         <Route path="/groups" element={<Groups />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/facts" element={<Facts />} />
+        <Route path="/facter-templates" element={<FacterTemplates />} />
         <Route path="/roles" element={<Roles />} />
         <Route path="/users" element={<Users />} />
         <Route path="/permissions" element={<Permissions />} />

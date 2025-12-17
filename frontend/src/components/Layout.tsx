@@ -6,6 +6,7 @@ import {
   FolderTree,
   FileText,
   Database,
+  FileCode2,
   Settings,
   Shield,
   Users,
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'Groups', href: '/groups', icon: FolderTree },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Facts', href: '/facts', icon: Database },
+  { name: 'Facter Templates', href: '/facter-templates', icon: FileCode2 },
 ];
 
 const adminNavigation = [

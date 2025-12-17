@@ -5,8 +5,8 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::models::{
-    ClassificationRule, CreateGroupRequest, CreateRuleRequest, NodeGroup, RuleMatchType,
-    RuleOperator, UpdateGroupRequest,
+    ClassificationRule, CreateGroupRequest, CreateRuleRequest, FactDefinition, FactTemplate,
+    NodeGroup, RuleMatchType, RuleOperator, UpdateGroupRequest,
 };
 
 /// Repository for node group operations
@@ -404,6 +404,176 @@ fn parse_operator(s: &str) -> RuleOperator {
         "in" => RuleOperator::In,
         "not_in" => RuleOperator::NotIn,
         _ => RuleOperator::Equals,
+    }
+}
+
+// ============================================================================
+// Fact Template Repository
+// ============================================================================
+
+/// Row returned from fact_templates table
+#[derive(Debug, sqlx::FromRow)]
+struct FactTemplateRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    facts: String,
+}
+
+/// Repository for fact template operations
+pub struct FactTemplateRepository<'a> {
+    pool: &'a SqlitePool,
+}
+
+impl<'a> FactTemplateRepository<'a> {
+    pub fn new(pool: &'a SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// Get all fact templates
+    pub async fn get_all(&self) -> Result<Vec<FactTemplate>> {
+        let rows = sqlx::query_as::<_, FactTemplateRow>(
+            r#"
+            SELECT id, name, description, facts
+            FROM fact_templates
+            ORDER BY name
+            "#,
+        )
+        .fetch_all(self.pool)
+        .await
+        .context("Failed to fetch fact templates")?;
+
+        Ok(rows.into_iter().map(row_to_template).collect())
+    }
+
+    /// Get a fact template by ID
+    pub async fn get_by_id(&self, id: Uuid) -> Result<Option<FactTemplate>> {
+        let row = sqlx::query_as::<_, FactTemplateRow>(
+            r#"
+            SELECT id, name, description, facts
+            FROM fact_templates
+            WHERE id = ?
+            "#,
+        )
+        .bind(id.to_string())
+        .fetch_optional(self.pool)
+        .await
+        .context("Failed to fetch fact template")?;
+
+        Ok(row.map(row_to_template))
+    }
+
+    /// Get a fact template by name
+    pub async fn get_by_name(&self, name: &str) -> Result<Option<FactTemplate>> {
+        let row = sqlx::query_as::<_, FactTemplateRow>(
+            r#"
+            SELECT id, name, description, facts
+            FROM fact_templates
+            WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(self.pool)
+        .await
+        .context("Failed to fetch fact template")?;
+
+        Ok(row.map(row_to_template))
+    }
+
+    /// Create a new fact template
+    pub async fn create(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        facts: &[FactDefinition],
+    ) -> Result<FactTemplate> {
+        let id = Uuid::new_v4();
+        let facts_json =
+            serde_json::to_string(facts).unwrap_or_else(|_| "[]".to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO fact_templates (id, name, description, facts)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(id.to_string())
+        .bind(name)
+        .bind(description)
+        .bind(&facts_json)
+        .execute(self.pool)
+        .await
+        .context("Failed to create fact template")?;
+
+        Ok(FactTemplate {
+            id: Some(id.to_string()),
+            name: name.to_string(),
+            description: description.map(|s| s.to_string()),
+            facts: facts.to_vec(),
+        })
+    }
+
+    /// Update a fact template
+    pub async fn update(
+        &self,
+        id: Uuid,
+        name: Option<&str>,
+        description: Option<&str>,
+        facts: Option<&[FactDefinition]>,
+    ) -> Result<Option<FactTemplate>> {
+        // First check if template exists
+        let existing = self.get_by_id(id).await?;
+        if existing.is_none() {
+            return Ok(None);
+        }
+        let existing = existing.unwrap();
+
+        let new_name = name.unwrap_or(&existing.name);
+        let new_description = description.or(existing.description.as_deref());
+        let new_facts = facts.unwrap_or(&existing.facts);
+        let facts_json =
+            serde_json::to_string(new_facts).unwrap_or_else(|_| "[]".to_string());
+
+        sqlx::query(
+            r#"
+            UPDATE fact_templates
+            SET name = ?, description = ?, facts = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            "#,
+        )
+        .bind(new_name)
+        .bind(new_description)
+        .bind(&facts_json)
+        .bind(id.to_string())
+        .execute(self.pool)
+        .await
+        .context("Failed to update fact template")?;
+
+        self.get_by_id(id).await
+    }
+
+    /// Delete a fact template
+    pub async fn delete(&self, id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM fact_templates WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to delete fact template")?;
+
+        Ok(result.rows_affected() > 0)
+    }
+}
+
+/// Convert a database row to a FactTemplate
+fn row_to_template(row: FactTemplateRow) -> FactTemplate {
+    let facts: Vec<FactDefinition> =
+        serde_json::from_str(&row.facts).unwrap_or_default();
+
+    FactTemplate {
+        id: Some(row.id),
+        name: row.name,
+        description: row.description,
+        facts,
     }
 }
 

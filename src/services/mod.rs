@@ -14,6 +14,7 @@ pub use cache::{
     Cache, CacheEntry, CacheEvictionStats, CacheServiceStats, CacheStats, CacheSyncJob,
     CachedPuppetDbService,
 };
+pub use facter::{ExportFormat, FacterService, GeneratedFacts};
 pub use puppet_ca::PuppetCAService;
 pub use puppetdb::{
     Catalog, CatalogEdge, CatalogResource, Environment, Event, FactContent, FactPath,

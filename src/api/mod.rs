@@ -8,6 +8,7 @@ use crate::AppState;
 
 mod auth;
 mod ca;
+mod facter;
 mod facts;
 mod groups;
 mod health;
@@ -34,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())
         .nest("/facts", facts::routes())
+        .nest("/facter", facter::routes())
         .nest("/reports", reports::routes())
         .nest("/roles", roles::routes())
         .nest("/users", users::routes())

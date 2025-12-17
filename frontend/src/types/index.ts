@@ -308,3 +308,49 @@ export interface BulkPermissionResult {
   failed: number;
   results: BulkOperationResult[];
 }
+
+// Facter types
+export type FactValueSourceType = 'Static' | 'FromClassification' | 'FromFact' | 'Template';
+
+export interface FactValueSource {
+  type: FactValueSourceType;
+  value: unknown;
+}
+
+export interface FactDefinition {
+  name: string;
+  value: FactValueSource;
+}
+
+export interface FactTemplate {
+  id?: string;
+  name: string;
+  description?: string | null;
+  facts: FactDefinition[];
+}
+
+export interface CreateFactTemplateRequest {
+  name: string;
+  description?: string;
+  facts: FactDefinition[];
+}
+
+export interface UpdateFactTemplateRequest {
+  name?: string;
+  description?: string;
+  facts?: FactDefinition[];
+}
+
+export interface GenerateFactsRequest {
+  certname: string;
+  template: string;
+  existing_facts?: Record<string, unknown>;
+}
+
+export interface GeneratedFacts {
+  certname: string;
+  template: string;
+  facts: Record<string, unknown>;
+}
+
+export type ExportFormat = 'json' | 'yaml' | 'shell';

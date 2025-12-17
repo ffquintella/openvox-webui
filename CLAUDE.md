@@ -134,4 +134,13 @@ GET  /api/v1/facts/names
 # Reports
 GET  /api/v1/reports
 GET  /api/v1/reports/:hash
+
+# Facter Templates (full CRUD)
+GET    /api/v1/facter/templates
+POST   /api/v1/facter/templates
+GET    /api/v1/facter/templates/:id
+PUT    /api/v1/facter/templates/:id
+DELETE /api/v1/facter/templates/:id
+POST   /api/v1/facter/generate
+GET    /api/v1/facter/export/:certname
 ```

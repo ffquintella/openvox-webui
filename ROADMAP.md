@@ -544,12 +544,16 @@ Then the classification should include class "{class}"
 
 ## Phase 5: Facter Integration
 
-### 5.1 Facter Data Management
-- [ ] Implement Facter data parser
-- [ ] Support for core facts
-- [ ] Support for custom facts
-- [ ] Support for external facts
-- [ ] Fact history tracking
+### 5.1 Facter Data Management - COMPLETE
+- [x] Implement Facter data parser (FacterService)
+- [x] Support for core facts (via PuppetDB integration)
+- [x] Support for custom facts (FactTemplate with Static, FromFact, FromClassification, Template sources)
+- [x] Support for external facts (fact generation and export)
+- [x] Fact template CRUD API endpoints
+- [x] Fact generation from templates
+- [x] Export formats: JSON, YAML, Shell script
+- [x] Frontend Facter Templates management page
+- [ ] Fact history tracking (future enhancement)
 - [ ] Integrate classification with facts (classification should be able to generate custom facts)
 
 ### 5.x Testing Requirements
@@ -577,16 +581,20 @@ Then the exported facts should be valid "{format}"
 - YAML export
 - Shell script export (FACTER_* variables)
 
-### 5.2 Facter Generation
-- [ ] Design facter generation templates
-- [ ] Generate external facts from classifications
-- [ ] Export facts in JSON/YAML formats
-- [ ] Fact validation and schema enforcement
+### 5.2 Facter Generation - COMPLETE
+- [x] Design facter generation templates (FactTemplate model with FactDefinition and FactValueSource)
+- [x] Generate external facts from classifications (FromClassification source type)
+- [x] Export facts in JSON/YAML formats (plus Shell format)
+- [ ] Fact validation and schema enforcement (future enhancement)
 
-### 5.3 API Endpoints
-- [ ] GET /api/v1/facter/templates - List fact templates
-- [ ] POST /api/v1/facter/generate - Generate facts for node
-- [ ] GET /api/v1/facter/export/:certname - Export node facts
+### 5.3 API Endpoints - COMPLETE
+- [x] GET /api/v1/facter/templates - List fact templates
+- [x] GET /api/v1/facter/templates/:id - Get fact template
+- [x] POST /api/v1/facter/templates - Create fact template
+- [x] PUT /api/v1/facter/templates/:id - Update fact template
+- [x] DELETE /api/v1/facter/templates/:id - Delete fact template
+- [x] POST /api/v1/facter/generate - Generate facts for node
+- [x] GET /api/v1/facter/export/:certname - Export node facts
 
 ## Phase 6: Dashboard & Visualization
 

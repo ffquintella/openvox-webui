@@ -86,6 +86,10 @@ pub struct FactSet {
 /// Fact template for generating external facts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FactTemplate {
+    /// Unique identifier
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
     /// Template name
     pub name: String,
 
@@ -94,6 +98,43 @@ pub struct FactTemplate {
 
     /// Facts to generate
     pub facts: Vec<FactDefinition>,
+}
+
+/// Request to create a fact template
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFactTemplateRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub facts: Vec<FactDefinition>,
+}
+
+/// Request to update a fact template
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateFactTemplateRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub facts: Option<Vec<FactDefinition>>,
+}
+
+/// Request to generate facts for a node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateFactsRequest {
+    /// Node certname
+    pub certname: String,
+    /// Template name to use
+    pub template: String,
+    /// Optional existing facts (if not provided, will be fetched from PuppetDB)
+    pub existing_facts: Option<serde_json::Value>,
+}
+
+/// Export format for facts
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportFormat {
+    #[default]
+    Json,
+    Yaml,
+    Shell,
 }
 
 /// Definition of a fact to generate

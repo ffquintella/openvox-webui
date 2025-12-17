@@ -20,6 +20,12 @@ import type {
   BulkPermissionRequest,
   BulkPermissionResult,
   CreatePermissionRequest,
+  FactTemplate,
+  CreateFactTemplateRequest,
+  UpdateFactTemplateRequest,
+  GenerateFactsRequest,
+  GeneratedFacts,
+  ExportFormat,
 } from '../types';
 
 const client = axios.create({
@@ -259,5 +265,42 @@ export const api = {
 
   removePermissionFromRole: async (roleId: string, permissionId: string): Promise<void> => {
     await client.delete(`/roles/${roleId}/permissions/${permissionId}`);
+  },
+
+  // Facter Templates
+  getFactTemplates: async (): Promise<FactTemplate[]> => {
+    const response = await client.get('/facter/templates');
+    return response.data;
+  },
+
+  getFactTemplate: async (id: string): Promise<FactTemplate> => {
+    const response = await client.get(`/facter/templates/${id}`);
+    return response.data;
+  },
+
+  createFactTemplate: async (data: CreateFactTemplateRequest): Promise<FactTemplate> => {
+    const response = await client.post('/facter/templates', data);
+    return response.data;
+  },
+
+  updateFactTemplate: async (id: string, data: UpdateFactTemplateRequest): Promise<FactTemplate> => {
+    const response = await client.put(`/facter/templates/${id}`, data);
+    return response.data;
+  },
+
+  deleteFactTemplate: async (id: string): Promise<void> => {
+    await client.delete(`/facter/templates/${id}`);
+  },
+
+  generateFacts: async (data: GenerateFactsRequest): Promise<GeneratedFacts> => {
+    const response = await client.post('/facter/generate', data);
+    return response.data;
+  },
+
+  exportFacts: async (certname: string, template: string, format: ExportFormat = 'json'): Promise<string> => {
+    const response = await client.get(`/facter/export/${encodeURIComponent(certname)}`, {
+      params: { template, format },
+    });
+    return response.data;
   },
 };

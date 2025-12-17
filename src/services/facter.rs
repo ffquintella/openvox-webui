@@ -196,6 +196,7 @@ mod tests {
     #[test]
     fn test_generate_facts_static() {
         let template = FactTemplate {
+            id: None,
             name: "basic".to_string(),
             description: Some("Basic facts".to_string()),
             facts: vec![FactDefinition {
@@ -216,6 +217,7 @@ mod tests {
     #[test]
     fn test_generate_facts_from_classification() {
         let template = FactTemplate {
+            id: None,
             name: "classification".to_string(),
             description: None,
             facts: vec![
@@ -247,6 +249,7 @@ mod tests {
     #[test]
     fn test_generate_facts_from_existing_fact() {
         let template = FactTemplate {
+            id: None,
             name: "derived".to_string(),
             description: None,
             facts: vec![FactDefinition {
