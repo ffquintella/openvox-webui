@@ -7,6 +7,7 @@ import {
   FileText,
   Database,
   FileCode2,
+  BarChart3,
   Settings,
   Shield,
   Users,
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Facts', href: '/facts', icon: Database },
   { name: 'Facter Templates', href: '/facter-templates', icon: FileCode2 },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
 ];
 
 const adminNavigation = [

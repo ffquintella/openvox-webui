@@ -8,6 +8,17 @@ async fn group_exists(world: &mut TestWorld, name: String) {
     world.create_group(&name).await.expect("Failed to create group");
 }
 
+#[given(expr = "a node group {string} exists with parent {string}")]
+async fn group_exists_with_parent(world: &mut TestWorld, name: String, parent: String) {
+    world.create_group(&name).await.expect("Failed to create group");
+    world.group_parents.insert(name, parent);
+}
+
+#[given(expr = "group {string} has class {string}")]
+async fn group_has_class(world: &mut TestWorld, group: String, class: String) {
+    world.group_classes.entry(group).or_default().push(class);
+}
+
 #[when(expr = "I create a node group named {string}")]
 async fn create_group(world: &mut TestWorld, name: String) {
     // Check authentication status

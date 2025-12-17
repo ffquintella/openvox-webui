@@ -65,12 +65,38 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
         }
     }
 
+    // Collect classes from matched groups and their parents
+    let mut classes: Vec<String> = Vec::new();
+    for group in &matched {
+        // Add classes from the group itself
+        if let Some(group_classes) = world.group_classes.get(group) {
+            for class in group_classes {
+                if !classes.contains(class) {
+                    classes.push(class.clone());
+                }
+            }
+        }
+
+        // Add classes from parent groups (walk up the hierarchy)
+        let mut current = group.clone();
+        while let Some(parent) = world.group_parents.get(&current) {
+            if let Some(parent_classes) = world.group_classes.get(parent) {
+                for class in parent_classes {
+                    if !classes.contains(class) {
+                        classes.push(class.clone());
+                    }
+                }
+            }
+            current = parent.clone();
+        }
+    }
+
     world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "certname": certname,
             "groups": matched,
-            "classes": [],
+            "classes": classes,
             "parameters": {}
         }),
     });

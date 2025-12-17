@@ -585,7 +585,13 @@ Then the exported facts should be valid "{format}"
 - [x] Design facter generation templates (FactTemplate model with FactDefinition and FactValueSource)
 - [x] Generate external facts from classifications (FromClassification source type)
 - [x] Export facts in JSON/YAML formats (plus Shell format)
-- [ ] Fact validation and schema enforcement (future enhancement)
+- [x] Fact validation and schema enforcement:
+  - Template name validation (alphanumeric, underscores, hyphens)
+  - Fact name validation (lowercase, underscores only - Puppet/Facter compatible)
+  - Fact value source validation (Static, FromClassification, FromFact, Template)
+  - Template string syntax validation (balanced braces)
+  - Duplicate fact name detection
+  - Size limits for values and templates
 
 ### 5.3 API Endpoints - COMPLETE
 - [x] GET /api/v1/facter/templates - List fact templates
@@ -598,14 +604,14 @@ Then the exported facts should be valid "{format}"
 
 ## Phase 6: Dashboard & Visualization
 
-### 6.1 React Frontend Foundation
-- [ ] Set up React with TypeScript
-- [ ] Configure state management (Zustand/Redux)
-- [ ] Implement routing (React Router)
-- [ ] Set up UI component library
-- [ ] Implement authentication flow
-- [ ] Create responsive layout system
-- [ ] **RBAC: Permission-aware routing**
+### 6.1 React Frontend Foundation - COMPLETE
+- [x] Set up React with TypeScript
+- [x] Configure state management (Zustand/Redux)
+- [x] Implement routing (React Router)
+- [x] Set up UI component library (Tailwind CSS)
+- [x] Implement authentication flow (Login page, JWT storage)
+- [x] Create responsive layout system
+- [x] **RBAC: Permission-aware routing** (ProtectedRoute component)
 
 ### 6.x Testing Requirements
 **Frontend tests location:** `frontend/tests/`
@@ -638,29 +644,30 @@ npm run test:e2e      # Run E2E tests (when configured)
 npm run test:coverage # Coverage report
 ```
 
-### 6.2 Dashboard Components
-- [ ] Node overview dashboard
-- [ ] Node health status indicators
-- [ ] Recent activity timeline
-- [ ] Quick search functionality
-- [ ] Filtering and sorting controls
+### 6.2 Dashboard Components - COMPLETE
+- [x] Node overview dashboard
+- [x] Node health status indicators (color-coded by health: healthy/warning/critical/unknown)
+- [x] Recent activity timeline (last 10 reports with status)
+- [x] Quick search functionality (search nodes by certname or environment)
+- [x] Filtering and sorting controls (status filter dropdown)
 
-### 6.3 Visualization & Graphics
-- [ ] Node status distribution charts (pie/donut)
-- [ ] Report success/failure trends (line charts)
-- [ ] Resource change heatmaps
-- [ ] Node group membership visualization
-- [ ] Fact distribution histograms
-- [ ] Infrastructure topology graph
-- [ ] Time-series metrics charts
+### 6.3 Visualization & Graphics - COMPLETE
+- [x] Node status distribution charts (pie/donut)
+- [x] Report success/failure trends (line charts)
+- [x] Resource change heatmaps (weekly activity heatmap by hour/day)
+- [x] Node group membership visualization (treemap with hierarchy)
+- [x] Fact distribution histograms (horizontal bar chart)
+- [x] Infrastructure topology graph (tree view by environment/group)
+- [x] Time-series metrics charts (area chart with 24h/7d/30d ranges)
+- [x] Analytics page with tabbed interface for all visualizations
 
-### 6.4 Node Detail Views
-- [ ] Node summary page
-- [ ] Facts browser with search
-- [ ] Report history with diff view
-- [ ] Resource catalog viewer
-- [ ] Group membership display
-- [ ] Classification rule matches
+### 6.4 Node Detail Views - COMPLETE
+- [x] Node summary page (enhanced layout with key facts, environment, status)
+- [x] Facts browser with search (expandable tree, search filter, copy fact path)
+- [x] Report history with timeline view (expandable details, metrics display)
+- [x] Resource catalog viewer (placeholder - requires PuppetDB resources endpoint)
+- [x] Group membership display (pinned groups, potential rule matches)
+- [x] Classification rule matches (shows which rules could match based on node facts)
 
 ## Phase 7: Configuration Management
 

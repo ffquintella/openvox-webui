@@ -44,7 +44,42 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// Auth response types
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+  };
+}
+
+interface RefreshResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
 export const api = {
+  // Auth
+  login: async (username: string, password: string): Promise<LoginResponse> => {
+    const response = await client.post('/auth/login', { username, password });
+    return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await client.post('/auth/logout');
+  },
+
+  refreshToken: async (refreshToken: string): Promise<RefreshResponse> => {
+    const response = await client.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
+
   // Health
   health: async () => {
     const response = await client.get('/health');

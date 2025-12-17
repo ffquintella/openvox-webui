@@ -37,6 +37,12 @@ pub struct TestWorld {
     /// Classification rules by group name (simple equals rules for tests)
     pub group_rules: HashMap<String, Vec<(String, String)>>,
 
+    /// Group parent relationships (child_group -> parent_group)
+    pub group_parents: HashMap<String, String>,
+
+    /// Group classes (group_name -> list of classes)
+    pub group_classes: HashMap<String, Vec<String>>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,

@@ -16,7 +16,10 @@ use crate::{
         UpdateFactTemplateRequest,
     },
     services::facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
-    utils::AppError,
+    utils::{
+        validation::{format_validation_errors, validate_fact_template},
+        AppError,
+    },
     AppState,
 };
 
@@ -56,6 +59,21 @@ async fn create_template(
     State(state): State<AppState>,
     Json(payload): Json<CreateFactTemplateRequest>,
 ) -> Result<(StatusCode, Json<FactTemplate>), AppError> {
+    // Validate the template before creating
+    let template_for_validation = FactTemplate {
+        id: None,
+        name: payload.name.clone(),
+        description: payload.description.clone(),
+        facts: payload.facts.clone(),
+    };
+
+    if let Err(errors) = validate_fact_template(&template_for_validation) {
+        return Err(AppError::bad_request(format!(
+            "Validation failed: {}",
+            format_validation_errors(&errors)
+        )));
+    }
+
     let repo = FactTemplateRepository::new(&state.db);
     let template = repo
         .create(&payload.name, payload.description.as_deref(), &payload.facts)
@@ -99,6 +117,30 @@ async fn update_template(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid template ID"))?;
 
     let repo = FactTemplateRepository::new(&state.db);
+
+    // Get existing template to merge with updates for validation
+    let existing = repo.get_by_id(uuid).await.map_err(|e| {
+        tracing::error!("Failed to get fact template: {}", e);
+        AppError::internal("Failed to get fact template")
+    })?;
+
+    let existing = existing.ok_or_else(|| AppError::not_found("Fact template not found"))?;
+
+    // Create merged template for validation
+    let template_for_validation = FactTemplate {
+        id: existing.id.clone(),
+        name: payload.name.clone().unwrap_or(existing.name.clone()),
+        description: payload.description.clone().or(existing.description.clone()),
+        facts: payload.facts.clone().unwrap_or(existing.facts.clone()),
+    };
+
+    if let Err(errors) = validate_fact_template(&template_for_validation) {
+        return Err(AppError::bad_request(format!(
+            "Validation failed: {}",
+            format_validation_errors(&errors)
+        )));
+    }
+
     let template = repo
         .update(
             uuid,
