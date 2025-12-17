@@ -351,14 +351,18 @@ Then the response status should be 401
 ## Phase 3: PuppetDB Integration
 
 ### 3.1 PuppetDB Client
-- [ ] Implement PuppetDB API client
-- [ ] Support for PQL (Puppet Query Language)
-- [ ] Node queries (`/pdb/query/v4/nodes`)
-- [ ] Facts queries (`/pdb/query/v4/facts`)
-- [ ] Reports queries (`/pdb/query/v4/reports`)
-- [ ] Resources queries (`/pdb/query/v4/resources`)
-- [ ] Events queries (`/pdb/query/v4/events`)
-- [ ] Catalogs queries (`/pdb/query/v4/catalogs`)
+- [x] Implement PuppetDB API client
+- [x] Support for PQL (Puppet Query Language)
+- [x] Node queries (`/pdb/query/v4/nodes`)
+- [x] Facts queries (`/pdb/query/v4/facts`)
+- [x] Reports queries (`/pdb/query/v4/reports`)
+- [x] Resources queries (`/pdb/query/v4/resources`)
+- [x] Events queries (`/pdb/query/v4/events`)
+- [x] Catalogs queries (`/pdb/query/v4/catalogs`)
+- [x] SSL/TLS support with client certificates
+- [x] QueryBuilder for AST queries
+- [x] Pagination support (QueryParams)
+- [x] Environment queries
 
 ### 3.x Testing Requirements
 **Feature files to enable:** `nodes.feature`, `reports.feature`
@@ -389,19 +393,28 @@ Then the node should have fact "{path}" with value "{value}"
 - Add `MockPuppetDbServer` for HTTP-level integration tests
 
 ### 3.2 Data Caching Layer
-- [ ] Implement caching strategy for PuppetDB data
-- [ ] Background sync jobs for data freshness
-- [ ] Cache invalidation mechanisms
-- [ ] Configurable cache TTLs
+- [x] Implement caching strategy for PuppetDB data
+- [x] Background sync jobs for data freshness
+- [x] Cache invalidation mechanisms
+- [x] Configurable cache TTLs
+- [x] Generic Cache<K,V> with TTL and max entries
+- [x] CachedPuppetDbService wrapper
+- [x] CacheSyncJob for background refresh
+- [x] Per-resource TTL configuration (nodes, facts, reports, resources, catalogs)
 
 ### 3.3 API Endpoints
-- [ ] GET /api/v1/nodes - List all nodes
-- [ ] GET /api/v1/nodes/:certname - Get node details
-- [ ] GET /api/v1/nodes/:certname/facts - Get node facts
-- [ ] GET /api/v1/nodes/:certname/reports - Get node reports
-- [ ] GET /api/v1/facts - Query facts across nodes
-- [ ] GET /api/v1/reports - Query reports
-- [ ] POST /api/v1/query - Execute PQL queries
+- [x] GET /api/v1/nodes - List all nodes
+- [x] GET /api/v1/nodes/:certname - Get node details
+- [x] GET /api/v1/nodes/:certname/facts - Get node facts
+- [x] GET /api/v1/nodes/:certname/reports - Get node reports
+- [x] GET /api/v1/facts - Query facts across nodes
+- [x] GET /api/v1/reports - Query reports
+- [x] POST /api/v1/query - Execute PQL queries
+
+Implementation notes:
+- List endpoints return an empty array when PuppetDB is not configured (compat with existing tests).
+- Detailed endpoints return 404 when resource is not found.
+- Advanced querying supports AST builder and pagination via `QueryParams`.
 
 ## Phase 4: Node Classification System
 

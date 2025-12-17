@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use openvox_webui::{
     api,
-    config::{AppConfig, AuthConfig, DatabaseConfig, LoggingConfig, ServerConfig},
+    config::{AppConfig, AuthConfig, CacheConfig, DatabaseConfig, LoggingConfig, ServerConfig},
     db,
     middleware::auth::{Claims, TokenType},
     AppState, DbRbacService, RbacService,
@@ -240,6 +240,10 @@ pub fn test_config() -> AppConfig {
         },
         puppetdb: None,
         logging: LoggingConfig::default(),
+        cache: CacheConfig {
+            enabled: false, // Disable cache in tests
+            ..CacheConfig::default()
+        },
     }
 }
 

@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 /// Server configuration
@@ -146,6 +148,82 @@ fn default_log_format() -> LogFormat {
     LogFormat::Pretty
 }
 
+/// Cache configuration for PuppetDB data
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CacheConfig {
+    /// Enable/disable caching
+    #[serde(default = "default_cache_enabled")]
+    pub enabled: bool,
+    /// TTL for node cache in seconds
+    #[serde(default = "default_node_ttl")]
+    pub node_ttl_secs: u64,
+    /// TTL for fact cache in seconds
+    #[serde(default = "default_fact_ttl")]
+    pub fact_ttl_secs: u64,
+    /// TTL for report cache in seconds
+    #[serde(default = "default_report_ttl")]
+    pub report_ttl_secs: u64,
+    /// TTL for resource cache in seconds
+    #[serde(default = "default_resource_ttl")]
+    pub resource_ttl_secs: u64,
+    /// TTL for catalog cache in seconds
+    #[serde(default = "default_catalog_ttl")]
+    pub catalog_ttl_secs: u64,
+    /// Maximum number of entries per cache type
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
+    /// Background sync interval in seconds (0 to disable)
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval_secs: u64,
+}
+
+fn default_cache_enabled() -> bool {
+    true
+}
+
+fn default_node_ttl() -> u64 {
+    300 // 5 minutes
+}
+
+fn default_fact_ttl() -> u64 {
+    300 // 5 minutes
+}
+
+fn default_report_ttl() -> u64 {
+    60 // 1 minute (reports change frequently)
+}
+
+fn default_resource_ttl() -> u64 {
+    600 // 10 minutes
+}
+
+fn default_catalog_ttl() -> u64 {
+    600 // 10 minutes
+}
+
+fn default_max_entries() -> usize {
+    10000
+}
+
+fn default_sync_interval() -> u64 {
+    0 // Disabled by default
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_cache_enabled(),
+            node_ttl_secs: default_node_ttl(),
+            fact_ttl_secs: default_fact_ttl(),
+            report_ttl_secs: default_report_ttl(),
+            resource_ttl_secs: default_resource_ttl(),
+            catalog_ttl_secs: default_catalog_ttl(),
+            max_entries: default_max_entries(),
+            sync_interval_secs: default_sync_interval(),
+        }
+    }
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -190,6 +268,7 @@ impl Default for AppConfig {
                 idle_timeout_secs: default_idle_timeout(),
             },
             logging: LoggingConfig::default(),
+            cache: CacheConfig::default(),
         }
     }
 }
