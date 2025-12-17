@@ -16,6 +16,16 @@ puppetdb:
   # ssl_key: "/etc/openvox-webui/ssl/client.key"
   # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
 
+# Puppet CA connection settings
+puppet_ca:
+  url: "https://localhost:8140"
+  timeout_secs: 30
+  ssl_verify: true
+  # Uncomment and set paths for SSL client authentication
+  # ssl_cert: "/etc/openvox-webui/ssl/ca_client.pem"
+  # ssl_key: "/etc/openvox-webui/ssl/ca_client.key"
+  # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
+
 # Authentication settings
 auth:
   jwt_secret: "change-this-to-a-secure-random-string-in-production"

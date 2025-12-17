@@ -5,6 +5,7 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 ## Features
 
 - **PuppetDB Integration**: Query and visualize node data, facts, reports, and resources
+- **Puppet CA Management**: List CSRs, sign/reject/revoke node certificates, renew CA certificate
 - **Node Classification**: Puppet Enterprise-style node groups with rule-based classification
 - **Facter Generation**: Generate external facts based on node classification
 - **Dashboard**: Real-time infrastructure monitoring with charts and statistics
@@ -124,6 +125,13 @@ The API follows RESTful conventions:
 - `POST /api/v1/groups` - Create node group
 - `GET /api/v1/reports` - Query reports
 - `GET /api/v1/facts` - Query facts
+- `GET /api/v1/ca/status` - CA service status
+- `GET /api/v1/ca/requests` - List pending CSRs
+- `GET /api/v1/ca/certificates` - List signed certificates
+- `POST /api/v1/ca/sign/:certname` - Sign CSR
+- `POST /api/v1/ca/reject/:certname` - Reject CSR
+- `DELETE /api/v1/ca/certificates/:certname` - Revoke certificate
+- `POST /api/v1/ca/renew` - Renew CA certificate
 
 See [docs/api/](docs/api/) for full API documentation.
 

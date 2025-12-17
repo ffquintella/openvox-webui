@@ -167,6 +167,7 @@ pub fn check_permission(
 ///         bcrypt_cost: 4, password_min_length: 8,
 ///     },
 ///     puppetdb: None,
+///     puppet_ca: None,
 ///     logging: LoggingConfig::default(),
 ///     cache: CacheConfig::default(),
 /// };
@@ -176,6 +177,7 @@ pub fn check_permission(
 ///     config,
 ///     db,
 ///     puppetdb: None,
+///     puppet_ca: None,
 ///     rbac: Arc::new(RbacService::new()),
 ///     rbac_db: Arc::new(DbRbacService::new(openvox_webui::db::init_pool(
 ///         &openvox_webui::config::DatabaseConfig {
