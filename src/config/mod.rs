@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert_eq!(config.server.port, 3000);
+        assert_eq!(config.server.port, 5051);
         assert_eq!(config.server.host, "127.0.0.1");
         assert!(config.puppetdb.is_none());
     }
