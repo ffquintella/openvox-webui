@@ -141,8 +141,18 @@ pub fn check_permission(
 /// Middleware factory for requiring a specific permission
 ///
 /// Usage:
-/// ```ignore
-/// let app = Router::new()
+/// ```no_run
+/// use axum::{Router, routing::get};
+/// use openvox_webui::{AppState, require_permission_middleware};
+/// use openvox_webui::models::Resource;
+/// use openvox_webui::middleware::rbac::RequirePermission;
+///
+/// async fn list_nodes() -> &'static str { "ok" }
+///
+/// // Example only; placeholder state to satisfy types for compilation
+/// let state: AppState = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+///
+/// let app = Router::<AppState>::new()
 ///     .route("/nodes", get(list_nodes))
 ///     .layer(axum::middleware::from_fn_with_state(
 ///         state.clone(),
