@@ -19,6 +19,7 @@ pub use middleware::{
     auth_middleware, check_permission, optional_auth_middleware, require_permission_middleware,
     AuthUser, Claims, RbacError, RequirePermission,
 };
+use services::puppet_ca::PuppetCAService;
 use services::puppetdb::PuppetDbClient;
 pub use services::{DbRbacService, RbacService};
 
@@ -31,6 +32,8 @@ pub struct AppState {
     pub db: DbPool,
     /// PuppetDB client (optional)
     pub puppetdb: Option<Arc<PuppetDbClient>>,
+    /// Puppet CA client (optional)
+    pub puppet_ca: Option<Arc<PuppetCAService>>,
     /// RBAC service for permission checking (in-memory, for middleware)
     pub rbac: Arc<RbacService>,
     /// Database-backed RBAC service (for API operations)

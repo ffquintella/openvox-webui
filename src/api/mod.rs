@@ -7,6 +7,7 @@ use axum::{routing::get, Router};
 use crate::AppState;
 
 mod auth;
+mod ca;
 mod facts;
 mod groups;
 mod health;
@@ -39,4 +40,6 @@ pub fn routes() -> Router<AppState> {
         .nest("/permissions", permissions::routes())
         // PQL query endpoint
         .nest("/query", query::routes())
+        // CA management endpoints
+        .merge(ca::routes())
 }

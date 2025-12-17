@@ -103,6 +103,7 @@ fn format_resource_name(resource: &Resource) -> String {
         Resource::AuditLogs => "Audit Logs".to_string(),
         Resource::FacterTemplates => "Facter Templates".to_string(),
         Resource::ApiKeys => "API Keys".to_string(),
+        Resource::Certificates => "Certificates".to_string(),
     }
 }
 
@@ -118,6 +119,7 @@ fn get_resource_description(resource: &Resource) -> String {
         Resource::AuditLogs => "Activity audit logs".to_string(),
         Resource::FacterTemplates => "Templates for generating external facts".to_string(),
         Resource::ApiKeys => "API authentication keys".to_string(),
+        Resource::Certificates => "Puppet CA certificates".to_string(),
     }
 }
 
@@ -133,6 +135,7 @@ fn get_resource_actions(resource: &Resource) -> Vec<String> {
         Resource::AuditLogs => vec!["read"],
         Resource::FacterTemplates => vec!["read", "create", "update", "delete"],
         Resource::ApiKeys => vec!["read", "create", "delete"],
+        Resource::Certificates => vec!["read", "sign", "reject", "revoke", "admin"],
     }
     .iter()
     .map(|s| s.to_string())
@@ -149,6 +152,9 @@ fn format_action_name(action: &Action) -> String {
         Action::Export => "Export".to_string(),
         Action::Classify => "Classify".to_string(),
         Action::Generate => "Generate".to_string(),
+        Action::Sign => "Sign".to_string(),
+        Action::Reject => "Reject".to_string(),
+        Action::Revoke => "Revoke".to_string(),
     }
 }
 
@@ -161,6 +167,9 @@ fn get_action_description(action: &Action) -> String {
         Action::Admin => "Full administrative access including all actions".to_string(),
         Action::Export => "Export resource data".to_string(),
         Action::Classify => "Classify nodes into groups".to_string(),
+            Action::Sign => "Sign certificate requests".to_string(),
+            Action::Reject => "Reject certificate requests".to_string(),
+            Action::Revoke => "Revoke signed certificates".to_string(),
         Action::Generate => "Generate derived data (e.g., facts)".to_string(),
     }
 }

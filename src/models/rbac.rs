@@ -107,6 +107,8 @@ pub enum Resource {
     FacterTemplates,
     /// API keys
     ApiKeys,
+    /// Puppet CA certificates
+    Certificates,
 }
 
 impl Resource {
@@ -123,6 +125,7 @@ impl Resource {
             Resource::AuditLogs,
             Resource::FacterTemplates,
             Resource::ApiKeys,
+            Resource::Certificates,
         ]
     }
 
@@ -139,6 +142,7 @@ impl Resource {
             Resource::AuditLogs => "audit_logs",
             Resource::FacterTemplates => "facter_templates",
             Resource::ApiKeys => "api_keys",
+            Resource::Certificates => "certificates",
         }
     }
 }
@@ -163,6 +167,12 @@ pub enum Action {
     Classify,
     /// Generate facts
     Generate,
+    /// Sign certificates
+    Sign,
+    /// Reject certificates
+    Reject,
+    /// Revoke certificates
+    Revoke,
 }
 
 impl Action {
@@ -177,6 +187,9 @@ impl Action {
             Action::Export,
             Action::Classify,
             Action::Generate,
+            Action::Sign,
+            Action::Reject,
+            Action::Revoke,
         ]
     }
 
@@ -191,6 +204,9 @@ impl Action {
             Action::Export => "export",
             Action::Classify => "classify",
             Action::Generate => "generate",
+            Action::Sign => "sign",
+            Action::Reject => "reject",
+            Action::Revoke => "revoke",
         }
     }
 }

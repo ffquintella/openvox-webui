@@ -416,6 +416,51 @@ Implementation notes:
 - Detailed endpoints return 404 when resource is not found.
 - Advanced querying supports AST builder and pagination via `QueryParams`.
 
+### 3.4 Puppet CA Management
+- [x] Implement Puppet CA client integration
+- [x] Certificate signing request (CSR) listing
+- [x] Sign node certificate requests
+- [x] Reject node certificate requests
+- [x] Revoke signed node certificates
+- [x] CA certificate renewal operations
+- [x] Certificate status monitoring
+- [x] **RBAC: CA management permissions**
+
+### 3.x Testing Requirements (CA)
+**Unit tests to add:**
+- `src/services/puppet_ca.rs` - CA operations, certificate parsing
+- `src/models/certificate.rs` - Certificate data model
+
+**Integration tests to add:**
+- `GET /api/v1/ca/requests` - List pending CSRs
+- `POST /api/v1/ca/sign/:certname` - Sign certificate request
+- `POST /api/v1/ca/reject/:certname` - Reject certificate request
+- `DELETE /api/v1/ca/certificates/:certname` - Revoke certificate
+- `POST /api/v1/ca/renew` - Renew CA certificate
+
+**Step definitions to implement:**
+```gherkin
+Given a pending certificate request for node "{certname}"
+Given a signed certificate for node "{certname}"
+When I sign the certificate request for "{certname}"
+When I reject the certificate request for "{certname}"
+When I revoke the certificate for "{certname}"
+Then the certificate for "{certname}" should be signed
+Then the certificate for "{certname}" should be revoked
+```
+
+**Feature file to add:** `puppet_ca.feature`
+
+### 3.5 CA API Endpoints
+- [x] GET /api/v1/ca/status - CA service status
+- [x] GET /api/v1/ca/requests - List pending certificate requests
+- [x] GET /api/v1/ca/certificates - List signed certificates
+- [x] POST /api/v1/ca/sign/:certname - Sign a certificate request
+- [x] POST /api/v1/ca/reject/:certname - Reject a certificate request
+- [x] DELETE /api/v1/ca/certificates/:certname - Revoke a certificate
+- [x] POST /api/v1/ca/renew - Renew CA certificate
+- [x] GET /api/v1/ca/certificates/:certname - Get certificate details
+
 ## Phase 4: Node Classification System
 
 ### 4.1 Classification Engine

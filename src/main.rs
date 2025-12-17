@@ -51,7 +51,18 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Initialize RBAC service with default system roles
+    // Initialize Puppet CA client if configured
+    let puppet_ca = if let Some(ref ca_config) = config.puppet_ca {
+        info!("Initializing Puppet CA client: {}", ca_config.url);
+        Some(Arc::new(
+            services::PuppetCAService::new(ca_config)
+                .context("Failed to initialize Puppet CA client")?,
+        ))
+    } else {
+        info!("Puppet CA not configured, skipping client initialization");
+        None
+    };
+
     info!("Initializing RBAC service");
     let rbac = Arc::new(RbacService::new());
     info!(
@@ -68,6 +79,7 @@ async fn main() -> Result<()> {
         config: config.clone(),
         db,
         puppetdb,
+        puppet_ca,
         rbac,
         rbac_db,
     };

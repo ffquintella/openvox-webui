@@ -47,6 +47,7 @@ impl TestApp {
             config,
             db,
             puppetdb: None,
+            puppet_ca: None,
             rbac,
             rbac_db,
         };
@@ -239,6 +240,7 @@ pub fn test_config() -> AppConfig {
             password_min_length: 8,
         },
         puppetdb: None,
+        puppet_ca: None,
         logging: LoggingConfig::default(),
         cache: CacheConfig {
             enabled: false, // Disable cache in tests

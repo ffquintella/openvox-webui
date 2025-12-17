@@ -1,5 +1,6 @@
 //! Data models
 
+mod certificate;
 mod classification;
 mod fact;
 mod group;
@@ -8,6 +9,7 @@ mod rbac;
 mod report;
 mod user;
 
+pub use certificate::*;
 pub use classification::*;
 pub use fact::*;
 pub use group::*;

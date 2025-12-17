@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub server: ServerConfig,
     #[serde(default)]
     pub puppetdb: Option<PuppetDbConfig>,
+    #[serde(default)]
+    pub puppet_ca: Option<PuppetCAConfig>,
     pub auth: AuthConfig,
     pub database: DatabaseConfig,
     #[serde(default)]
@@ -67,6 +69,19 @@ fn default_timeout() -> u64 {
 
 fn default_ssl_verify() -> bool {
     true
+}
+
+/// Puppet CA connection configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PuppetCAConfig {
+    pub url: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_ssl_verify")]
+    pub ssl_verify: bool,
+    pub ssl_cert: Option<PathBuf>,
+    pub ssl_key: Option<PathBuf>,
+    pub ssl_ca: Option<PathBuf>,
 }
 
 /// Authentication configuration
@@ -253,6 +268,7 @@ impl Default for AppConfig {
                 request_timeout_secs: None,
             },
             puppetdb: None,
+                        puppet_ca: None,
             auth: AuthConfig {
                 jwt_secret: "change-me-in-production-minimum-32-characters-long".to_string(),
                 token_expiry_hours: default_token_expiry(),

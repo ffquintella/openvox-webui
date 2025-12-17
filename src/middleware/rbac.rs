@@ -141,16 +141,49 @@ pub fn check_permission(
 /// Middleware factory for requiring a specific permission
 ///
 /// Usage:
-/// ```no_run
+/// ```
+/// use std::sync::Arc;
 /// use axum::{Router, routing::get};
 /// use openvox_webui::{AppState, require_permission_middleware};
+/// use openvox_webui::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig, CacheConfig, LoggingConfig};
 /// use openvox_webui::models::Resource;
 /// use openvox_webui::middleware::rbac::RequirePermission;
+/// use openvox_webui::{DbRbacService, RbacService};
 ///
+/// # tokio_test::block_on(async {
 /// async fn list_nodes() -> &'static str { "ok" }
 ///
-/// // Example only; placeholder state to satisfy types for compilation
-/// let state: AppState = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+/// // Create minimal in-memory database config for the example
+/// let config = AppConfig {
+///     server: ServerConfig { host: "127.0.0.1".into(), port: 3000, workers: 1, request_timeout_secs: None },
+///     database: DatabaseConfig {
+///         url: "sqlite::memory:".into(),
+///         max_connections: 1, min_connections: 1,
+///         connect_timeout_secs: 30, idle_timeout_secs: 600,
+///     },
+///     auth: AuthConfig {
+///         jwt_secret: "test_secret_at_least_32_chars_long".into(),
+///         token_expiry_hours: 24, refresh_token_expiry_days: 7,
+///         bcrypt_cost: 4, password_min_length: 8,
+///     },
+///     puppetdb: None,
+///     logging: LoggingConfig::default(),
+///     cache: CacheConfig::default(),
+/// };
+///
+/// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
+/// let state = AppState {
+///     config,
+///     db,
+///     puppetdb: None,
+///     rbac: Arc::new(RbacService::new()),
+///     rbac_db: Arc::new(DbRbacService::new(openvox_webui::db::init_pool(
+///         &openvox_webui::config::DatabaseConfig {
+///             url: "sqlite::memory:".into(),
+///             max_connections: 1, min_connections: 1,
+///             connect_timeout_secs: 30, idle_timeout_secs: 600,
+///         }).await.unwrap())),
+/// };
 ///
 /// let app = Router::<AppState>::new()
 ///     .route("/nodes", get(list_nodes))
@@ -163,6 +196,7 @@ pub fn check_permission(
 ///             RequirePermission::read(Resource::Nodes),
 ///         ),
 ///     ));
+/// # })
 /// ```
 pub async fn require_permission_middleware(
     State(state): State<AppState>,
