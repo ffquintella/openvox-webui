@@ -120,9 +120,7 @@ pub fn check_permission(
     // Convert role names to UUIDs
     let role_ids: Vec<Uuid> = auth_user
         .role_ids
-        .iter()
-        .copied()
-        .collect();
+        .to_vec();
 
     // Check permission
     let check = rbac_service.check_permission(&role_ids, resource, action, resource_id, environment);

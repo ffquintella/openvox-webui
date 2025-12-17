@@ -5,10 +5,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Git Commit Guidelines
 
 **IMPORTANT:** When creating git commits, do NOT include:
-- "Generated with Claude Code" or similar attribution messages
-- "Co-Authored-By: Claude" or any AI co-author tags
-- Any other references to AI assistance in commit messages
-
 Keep commit messages clean and focused only on describing the changes made.
 
 ## Project Overview

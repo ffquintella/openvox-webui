@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Represents a node in the infrastructure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Node {
     /// Certificate name (unique identifier)
     pub certname: String,
@@ -41,25 +41,6 @@ pub struct Node {
 
     /// Whether the node is cached
     pub cached_catalog_status: Option<String>,
-}
-
-impl Default for Node {
-    fn default() -> Self {
-        Self {
-            certname: String::new(),
-            deactivated: None,
-            expired: None,
-            catalog_timestamp: None,
-            facts_timestamp: None,
-            report_timestamp: None,
-            catalog_environment: None,
-            facts_environment: None,
-            report_environment: None,
-            latest_report_status: None,
-            latest_report_corrective_change: None,
-            cached_catalog_status: None,
-        }
-    }
 }
 
 /// Node summary for listing

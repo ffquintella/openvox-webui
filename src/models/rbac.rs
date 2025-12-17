@@ -212,10 +212,11 @@ impl Action {
 }
 
 /// Scope of a permission
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Scope {
     /// All resources of this type
+    #[default]
     All,
     /// Only resources owned by the user
     Owned,
@@ -227,12 +228,6 @@ pub enum Scope {
     Environment(String),
     /// Resources within a specific group
     Group(Uuid),
-}
-
-impl Default for Scope {
-    fn default() -> Self {
-        Scope::All
-    }
 }
 
 /// Constraint for specific permissions

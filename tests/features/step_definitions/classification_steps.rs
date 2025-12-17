@@ -3,10 +3,32 @@
 use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestWorld};
 
+fn get_fact_value(facts: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut current = facts;
+    for part in parts {
+        match current.get(part) {
+            Some(v) => current = v,
+            None => return None,
+        }
+    }
+    Some(current.clone())
+}
+
 #[given(expr = "a classification rule {string} on group {string}")]
-async fn add_classification_rule(_world: &mut TestWorld, _rule: String, _group: String) {
-    // Parse and store the rule
-    // Format: "fact_path operator value" e.g., "os.family = RedHat"
+async fn add_classification_rule(world: &mut TestWorld, rule: String, group: String) {
+    // Very simple parser for tests: only supports '=' operator
+    // Example: "os.family = RedHat"
+    let parts: Vec<&str> = rule.split('=').map(|s| s.trim()).collect();
+    if parts.len() == 2 {
+        let path = parts[0].to_string();
+        let value = parts[1].to_string();
+        world
+            .group_rules
+            .entry(group)
+            .or_default()
+            .push((path, value));
+    }
 }
 
 #[when(expr = "I add a rule {string} to group {string}")]
@@ -23,18 +45,31 @@ async fn add_rule_to_group(world: &mut TestWorld, rule: String, _group: String) 
 
 #[when(expr = "I classify node {string}")]
 async fn classify_node(world: &mut TestWorld, certname: String) {
-    // In real implementation, make API call to POST /api/v1/classify/{certname}
-    let groups = if world.node_facts.contains_key(&certname) {
-        vec!["matched_group"]
-    } else {
-        vec![]
-    };
+    // Simulate classification using stored group_rules and node_facts
+    let mut matched: Vec<String> = Vec::new();
+    if let Some(facts) = world.node_facts.get(&certname) {
+        for (group, rules) in &world.group_rules {
+            let mut all_match = true;
+            for (path, expected) in rules {
+                let val = get_fact_value(facts, path)
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .or_else(|| get_fact_value(facts, path).map(|v| v.to_string()));
+                if val.as_deref() != Some(expected.as_str()) {
+                    all_match = false;
+                    break;
+                }
+            }
+            if all_match {
+                matched.push(group.clone());
+            }
+        }
+    }
 
     world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "certname": certname,
-            "groups": groups,
+            "groups": matched,
             "classes": [],
             "parameters": {}
         }),
@@ -42,11 +77,16 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
 }
 
 #[when(expr = "I pin node {string} to group {string}")]
-async fn pin_node_to_group(world: &mut TestWorld, _certname: String, _group: String) {
+async fn pin_node_to_group(world: &mut TestWorld, certname: String, group: String) {
     // In real implementation, make API call to add pinned node
     world.last_response = Some(TestResponse {
         status: 200,
-        body: serde_json::json!({}),
+        body: serde_json::json!({
+            "certname": certname,
+            "groups": [group],
+            "classes": [],
+            "parameters": {}
+        }),
     });
 }
 

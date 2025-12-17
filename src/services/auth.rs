@@ -166,17 +166,17 @@ impl AuthService {
         let new_role = role.unwrap_or(&existing.role);
 
         // Check username uniqueness if changed
-        if new_username != existing.username {
-            if self.get_user_by_username(new_username).await?.is_some() {
-                anyhow::bail!("Username already exists");
-            }
+        if new_username != existing.username
+            && self.get_user_by_username(new_username).await?.is_some()
+        {
+            anyhow::bail!("Username already exists");
         }
 
         // Check email uniqueness if changed
-        if new_email != existing.email {
-            if self.get_user_by_email(new_email).await?.is_some() {
-                anyhow::bail!("Email already exists");
-            }
+        if new_email != existing.email
+            && self.get_user_by_email(new_email).await?.is_some()
+        {
+            anyhow::bail!("Email already exists");
         }
 
         let new_password_hash = match password {

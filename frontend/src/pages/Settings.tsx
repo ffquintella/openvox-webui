@@ -11,7 +11,7 @@ export default function Settings() {
 
   const handleSave = () => {
     // TODO: Implement settings save
-    console.log('Saving settings:', settings);
+    console.warn('Saving settings:', settings);
   };
 
   return (

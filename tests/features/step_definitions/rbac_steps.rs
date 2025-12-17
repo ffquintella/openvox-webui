@@ -134,7 +134,7 @@ async fn user_has_role(world: &mut TestWorld, user: String, role: String) {
     world
         .user_roles
         .entry(user.clone())
-        .or_insert_with(Vec::new)
+        .or_default()
         .push(role.clone());
 
     // Also set as current user for subsequent actions
@@ -150,7 +150,7 @@ async fn a_user_has_role(world: &mut TestWorld, user: String, role: String) {
     world
         .user_roles
         .entry(user.clone())
-        .or_insert_with(Vec::new)
+        .or_default()
         .push(role.clone());
 
     // Also set as current user for subsequent actions
@@ -280,7 +280,7 @@ async fn user_has_env_scoped_permission(world: &mut TestWorld, user: String, env
     world
         .user_scoped_environments
         .entry(user.clone())
-        .or_insert_with(Vec::new)
+        .or_default()
         .push(env);
 
     // Also set as current user for subsequent actions
@@ -296,7 +296,7 @@ async fn user_has_group_scoped_permission(world: &mut TestWorld, user: String, g
     world
         .user_scoped_groups
         .entry(user.clone())
-        .or_insert_with(Vec::new)
+        .or_default()
         .push(group);
 
     // Also set this user as the current user for subsequent actions
@@ -376,9 +376,11 @@ async fn response_includes_permission(world: &mut TestWorld, permission: String)
 
         if let Some(perms) = permissions {
             let parts: Vec<&str> = permission.split(':').collect();
+            let resource = parts.first().copied().unwrap_or("");
+            let action = parts.get(1).copied().unwrap_or("");
             let has_perm = perms.iter().any(|p| {
-                p.get("resource").and_then(|r| r.as_str()) == Some(parts.get(0).unwrap_or(&""))
-                    && p.get("action").and_then(|a| a.as_str()) == Some(parts.get(1).unwrap_or(&""))
+                p.get("resource").and_then(|r| r.as_str()) == Some(resource)
+                    && p.get("action").and_then(|a| a.as_str()) == Some(action)
             });
             assert!(has_perm, "Permission {} not found", permission);
         }

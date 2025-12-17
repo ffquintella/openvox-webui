@@ -232,10 +232,10 @@ impl DbRbacService {
         }
 
         // Check name uniqueness if changed
-        if request.name != existing.name {
-            if self.get_role_by_name(&request.name).await?.is_some() {
-                anyhow::bail!("Role with name '{}' already exists", request.name);
-            }
+        if request.name != existing.name
+            && self.get_role_by_name(&request.name).await?.is_some()
+        {
+            anyhow::bail!("Role with name '{}' already exists", request.name);
         }
 
         let id_str = id.to_string();

@@ -304,7 +304,7 @@ impl AppConfig {
         let config_path = std::env::var("OPENVOX_CONFIG")
             .map(PathBuf::from)
             .ok()
-            .or_else(|| Self::find_config_file());
+            .or_else(Self::find_config_file);
 
         let mut config = if let Some(path) = config_path {
             if path.exists() {

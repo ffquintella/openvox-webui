@@ -464,12 +464,12 @@ Then the certificate for "{certname}" should be revoked
 ## Phase 4: Node Classification System
 
 ### 4.1 Classification Engine
-- [ ] Design classification rule engine
-- [ ] Implement fact-based matching rules
-- [ ] Support for structured facts matching
-- [ ] Support for trusted facts matching
-- [ ] Rule operators: =, !=, ~, >, <, in, and, or
-- [ ] Rule inheritance from parent groups
+- [x] Design classification rule engine
+- [x] Implement fact-based matching rules
+- [x] Support for structured facts matching
+- [x] Support for trusted facts matching
+- [x] Rule operators: =, !=, ~, !~, >, >=, <, <=, in, not_in; group-level and/or via `RuleMatchType`
+- [x] Rule inheritance from parent groups
 
 ### 4.x Testing Requirements
 **Feature files to enable:** `node_classification.feature`
@@ -529,6 +529,7 @@ Then the classification should include class "{class}"
 - [ ] Support for custom facts
 - [ ] Support for external facts
 - [ ] Fact history tracking
+- [ ] Integrate classification with facts (classification should be able to generate custom facts)
 
 ### 5.x Testing Requirements
 **Feature files to enable:** `facter_generation.feature`

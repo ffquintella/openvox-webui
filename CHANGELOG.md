@@ -18,9 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation framework
 - Puppet CA client and management API (status, CSR list, sign, reject, revoke, renew)
 - Puppet CA configuration block (`puppet_ca`) and RBAC permissions for certificates
+- Classification service hierarchy inheritance tests
+ - Classification engine (Phase 4.1): rule evaluation, operators coverage, hierarchical inheritance
+ - Enabled BDD `node_classification.feature` scenarios
+ - Cucumber scenarios for Puppet CA operations (status, requests, sign/reject/revoke, renew)
 
 ### Changed
-- Nothing yet
+- Rust clippy lint fixes across config, middleware, models, and services
 
 ### Deprecated
 - Nothing yet
@@ -29,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- ESLint warning cleanup in Settings page (`no-console`)
 
 ### Security
 - Nothing yet

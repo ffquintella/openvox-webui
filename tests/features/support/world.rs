@@ -34,6 +34,9 @@ pub struct TestWorld {
     /// Custom roles with parent relationships (role_name -> parent_role_name)
     pub role_parents: HashMap<String, String>,
 
+    /// Classification rules by group name (simple equals rules for tests)
+    pub group_rules: HashMap<String, Vec<(String, String)>>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,
