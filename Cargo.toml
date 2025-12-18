@@ -18,6 +18,13 @@ axum-extra = { version = "0.10", features = ["typed-header"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
 hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
+
+# TLS support
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = "0.23"
+rustls-pemfile = "2.2"
+tokio-rustls = "0.26"
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
@@ -45,6 +52,7 @@ config = "0.14"
 # Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 
 # Error handling
 thiserror = "2.0"

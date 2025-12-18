@@ -3,6 +3,7 @@
   Stdlib::Port $listen_port,
   Stdlib::Absolutepath $database_path,
   Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level,
+  Stdlib::Absolutepath $log_dir,
   Optional[Stdlib::HTTPUrl] $puppetdb_url,
   Optional[Stdlib::Absolutepath] $puppetdb_ssl_cert,
   Optional[Stdlib::Absolutepath] $puppetdb_ssl_key,
@@ -14,6 +15,12 @@
   String $admin_username,
   Optional[Sensitive[String]] $admin_password,
   Optional[String] $admin_email,
+  Boolean $enable_tls,
+  Optional[Stdlib::Absolutepath] $tls_cert_file,
+  Optional[Stdlib::Absolutepath] $tls_key_file,
+  Optional[String] $tls_min_version,
+  Stdlib::Absolutepath $static_dir,
+  Boolean $serve_frontend,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -22,6 +29,14 @@ server:
   host: "<%= $listen_address %>"
   port: <%= $listen_port %>
   workers: 4
+  serve_frontend: <%= $serve_frontend %>
+  static_dir: "<%= $static_dir %>"
+<% if $enable_tls and $tls_cert_file and $tls_key_file { -%>
+  tls:
+    cert_file: "<%= $tls_cert_file %>"
+    key_file: "<%= $tls_key_file %>"
+    min_version: "<%= $tls_min_version %>"
+<% } -%>
 
 database:
   url: "sqlite://<%= $database_path %>"
@@ -30,6 +45,11 @@ database:
 logging:
   level: "<%= $log_level %>"
   format: "json"
+  target: "file"
+  log_dir: "<%= $log_dir %>"
+  log_prefix: "openvox-webui"
+  daily_rotation: true
+  max_log_files: 30
 
 <% if $puppetdb_url { -%>
 puppetdb:

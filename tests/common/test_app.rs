@@ -236,6 +236,9 @@ pub fn test_config() -> AppConfig {
             port: 3000, // Test port
             workers: 1,
             request_timeout_secs: None,
+            tls: None,
+            static_dir: None,
+            serve_frontend: false,
         },
         database: DatabaseConfig {
             url: format!("sqlite://{}?mode=rwc", db_path),

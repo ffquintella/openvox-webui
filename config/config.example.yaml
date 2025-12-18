@@ -8,6 +8,17 @@ server:
   # workers: 4  # Number of worker threads (defaults to CPU count)
   # request_timeout_secs: 30  # Request timeout in seconds
 
+  # Frontend static files (serves the React app from the same server)
+  serve_frontend: true
+  static_dir: "frontend/dist"  # Path to built frontend files
+
+  # TLS/HTTPS configuration (uncomment to enable HTTPS)
+  # tls:
+  #   cert_file: "/etc/openvox-webui/ssl/server.crt"
+  #   key_file: "/etc/openvox-webui/ssl/server.key"
+  #   min_version: "1.2"  # Minimum TLS version: "1.2" or "1.3"
+  #   ciphers: []  # Custom cipher suites (empty = secure defaults)
+
 # PuppetDB connection settings (optional)
 puppetdb:
   url: "http://localhost:8081"
@@ -48,7 +59,18 @@ database:
 logging:
   level: "info"  # trace, debug, info, warn, error
   format: "pretty"  # pretty, json, compact
-  # file: "/var/log/openvox-webui/app.log"  # Optional log file
+
+  # Log output target:
+  # - "console": Output to stdout (default, recommended for development)
+  # - "file": Output to log files with daily rotation (recommended for production)
+  # - "both": Output to both console and files
+  target: "console"
+
+  # File logging settings (used when target is "file" or "both")
+  log_dir: "/var/log/openvox/webui"  # Directory for log files
+  log_prefix: "openvox-webui"        # Log file prefix
+  daily_rotation: true                # Enable daily log rotation
+  max_log_files: 30                   # Number of log files to keep (0 = unlimited)
 
 # Cache configuration for PuppetDB data
 cache:

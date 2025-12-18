@@ -46,6 +46,30 @@ pub struct ServerConfig {
     pub workers: usize,
     #[serde(default)]
     pub request_timeout_secs: Option<u64>,
+    /// TLS/HTTPS configuration (if not set, server runs HTTP)
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
+    /// Path to static files directory (frontend build output)
+    #[serde(default = "default_static_dir")]
+    pub static_dir: Option<PathBuf>,
+    /// Whether to serve the frontend SPA (enables fallback to index.html)
+    #[serde(default = "default_serve_frontend")]
+    pub serve_frontend: bool,
+}
+
+/// TLS/HTTPS configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TlsConfig {
+    /// Path to TLS certificate file (PEM format)
+    pub cert_file: PathBuf,
+    /// Path to TLS private key file (PEM format)
+    pub key_file: PathBuf,
+    /// Minimum TLS version (1.2 or 1.3, defaults to 1.2)
+    #[serde(default = "default_min_tls_version")]
+    pub min_version: String,
+    /// TLS cipher suites (if empty, uses secure defaults)
+    #[serde(default)]
+    pub ciphers: Vec<String>,
 }
 
 fn default_host() -> String {
@@ -58,6 +82,24 @@ fn default_port() -> u16 {
 
 fn default_workers() -> usize {
     num_cpus::get()
+}
+
+fn default_static_dir() -> Option<PathBuf> {
+    // Default to looking for frontend/dist in current directory
+    let path = PathBuf::from("frontend/dist");
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn default_serve_frontend() -> bool {
+    true
+}
+
+fn default_min_tls_version() -> String {
+    "1.2".to_string()
 }
 
 /// PuppetDB connection configuration
@@ -161,8 +203,37 @@ pub struct LoggingConfig {
     pub level: String,
     #[serde(default = "default_log_format")]
     pub format: LogFormat,
+    /// Log output target (console or file)
+    #[serde(default = "default_log_target")]
+    pub target: LogTarget,
+    /// Directory for log files (used when target is "file")
+    #[serde(default = "default_log_dir")]
+    pub log_dir: PathBuf,
+    /// Log file name prefix (default: "openvox-webui")
+    #[serde(default = "default_log_prefix")]
+    pub log_prefix: String,
+    /// Enable daily log rotation (default: true for production)
+    #[serde(default = "default_log_rotation")]
+    pub daily_rotation: bool,
+    /// Maximum number of log files to keep (0 = unlimited)
+    #[serde(default = "default_max_log_files")]
+    pub max_log_files: usize,
+    /// Deprecated: use log_dir instead
     #[serde(default)]
     pub file: Option<PathBuf>,
+}
+
+/// Log output target
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogTarget {
+    /// Log to console (stdout/stderr) - default for development
+    #[default]
+    Console,
+    /// Log to file with optional rotation - recommended for production
+    File,
+    /// Log to both console and file
+    Both,
 }
 
 fn default_log_level() -> String {
@@ -171,6 +242,26 @@ fn default_log_level() -> String {
 
 fn default_log_format() -> LogFormat {
     LogFormat::Pretty
+}
+
+fn default_log_target() -> LogTarget {
+    LogTarget::Console
+}
+
+fn default_log_dir() -> PathBuf {
+    PathBuf::from("/var/log/openvox/webui")
+}
+
+fn default_log_prefix() -> String {
+    "openvox-webui".to_string()
+}
+
+fn default_log_rotation() -> bool {
+    true
+}
+
+fn default_max_log_files() -> usize {
+    30 // Keep 30 days of logs by default
 }
 
 /// Cache configuration for PuppetDB data
@@ -550,6 +641,11 @@ impl Default for LoggingConfig {
         Self {
             level: default_log_level(),
             format: default_log_format(),
+            target: default_log_target(),
+            log_dir: default_log_dir(),
+            log_prefix: default_log_prefix(),
+            daily_rotation: default_log_rotation(),
+            max_log_files: default_max_log_files(),
             file: None,
         }
     }
@@ -572,6 +668,9 @@ impl Default for AppConfig {
                 port: default_port(),
                 workers: default_workers(),
                 request_timeout_secs: None,
+                tls: None,
+                static_dir: default_static_dir(),
+                serve_frontend: default_serve_frontend(),
             },
             puppetdb: None,
             puppet_ca: None,
@@ -717,6 +816,57 @@ impl AppConfig {
                 puppetdb.ssl_ca = Some(PathBuf::from(ca));
             }
         }
+
+        // Server TLS overrides
+        if let Ok(cert) = std::env::var("OPENVOX_TLS_CERT") {
+            let key = std::env::var("OPENVOX_TLS_KEY").unwrap_or_default();
+            if !key.is_empty() {
+                self.server.tls = Some(TlsConfig {
+                    cert_file: PathBuf::from(cert),
+                    key_file: PathBuf::from(key),
+                    min_version: std::env::var("OPENVOX_TLS_MIN_VERSION")
+                        .unwrap_or_else(|_| default_min_tls_version()),
+                    ciphers: Vec::new(),
+                });
+            }
+        }
+
+        // Static directory override
+        if let Ok(dir) = std::env::var("OPENVOX_STATIC_DIR") {
+            self.server.static_dir = Some(PathBuf::from(dir));
+        }
+
+        // Serve frontend override
+        if let Ok(serve) = std::env::var("OPENVOX_SERVE_FRONTEND") {
+            self.server.serve_frontend = serve.parse().unwrap_or(true);
+        }
+
+        // Logging target override
+        if let Ok(target) = std::env::var("OPENVOX_LOG_TARGET") {
+            self.logging.target = match target.to_lowercase().as_str() {
+                "file" => LogTarget::File,
+                "both" => LogTarget::Both,
+                _ => LogTarget::Console,
+            };
+        }
+        // Log directory override
+        if let Ok(dir) = std::env::var("OPENVOX_LOG_DIR") {
+            self.logging.log_dir = PathBuf::from(dir);
+        }
+        // Log prefix override
+        if let Ok(prefix) = std::env::var("OPENVOX_LOG_PREFIX") {
+            self.logging.log_prefix = prefix;
+        }
+        // Log rotation override
+        if let Ok(rotation) = std::env::var("OPENVOX_LOG_ROTATION") {
+            self.logging.daily_rotation = rotation.parse().unwrap_or(true);
+        }
+        // Max log files override
+        if let Ok(max_files) = std::env::var("OPENVOX_LOG_MAX_FILES") {
+            if let Ok(n) = max_files.parse() {
+                self.logging.max_log_files = n;
+            }
+        }
     }
 
     /// Validate configuration
@@ -734,6 +884,38 @@ impl AppConfig {
         // Validate database URL
         if self.database.url.is_empty() {
             anyhow::bail!("Database URL cannot be empty");
+        }
+
+        // Validate TLS configuration if present
+        if let Some(ref tls) = self.server.tls {
+            if !tls.cert_file.exists() {
+                anyhow::bail!(
+                    "TLS certificate file not found: {:?}",
+                    tls.cert_file
+                );
+            }
+            if !tls.key_file.exists() {
+                anyhow::bail!(
+                    "TLS key file not found: {:?}",
+                    tls.key_file
+                );
+            }
+            if tls.min_version != "1.2" && tls.min_version != "1.3" {
+                anyhow::bail!(
+                    "Invalid TLS minimum version: {}. Must be '1.2' or '1.3'",
+                    tls.min_version
+                );
+            }
+        }
+
+        // Validate static directory if specified
+        if let Some(ref static_dir) = self.server.static_dir {
+            if !static_dir.exists() {
+                tracing::warn!(
+                    "Static directory does not exist: {:?}. Frontend will not be served.",
+                    static_dir
+                );
+            }
         }
 
         Ok(())

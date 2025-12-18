@@ -154,7 +154,7 @@ pub fn check_permission(
 ///
 /// // Create minimal in-memory database config for the example
 /// let config = AppConfig {
-///     server: ServerConfig { host: "127.0.0.1".into(), port: 3000, workers: 1, request_timeout_secs: None },
+///     server: ServerConfig { host: "127.0.0.1".into(), port: 3000, workers: 1, request_timeout_secs: None, tls: None, static_dir: None, serve_frontend: false },
 ///     database: DatabaseConfig {
 ///         url: "sqlite::memory:".into(),
 ///         max_connections: 1, min_connections: 1,

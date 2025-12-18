@@ -4,6 +4,7 @@
 //! OpenVox infrastructure, including PuppetDB queries, node classification,
 //! and facter generation.
 
+use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -12,9 +13,10 @@ use axum::Router;
 use tower_http::{
     compression::CompressionLayer,
     cors::{Any, CorsLayer},
+    services::{ServeDir, ServeFile},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 
 use config::LogFormat;
 use openvox_webui::{
@@ -28,7 +30,9 @@ async fn main() -> Result<()> {
     let config = AppConfig::load().context("Failed to load configuration")?;
 
     // Initialize logging based on configuration
-    init_logging(&config);
+    // The guard must be kept alive for the duration of the program
+    // to ensure log messages are flushed to files
+    let _log_guard = init_logging(&config);
 
     info!("OpenVox WebUI starting up");
     info!("Configuration loaded successfully");
@@ -87,36 +91,147 @@ async fn main() -> Result<()> {
     };
 
     // Build the router
-    let app = create_router(state);
+    let app = create_router(state, &config);
 
     // Start the server
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
         .parse()
         .context("Invalid server address configuration")?;
 
-    info!("Starting server on http://{}", addr);
+    // Check if TLS is configured
+    if let Some(ref tls_config) = config.server.tls {
+        info!("Starting HTTPS server on https://{}", addr);
+        info!("TLS certificate: {:?}", tls_config.cert_file);
+        info!("TLS minimum version: {}", tls_config.min_version);
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .context("Failed to bind to address")?;
+        let rustls_config = create_rustls_config(tls_config).await?;
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .context("Failed to bind to address")?;
 
-    info!("Server is ready to accept connections");
+        info!("HTTPS server is ready to accept connections");
 
-    axum::serve(listener, app).await.context("Server error")?;
+        // Use axum-server for TLS
+        axum_server::from_tcp_rustls(listener.into_std()?, rustls_config)
+            .serve(app.into_make_service())
+            .await
+            .context("HTTPS server error")?;
+    } else {
+        info!("Starting HTTP server on http://{}", addr);
+
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .context("Failed to bind to address")?;
+
+        info!("HTTP server is ready to accept connections");
+
+        axum::serve(listener, app).await.context("HTTP server error")?;
+    }
 
     Ok(())
 }
 
+/// Create RusTLS configuration from TLS config
+async fn create_rustls_config(tls_config: &config::TlsConfig) -> Result<axum_server::tls_rustls::RustlsConfig> {
+    use axum_server::tls_rustls::RustlsConfig;
+
+    // Load certificate chain
+    let cert_file = std::fs::File::open(&tls_config.cert_file)
+        .with_context(|| format!("Failed to open certificate file: {:?}", tls_config.cert_file))?;
+    let mut cert_reader = BufReader::new(cert_file);
+    let certs: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if certs.is_empty() {
+        anyhow::bail!("No certificates found in {:?}", tls_config.cert_file);
+    }
+
+    // Load private key
+    let key_file = std::fs::File::open(&tls_config.key_file)
+        .with_context(|| format!("Failed to open key file: {:?}", tls_config.key_file))?;
+    let mut key_reader = BufReader::new(key_file);
+    let key = rustls_pemfile::private_key(&mut key_reader)
+        .with_context(|| format!("Failed to read private key: {:?}", tls_config.key_file))?
+        .ok_or_else(|| anyhow::anyhow!("No private key found in {:?}", tls_config.key_file))?;
+
+    // Build RustlsConfig
+    let config = RustlsConfig::from_der(
+        certs.into_iter().map(|c| c.to_vec()).collect(),
+        key.secret_der().to_vec(),
+    )
+    .await
+    .context("Failed to create RustlsConfig")?;
+
+    Ok(config)
+}
+
 /// Initialize the logging/tracing infrastructure
-fn init_logging(config: &AppConfig) {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+fn init_logging(config: &AppConfig) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    use config::LogTarget;
+    use tracing_subscriber::{prelude::*, EnvFilter};
 
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
 
-    let subscriber = tracing_subscriber::registry().with(env_filter);
+    let log_config = &config.logging;
 
-    match config.logging.format {
+    match &log_config.target {
+        LogTarget::Console => {
+            // Console-only logging (development mode)
+            let subscriber = tracing_subscriber::registry().with(env_filter);
+            init_console_logging(subscriber, &log_config.format);
+            None
+        }
+        LogTarget::File => {
+            // File-only logging (production mode)
+            let (writer, guard) = create_file_writer(log_config);
+            let subscriber = tracing_subscriber::registry().with(env_filter);
+            init_file_logging(subscriber, &log_config.format, writer);
+            Some(guard)
+        }
+        LogTarget::Both => {
+            // Both console and file logging
+            let (writer, guard) = create_file_writer(log_config);
+            let subscriber = tracing_subscriber::registry().with(env_filter);
+            init_both_logging(subscriber, &log_config.format, writer);
+            Some(guard)
+        }
+    }
+}
+
+/// Create a file writer with optional daily rotation
+fn create_file_writer(
+    log_config: &config::LoggingConfig,
+) -> (
+    tracing_appender::non_blocking::NonBlocking,
+    tracing_appender::non_blocking::WorkerGuard,
+) {
+    // Ensure log directory exists
+    if let Err(e) = std::fs::create_dir_all(&log_config.log_dir) {
+        eprintln!(
+            "Warning: Failed to create log directory {:?}: {}",
+            log_config.log_dir, e
+        );
+    }
+
+    let file_appender = if log_config.daily_rotation {
+        tracing_appender::rolling::daily(&log_config.log_dir, &log_config.log_prefix)
+    } else {
+        tracing_appender::rolling::never(&log_config.log_dir, &log_config.log_prefix)
+    };
+
+    tracing_appender::non_blocking(file_appender)
+}
+
+/// Initialize console-only logging
+fn init_console_logging<S>(subscriber: S, format: &LogFormat)
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync,
+{
+    use tracing_subscriber::{fmt, prelude::*};
+
+    match format {
         LogFormat::Json => {
             subscriber
                 .with(fmt::layer().json().with_target(true))
@@ -141,6 +256,97 @@ fn init_logging(config: &AppConfig) {
     }
 }
 
+/// Initialize file-only logging
+fn init_file_logging<S>(
+    subscriber: S,
+    format: &LogFormat,
+    writer: tracing_appender::non_blocking::NonBlocking,
+) where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync,
+{
+    use tracing_subscriber::{fmt, prelude::*};
+
+    match format {
+        LogFormat::Json => {
+            subscriber
+                .with(fmt::layer().json().with_target(true).with_writer(writer))
+                .init();
+        }
+        LogFormat::Compact => {
+            subscriber
+                .with(
+                    fmt::layer()
+                        .compact()
+                        .with_target(false)
+                        .with_writer(writer),
+                )
+                .init();
+        }
+        LogFormat::Pretty => {
+            subscriber
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_file(false)
+                        .with_line_number(false)
+                        .with_writer(writer),
+                )
+                .init();
+        }
+    }
+}
+
+/// Initialize both console and file logging
+fn init_both_logging<S>(
+    subscriber: S,
+    format: &LogFormat,
+    writer: tracing_appender::non_blocking::NonBlocking,
+) where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync,
+{
+    use tracing_subscriber::{fmt, prelude::*};
+
+    match format {
+        LogFormat::Json => {
+            subscriber
+                .with(fmt::layer().json().with_target(true)) // Console
+                .with(fmt::layer().json().with_target(true).with_writer(writer)) // File
+                .init();
+        }
+        LogFormat::Compact => {
+            subscriber
+                .with(fmt::layer().compact().with_target(false)) // Console
+                .with(
+                    fmt::layer()
+                        .compact()
+                        .with_target(false)
+                        .with_writer(writer),
+                ) // File
+                .init();
+        }
+        LogFormat::Pretty => {
+            subscriber
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_file(false)
+                        .with_line_number(false),
+                ) // Console
+                .with(
+                    fmt::layer()
+                        .with_target(true)
+                        .with_thread_ids(false)
+                        .with_file(false)
+                        .with_line_number(false)
+                        .with_writer(writer),
+                ) // File
+                .init();
+        }
+    }
+}
+
 /// Ensure the data directory exists
 fn ensure_data_directory(config: &AppConfig) -> Result<()> {
     // Extract directory from database URL
@@ -156,8 +362,9 @@ fn ensure_data_directory(config: &AppConfig) -> Result<()> {
 }
 
 /// Create the application router with all routes and middleware
-fn create_router(state: AppState) -> Router {
-    // Configure CORS
+fn create_router(state: AppState, config: &AppConfig) -> Router {
+    // Configure CORS - only needed when frontend is served separately (development)
+    // When serving frontend from the same server, CORS is not needed
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -168,12 +375,12 @@ fn create_router(state: AppState) -> Router {
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
-    // Build the router
+    // Build the API router
     //
     // Note: Authentication must not be applied globally, otherwise public endpoints like
     // `/api/v1/auth/login` become unusable. We keep public routes unauthenticated and apply
     // auth middleware only to protected routes.
-    Router::new()
+    let api_router = Router::new()
         .nest("/api/v1", api::public_routes())
         .nest(
             "/api/v1",
@@ -182,7 +389,41 @@ fn create_router(state: AppState) -> Router {
                 middleware::auth::auth_middleware,
             )),
         )
-        .with_state(state.clone())
+        .with_state(state.clone());
+
+    // Optionally serve frontend static files
+    let router = if config.server.serve_frontend {
+        if let Some(ref static_dir) = config.server.static_dir {
+            if static_dir.exists() {
+                info!("Serving frontend from {:?}", static_dir);
+
+                // Serve index.html for the root and as a fallback for SPA routing
+                let index_file = static_dir.join("index.html");
+                if index_file.exists() {
+                    // Create a service that serves static files and falls back to index.html
+                    let serve_dir = ServeDir::new(static_dir)
+                        .not_found_service(ServeFile::new(&index_file));
+
+                    api_router.fallback_service(serve_dir)
+                } else {
+                    warn!("index.html not found in {:?}, SPA fallback disabled", static_dir);
+                    let serve_dir = ServeDir::new(static_dir);
+                    api_router.fallback_service(serve_dir)
+                }
+            } else {
+                warn!("Static directory {:?} does not exist, frontend not served", static_dir);
+                api_router
+            }
+        } else {
+            info!("No static directory configured, frontend not served");
+            api_router
+        }
+    } else {
+        info!("Frontend serving disabled by configuration");
+        api_router
+    };
+
+    router
         .layer(CompressionLayer::new())
         .layer(trace_layer)
         .layer(cors)
