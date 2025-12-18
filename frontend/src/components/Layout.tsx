@@ -10,6 +10,7 @@ import {
   BarChart3,
   Settings,
   Shield,
+  ShieldCheck,
   Users,
   Lock,
   User,
@@ -34,6 +35,7 @@ const navigation = [
 ];
 
 const adminNavigation = [
+  { name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
   { name: 'Users', href: '/users', icon: Users },
   { name: 'Roles', href: '/roles', icon: Shield },
   { name: 'Permissions', href: '/permissions', icon: Lock },
@@ -172,7 +174,7 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
               )}
             </div>
-            <p className="mt-3 text-xs text-gray-500">OpenVox WebUI v0.1.0</p>
+            <p className="mt-3 text-xs text-gray-500">OpenVox WebUI v{__APP_VERSION__}</p>
           </div>
         </div>
       </aside>

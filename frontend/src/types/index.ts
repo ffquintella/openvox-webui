@@ -525,3 +525,61 @@ export interface ServerInfoResponse {
   config_file_path?: string | null;
   features: string[];
 }
+
+// CA (Certificate Authority) types
+export type CertificateStatus = 'requested' | 'signed' | 'rejected' | 'revoked';
+
+export interface CertificateRequest {
+  certname: string;
+  requested_at: string;
+  dns_alt_names: string[];
+  fingerprint: string;
+  state: CertificateStatus;
+}
+
+export interface Certificate {
+  certname: string;
+  serial: string;
+  not_before: string;
+  not_after: string;
+  dns_alt_names: string[];
+  fingerprint: string;
+  state: CertificateStatus;
+}
+
+export interface CAStatus {
+  available: boolean;
+  ca_fingerprint?: string | null;
+  ca_expires_at?: string | null;
+  pending_requests: number;
+  signed_certificates: number;
+}
+
+export interface SignRequest {
+  dns_alt_names?: string[];
+}
+
+export interface SignResponse {
+  certificate: Certificate;
+  message: string;
+}
+
+export interface RejectResponse {
+  certname: string;
+  message: string;
+}
+
+export interface RevokeResponse {
+  certname: string;
+  message: string;
+}
+
+export interface RenewCARequest {
+  days: number;
+}
+
+export interface RenewCAResponse {
+  fingerprint: string;
+  expires_at: string;
+  message: string;
+}

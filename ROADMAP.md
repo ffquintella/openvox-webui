@@ -736,6 +736,76 @@ tests/fixtures/configs/
 - ImportExportTab - YAML editor, validation, import/export with history
 - ServerInfoTab - Server version, uptime, features display
 
+## Phase 7.5: Puppet CA Management UI
+
+### 7.5.1 CA Dashboard - COMPLETE
+- [x] CA status overview card (service health, certificate counts)
+- [x] Pending certificate requests counter with badge
+- [x] Quick actions for common CA operations
+- [x] Certificate expiration warnings
+
+### 7.5.2 Certificate Requests Management - COMPLETE
+- [x] List pending certificate signing requests (CSRs)
+- [x] CSR details view (certname, fingerprint, request time)
+- [ ] Bulk sign/reject operations with confirmation dialogs
+- [x] Individual sign/reject actions
+- [ ] Filter CSRs by certname pattern
+- [x] Auto-refresh for new requests (10 second interval)
+
+### 7.5.3 Signed Certificates Management - COMPLETE
+- [x] List all signed certificates with pagination
+- [x] Certificate details view (certname, serial, expiration, fingerprint)
+- [x] Revoke certificate with confirmation
+- [x] Certificate expiration timeline/warnings
+- [x] Filter/search by certname
+- [x] Sort by expiration date, issue date, certname
+
+### 7.5.4 CA Operations
+- [ ] CA certificate renewal interface
+- [ ] View CA certificate details
+- [ ] Export CA certificate (for distribution)
+- [ ] Certificate revocation list (CRL) status
+
+### 7.5.5 Frontend Components
+```
+frontend/src/pages/
+├── CA.tsx                    # Main CA management page
+├── ca/
+│   ├── CertificateRequests.tsx   # Pending CSRs tab
+│   ├── SignedCertificates.tsx    # Signed certs tab
+│   ├── CAStatus.tsx              # CA status overview
+│   └── CertificateDetails.tsx    # Certificate detail modal
+
+frontend/src/hooks/
+├── useCA.ts                  # React Query hooks for CA API
+
+frontend/src/services/
+├── ca.ts                     # CA API client functions
+```
+
+### 7.5.6 API Integration
+Integrate with existing backend endpoints:
+- GET /api/v1/ca/status - CA service status
+- GET /api/v1/ca/requests - List pending CSRs
+- GET /api/v1/ca/certificates - List signed certificates
+- POST /api/v1/ca/sign/:certname - Sign CSR
+- POST /api/v1/ca/reject/:certname - Reject CSR
+- DELETE /api/v1/ca/certificates/:certname - Revoke certificate
+- POST /api/v1/ca/renew - Renew CA certificate
+- GET /api/v1/ca/certificates/:certname - Get certificate details
+
+### 7.5.x Testing Requirements
+**Frontend tests to add:**
+- `CA.test.tsx` - Main page rendering, tab navigation
+- `CertificateRequests.test.tsx` - CSR listing, sign/reject actions
+- `SignedCertificates.test.tsx` - Certificate listing, revocation
+
+**E2E scenarios:**
+- Sign a pending certificate request
+- Reject a certificate request
+- Revoke a signed certificate
+- View certificate details
+
 ## Phase 8: Advanced Features
 
 ### 8.1 Reporting & Analytics
@@ -928,6 +998,7 @@ Feature: Package Installation
 | 0.5.x   | 5     | Facter integration |
 | 0.6.x   | 6     | Dashboard and visualizations |
 | 0.7.x   | 7     | Configuration management UI |
+| 0.7.5.x | 7.5   | Puppet CA management frontend |
 | 0.8.x   | 8     | Reporting, alerting, multi-tenancy |
 | 0.9.x   | 9.1-9.3 | Performance, security, RPM/DEB packages |
 | 1.0.x   | 9.4-9.5 | Puppet module, full documentation, production-ready |

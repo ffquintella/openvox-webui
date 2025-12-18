@@ -479,24 +479,20 @@ impl PuppetDbClient {
 
     /// Get facts for a specific node
     pub async fn get_node_facts(&self, certname: &str) -> Result<Vec<Fact>> {
-        let url = format!(
-            "{}/pdb/query/v4/nodes/{}/facts",
-            self.base_url,
-            urlencoding::encode(certname)
-        );
-        self.get(&url).await
+        // Use the facts endpoint with a certname query filter
+        // The /nodes/{certname}/facts endpoint is not supported by all PuppetDB versions
+        let query = QueryBuilder::new().equals("certname", certname);
+        self.query_facts_advanced(&query, QueryParams::default()).await
     }
 
     /// Get a specific fact for a node
     pub async fn get_node_fact(&self, certname: &str, fact_name: &str) -> Result<Option<Fact>> {
-        let url = format!(
-            "{}/pdb/query/v4/nodes/{}/facts/{}",
-            self.base_url,
-            urlencoding::encode(certname),
-            urlencoding::encode(fact_name)
-        );
-
-        let facts: Vec<Fact> = self.get(&url).await?;
+        // Use the facts endpoint with certname and name query filters
+        // The /nodes/{certname}/facts/{name} endpoint is not supported by all PuppetDB versions
+        let query = QueryBuilder::new()
+            .equals("certname", certname)
+            .equals("name", fact_name);
+        let facts: Vec<Fact> = self.query_facts_advanced(&query, QueryParams::default()).await?;
         Ok(facts.into_iter().next())
     }
 
@@ -566,19 +562,9 @@ impl PuppetDbClient {
 
     /// Get reports for a specific node
     pub async fn get_node_reports(&self, certname: &str, limit: Option<u32>) -> Result<Vec<Report>> {
-        let params = if let Some(l) = limit {
-            QueryParams::new().limit(l)
-        } else {
-            QueryParams::default()
-        };
-
-        let url = format!(
-            "{}/pdb/query/v4/nodes/{}/reports{}",
-            self.base_url,
-            urlencoding::encode(certname),
-            params.to_query_string()
-        );
-        self.get(&url).await
+        // Use the reports endpoint with a certname query filter
+        // The /nodes/{certname}/reports endpoint is not supported by all PuppetDB versions
+        self.query_reports(Some(certname), None, limit).await
     }
 
     /// Query reports

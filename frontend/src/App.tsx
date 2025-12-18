@@ -18,6 +18,7 @@ import Roles from './pages/Roles';
 import Users from './pages/Users';
 import Permissions from './pages/Permissions';
 import Profile from './pages/Profile';
+import CA from './pages/CA';
 import { useAuthStore } from './stores/authStore';
 import { usePermissionsStore } from './stores/permissionsStore';
 
@@ -111,6 +112,7 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
+                  <Route path="/ca" element={<CA />} />
                 </Routes>
               </Layout>
             </ProtectedRoute>

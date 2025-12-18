@@ -34,6 +34,15 @@ import type {
   ValidateConfigResponse,
   ConfigHistoryEntry,
   ServerInfoResponse,
+  CAStatus,
+  CertificateRequest,
+  Certificate,
+  SignRequest,
+  SignResponse,
+  RejectResponse,
+  RevokeResponse,
+  RenewCARequest,
+  RenewCAResponse,
 } from '../types';
 
 const client = axios.create({
@@ -404,6 +413,47 @@ export const api = {
 
   getServerInfo: async (): Promise<ServerInfoResponse> => {
     const response = await client.get('/settings/server');
+    return response.data;
+  },
+
+  // CA (Certificate Authority)
+  getCAStatus: async (): Promise<CAStatus> => {
+    const response = await client.get('/ca/status');
+    return response.data;
+  },
+
+  getCertificateRequests: async (): Promise<CertificateRequest[]> => {
+    const response = await client.get('/ca/requests');
+    return response.data;
+  },
+
+  getCertificates: async (): Promise<Certificate[]> => {
+    const response = await client.get('/ca/certificates');
+    return response.data;
+  },
+
+  getCertificate: async (certname: string): Promise<Certificate> => {
+    const response = await client.get(`/ca/certificates/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  signCertificate: async (certname: string, request?: SignRequest): Promise<SignResponse> => {
+    const response = await client.post(`/ca/sign/${encodeURIComponent(certname)}`, request || {});
+    return response.data;
+  },
+
+  rejectCertificate: async (certname: string): Promise<RejectResponse> => {
+    const response = await client.post(`/ca/reject/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  revokeCertificate: async (certname: string): Promise<RevokeResponse> => {
+    const response = await client.delete(`/ca/certificates/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  renewCA: async (request: RenewCARequest): Promise<RenewCAResponse> => {
+    const response = await client.post('/ca/renew', request);
     return response.data;
   },
 };
