@@ -116,7 +116,7 @@ async fn delete_group(
     Ok(Json(deleted))
 }
 
-/// Get nodes in a specific group
+/// Get nodes in a specific group (pinned + classified by rules)
 async fn get_group_nodes(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -124,12 +124,78 @@ async fn get_group_nodes(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     let repo = GroupRepository::new(&state.db);
-    let nodes = repo.get_group_nodes(uuid).await.map_err(|e| {
-        tracing::error!("Failed to get group nodes: {}", e);
-        AppError::internal("Failed to get group nodes")
+
+    // Get the group to verify it exists
+    let group = repo.get_by_id(uuid).await.map_err(|e| {
+        tracing::error!("Failed to get group: {}", e);
+        AppError::internal("Failed to get group")
     })?;
 
-    Ok(Json(nodes))
+    if group.is_none() {
+        return Err(AppError::not_found("Group not found"));
+    }
+
+    // Start with pinned nodes
+    let mut matched_nodes: Vec<String> = repo.get_pinned_nodes(uuid).await.map_err(|e| {
+        tracing::error!("Failed to get pinned nodes: {}", e);
+        AppError::internal("Failed to get pinned nodes")
+    })?;
+
+    // If PuppetDB is configured, also classify nodes by rules
+    if let Some(ref puppetdb) = state.puppetdb {
+        // Get all groups for classification
+        let all_groups = repo.get_all().await.map_err(|e| {
+            tracing::error!("Failed to get groups: {}", e);
+            AppError::internal("Failed to get groups")
+        })?;
+
+        // Create classification service
+        let classification_service = crate::services::classification::ClassificationService::new(all_groups);
+
+        // Get all nodes from PuppetDB
+        let nodes = puppetdb.get_nodes().await.map_err(|e| {
+            tracing::error!("Failed to get nodes from PuppetDB: {}", e);
+            AppError::internal("Failed to get nodes from PuppetDB")
+        })?;
+
+        // Classify each node and check if it matches the target group
+        for node in nodes {
+            // Skip if already in matched_nodes (pinned)
+            if matched_nodes.contains(&node.certname) {
+                continue;
+            }
+
+            // Get facts for the node
+            let facts = match puppetdb.get_node_facts(&node.certname).await {
+                Ok(facts) => {
+                    // Convert facts Vec to JSON object
+                    let mut facts_obj = serde_json::Map::new();
+                    for fact in facts {
+                        facts_obj.insert(fact.name, fact.value);
+                    }
+                    serde_json::Value::Object(facts_obj)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to get facts for {}: {}", node.certname, e);
+                    continue;
+                }
+            };
+
+            // Classify the node
+            let classification = classification_service.classify(&node.certname, &facts);
+
+            // Check if this node was classified into the target group
+            if classification.groups.iter().any(|g| g.id == uuid) {
+                matched_nodes.push(node.certname);
+            }
+        }
+    }
+
+    // Remove duplicates (in case of edge cases)
+    matched_nodes.sort();
+    matched_nodes.dedup();
+
+    Ok(Json(matched_nodes))
 }
 
 /// Get classification rules for a group

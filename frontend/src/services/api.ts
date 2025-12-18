@@ -229,7 +229,8 @@ export const api = {
   // Facts
   getFacts: async (params?: { name?: string; certname?: string }): Promise<Array<{ certname: string; name: string; value: unknown }>> => {
     const response = await client.get('/facts', { params });
-    return response.data;
+    // Backend returns { facts: [...], total: N } wrapper, extract the facts array
+    return response.data.facts || response.data;
   },
 
   getFactNames: async (): Promise<string[]> => {

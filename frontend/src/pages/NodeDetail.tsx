@@ -82,6 +82,14 @@ function formatTimeAgo(dateString: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
+// Type for PuppetDB fact format
+interface PuppetDBFact {
+  certname: string;
+  name: string;
+  value: unknown;
+  environment?: string;
+}
+
 // Facts Browser Component
 function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -599,6 +607,20 @@ export default function NodeDetail() {
     refetchGroups();
   };
 
+  // Normalize facts from PuppetDB array format to object format
+  const normalizedFacts = useMemo(() => {
+    if (Array.isArray(facts)) {
+      const result: Record<string, unknown> = {};
+      for (const fact of facts as PuppetDBFact[]) {
+        if (fact && typeof fact === 'object' && 'name' in fact && 'value' in fact) {
+          result[fact.name] = fact.value;
+        }
+      }
+      return result;
+    }
+    return facts as Record<string, unknown>;
+  }, [facts]);
+
   const isLoading = nodeLoading || factsLoading;
 
   if (isLoading) {
@@ -708,7 +730,7 @@ export default function NodeDetail() {
             <div>
               <p className="text-xs text-gray-500">Facts</p>
               <p className="text-sm font-medium text-gray-900">
-                {Object.keys(facts).length} top-level
+                {Object.keys(normalizedFacts).length} top-level
               </p>
             </div>
           </div>
@@ -821,15 +843,15 @@ export default function NodeDetail() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
-                  ['os.family', (facts as Record<string, unknown>).os && ((facts as Record<string, unknown>).os as Record<string, unknown>).family],
-                  ['os.name', (facts as Record<string, unknown>).os && ((facts as Record<string, unknown>).os as Record<string, unknown>).name],
-                  ['os.release.full', (facts as Record<string, unknown>).os && ((facts as Record<string, unknown>).os as Record<string, unknown>).release && (((facts as Record<string, unknown>).os as Record<string, unknown>).release as Record<string, unknown>).full],
-                  ['kernel', (facts as Record<string, unknown>).kernel],
-                  ['kernelrelease', (facts as Record<string, unknown>).kernelrelease],
-                  ['virtual', (facts as Record<string, unknown>).virtual],
-                  ['is_virtual', (facts as Record<string, unknown>).is_virtual],
-                  ['processors.count', (facts as Record<string, unknown>).processors && ((facts as Record<string, unknown>).processors as Record<string, unknown>).count],
-                  ['memory.system.total', (facts as Record<string, unknown>).memory && ((facts as Record<string, unknown>).memory as Record<string, unknown>).system && (((facts as Record<string, unknown>).memory as Record<string, unknown>).system as Record<string, unknown>).total],
+                  ['os.family', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).family],
+                  ['os.name', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).name],
+                  ['os.release.full', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).release && ((normalizedFacts.os as Record<string, unknown>).release as Record<string, unknown>).full],
+                  ['kernel', normalizedFacts.kernel],
+                  ['kernelrelease', normalizedFacts.kernelrelease],
+                  ['virtual', normalizedFacts.virtual],
+                  ['is_virtual', normalizedFacts.is_virtual],
+                  ['processors.count', normalizedFacts.processors && (normalizedFacts.processors as Record<string, unknown>).count],
+                  ['memory.system.total', normalizedFacts.memory && (normalizedFacts.memory as Record<string, unknown>).system && ((normalizedFacts.memory as Record<string, unknown>).system as Record<string, unknown>).total],
                 ]
                   .filter(([, value]) => value !== undefined)
                   .map(([key, value]) => (
@@ -845,7 +867,7 @@ export default function NodeDetail() {
           </div>
         )}
 
-        {activeTab === 'facts' && <FactsBrowser facts={facts} />}
+        {activeTab === 'facts' && <FactsBrowser facts={normalizedFacts} />}
 
         {activeTab === 'reports' && (
           reportsLoading ? (
