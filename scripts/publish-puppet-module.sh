@@ -105,11 +105,13 @@ if ! command -v pdk &> /dev/null; then
     fatal "PDK (Puppet Development Kit) not found. Install from: https://puppet.com/try-puppet/puppet-development-kit"
 fi
 
-# Prefer system puppet; fall back to PDK's embedded puppet
+# Prefer system puppet; fall back to PDK's embedded puppet via bundle exec
 if command -v puppet &> /dev/null; then
     PUPPET_CMD=(puppet)
+elif pdk bundle exec puppet --version >/dev/null 2>&1; then
+    PUPPET_CMD=(pdk bundle exec puppet)
 else
-    PUPPET_CMD=(pdk puppet)
+    fatal "Puppet not found (tried system puppet and 'pdk bundle exec puppet'). Install Puppet or PDK."
 fi
 
 success "Required tools found"
