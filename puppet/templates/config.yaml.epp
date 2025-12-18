@@ -12,6 +12,8 @@
   String $jwt_secret,
   String $jwt_expiry,
   Integer $session_timeout,
+  Integer $max_login_attempts,
+  Integer $lockout_duration,
   String $admin_username,
   Optional[Sensitive[String]] $admin_password,
   Optional[String] $admin_email,
@@ -21,6 +23,12 @@
   Optional[String] $tls_min_version,
   Stdlib::Absolutepath $static_dir,
   Boolean $serve_frontend,
+  Integer $cache_ttl,
+  Integer $cache_max_entries,
+  String $dashboard_theme,
+  Integer $dashboard_page_size,
+  Integer $dashboard_refresh,
+  Integer $max_rules_per_group,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -82,6 +90,8 @@ auth:
   jwt_expiry: "<%= $jwt_expiry %>"
   session_timeout: <%= $session_timeout %>
   password_min_length: 8
+  max_login_attempts: <%= $max_login_attempts %>
+  lockout_duration: <%= $lockout_duration %>
 <% if $admin_username and $admin_password { -%>
 
 # Initial admin account (only used on first run)
@@ -93,9 +103,18 @@ initial_admin:
 <% } -%>
 <% } -%>
 
+cache:
+  ttl: <%= $cache_ttl %>
+  max_entries: <%= $cache_max_entries %>
+
+dashboard:
+  theme: "<%= $dashboard_theme %>"
+  default_page_size: <%= $dashboard_page_size %>
+  refresh_interval: <%= $dashboard_refresh %>
+
 classification:
-  cache_ttl: 300
-  max_rules_per_group: 100
+  cache_ttl: <%= $cache_ttl %>
+  max_rules_per_group: <%= $max_rules_per_group %>
 
 facter:
   templates_dir: "/etc/openvox-webui/templates"

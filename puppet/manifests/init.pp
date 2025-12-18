@@ -113,32 +113,57 @@ class openvox_webui (
   String[1]                           $group          = 'openvox-webui',
 
   # Server settings
-  Stdlib::Host                        $listen_address = '127.0.0.1',
-  Stdlib::Port                        $listen_port    = 3000,
-  Stdlib::Absolutepath                $database_path  = '/var/lib/openvox-webui/openvox.db',
+  Stdlib::Host                        $listen_address     = '127.0.0.1',
+  Stdlib::Port                        $listen_port        = 5051,
+  Stdlib::Absolutepath                $database_path      = '/var/lib/openvox-webui/openvox.db',
   Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level = 'info',
+  Stdlib::Absolutepath                $log_dir            = '/var/log/openvox-webui',
+  Boolean                             $serve_frontend     = true,
+  Stdlib::Absolutepath                $static_dir         = '/usr/share/openvox-webui/frontend',
+
+  # TLS settings
+  Boolean                             $enable_tls         = false,
+  Optional[Stdlib::Absolutepath]      $tls_cert_file      = undef,
+  Optional[Stdlib::Absolutepath]      $tls_key_file       = undef,
+  Optional[String[1]]                 $tls_min_version    = 'TLS1.3',
 
   # PuppetDB settings
-  Optional[Stdlib::HTTPUrl]           $puppetdb_url      = undef,
-  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_cert = undef,
-  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_key  = undef,
-  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_ca   = undef,
-  Integer[1, 300]                     $puppetdb_timeout  = 30,
+  Optional[Stdlib::HTTPUrl]           $puppetdb_url           = undef,
+  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_cert      = undef,
+  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_key       = undef,
+  Optional[Stdlib::Absolutepath]      $puppetdb_ssl_ca        = undef,
+  Integer[1, 300]                     $puppetdb_timeout       = 30,
+  Boolean                             $puppetdb_auto_discover = true,
 
   # Authentication settings
-  String[32]                          $jwt_secret       = fqdn_rand_string(64),
-  String[1]                           $jwt_expiry       = '24h',
-  Integer[60, 86400]                  $session_timeout  = 3600,
+  String[32]                          $jwt_secret             = fqdn_rand_string(64),
+  String[1]                           $jwt_expiry             = '24h',
+  Integer[60, 86400]                  $session_timeout        = 3600,
+  Integer[1, 20]                      $max_login_attempts     = 5,
+  Integer[60, 3600]                   $lockout_duration       = 900,
 
   # Initial admin account
-  String[1]                           $admin_username   = 'admin',
-  Optional[Sensitive[String[8]]]      $admin_password   = undef,
-  Optional[String[1]]                 $admin_email      = undef,
+  String[1]                           $admin_username         = 'admin',
+  Optional[Sensitive[String[8]]]      $admin_password         = undef,
+  Optional[String[1]]                 $admin_email            = undef,
+
+  # Cache settings
+  Integer[0]                          $cache_ttl              = 300,
+  Integer[10]                         $cache_max_entries      = 1000,
+
+  # Dashboard settings
+  String[1]                           $dashboard_theme        = 'light',
+  Integer[10, 1000]                   $dashboard_page_size    = 25,
+  Integer[5, 300]                     $dashboard_refresh      = 30,
+
+  # Classification settings
+  Integer[1, 500]                     $max_rules_per_group    = 100,
 
   # Management options
-  Boolean                             $manage_package   = true,
-  Boolean                             $manage_service   = true,
-  Boolean                             $manage_config    = true,
+  Boolean                             $manage_package         = true,
+  Boolean                             $manage_service         = true,
+  Boolean                             $manage_config          = true,
+  Boolean                             $manage_firewall        = false,
 ) {
   contain openvox_webui::install
   contain openvox_webui::config

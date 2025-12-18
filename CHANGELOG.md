@@ -38,6 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Environment configuration files (`/etc/default/openvox-webui`, `/etc/sysconfig/openvox-webui`)
   - GPG package signing support
   - Comprehensive packaging documentation (`packaging/README.md`)
+- Puppet module for automated deployment (Phase 9.4):
+  - Complete `openvox-webui` Puppet module with 50+ configurable parameters
+  - Template-based configuration generation (`config.yaml.epp`)
+  - Custom facter for PuppetDB auto-discovery (`puppetdb_connection`)
+  - Automatic SSL certificate detection for PuppetDB integration
+  - Support for 8 OS distributions (RHEL/CentOS/Rocky/Alma/Fedora/Debian/Ubuntu)
+  - Hiera integration with data defaults
+  - Example manifests for common deployment scenarios
+  - Module README with complete usage documentation
+- Production documentation suite (Phase 9.5):
+  - Installation guide (`docs/INSTALLATION.md`) covering RPM, DEB, and Puppet methods
+  - Configuration reference (`docs/CONFIGURATION.md`) with all parameters and examples
+  - Upgrade guide (`docs/UPGRADE.md`) with version-specific migration notes and rollback procedures
+  - Backup and restore guide (`docs/BACKUP.md`) with automated scripts and disaster recovery
+  - Troubleshooting sections for common deployment issues
+  - Security best practices integrated throughout documentation
 
 ### Changed
 - Rust clippy lint fixes across config, middleware, models, and services
