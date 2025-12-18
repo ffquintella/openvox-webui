@@ -60,8 +60,33 @@ pub struct Report {
     /// Cached catalog status
     pub cached_catalog_status: Option<String>,
 
-    /// Report metrics
-    pub metrics: Option<ReportMetrics>,
+    /// Report type (e.g., "agent")
+    #[serde(rename = "type")]
+    pub report_type: Option<String>,
+
+    /// Job ID
+    pub job_id: Option<String>,
+
+    /// Receive time
+    pub receive_time: Option<DateTime<Utc>>,
+
+    /// Report metrics (raw PuppetDB format)
+    pub metrics: Option<PuppetDbDataRef>,
+
+    /// Resource events (raw PuppetDB format)
+    pub resource_events: Option<PuppetDbDataRef>,
+
+    /// Logs (raw PuppetDB format)
+    pub logs: Option<PuppetDbDataRef>,
+}
+
+/// Reference to PuppetDB data with href for lazy loading
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PuppetDbDataRef {
+    /// Data can be null or an array in PuppetDB responses
+    #[serde(default)]
+    pub data: Option<Vec<serde_json::Value>>,
+    pub href: Option<String>,
 }
 
 /// Report status
@@ -158,5 +183,42 @@ mod tests {
         let status = ReportStatus::Failed;
         let json = serde_json::to_string(&status).unwrap();
         assert_eq!(json, "\"failed\"");
+    }
+
+    #[test]
+    fn test_parse_puppetdb_report() {
+        let json = r#"[{
+            "catalog_uuid": "68722b66-3561-4c94-bc34-31bc91bd2e5b",
+            "receive_time": "2025-12-18T11:49:52.463Z",
+            "producer": "segdc1vpr0018.fgv.br",
+            "hash": "3db4c351c30135c484b128f7a408222d2ad18e77",
+            "transaction_uuid": "14958851-5cbf-483e-93a0-3b64f34296f8",
+            "puppet_version": "8.24.1",
+            "noop": false,
+            "corrective_change": null,
+            "logs": {"data": [], "href": "/pdb/query/v4/reports/xxx/logs"},
+            "report_format": 12,
+            "start_time": "2025-12-18T11:49:49.671Z",
+            "producer_timestamp": "2025-12-18T11:49:52.451Z",
+            "type": "agent",
+            "cached_catalog_status": "not_used",
+            "end_time": "2025-12-18T11:49:52.406Z",
+            "resource_events": {"data": null, "href": "/pdb/query/v4/reports/xxx/events"},
+            "status": "failed",
+            "configuration_version": "1766058591",
+            "environment": "pserver",
+            "code_id": null,
+            "noop_pending": false,
+            "certname": "segdc1vpr0018.fgv.br",
+            "metrics": {"data": [], "href": "/pdb/query/v4/reports/xxx/metrics"},
+            "job_id": null
+        }]"#;
+
+        let reports: Vec<Report> = serde_json::from_str(json).expect("Failed to parse report");
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].certname, "segdc1vpr0018.fgv.br");
+        assert_eq!(reports[0].status, Some(ReportStatus::Failed));
+        // Verify null data is handled correctly
+        assert!(reports[0].resource_events.as_ref().unwrap().data.is_none());
     }
 }

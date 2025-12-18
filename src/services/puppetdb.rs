@@ -912,10 +912,16 @@ impl PuppetDbClient {
         let status = response.status();
 
         if status.is_success() {
-            response
-                .json::<T>()
-                .await
-                .context("Failed to parse response JSON")
+            let body = response.text().await.context("Failed to read response body")?;
+            serde_json::from_str::<T>(&body).with_context(|| {
+                // Truncate body for logging if too long
+                let truncated = if body.len() > 500 {
+                    format!("{}... (truncated)", &body[..500])
+                } else {
+                    body
+                };
+                format!("Failed to parse response JSON: {}", truncated)
+            })
         } else {
             let body = response.text().await.unwrap_or_default();
             anyhow::bail!("Request failed with status {}: {}", status, body);

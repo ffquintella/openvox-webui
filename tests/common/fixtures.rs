@@ -6,8 +6,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use openvox_webui::models::{
-    Action, Node, NodeGroup, Permission, Report, ReportMetrics, ReportStatus,
-    Resource, Role, RuleMatchType, Scope, SystemRole,
+    Action, Node, NodeGroup, Permission, Report, ReportStatus, Resource, Role, RuleMatchType,
+    Scope, SystemRole,
 };
 
 /// Fixed UUIDs for testing (reproducible tests)
@@ -189,7 +189,12 @@ impl ReportFixtures {
             catalog_uuid: Some(Uuid::new_v4().to_string()),
             code_id: Some("abc123".to_string()),
             cached_catalog_status: None,
-            metrics: Some(ReportMetrics::default()),
+            report_type: Some("agent".to_string()),
+            job_id: None,
+            receive_time: Some(Utc::now()),
+            metrics: None,
+            resource_events: None,
+            logs: None,
         }
     }
 
