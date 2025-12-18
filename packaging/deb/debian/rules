@@ -8,7 +8,7 @@ export CARGO_HOME = $(CURDIR)/debian/.cargo
 
 override_dh_auto_build:
 	# Build frontend
-	cd frontend && npm ci && npm run build
+	cd frontend && npm ci --prefer-offline && npm run build
 	# Build backend
 	cargo build --release
 
@@ -17,17 +17,34 @@ override_dh_auto_install:
 	install -D -m 755 target/release/openvox-webui \
 		debian/openvox-webui/usr/bin/openvox-webui
 
+	# Install scheduled reports binary if it exists
+	if [ -f target/release/run-scheduled-reports ]; then \
+		install -D -m 755 target/release/run-scheduled-reports \
+			debian/openvox-webui/usr/bin/openvox-webui-scheduled-reports; \
+	fi
+
 	# Install frontend assets
 	mkdir -p debian/openvox-webui/usr/share/openvox-webui/static
 	cp -r frontend/dist/* debian/openvox-webui/usr/share/openvox-webui/static/
 
 	# Install configuration
-	install -D -m 644 config/config.example.yaml \
+	install -D -m 640 config/config.example.yaml \
 		debian/openvox-webui/etc/openvox-webui/config.yaml
+
+	# Create SSL directory
+	install -d -m 750 debian/openvox-webui/etc/openvox-webui/ssl
+
+	# Install default environment file
+	install -D -m 644 packaging/default/openvox-webui \
+		debian/openvox-webui/etc/default/openvox-webui
 
 	# Install systemd service
 	install -D -m 644 packaging/systemd/openvox-webui.service \
 		debian/openvox-webui/lib/systemd/system/openvox-webui.service
+
+	# Create data and log directories
+	install -d -m 750 debian/openvox-webui/var/lib/openvox-webui
+	install -d -m 750 debian/openvox-webui/var/log/openvox/webui
 
 override_dh_auto_clean:
 	cargo clean || true
@@ -36,3 +53,9 @@ override_dh_auto_clean:
 override_dh_auto_test:
 	# Skip tests during package build
 	true
+
+override_dh_fixperms:
+	dh_fixperms
+	# Fix permissions for sensitive files
+	chmod 640 debian/openvox-webui/etc/openvox-webui/config.yaml || true
+	chmod 750 debian/openvox-webui/etc/openvox-webui/ssl || true

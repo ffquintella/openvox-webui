@@ -1,6 +1,6 @@
 [Unit]
 Description=OpenVox WebUI - Web interface for OpenVox infrastructure
-Documentation=https://github.com/openvoxproject/openvox-webui
+Documentation=https://github.com/ffquintella/openvox-webui
 After=network-online.target
 Wants=network-online.target
 
@@ -9,19 +9,31 @@ Type=simple
 User=openvox-webui
 Group=openvox-webui
 
-# Environment
+# Environment configuration
 Environment=RUST_LOG=info
-Environment=OPENVOX_WEBUI_CONFIG=/etc/openvox-webui/config.yaml
+Environment=OPENVOX_CONFIG=/etc/openvox-webui/config.yaml
+
+# Allow environment variables from file (Debian/Ubuntu)
+EnvironmentFile=-/etc/default/openvox-webui
+# Allow environment variables from file (RHEL/CentOS)
+EnvironmentFile=-/etc/sysconfig/openvox-webui
 
 # Paths
 WorkingDirectory=/var/lib/openvox-webui
 ExecStart=/usr/bin/openvox-webui
+ExecReload=/bin/kill -HUP $MAINPID
 
 # Restart behavior
 Restart=on-failure
 RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
-# Security hardening
+# Timeouts
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Security hardening - Filesystem
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -29,15 +41,51 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+# Security hardening - Read/Write paths
 ReadWritePaths=/var/lib/openvox-webui
+ReadWritePaths=/var/log/openvox/webui
 ReadOnlyPaths=/etc/openvox-webui
+
+# Security hardening - Network
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+PrivateNetwork=no
+
+# Security hardening - Capabilities
+# CAP_NET_BIND_SERVICE: Allow binding to ports < 1024 (optional)
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
+# Security hardening - System calls
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Security hardening - Memory
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Security hardening - Misc
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+UMask=0027
+
 # Resource limits
 LimitNOFILE=65536
-MemoryMax=1G
+LimitNPROC=4096
+MemoryMax=2G
+MemoryHigh=1G
+TasksMax=512
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=openvox-webui
 
 [Install]
 WantedBy=multi-user.target

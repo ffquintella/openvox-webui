@@ -99,7 +99,7 @@ fn default_serve_frontend() -> bool {
 }
 
 fn default_min_tls_version() -> String {
-    "1.2".to_string()
+    "1.3".to_string()
 }
 
 /// PuppetDB connection configuration

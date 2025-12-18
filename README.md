@@ -2,6 +2,8 @@
 
 A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastructure management.
 
+![OpenVox WebUI Dashboard](docs/images/dashboard.png)
+
 ## Features
 
 - **PuppetDB Integration**: Query and visualize node data, facts, reports, and resources
@@ -30,7 +32,7 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 
 ```bash
 # Clone the repository
-git clone https://github.com/openvoxproject/openvox-webui.git
+git clone https://github.com/ffquintella/openvox-webui.git
 cd openvox-webui
 
 # Copy example configuration

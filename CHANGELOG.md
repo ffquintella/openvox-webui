@@ -27,12 +27,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Audit logging improvements with `/api/v1/audit-logs` endpoint
 - User-selectable theme: light/dark toggle with persistence (localStorage) and early application to avoid FOUC
 - Tailwind dark mode enabled (`darkMode: 'class'`) and ThemeToggle component added to sidebar
+- Database batch loading methods to eliminate N+1 query patterns in GroupRepository and RBAC services
+- Selective permission cache invalidation using role-to-users reverse lookup mapping
+- Frontend lazy loading with React.lazy() and Suspense for all page components
+- Native package building infrastructure (Phase 9.3):
+  - Enhanced `scripts/build-packages.sh` with version auto-detection, Docker builds, and binary tarball support
+  - RPM spec file for RHEL/CentOS/Fedora/Rocky with proper dependencies and security hardening
+  - DEB packaging for Debian/Ubuntu with libssl3/libssl1.1 alternatives
+  - Systemd service unit with comprehensive security hardening (SystemCallFilter, MemoryDenyWriteExecute, etc.)
+  - Environment configuration files (`/etc/default/openvox-webui`, `/etc/sysconfig/openvox-webui`)
+  - GPG package signing support
+  - Comprehensive packaging documentation (`packaging/README.md`)
 
 ### Changed
 - Rust clippy lint fixes across config, middleware, models, and services
 - API routing split into public vs protected routes; auth middleware applies only to protected routes
 - Groups, fact templates, and users are tenant-scoped in repository queries
 - Consistent dark theme styles across layout, navigations, cards, inputs, and alerting UI
+- GroupRepository.get_all() optimized from 1+2N queries to 3 queries using batch loading
+- RBAC get_all_roles() and get_user_roles() optimized from N+1 to 2 queries each
+- Frontend bundle split into vendor chunks (react, query, charts, ui) for better caching
 
 ### Fixed
 - `/api/v1/auth/*` endpoints no longer blocked by global auth middleware
@@ -45,7 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Security
-- Nothing yet
+- Rate limiting middleware (IP-based) with configurable limits for auth endpoints (stricter) and API endpoints (standard)
+- Security headers middleware adding HSTS, CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, and Permissions-Policy
+- API responses include Cache-Control headers to prevent caching of sensitive data
+- TLS 1.3 as default minimum version (configurable via `server.tls.min_version`)
+- ALPN support for HTTP/2 and HTTP/1.1 over TLS
 
 ---
 

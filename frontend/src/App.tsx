@@ -24,6 +24,7 @@ const Users = lazy(() => import('./pages/Users'));
 const Permissions = lazy(() => import('./pages/Permissions'));
 const Profile = lazy(() => import('./pages/Profile'));
 const CA = lazy(() => import('./pages/CA'));
+const About = lazy(() => import('./pages/About'));
 
 // Loading spinner component for Suspense fallback
 const PageLoader = () => (
@@ -126,6 +127,7 @@ function App() {
                         }
                       />
                       <Route path="/ca" element={<CA />} />
+                      <Route path="/about" element={<About />} />
                     </Routes>
                   </Suspense>
                 </Layout>

@@ -134,6 +134,8 @@ async fn main() -> Result<()> {
 /// Create RusTLS configuration from TLS config
 async fn create_rustls_config(tls_config: &config::TlsConfig) -> Result<axum_server::tls_rustls::RustlsConfig> {
     use axum_server::tls_rustls::RustlsConfig;
+    use rustls::crypto::ring::default_provider;
+    use rustls::ServerConfig;
 
     // Load certificate chain
     let cert_file = std::fs::File::open(&tls_config.cert_file)
@@ -155,13 +157,31 @@ async fn create_rustls_config(tls_config: &config::TlsConfig) -> Result<axum_ser
         .with_context(|| format!("Failed to read private key: {:?}", tls_config.key_file))?
         .ok_or_else(|| anyhow::anyhow!("No private key found in {:?}", tls_config.key_file))?;
 
-    // Build RustlsConfig
-    let config = RustlsConfig::from_der(
-        certs.into_iter().map(|c| c.to_vec()).collect(),
-        key.secret_der().to_vec(),
-    )
-    .await
-    .context("Failed to create RustlsConfig")?;
+    // Get the crypto provider
+    let provider = default_provider();
+
+    // Determine minimum TLS version from config
+    let versions: Vec<&'static rustls::SupportedProtocolVersion> = match tls_config.min_version.as_str() {
+        "1.3" => vec![&rustls::version::TLS13],
+        "1.2" | _ => vec![&rustls::version::TLS12, &rustls::version::TLS13],
+    };
+
+    info!("TLS configured with minimum version: {}", tls_config.min_version);
+    info!("Enabled TLS versions: {:?}", versions.iter().map(|v| format!("{:?}", v.version)).collect::<Vec<_>>());
+
+    // Build ServerConfig with specified TLS versions
+    let mut server_config = ServerConfig::builder_with_provider(provider.into())
+        .with_protocol_versions(&versions)
+        .context("Failed to set TLS protocol versions")?
+        .with_no_client_auth()
+        .with_single_cert(certs, key.into())
+        .context("Failed to build TLS server config")?;
+
+    // Enable ALPN for HTTP/1.1 and HTTP/2
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    // Build RustlsConfig from ServerConfig
+    let config = RustlsConfig::from_config(Arc::new(server_config));
 
     Ok(config)
 }
@@ -375,20 +395,46 @@ fn create_router(state: AppState, config: &AppConfig) -> Router {
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
+    // Initialize rate limiting
+    let api_rate_limit = middleware::create_rate_limit_state(middleware::api_rate_limit_config());
+    let auth_rate_limit =
+        middleware::create_rate_limit_state(middleware::auth_rate_limit_config());
+
+    // Spawn background cleanup task for rate limiters
+    middleware::spawn_rate_limit_cleanup(api_rate_limit.clone());
+
     // Build the API router
     //
     // Note: Authentication must not be applied globally, otherwise public endpoints like
     // `/api/v1/auth/login` become unusable. We keep public routes unauthenticated and apply
     // auth middleware only to protected routes.
+    //
+    // Rate limiting is applied:
+    // - Stricter limits on auth endpoints (brute force protection)
+    // - Standard limits on all other API endpoints
     let api_router = Router::new()
-        .nest("/api/v1", api::public_routes())
         .nest(
             "/api/v1",
-            api::protected_routes().layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                middleware::auth::auth_middleware,
+            api::public_routes().layer(axum::middleware::from_fn_with_state(
+                auth_rate_limit,
+                middleware::rate_limit_middleware,
             )),
         )
+        .nest(
+            "/api/v1",
+            api::protected_routes()
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    middleware::auth::auth_middleware,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    api_rate_limit,
+                    middleware::rate_limit_middleware,
+                )),
+        )
+        .layer(axum::middleware::from_fn(
+            middleware::api_cache_control_middleware,
+        ))
         .with_state(state.clone());
 
     // Optionally serve frontend static files
@@ -423,7 +469,15 @@ fn create_router(state: AppState, config: &AppConfig) -> Router {
         api_router
     };
 
+    // Apply global middleware layers:
+    // 1. Security headers (HSTS, CSP, X-Frame-Options, etc.)
+    // 2. Compression
+    // 3. Request tracing
+    // 4. CORS
     router
+        .layer(axum::middleware::from_fn(
+            middleware::security_headers_middleware,
+        ))
         .layer(CompressionLayer::new())
         .layer(trace_layer)
         .layer(cors)

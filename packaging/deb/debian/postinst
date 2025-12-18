@@ -3,11 +3,12 @@ set -e
 
 case "$1" in
     configure)
-        # Create openvox-webui user and group
+        # Create openvox-webui group if it doesn't exist
         if ! getent group openvox-webui >/dev/null; then
             addgroup --system openvox-webui
         fi
 
+        # Create openvox-webui user if it doesn't exist
         if ! getent passwd openvox-webui >/dev/null; then
             adduser --system --ingroup openvox-webui \
                 --home /var/lib/openvox-webui \
@@ -16,18 +17,46 @@ case "$1" in
                 openvox-webui
         fi
 
-        # Create data directory
+        # Create and set permissions on data directory
         if [ ! -d /var/lib/openvox-webui ]; then
             mkdir -p /var/lib/openvox-webui
-            chown openvox-webui:openvox-webui /var/lib/openvox-webui
-            chmod 750 /var/lib/openvox-webui
         fi
+        chown openvox-webui:openvox-webui /var/lib/openvox-webui
+        chmod 750 /var/lib/openvox-webui
+
+        # Create and set permissions on log directory
+        if [ ! -d /var/log/openvox/webui ]; then
+            mkdir -p /var/log/openvox/webui
+        fi
+        chown openvox-webui:openvox-webui /var/log/openvox/webui
+        chmod 750 /var/log/openvox/webui
 
         # Set config file permissions
         if [ -f /etc/openvox-webui/config.yaml ]; then
             chown root:openvox-webui /etc/openvox-webui/config.yaml
             chmod 640 /etc/openvox-webui/config.yaml
         fi
+
+        # Set SSL directory permissions
+        if [ -d /etc/openvox-webui/ssl ]; then
+            chown root:openvox-webui /etc/openvox-webui/ssl
+            chmod 750 /etc/openvox-webui/ssl
+        fi
+
+        # Print post-installation message
+        echo ""
+        echo "OpenVox WebUI has been installed!"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Edit /etc/openvox-webui/config.yaml"
+        echo "  2. Set up TLS certificates in /etc/openvox-webui/ssl/"
+        echo "  3. Start the service: systemctl start openvox-webui"
+        echo "  4. Enable on boot: systemctl enable openvox-webui"
+        echo ""
+        echo "Default admin credentials (change immediately!):"
+        echo "  Username: admin"
+        echo "  Password: admin"
+        echo ""
         ;;
 esac
 

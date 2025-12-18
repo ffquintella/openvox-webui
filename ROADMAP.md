@@ -933,12 +933,25 @@ Feature: Reporting
 
 ## Phase 9: Production Readiness
 
-### 9.1 Performance Optimization
-- [ ] Database query optimization
-- [ ] API response caching
-- [ ] Frontend bundle optimization
-- [ ] Lazy loading implementation
-- [ ] Permission caching optimization
+### 9.1 Performance Optimization - COMPLETE
+- [x] Database query optimization
+  - Fixed N+1 queries in GroupRepository.get_all() using batch loading
+  - Added batch_get_rules() and batch_get_pinned_nodes() methods
+  - Fixed N+1 queries in DbRbacService.get_all_roles() and get_user_roles()
+  - Added batch_get_role_permissions() for efficient permission loading
+  - Reduced 1+2N queries to 3 queries for group loading
+- [x] API response caching (PuppetDB caching already implemented in Phase 3.2)
+- [x] Frontend bundle optimization
+  - Configured Vite manual chunks for vendor code splitting
+  - Separated vendor-react (176KB), vendor-charts (452KB), vendor-query (41KB), vendor-ui (30KB)
+  - Reduced initial bundle from 1MB to ~65KB + on-demand chunks
+- [x] Lazy loading implementation
+  - All 16 page components now lazy-loaded with React.lazy()
+  - Added Suspense boundaries with loading spinner fallback
+- [x] Permission caching optimization
+  - Added selective cache invalidation for RBAC
+  - Track user-role associations via role_users_cache
+  - Only invalidate affected users when role permissions change
 
 ### 9.x Testing Requirements
 **Performance tests to add:**
@@ -989,21 +1002,44 @@ Feature: Package Installation
     And the service should be running
 ```
 
-### 9.2 Security Hardening
-- [ ] Security audit
-- [ ] OWASP compliance review
-- [ ] Rate limiting
-- [ ] Input sanitization review
-- [ ] SSL/TLS configuration
-- [ ] RBAC security review
+### 9.2 Security Hardening ✅
+- [x] Security audit
+- [x] OWASP compliance review
+- [x] Rate limiting (IP-based rate limiting with governor crate)
+- [x] Input sanitization review (parameterized SQL, JSON deserialization, inline validation)
+- [x] SSL/TLS configuration (TLS 1.3 default, configurable min version)
+- [x] RBAC security review (permission checks on protected endpoints)
+- [x] Security headers middleware (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
 
-### 9.3 Package Building
-- [ ] Build system for native packages
-- [ ] RPM package for RHEL/CentOS/Fedora/Rocky
-- [ ] DEB package for Debian/Ubuntu
-- [ ] Systemd service unit files
-- [ ] Package signing and repository setup
-- [ ] Package metadata and dependencies
+### 9.3 Package Building ✅
+- [x] Build system for native packages
+  - Enhanced `scripts/build-packages.sh` with version auto-detection from Cargo.toml
+  - Docker-based cross-distribution builds for consistent packaging
+  - Binary tarball option with standalone install script
+  - Package signing support with GPG
+- [x] RPM package for RHEL/CentOS/Fedora/Rocky
+  - Updated spec file with proper metadata and dependencies
+  - Rust 1.75+, Node.js 20+ build requirements
+  - OpenSSL, SQLite3 runtime dependencies
+  - Proper user/group creation and directory permissions
+- [x] DEB package for Debian/Ubuntu
+  - Updated control file with libssl3/libssl1.1 alternatives
+  - Proper postinst script with user creation and permissions
+  - SSL directory setup and log directory creation
+  - Post-installation instructions displayed
+- [x] Systemd service unit files
+  - Extensive security hardening (SystemCallFilter, MemoryDenyWriteExecute, etc.)
+  - EnvironmentFile support for both Debian and RHEL style locations
+  - Proper resource limits and process isolation
+  - DynamicUser disabled for proper permission management
+- [x] Package signing and repository setup
+  - GPG signing support in build script
+  - Documentation for YUM/DNF repository setup
+  - Documentation for APT repository setup
+- [x] Package metadata and dependencies
+  - Comprehensive README in packaging/ directory
+  - Package contents documentation
+  - Installation and configuration guides
 
 ### 9.4 Puppet Module
 - [ ] Create `openvox-webui` Puppet module

@@ -16,7 +16,10 @@ default-run = "openvox-webui"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs", "set-header"] }
+
+# Rate limiting
+governor = "0.8"
 hyper = { version = "1.5", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 

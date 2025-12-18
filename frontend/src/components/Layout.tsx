@@ -17,6 +17,7 @@ import {
   User,
   LogOut,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../stores/authStore';
@@ -165,6 +166,14 @@ export default function Layout({ children }: LayoutProps) {
                   >
                     <User className="w-4 h-4 mr-3" />
                     Profile
+                  </Link>
+                  <Link
+                    to="/about"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    <Info className="w-4 h-4 mr-3" />
+                    About
                   </Link>
                   <button
                     onClick={handleLogout}
