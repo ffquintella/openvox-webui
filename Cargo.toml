@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -37,6 +37,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
 jsonwebtoken = "9.3"
 argon2 = { version = "0.5", features = ["std"] }
 rand = "0.8"
+base64 = "0.22"
 
 # Configuration
 config = "0.14"

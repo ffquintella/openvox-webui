@@ -12,9 +12,12 @@ use axum::{
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{utils::error::ErrorResponse, AppState};
+use crate::{
+    models::default_organization_uuid, services::AuthService, utils::error::ErrorResponse, AppState,
+};
 
 /// JWT Claims structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +42,9 @@ pub struct Claims {
     /// User roles
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Organization/tenant ID
+    #[serde(default)]
+    pub organization_id: Option<String>,
 }
 
 fn default_token_type() -> TokenType {
@@ -58,6 +64,7 @@ pub enum TokenType {
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub id: Uuid,
+    pub organization_id: Uuid,
     pub username: String,
     pub email: String,
     /// Role names (from JWT)
@@ -71,8 +78,13 @@ impl TryFrom<Claims> for AuthUser {
 
     fn try_from(claims: Claims) -> Result<Self, Self::Error> {
         let id = Uuid::parse_str(&claims.sub).map_err(|_| "Invalid user ID in token")?;
+        let organization_id = match claims.organization_id {
+            Some(org) => Uuid::parse_str(&org).map_err(|_| "Invalid organization ID in token")?,
+            None => default_organization_uuid(),
+        };
         Ok(Self {
             id,
+            organization_id,
             username: claims.username,
             email: claims.email,
             roles: claims.roles,
@@ -91,6 +103,12 @@ impl AuthUser {
     /// Get the user ID
     pub fn user_id(&self) -> Uuid {
         self.id
+    }
+
+    pub fn is_super_admin(&self) -> bool {
+        // Role IDs may be empty in some contexts; check both sources.
+        self.roles.iter().any(|r| r == "super_admin")
+            || self.roles.iter().any(|r| r == "superadmin")
     }
 }
 
@@ -121,6 +139,7 @@ where
 /// Create a new JWT access token
 pub fn create_access_token(
     user_id: &Uuid,
+    organization_id: &Uuid,
     username: &str,
     email: &str,
     roles: Vec<String>,
@@ -140,6 +159,7 @@ pub fn create_access_token(
         jti: Uuid::new_v4().to_string(),
         token_type: TokenType::Access,
         roles,
+        organization_id: Some(organization_id.to_string()),
     };
 
     encode(
@@ -170,6 +190,7 @@ pub fn create_refresh_token(
         jti: Uuid::new_v4().to_string(),
         token_type: TokenType::Refresh,
         roles: vec![],
+        organization_id: None,
     };
 
     encode(
@@ -211,7 +232,9 @@ impl IntoResponse for AuthError {
         let (status, message) = match self {
             AuthError::MissingToken => (StatusCode::UNAUTHORIZED, "Missing authentication token"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid authentication token"),
-            AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, "Authentication token has expired"),
+            AuthError::TokenExpired => {
+                (StatusCode::UNAUTHORIZED, "Authentication token has expired")
+            }
             AuthError::InvalidTokenType => (StatusCode::UNAUTHORIZED, "Invalid token type"),
         };
 
@@ -233,6 +256,116 @@ fn extract_bearer_token(auth_header: &str) -> Option<&str> {
         .or_else(|| auth_header.strip_prefix("bearer "))
 }
 
+fn extract_api_key_token(auth_header: &str) -> Option<&str> {
+    auth_header
+        .strip_prefix("ApiKey ")
+        .or_else(|| auth_header.strip_prefix("apikey "))
+        .or_else(|| auth_header.strip_prefix("APIKEY "))
+}
+
+fn parse_ovk(token: &str) -> Option<(Uuid, &str)> {
+    // Format: ovk_<uuid>_<secret>
+    let token = token.strip_prefix("ovk_")?;
+    let (id_str, secret) = token.split_once('_')?;
+    let id = Uuid::parse_str(id_str).ok()?;
+    if secret.is_empty() {
+        return None;
+    }
+    Some((id, secret))
+}
+
+fn parse_db_timestamp(ts: &str) -> Option<chrono::DateTime<Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S") {
+        return Some(chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc));
+    }
+    None
+}
+
+async fn authenticate_api_key(state: &AppState, token: &str) -> Result<AuthUser, AuthError> {
+    let (api_key_id, secret) = parse_ovk(token).ok_or(AuthError::InvalidToken)?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT ak.user_id, ak.organization_id, ak.key_hash, ak.expires_at,
+               u.username, u.email
+        FROM api_keys ak
+        INNER JOIN users u ON u.id = ak.user_id
+        WHERE ak.id = ?
+        "#,
+    )
+    .bind(api_key_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| AuthError::InvalidToken)?
+    .ok_or(AuthError::InvalidToken)?;
+
+    let user_id_str: String = row.get("user_id");
+    let org_id_str: String = row.get("organization_id");
+    let key_hash: String = row.get("key_hash");
+    let expires_at: Option<String> = row.try_get("expires_at").ok();
+
+    if let Some(expires_at) = expires_at.as_deref() {
+        if let Some(exp) = parse_db_timestamp(expires_at) {
+            if Utc::now() >= exp {
+                return Err(AuthError::TokenExpired);
+            }
+        }
+    }
+
+    let ok =
+        AuthService::verify_password(secret, &key_hash).map_err(|_| AuthError::InvalidToken)?;
+    if !ok {
+        return Err(AuthError::InvalidToken);
+    }
+
+    // Fetch key-scoped roles
+    let role_rows = sqlx::query(
+        r#"
+        SELECT r.id AS role_id, r.name AS role_name
+        FROM api_key_roles akr
+        INNER JOIN roles r ON r.id = akr.role_id
+        WHERE akr.api_key_id = ?
+        ORDER BY r.name
+        "#,
+    )
+    .bind(api_key_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| AuthError::InvalidToken)?;
+
+    let mut roles: Vec<String> = Vec::with_capacity(role_rows.len());
+    let mut role_ids: Vec<Uuid> = Vec::with_capacity(role_rows.len());
+    for r in role_rows {
+        if let Ok(role_id_str) = r.try_get::<String, _>("role_id") {
+            if let Ok(role_id) = Uuid::parse_str(&role_id_str) {
+                role_ids.push(role_id);
+            }
+        }
+        if let Ok(role_name) = r.try_get::<String, _>("role_name") {
+            roles.push(role_name);
+        }
+    }
+
+    // Update last_used_at (best-effort)
+    let _ = sqlx::query("UPDATE api_keys SET last_used_at = ? WHERE id = ?")
+        .bind(Utc::now().to_rfc3339())
+        .bind(api_key_id.to_string())
+        .execute(&state.db)
+        .await;
+
+    Ok(AuthUser {
+        id: Uuid::parse_str(&user_id_str).map_err(|_| AuthError::InvalidToken)?,
+        organization_id: Uuid::parse_str(&org_id_str).map_err(|_| AuthError::InvalidToken)?,
+        username: row.get("username"),
+        email: row.get("email"),
+        roles,
+        role_ids,
+    })
+}
+
 /// Authentication middleware
 ///
 /// This middleware extracts and validates JWT tokens from the Authorization header.
@@ -242,37 +375,45 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
-    // Extract the Authorization header
+    // Try Authorization header first; fall back to X-API-Key
     let auth_header = request
         .headers()
         .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+
+    let auth_user = if let Some(auth_header) = auth_header {
+        if let Some(token) = extract_bearer_token(auth_header) {
+            let token_data = validate_token(token, &state.config.auth.jwt_secret)?;
+            if token_data.claims.token_type != TokenType::Access {
+                return Err(AuthError::InvalidTokenType);
+            }
+            let mut user: AuthUser = token_data
+                .claims
+                .try_into()
+                .map_err(|_| AuthError::InvalidToken)?;
+            let role_ids: Vec<Uuid> = user
+                .roles
+                .iter()
+                .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
+                .collect();
+            user.role_ids = role_ids;
+            user
+        } else if let Some(token) = extract_api_key_token(auth_header) {
+            authenticate_api_key(&state, token).await?
+        } else {
+            return Err(AuthError::InvalidToken);
+        }
+    } else if let Some(token) = request
+        .headers()
+        .get("X-API-Key")
+        .or_else(|| request.headers().get("X-Api-Key"))
+        .or_else(|| request.headers().get("x-api-key"))
         .and_then(|h| h.to_str().ok())
-        .ok_or(AuthError::MissingToken)?;
-
-    // Extract the bearer token
-    let token = extract_bearer_token(auth_header).ok_or(AuthError::InvalidToken)?;
-
-    // Validate the token
-    let token_data = validate_token(token, &state.config.auth.jwt_secret)?;
-
-    // Ensure it's an access token
-    if token_data.claims.token_type != TokenType::Access {
-        return Err(AuthError::InvalidTokenType);
-    }
-
-    // Convert claims to AuthUser
-    let mut auth_user: AuthUser = token_data
-        .claims
-        .try_into()
-        .map_err(|_| AuthError::InvalidToken)?;
-
-    // Resolve role names to UUIDs using the RBAC service
-    let role_ids: Vec<Uuid> = auth_user
-        .roles
-        .iter()
-        .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
-        .collect();
-    auth_user.role_ids = role_ids;
+    {
+        authenticate_api_key(&state, token).await?
+    } else {
+        return Err(AuthError::MissingToken);
+    };
 
     // Insert the authenticated user into request extensions
     request.extensions_mut().insert(auth_user);
@@ -290,28 +431,52 @@ pub async fn optional_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Try to extract and validate token
-    if let Some(auth_header) = request
+    // Try to extract and validate token (Bearer or API key)
+    let maybe_auth_header = request
         .headers()
         .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
+        .and_then(|h| h.to_str().ok());
+
+    let maybe_user: Option<AuthUser> = if let Some(auth_header) = maybe_auth_header {
         if let Some(token) = extract_bearer_token(auth_header) {
             if let Ok(token_data) = validate_token(token, &state.config.auth.jwt_secret) {
                 if token_data.claims.token_type == TokenType::Access {
                     if let Ok(mut auth_user) = AuthUser::try_from(token_data.claims) {
-                        // Resolve role names to UUIDs
                         let role_ids: Vec<Uuid> = auth_user
                             .roles
                             .iter()
                             .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
                             .collect();
                         auth_user.role_ids = role_ids;
-                        request.extensions_mut().insert(auth_user);
+                        Some(auth_user)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        } else if let Some(token) = extract_api_key_token(auth_header) {
+            authenticate_api_key(&state, token).await.ok()
+        } else {
+            None
         }
+    } else if let Some(token) = request
+        .headers()
+        .get("X-API-Key")
+        .or_else(|| request.headers().get("X-Api-Key"))
+        .or_else(|| request.headers().get("x-api-key"))
+        .and_then(|h| h.to_str().ok())
+    {
+        authenticate_api_key(&state, token).await.ok()
+    } else {
+        None
+    };
+
+    if let Some(auth_user) = maybe_user {
+        request.extensions_mut().insert(auth_user);
     }
 
     next.run(request).await
@@ -326,8 +491,10 @@ mod tests {
     #[test]
     fn test_create_and_validate_access_token() {
         let user_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
         let token = create_access_token(
             &user_id,
+            &org_id,
             "testuser",
             "test@example.com",
             vec!["admin".to_string()],
@@ -361,8 +528,10 @@ mod tests {
     #[test]
     fn test_wrong_secret() {
         let user_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
         let token = create_access_token(
             &user_id,
+            &org_id,
             "testuser",
             "test@example.com",
             vec![],
@@ -377,20 +546,15 @@ mod tests {
 
     #[test]
     fn test_extract_bearer_token() {
-        assert_eq!(
-            extract_bearer_token("Bearer abc123"),
-            Some("abc123")
-        );
-        assert_eq!(
-            extract_bearer_token("bearer abc123"),
-            Some("abc123")
-        );
+        assert_eq!(extract_bearer_token("Bearer abc123"), Some("abc123"));
+        assert_eq!(extract_bearer_token("bearer abc123"), Some("abc123"));
         assert_eq!(extract_bearer_token("Basic abc123"), None);
     }
 
     #[test]
     fn test_auth_user_from_claims() {
         let user_id = Uuid::new_v4();
+        let org_id = Uuid::new_v4();
         let claims = Claims {
             sub: user_id.to_string(),
             username: "testuser".to_string(),
@@ -401,10 +565,12 @@ mod tests {
             jti: Uuid::new_v4().to_string(),
             token_type: TokenType::Access,
             roles: vec!["admin".to_string()],
+            organization_id: Some(org_id.to_string()),
         };
 
         let auth_user = AuthUser::try_from(claims).unwrap();
         assert_eq!(auth_user.id, user_id);
+        assert_eq!(auth_user.organization_id, org_id);
         assert_eq!(auth_user.username, "testuser");
         assert_eq!(auth_user.roles, vec!["admin".to_string()]);
         assert!(auth_user.role_ids.is_empty()); // Role IDs are resolved by middleware
@@ -416,6 +582,7 @@ mod tests {
         let role_id = Uuid::new_v4();
         let auth_user = AuthUser {
             id: user_id,
+            organization_id: Uuid::new_v4(),
             username: "testuser".to_string(),
             email: "test@example.com".to_string(),
             roles: vec!["admin".to_string()],

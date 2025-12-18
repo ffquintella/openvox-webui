@@ -52,9 +52,10 @@ async fn execute_pql(
     State(state): State<AppState>,
     Json(request): Json<PqlRequest>,
 ) -> AppResult<Json<PqlResponse>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // Validate query is not empty
     if request.query.trim().is_empty() {

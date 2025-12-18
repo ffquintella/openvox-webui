@@ -68,7 +68,10 @@ impl ReportScheduler {
         let report = match report_repo.get_by_id(schedule.report_id).await {
             Ok(Some(r)) => r,
             Ok(None) => {
-                warn!("Report {} not found for schedule {}", schedule.report_id, schedule.id);
+                warn!(
+                    "Report {} not found for schedule {}",
+                    schedule.report_id, schedule.id
+                );
                 return ScheduleExecutionResult {
                     schedule_id: schedule.id,
                     success: false,
@@ -105,7 +108,10 @@ impl ReportScheduler {
         let now = Utc::now();
         let next_run = calculate_next_run(&schedule.schedule_cron, &schedule.timezone);
 
-        if let Err(e) = schedule_repo.update_run_times(schedule.id, now, next_run).await {
+        if let Err(e) = schedule_repo
+            .update_run_times(schedule.id, now, next_run)
+            .await
+        {
             error!("Failed to update schedule run times: {}", e);
         }
 

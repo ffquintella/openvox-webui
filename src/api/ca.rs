@@ -56,9 +56,7 @@ async fn list_certificate_requests(
 /// GET /api/v1/ca/certificates - List signed certificates
 ///
 /// Returns all signed certificates.
-async fn list_certificates(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+async fn list_certificates(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let Some(ca) = state.puppet_ca.as_ref() else {
         return Ok(Json(Vec::<crate::models::Certificate>::new()));
     };

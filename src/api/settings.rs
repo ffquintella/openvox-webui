@@ -23,7 +23,10 @@ pub fn routes() -> Router<AppState> {
         // Get current configuration (read-only view)
         .route("/", get(get_settings))
         // Get dashboard configuration
-        .route("/dashboard", get(get_dashboard_config).put(update_dashboard_config))
+        .route(
+            "/dashboard",
+            get(get_dashboard_config).put(update_dashboard_config),
+        )
         // Get RBAC configuration
         .route("/rbac", get(get_rbac_config))
         // Export configuration as YAML
@@ -118,9 +121,7 @@ pub struct RbacSettings {
 /// Get current settings (read-only view)
 ///
 /// GET /api/v1/settings
-async fn get_settings(
-    State(state): State<AppState>,
-) -> Json<SettingsResponse> {
+async fn get_settings(State(state): State<AppState>) -> Json<SettingsResponse> {
     let config = &state.config;
 
     let response = SettingsResponse {
@@ -154,7 +155,11 @@ async fn get_settings(
         logging: LoggingSettings {
             level: config.logging.level.clone(),
             format: format!("{:?}", config.logging.format).to_lowercase(),
-            file: config.logging.file.as_ref().map(|p| p.display().to_string()),
+            file: config
+                .logging
+                .file
+                .as_ref()
+                .map(|p| p.display().to_string()),
         },
         cache: CacheSettings {
             enabled: config.cache.enabled,
@@ -179,9 +184,7 @@ async fn get_settings(
 /// Get dashboard configuration
 ///
 /// GET /api/v1/settings/dashboard
-async fn get_dashboard_config(
-    State(state): State<AppState>,
-) -> Json<DashboardConfig> {
+async fn get_dashboard_config(State(state): State<AppState>) -> Json<DashboardConfig> {
     Json(state.config.dashboard.clone())
 }
 
@@ -218,7 +221,10 @@ async fn update_dashboard_config(
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
                     error: "validation_error".to_string(),
-                    message: format!("Invalid time range: {}. Must be one of: 1h, 6h, 12h, 24h, 7d, 30d", range),
+                    message: format!(
+                        "Invalid time range: {}. Must be one of: 1h, 6h, 12h, 24h, 7d, 30d",
+                        range
+                    ),
                     details: None,
                     code: None,
                 }),
@@ -233,7 +239,10 @@ async fn update_dashboard_config(
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
                     error: "validation_error".to_string(),
-                    message: format!("Invalid theme: {}. Must be one of: light, dark, system", theme),
+                    message: format!(
+                        "Invalid theme: {}. Must be one of: light, dark, system",
+                        theme
+                    ),
                     details: None,
                     code: None,
                 }),
@@ -244,12 +253,20 @@ async fn update_dashboard_config(
     // Build response with updated values (merged with current config)
     let current = &state.config.dashboard;
     let updated = DashboardConfig {
-        default_time_range: request.default_time_range.unwrap_or_else(|| current.default_time_range.clone()),
-        refresh_interval_secs: request.refresh_interval_secs.unwrap_or(current.refresh_interval_secs),
+        default_time_range: request
+            .default_time_range
+            .unwrap_or_else(|| current.default_time_range.clone()),
+        refresh_interval_secs: request
+            .refresh_interval_secs
+            .unwrap_or(current.refresh_interval_secs),
         nodes_per_page: request.nodes_per_page.unwrap_or(current.nodes_per_page),
         reports_per_page: request.reports_per_page.unwrap_or(current.reports_per_page),
-        show_inactive_nodes: request.show_inactive_nodes.unwrap_or(current.show_inactive_nodes),
-        inactive_threshold_hours: request.inactive_threshold_hours.unwrap_or(current.inactive_threshold_hours),
+        show_inactive_nodes: request
+            .show_inactive_nodes
+            .unwrap_or(current.show_inactive_nodes),
+        inactive_threshold_hours: request
+            .inactive_threshold_hours
+            .unwrap_or(current.inactive_threshold_hours),
         theme: request.theme.unwrap_or_else(|| current.theme.clone()),
         widgets: current.widgets.clone(),
     };
@@ -262,9 +279,7 @@ async fn update_dashboard_config(
 /// Get RBAC configuration
 ///
 /// GET /api/v1/settings/rbac
-async fn get_rbac_config(
-    State(state): State<AppState>,
-) -> Json<RbacConfig> {
+async fn get_rbac_config(State(state): State<AppState>) -> Json<RbacConfig> {
     Json(state.config.rbac.clone())
 }
 
@@ -339,8 +354,8 @@ async fn export_config(
         },
     });
 
-    let yaml_content = serde_yaml::to_string(&sanitized)
-        .map_err(|e| (
+    let yaml_content = serde_yaml::to_string(&sanitized).map_err(|e| {
+        (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
                 error: "serialization_error".to_string(),
@@ -348,7 +363,8 @@ async fn export_config(
                 details: None,
                 code: None,
             }),
-        ))?;
+        )
+    })?;
 
     Ok(Json(ExportConfigResponse {
         content: yaml_content,
@@ -384,9 +400,7 @@ pub struct ImportConfigResponse {
 /// Import configuration from YAML
 ///
 /// POST /api/v1/settings/import
-async fn import_config(
-    Json(request): Json<ImportConfigRequest>,
-) -> Json<ImportConfigResponse> {
+async fn import_config(Json(request): Json<ImportConfigRequest>) -> Json<ImportConfigResponse> {
     // Validate the YAML syntax
     let validation_result = validate_yaml_config(&request.content);
 
@@ -500,9 +514,7 @@ pub struct ServerInfoResponse {
 /// Get server information
 ///
 /// GET /api/v1/settings/server
-async fn get_server_info(
-    State(state): State<AppState>,
-) -> Json<ServerInfoResponse> {
+async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoResponse> {
     let features = vec![
         ("puppetdb", state.puppetdb.is_some()),
         ("puppet_ca", state.puppet_ca.is_some()),
@@ -519,7 +531,9 @@ async fn get_server_info(
 
     Json(ServerInfoResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        rust_version: option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown").to_string(),
+        rust_version: option_env!("CARGO_PKG_RUST_VERSION")
+            .unwrap_or("unknown")
+            .to_string(),
         build_timestamp: None,
         git_commit: option_env!("GIT_COMMIT").map(String::from),
         uptime_secs: 0, // Would track actual uptime
@@ -636,7 +650,9 @@ fn check_config_warnings(content: &str) -> Vec<String> {
         if let Some(cache) = value.get("cache") {
             if let Some(enabled) = cache.get("enabled") {
                 if enabled.as_bool() == Some(false) {
-                    warnings.push("Warning: Cache is disabled. This may impact performance.".to_string());
+                    warnings.push(
+                        "Warning: Cache is disabled. This may impact performance.".to_string(),
+                    );
                 }
             }
         }
@@ -693,7 +709,9 @@ database:
   url: "sqlite://./test.db"
 "#;
         let errors = validate_yaml_config(config);
-        assert!(errors.iter().any(|e| e.contains("Missing required section: 'auth'")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Missing required section: 'auth'")));
     }
 
     #[test]

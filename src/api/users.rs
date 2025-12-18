@@ -3,7 +3,7 @@
 //! Provides user CRUD operations and role/permission management.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    middleware::AuthUser,
     models::{AssignRolesRequest, EffectivePermissions, Role, UserPublic},
     services::AuthService,
     utils::error::ErrorResponse,
@@ -33,6 +34,7 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub password: String,
+    pub organization_id: Option<Uuid>,
     pub role: Option<String>,
     pub role_ids: Option<Vec<Uuid>>,
 }
@@ -55,15 +57,58 @@ pub struct UserWithRolesResponse {
     pub roles: Vec<Role>,
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct OrgQuery {
+    organization_id: Option<Uuid>,
+}
+
+fn forbidden(message: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: "forbidden".to_string(),
+            message: message.to_string(),
+            details: None,
+            code: None,
+        }),
+    )
+}
+
+fn resolve_org(
+    auth_user: &AuthUser,
+    requested: Option<Uuid>,
+) -> Result<Option<Uuid>, (StatusCode, Json<ErrorResponse>)> {
+    match requested {
+        Some(org_id) if !auth_user.is_super_admin() && org_id != auth_user.organization_id => Err(
+            forbidden("organization_id can only be specified by super_admin"),
+        ),
+        Some(org_id) => Ok(Some(org_id)),
+        None => Ok(None),
+    }
+}
+
 /// List all users
 ///
 /// GET /api/v1/users
 async fn list_users(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
 ) -> Result<Json<Vec<UserPublic>>, (StatusCode, Json<ErrorResponse>)> {
     let auth_service = AuthService::new(state.db.clone());
 
-    let users = auth_service.list_users().await.map_err(|e| {
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+
+    let users = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.list_users_in_org(org_id).await,
+        (true, None) => auth_service.list_users().await,
+        (false, _) => {
+            auth_service
+                .list_users_in_org(auth_user.organization_id)
+                .await
+        }
+    }
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -83,6 +128,7 @@ async fn list_users(
 /// POST /api/v1/users
 async fn create_user(
     State(state): State<AppState>,
+    auth_user: AuthUser,
     Json(payload): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserPublic>), (StatusCode, Json<ErrorResponse>)> {
     // Validate input
@@ -125,8 +171,24 @@ async fn create_user(
     let auth_service = AuthService::new(state.db.clone());
     let role = payload.role.as_deref().unwrap_or("viewer");
 
+    let org_id = match payload.organization_id {
+        Some(org_id) if !auth_user.is_super_admin() && org_id != auth_user.organization_id => {
+            return Err(forbidden(
+                "organization_id can only be specified by super_admin",
+            ));
+        }
+        Some(org_id) => org_id,
+        None => auth_user.organization_id,
+    };
+
     let user = auth_service
-        .create_user(&payload.username, &payload.email, &payload.password, role)
+        .create_user_in_org(
+            &payload.username,
+            &payload.email,
+            &payload.password,
+            role,
+            org_id,
+        )
         .await
         .map_err(|e| {
             let message = e.to_string();
@@ -182,35 +244,45 @@ async fn create_user(
 /// GET /api/v1/users/:id
 async fn get_user(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
     let auth_service = AuthService::new(state.db.clone());
 
-    let user = auth_service
-        .get_user_by_id(&id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "internal_error".to_string(),
-                    message: format!("Failed to fetch user: {}", e),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: "not_found".to_string(),
-                    message: "User not found".to_string(),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?;
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+
+    let user = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
 
     Ok(Json(user.into()))
 }
@@ -220,10 +292,46 @@ async fn get_user(
 /// PUT /api/v1/users/:id
 async fn update_user(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
     let auth_service = AuthService::new(state.db.clone());
+
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+    let existing = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    if existing.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
 
     let user = auth_service
         .update_user(
@@ -277,9 +385,45 @@ async fn update_user(
 /// DELETE /api/v1/users/:id
 async fn delete_user(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let auth_service = AuthService::new(state.db.clone());
+
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+    let existing = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "internal_error".to_string(),
+                message: format!("Failed to fetch user: {}", e),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
+
+    if existing.is_none() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "User not found".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
 
     let deleted = auth_service.delete_user(&id).await.map_err(|e| {
         (
@@ -313,11 +457,23 @@ async fn delete_user(
 /// GET /api/v1/users/:id/roles
 async fn get_user_roles(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Role>>, (StatusCode, Json<ErrorResponse>)> {
     // Verify user exists
     let auth_service = AuthService::new(state.db.clone());
-    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+    let existing = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -327,7 +483,9 @@ async fn get_user_roles(
                 code: None,
             }),
         )
-    })?.is_none() {
+    })?;
+
+    if existing.is_none() {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -359,12 +517,24 @@ async fn get_user_roles(
 /// PUT /api/v1/users/:id/roles
 async fn assign_user_roles(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
     Json(payload): Json<AssignRolesRequest>,
 ) -> Result<Json<Vec<Role>>, (StatusCode, Json<ErrorResponse>)> {
     // Verify user exists
     let auth_service = AuthService::new(state.db.clone());
-    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+    let existing = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -374,7 +544,9 @@ async fn assign_user_roles(
                 code: None,
             }),
         )
-    })?.is_none() {
+    })?;
+
+    if existing.is_none() {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -436,11 +608,23 @@ async fn assign_user_roles(
 /// GET /api/v1/users/:id/permissions
 async fn get_user_permissions(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EffectivePermissions>, (StatusCode, Json<ErrorResponse>)> {
     // Verify user exists
     let auth_service = AuthService::new(state.db.clone());
-    if auth_service.get_user_by_id(&id).await.map_err(|e| {
+    let requested_org = resolve_org(&auth_user, query.organization_id)?;
+    let existing = match (auth_user.is_super_admin(), requested_org) {
+        (true, Some(org_id)) => auth_service.get_user_by_id_in_org(org_id, &id).await,
+        (true, None) => auth_service.get_user_by_id(&id).await,
+        (false, _) => {
+            auth_service
+                .get_user_by_id_in_org(auth_user.organization_id, &id)
+                .await
+        }
+    }
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -450,7 +634,9 @@ async fn get_user_permissions(
                 code: None,
             }),
         )
-    })?.is_none() {
+    })?;
+
+    if existing.is_none() {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {

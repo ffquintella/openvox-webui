@@ -167,9 +167,9 @@ fn get_action_description(action: &Action) -> String {
         Action::Admin => "Full administrative access including all actions".to_string(),
         Action::Export => "Export resource data".to_string(),
         Action::Classify => "Classify nodes into groups".to_string(),
-            Action::Sign => "Sign certificate requests".to_string(),
-            Action::Reject => "Reject certificate requests".to_string(),
-            Action::Revoke => "Revoke signed certificates".to_string(),
+        Action::Sign => "Sign certificate requests".to_string(),
+        Action::Reject => "Reject certificate requests".to_string(),
+        Action::Revoke => "Revoke signed certificates".to_string(),
         Action::Generate => "Generate derived data (e.g., facts)".to_string(),
     }
 }
@@ -368,7 +368,11 @@ async fn bulk_update_permissions(
         let result = match op.op {
             BulkOperationType::Add => {
                 if let Some(perm) = op.permission {
-                    match state.rbac_db.add_permission_to_role(&op.role_id, perm).await {
+                    match state
+                        .rbac_db
+                        .add_permission_to_role(&op.role_id, perm)
+                        .await
+                    {
                         Ok(_) => {
                             let role = state.rbac_db.get_role(&op.role_id).await.ok().flatten();
                             BulkOperationResult {

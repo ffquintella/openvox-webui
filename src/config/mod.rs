@@ -772,7 +772,10 @@ mod tests {
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.server.port, config.server.port);
-        assert_eq!(parsed.database.max_connections, config.database.max_connections);
+        assert_eq!(
+            parsed.database.max_connections,
+            config.database.max_connections
+        );
     }
 
     #[test]
@@ -863,7 +866,10 @@ dashboard:
         assert_eq!(config.dashboard.theme, "dark");
         assert_eq!(config.dashboard.widgets.len(), 1);
         assert_eq!(config.dashboard.widgets[0].id, "status-widget");
-        assert_eq!(config.dashboard.widgets[0].widget_type, WidgetType::NodeStatus);
+        assert_eq!(
+            config.dashboard.widgets[0].widget_type,
+            WidgetType::NodeStatus
+        );
     }
 
     #[test]
@@ -949,7 +955,10 @@ groups:
             Some("00000000-0000-0000-0000-000000000001".to_string())
         );
         assert_eq!(groups_config.groups[1].rules.len(), 1);
-        assert_eq!(groups_config.groups[1].rules[0].fact_path, "trusted.extensions.pp_environment");
+        assert_eq!(
+            groups_config.groups[1].rules[0].fact_path,
+            "trusted.extensions.pp_environment"
+        );
         assert_eq!(groups_config.groups[1].rules[0].operator, "=");
     }
 
@@ -985,7 +994,10 @@ widgets:
         assert_eq!(parsed.widgets[2].widget_type, WidgetType::FactDistribution);
         assert_eq!(parsed.widgets[3].widget_type, WidgetType::GroupMembership);
         assert_eq!(parsed.widgets[4].widget_type, WidgetType::ActivityHeatmap);
-        assert_eq!(parsed.widgets[5].widget_type, WidgetType::InfrastructureTopology);
+        assert_eq!(
+            parsed.widgets[5].widget_type,
+            WidgetType::InfrastructureTopology
+        );
         assert_eq!(parsed.widgets[6].widget_type, WidgetType::QuickSearch);
         assert_eq!(parsed.widgets[7].widget_type, WidgetType::RecentActivity);
     }
@@ -1002,7 +1014,10 @@ widgets:
         assert_eq!(parsed.auth.jwt_secret, config.auth.jwt_secret);
         assert_eq!(parsed.logging.level, config.logging.level);
         assert_eq!(parsed.cache.enabled, config.cache.enabled);
-        assert_eq!(parsed.dashboard.default_time_range, config.dashboard.default_time_range);
+        assert_eq!(
+            parsed.dashboard.default_time_range,
+            config.dashboard.default_time_range
+        );
         assert_eq!(parsed.rbac.default_role, config.rbac.default_role);
     }
 }

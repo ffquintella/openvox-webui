@@ -1,29 +1,24 @@
 //! Input validation utilities
 
-use regex::Regex;
 use once_cell::sync::Lazy;
+use regex::Regex;
 
 use crate::models::{FactDefinition, FactTemplate, FactValueSource};
 
 /// Regex for validating certificate names
-static CERTNAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-zA-Z][a-zA-Z0-9._-]*$").unwrap()
-});
+static CERTNAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9._-]*$").unwrap());
 
 /// Regex for validating group names
-static GROUP_NAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$").unwrap()
-});
+static GROUP_NAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$").unwrap());
 
 /// Regex for validating fact names (Puppet/Facter compatible)
-static FACT_NAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-z][a-z0-9_]*$").unwrap()
-});
+static FACT_NAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-z][a-z0-9_]*$").unwrap());
 
 /// Regex for validating template names
-static TEMPLATE_NAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$").unwrap()
-});
+static TEMPLATE_NAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_-]*$").unwrap());
 
 /// Validate a certificate name
 pub fn validate_certname(certname: &str) -> bool {
@@ -42,9 +37,8 @@ pub fn validate_fact_path(path: &str) -> bool {
     }
 
     // Fact paths are dot-separated identifiers
-    path.split('.').all(|part| {
-        !part.is_empty() && part.chars().all(|c| c.is_alphanumeric() || c == '_')
-    })
+    path.split('.')
+        .all(|part| !part.is_empty() && part.chars().all(|c| c.is_alphanumeric() || c == '_'))
 }
 
 /// Validation error for fact templates
@@ -102,14 +96,19 @@ pub fn validate_fact_value_source(source: &FactValueSource) -> Result<(), String
             }
             // Valid classification keys
             let valid_keys = ["environment", "classes", "groups", "certname"];
-            if !valid_keys.contains(&key.as_str()) && !key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            if !valid_keys.contains(&key.as_str())
+                && !key.chars().all(|c| c.is_alphanumeric() || c == '_')
+            {
                 return Err(format!("Invalid classification key: '{}'. Use: environment, classes, groups, certname, or a parameter key", key));
             }
             Ok(())
         }
         FactValueSource::FromFact(path) => {
             if !validate_fact_path(path) {
-                return Err(format!("Invalid fact path: '{}'. Use dot-separated identifiers (e.g., 'os.family')", path));
+                return Err(format!(
+                    "Invalid fact path: '{}'. Use dot-separated identifiers (e.g., 'os.family')",
+                    path
+                ));
             }
             Ok(())
         }
@@ -143,10 +142,7 @@ pub fn validate_fact_definition(def: &FactDefinition) -> Vec<ValidationError> {
     }
 
     if let Err(e) = validate_fact_value_source(&def.value) {
-        errors.push(ValidationError::new(
-            format!("facts.{}.value", def.name),
-            e,
-        ));
+        errors.push(ValidationError::new(format!("facts.{}.value", def.name), e));
     }
 
     errors
@@ -222,6 +218,8 @@ pub fn format_validation_errors(errors: &[ValidationError]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::default_organization_uuid;
+
     use super::*;
 
     // Fact template validation tests
@@ -312,6 +310,7 @@ mod tests {
     fn test_validate_fact_template_valid() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "valid_template".to_string(),
             description: Some("A valid template".to_string()),
             facts: vec![FactDefinition {
@@ -326,6 +325,7 @@ mod tests {
     fn test_validate_fact_template_empty_facts() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "empty".to_string(),
             description: None,
             facts: vec![],
@@ -340,6 +340,7 @@ mod tests {
     fn test_validate_fact_template_duplicate_fact_names() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "duplicates".to_string(),
             description: None,
             facts: vec![
@@ -363,6 +364,7 @@ mod tests {
     fn test_validate_fact_template_invalid_fact_name() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "invalid_fact".to_string(),
             description: None,
             facts: vec![FactDefinition {

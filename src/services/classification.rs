@@ -32,10 +32,7 @@ impl ClassificationService {
         let mut children_map: HashMap<Option<Uuid>, Vec<&NodeGroup>> = HashMap::new();
         let mut group_index: HashMap<Uuid, &NodeGroup> = HashMap::new();
         for group in &self.groups {
-            children_map
-                .entry(group.parent_id)
-                .or_default()
-                .push(group);
+            children_map.entry(group.parent_id).or_default().push(group);
             group_index.insert(group.id, group);
         }
 
@@ -482,7 +479,10 @@ mod tests {
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[1].match_type, MatchType::Inherited);
-        assert_eq!(result.classes, vec!["class_child".to_string(), "class_parent".to_string()]);
+        assert_eq!(
+            result.classes,
+            vec!["class_child".to_string(), "class_parent".to_string()]
+        );
         assert_eq!(result.parameters["p"], serde_json::json!("child"));
         assert_eq!(result.parameters["child"], serde_json::json!(true));
     }

@@ -8,6 +8,8 @@ use crate::AppState;
 
 mod alerting;
 mod analytics;
+mod api_keys;
+mod audit_logs;
 mod auth;
 mod ca;
 mod facter;
@@ -15,6 +17,7 @@ mod facts;
 mod groups;
 mod health;
 mod nodes;
+mod organizations;
 mod permissions;
 mod query;
 mod reports;
@@ -24,8 +27,8 @@ mod users;
 
 pub use health::*;
 
-/// Create the API router with all routes
-pub fn routes() -> Router<AppState> {
+/// Public API routes (no authentication required)
+pub fn public_routes() -> Router<AppState> {
     Router::new()
         // Health check endpoints
         .route("/health", get(health::health_check))
@@ -34,14 +37,22 @@ pub fn routes() -> Router<AppState> {
         .route("/health/ready", get(health::readiness))
         // Authentication endpoints (no auth required)
         .nest("/auth", auth::routes())
+}
+
+/// Protected API routes (authentication required)
+pub fn protected_routes() -> Router<AppState> {
+    Router::new()
         // Resource endpoints
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())
         .nest("/facts", facts::routes())
         .nest("/facter", facter::routes())
         .nest("/reports", reports::routes())
+        .nest("/api-keys", api_keys::routes())
+        .nest("/audit-logs", audit_logs::routes())
         .nest("/roles", roles::routes())
         .nest("/users", users::routes())
+        .nest("/organizations", organizations::routes())
         .nest("/permissions", permissions::routes())
         .nest("/settings", settings::routes())
         // Analytics and reporting endpoints
@@ -52,4 +63,9 @@ pub fn routes() -> Router<AppState> {
         .nest("/query", query::routes())
         // CA management endpoints
         .merge(ca::routes())
+}
+
+/// Create the full API router (public + protected; useful for tests)
+pub fn routes() -> Router<AppState> {
+    public_routes().merge(protected_routes())
 }

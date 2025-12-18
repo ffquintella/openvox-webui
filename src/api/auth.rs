@@ -11,7 +11,9 @@ use axum::{
 use serde::Serialize;
 
 use crate::{
-    middleware::auth::{create_access_token, create_refresh_token, validate_token, AuthUser, TokenType},
+    middleware::auth::{
+        create_access_token, create_refresh_token, validate_token, AuthUser, TokenType,
+    },
     models::{AuthResponse, LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
     services::AuthService,
     utils::error::ErrorResponse,
@@ -91,6 +93,7 @@ async fn login(
     // Create tokens
     let access_token = create_access_token(
         &user.id,
+        &user.organization_id,
         &user.username,
         &user.email,
         roles,
@@ -220,6 +223,7 @@ async fn refresh_token(
     // Create new access token
     let access_token = create_access_token(
         &user.id,
+        &user.organization_id,
         &user.username,
         &user.email,
         roles,
@@ -312,7 +316,12 @@ async fn register(
 
     // Create user with default role
     let user = auth_service
-        .create_user(&payload.username, &payload.email, &payload.password, "viewer")
+        .create_user(
+            &payload.username,
+            &payload.email,
+            &payload.password,
+            "viewer",
+        )
         .await
         .map_err(|e| {
             let message = e.to_string();
@@ -527,7 +536,11 @@ async fn change_password(
     let auth_service = AuthService::new(state.db.clone());
 
     let success = auth_service
-        .change_password(&auth_user.id, &payload.current_password, &payload.new_password)
+        .change_password(
+            &auth_user.id,
+            &payload.current_password,
+            &payload.new_password,
+        )
         .await
         .map_err(|e| {
             (

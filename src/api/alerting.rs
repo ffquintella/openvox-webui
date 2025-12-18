@@ -147,7 +147,10 @@ async fn create_channel(
     let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
 
     match service.create_channel(&req, Some(user.user_id())).await {
-        Ok(channel) => Ok((StatusCode::CREATED, Json(AlertingResponse { data: channel }))),
+        Ok(channel) => Ok((
+            StatusCode::CREATED,
+            Json(AlertingResponse { data: channel }),
+        )),
         Err(e) => {
             tracing::error!("Failed to create channel: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -330,7 +333,10 @@ async fn list_alerts(
     let status = query.status.and_then(|s| AlertStatus::from_str(&s));
     let severity = query.severity.and_then(|s| AlertSeverity::from_str(&s));
 
-    match service.get_alerts(status, severity, query.rule_id, query.limit).await {
+    match service
+        .get_alerts(status, severity, query.rule_id, query.limit)
+        .await
+    {
         Ok(alerts) => Ok(Json(AlertingResponse { data: alerts })),
         Err(e) => {
             tracing::error!("Failed to list alerts: {}", e);
@@ -456,7 +462,10 @@ async fn create_silence(
     let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
 
     match service.create_silence(&req, Some(user.user_id())).await {
-        Ok(silence) => Ok((StatusCode::CREATED, Json(AlertingResponse { data: silence }))),
+        Ok(silence) => Ok((
+            StatusCode::CREATED,
+            Json(AlertingResponse { data: silence }),
+        )),
         Err(e) => {
             tracing::error!("Failed to create silence: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -494,7 +503,10 @@ async fn trigger_alert(
 ) -> Result<(StatusCode, Json<AlertingResponse<Alert>>), StatusCode> {
     let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
 
-    match service.trigger_manual_alert(req.rule_id, &req.title, &req.message, req.context).await {
+    match service
+        .trigger_manual_alert(req.rule_id, &req.title, &req.message, req.context)
+        .await
+    {
         Ok(alert) => Ok((StatusCode::CREATED, Json(AlertingResponse { data: alert }))),
         Err(e) => {
             tracing::error!("Failed to trigger alert: {}", e);

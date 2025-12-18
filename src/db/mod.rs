@@ -8,13 +8,19 @@
 //! - Alerting and notifications
 
 pub mod alerting_repository;
+pub mod api_key_repository;
+pub mod audit_repository;
 pub mod migrations;
+pub mod organization_repository;
 pub mod repository;
 
 pub use alerting_repository::{
-    AlertRepository, AlertRuleRepository, AlertSilenceRepository,
-    NotificationChannelRepository, NotificationHistoryRepository,
+    AlertRepository, AlertRuleRepository, AlertSilenceRepository, NotificationChannelRepository,
+    NotificationHistoryRepository,
 };
+pub use api_key_repository::ApiKeyRepository;
+pub use audit_repository::AuditRepository;
+pub use organization_repository::OrganizationRepository;
 
 use std::time::Duration;
 

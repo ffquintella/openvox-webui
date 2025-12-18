@@ -47,7 +47,6 @@ pub struct ReportsQuery {
     pub order_dir: Option<String>,
 }
 
-
 /// Query reports
 ///
 /// GET /api/v1/reports
@@ -126,9 +125,10 @@ async fn get_report(
     State(state): State<AppState>,
     Path(hash): Path<String>,
 ) -> AppResult<Json<Report>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     let report = puppetdb
         .get_report(&hash)
@@ -161,9 +161,10 @@ async fn get_report_events(
     Path(hash): Path<String>,
     Query(query): Query<ReportEventsQuery>,
 ) -> AppResult<Json<Vec<ResourceEvent>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // First verify the report exists
     let report_exists = puppetdb

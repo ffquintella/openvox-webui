@@ -154,12 +154,16 @@ impl IntoResponse for AppError {
             AppError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, "unauthorized", false),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden", true),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict", false),
-            AppError::ValidationError(_) => (StatusCode::UNPROCESSABLE_ENTITY, "validation_error", false),
+            AppError::ValidationError(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "validation_error", false)
+            }
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", true),
             AppError::PuppetDb(_) => (StatusCode::BAD_GATEWAY, "puppetdb_error", true),
             AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database_error", true),
             AppError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "config_error", true),
-            AppError::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", true),
+            AppError::ServiceUnavailable(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", true)
+            }
         };
 
         // Log server errors

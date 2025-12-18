@@ -4,10 +4,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::models::default_organization_uuid;
+
 /// User entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
+    #[serde(default = "default_organization_uuid")]
+    pub organization_id: Uuid,
     pub username: String,
     pub email: String,
     #[serde(skip_serializing)]
@@ -22,9 +26,26 @@ pub struct User {
 impl User {
     /// Create a new user
     pub fn new(username: String, email: String, password_hash: String, role: String) -> Self {
+        Self::new_with_org(
+            default_organization_uuid(),
+            username,
+            email,
+            password_hash,
+            role,
+        )
+    }
+
+    pub fn new_with_org(
+        organization_id: Uuid,
+        username: String,
+        email: String,
+        password_hash: String,
+        role: String,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
+            organization_id,
             username,
             email,
             password_hash,
@@ -40,6 +61,8 @@ impl User {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPublic {
     pub id: Uuid,
+    #[serde(default = "default_organization_uuid")]
+    pub organization_id: Uuid,
     pub username: String,
     pub email: String,
     pub role: String,
@@ -53,6 +76,7 @@ impl From<User> for UserPublic {
     fn from(user: User) -> Self {
         Self {
             id: user.id,
+            organization_id: user.organization_id,
             username: user.username,
             email: user.email,
             role: user.role,
@@ -69,6 +93,7 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub password: String,
+    pub organization_id: Option<Uuid>,
     #[serde(default = "default_role")]
     pub role: String,
 }

@@ -1,7 +1,7 @@
 //! Report step definitions
 
-use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestWorld};
+use cucumber::{given, then, when};
 
 #[given(expr = "a report exists for node {string} with status {string}")]
 async fn report_exists(_world: &mut TestWorld, _certname: String, _status: String) {

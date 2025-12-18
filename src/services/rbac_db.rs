@@ -232,9 +232,7 @@ impl DbRbacService {
         }
 
         // Check name uniqueness if changed
-        if request.name != existing.name
-            && self.get_role_by_name(&request.name).await?.is_some()
-        {
+        if request.name != existing.name && self.get_role_by_name(&request.name).await?.is_some() {
             anyhow::bail!("Role with name '{}' already exists", request.name);
         }
 
@@ -294,7 +292,7 @@ impl DbRbacService {
                     p.constraint_type, p.constraint_value, r.name as role_name
              FROM permissions p
              INNER JOIN roles r ON p.role_id = r.id
-             ORDER BY r.name, p.resource, p.action"
+             ORDER BY r.name, p.resource, p.action",
         )
         .fetch_all(&self.pool)
         .await
@@ -507,7 +505,7 @@ impl DbRbacService {
             let now = chrono::Utc::now().to_rfc3339();
 
             sqlx::query(
-                "INSERT INTO user_roles (id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)"
+                "INSERT INTO user_roles (id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)",
             )
             .bind(&id)
             .bind(&user_id_str)
@@ -657,9 +655,9 @@ impl DbRbacService {
                             PermissionConstraint::ResourceIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }
-                            PermissionConstraint::Environments(envs) => {
-                                environment.map(|e| envs.contains(&e.to_string())).unwrap_or(false)
-                            }
+                            PermissionConstraint::Environments(envs) => environment
+                                .map(|e| envs.contains(&e.to_string()))
+                                .unwrap_or(false),
                             PermissionConstraint::GroupIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }
@@ -743,9 +741,9 @@ impl DbRbacService {
                             PermissionConstraint::ResourceIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }
-                            PermissionConstraint::Environments(envs) => {
-                                environment.map(|e| envs.contains(&e.to_string())).unwrap_or(false)
-                            }
+                            PermissionConstraint::Environments(envs) => environment
+                                .map(|e| envs.contains(&e.to_string()))
+                                .unwrap_or(false),
                             PermissionConstraint::GroupIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }

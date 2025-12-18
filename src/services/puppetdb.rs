@@ -210,9 +210,7 @@ pub struct QueryBuilder {
 
 impl QueryBuilder {
     pub fn new() -> Self {
-        Self {
-            conditions: vec![],
-        }
+        Self { conditions: vec![] }
     }
 
     /// Add an equality condition: ["=", field, value]
@@ -323,8 +321,8 @@ impl PuppetDbClient {
         if let Some(ref ca_path) = config.ssl_ca {
             let ca_cert = fs::read(ca_path)
                 .with_context(|| format!("Failed to read CA certificate: {:?}", ca_path))?;
-            let cert = Certificate::from_pem(&ca_cert)
-                .context("Failed to parse CA certificate as PEM")?;
+            let cert =
+                Certificate::from_pem(&ca_cert).context("Failed to parse CA certificate as PEM")?;
             builder = builder.add_root_certificate(cert);
         }
 
@@ -381,11 +379,7 @@ impl PuppetDbClient {
         query: &str,
         params: QueryParams,
     ) -> Result<PaginatedResponse<T>> {
-        let url = format!(
-            "{}/pdb/query/v4{}",
-            self.base_url,
-            params.to_query_string()
-        );
+        let url = format!("{}/pdb/query/v4{}", self.base_url, params.to_query_string());
 
         let response = self
             .client
@@ -482,7 +476,8 @@ impl PuppetDbClient {
         // Use the facts endpoint with a certname query filter
         // The /nodes/{certname}/facts endpoint is not supported by all PuppetDB versions
         let query = QueryBuilder::new().equals("certname", certname);
-        self.query_facts_advanced(&query, QueryParams::default()).await
+        self.query_facts_advanced(&query, QueryParams::default())
+            .await
     }
 
     /// Get a specific fact for a node
@@ -492,7 +487,9 @@ impl PuppetDbClient {
         let query = QueryBuilder::new()
             .equals("certname", certname)
             .equals("name", fact_name);
-        let facts: Vec<Fact> = self.query_facts_advanced(&query, QueryParams::default()).await?;
+        let facts: Vec<Fact> = self
+            .query_facts_advanced(&query, QueryParams::default())
+            .await?;
         Ok(facts.into_iter().next())
     }
 
@@ -561,7 +558,11 @@ impl PuppetDbClient {
     // ==================== Report Endpoints ====================
 
     /// Get reports for a specific node
-    pub async fn get_node_reports(&self, certname: &str, limit: Option<u32>) -> Result<Vec<Report>> {
+    pub async fn get_node_reports(
+        &self,
+        certname: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<Report>> {
         // Use the reports endpoint with a certname query filter
         // The /nodes/{certname}/reports endpoint is not supported by all PuppetDB versions
         self.query_reports(Some(certname), None, limit).await
@@ -891,14 +892,14 @@ impl PuppetDbClient {
     }
 
     /// Handle HTTP response and parse JSON
-    async fn handle_response<T: DeserializeOwned>(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<T> {
+    async fn handle_response<T: DeserializeOwned>(&self, response: reqwest::Response) -> Result<T> {
         let status = response.status();
 
         if status.is_success() {
-            let body = response.text().await.context("Failed to read response body")?;
+            let body = response
+                .text()
+                .await
+                .context("Failed to read response body")?;
             serde_json::from_str::<T>(&body).with_context(|| {
                 // Truncate body for logging if too long
                 let truncated = if body.len() > 500 {

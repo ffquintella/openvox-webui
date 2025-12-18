@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     db::repository::FactTemplateRepository,
+    middleware::AuthUser,
     models::{
         CreateFactTemplateRequest, ExportFormat, Fact, FactTemplate, GenerateFactsRequest,
         UpdateFactTemplateRequest,
@@ -38,16 +39,38 @@ pub fn routes() -> Router<AppState> {
         .route("/templates", get(list_templates).post(create_template))
         .route(
             "/templates/{id}",
-            get(get_template).put(update_template).delete(delete_template),
+            get(get_template)
+                .put(update_template)
+                .delete(delete_template),
         )
         .route("/generate", post(generate_facts))
         .route("/export/{certname}", get(export_facts))
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct OrgQuery {
+    organization_id: Option<Uuid>,
+}
+
+fn resolve_org(auth_user: &AuthUser, requested: Option<Uuid>) -> Result<Uuid, AppError> {
+    match requested {
+        Some(org_id) if !auth_user.is_super_admin() => Err(AppError::forbidden(
+            "organization_id can only be specified by super_admin",
+        )),
+        Some(org_id) => Ok(org_id),
+        None => Ok(auth_user.organization_id),
+    }
+}
+
 /// List all fact templates
-async fn list_templates(State(state): State<AppState>) -> Result<Json<Vec<FactTemplate>>, AppError> {
+async fn list_templates(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
+) -> Result<Json<Vec<FactTemplate>>, AppError> {
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
     let repo = FactTemplateRepository::new(&state.db);
-    let templates = repo.get_all().await.map_err(|e| {
+    let templates = repo.get_all(org_id).await.map_err(|e| {
         tracing::error!("Failed to list fact templates: {}", e);
         AppError::internal("Failed to list fact templates")
     })?;
@@ -57,11 +80,15 @@ async fn list_templates(State(state): State<AppState>) -> Result<Json<Vec<FactTe
 /// Create a new fact template
 async fn create_template(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Json(payload): Json<CreateFactTemplateRequest>,
 ) -> Result<(StatusCode, Json<FactTemplate>), AppError> {
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
     // Validate the template before creating
     let template_for_validation = FactTemplate {
         id: None,
+        organization_id: org_id,
         name: payload.name.clone(),
         description: payload.description.clone(),
         facts: payload.facts.clone(),
@@ -76,7 +103,12 @@ async fn create_template(
 
     let repo = FactTemplateRepository::new(&state.db);
     let template = repo
-        .create(&payload.name, payload.description.as_deref(), &payload.facts)
+        .create(
+            org_id,
+            &payload.name,
+            payload.description.as_deref(),
+            &payload.facts,
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to create fact template: {}", e);
@@ -92,12 +124,15 @@ async fn create_template(
 /// Get a specific fact template
 async fn get_template(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<String>,
 ) -> Result<Json<FactTemplate>, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid template ID"))?;
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = FactTemplateRepository::new(&state.db);
-    let template = repo.get_by_id(uuid).await.map_err(|e| {
+    let template = repo.get_by_id(org_id, uuid).await.map_err(|e| {
         tracing::error!("Failed to get fact template: {}", e);
         AppError::internal("Failed to get fact template")
     })?;
@@ -111,15 +146,18 @@ async fn get_template(
 /// Update a fact template
 async fn update_template(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<String>,
     Json(payload): Json<UpdateFactTemplateRequest>,
 ) -> Result<Json<FactTemplate>, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid template ID"))?;
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = FactTemplateRepository::new(&state.db);
 
     // Get existing template to merge with updates for validation
-    let existing = repo.get_by_id(uuid).await.map_err(|e| {
+    let existing = repo.get_by_id(org_id, uuid).await.map_err(|e| {
         tracing::error!("Failed to get fact template: {}", e);
         AppError::internal("Failed to get fact template")
     })?;
@@ -129,6 +167,7 @@ async fn update_template(
     // Create merged template for validation
     let template_for_validation = FactTemplate {
         id: existing.id.clone(),
+        organization_id: existing.organization_id,
         name: payload.name.clone().unwrap_or(existing.name.clone()),
         description: payload.description.clone().or(existing.description.clone()),
         facts: payload.facts.clone().unwrap_or(existing.facts.clone()),
@@ -143,6 +182,7 @@ async fn update_template(
 
     let template = repo
         .update(
+            org_id,
             uuid,
             payload.name.as_deref(),
             payload.description.as_deref(),
@@ -167,12 +207,15 @@ async fn update_template(
 /// Delete a fact template
 async fn delete_template(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid template ID"))?;
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = FactTemplateRepository::new(&state.db);
-    let deleted = repo.delete(uuid).await.map_err(|e| {
+    let deleted = repo.delete(org_id, uuid).await.map_err(|e| {
         tracing::error!("Failed to delete fact template: {}", e);
         AppError::internal("Failed to delete fact template")
     })?;
@@ -187,18 +230,23 @@ async fn delete_template(
 /// Generate facts for a node using a template
 async fn generate_facts(
     State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
     Json(payload): Json<GenerateFactsRequest>,
 ) -> Result<Json<GeneratedFacts>, AppError> {
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
     // Get the template from the database
     let repo = FactTemplateRepository::new(&state.db);
-    let template = repo.get_by_name(&payload.template).await.map_err(|e| {
-        tracing::error!("Failed to get fact template: {}", e);
-        AppError::internal("Failed to get fact template")
-    })?;
+    let template = repo
+        .get_by_name(org_id, &payload.template)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get fact template: {}", e);
+            AppError::internal("Failed to get fact template")
+        })?;
 
-    let template = template.ok_or_else(|| {
-        AppError::not_found(format!("Template '{}' not found", payload.template))
-    })?;
+    let template = template
+        .ok_or_else(|| AppError::not_found(format!("Template '{}' not found", payload.template)))?;
 
     // Get existing facts for the node (from payload or PuppetDB)
     let existing_facts = match payload.existing_facts {
@@ -252,24 +300,31 @@ struct ExportQuery {
     format: ExportFormat,
     /// Template name
     template: String,
+    /// Optional organization override (super_admin only)
+    organization_id: Option<Uuid>,
 }
 
 /// Export facts for a node in the specified format
 async fn export_facts(
     State(state): State<AppState>,
+    auth_user: AuthUser,
     Path(certname): Path<String>,
     Query(query): Query<ExportQuery>,
 ) -> Result<String, AppError> {
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
+
     // Get the template
     let repo = FactTemplateRepository::new(&state.db);
-    let template = repo.get_by_name(&query.template).await.map_err(|e| {
-        tracing::error!("Failed to get fact template: {}", e);
-        AppError::internal("Failed to get fact template")
-    })?;
+    let template = repo
+        .get_by_name(org_id, &query.template)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get fact template: {}", e);
+            AppError::internal("Failed to get fact template")
+        })?;
 
-    let template = template.ok_or_else(|| {
-        AppError::not_found(format!("Template '{}' not found", query.template))
-    })?;
+    let template = template
+        .ok_or_else(|| AppError::not_found(format!("Template '{}' not found", query.template)))?;
 
     // Get existing facts from PuppetDB if available
     let existing_facts = if let Some(ref puppetdb) = state.puppetdb {

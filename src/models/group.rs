@@ -3,11 +3,17 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::models::default_organization_uuid;
+
 /// Represents a node classification group
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeGroup {
     /// Unique identifier
     pub id: Uuid,
+
+    /// Organization/tenant identifier
+    #[serde(default = "default_organization_uuid")]
+    pub organization_id: Uuid,
 
     /// Group name
     pub name: String,
@@ -44,6 +50,7 @@ impl Default for NodeGroup {
     fn default() -> Self {
         Self {
             id: Uuid::new_v4(),
+            organization_id: default_organization_uuid(),
             name: String::new(),
             description: None,
             parent_id: None,

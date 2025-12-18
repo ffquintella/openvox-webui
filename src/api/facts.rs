@@ -63,9 +63,10 @@ async fn query_facts(
     State(state): State<AppState>,
     Query(query): Query<FactsQuery>,
 ) -> AppResult<Json<FactsResponse>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // Build query
     let mut qb = QueryBuilder::new();
@@ -112,12 +113,11 @@ async fn query_facts(
 /// List all unique fact names
 ///
 /// GET /api/v1/facts/names
-async fn list_fact_names(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<String>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+async fn list_fact_names(State(state): State<AppState>) -> AppResult<Json<Vec<String>>> {
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     let names = puppetdb
         .get_fact_names()
@@ -138,12 +138,11 @@ pub struct FactPathResponse {
 /// List all unique fact paths (for structured facts)
 ///
 /// GET /api/v1/facts/paths
-async fn list_fact_paths(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<FactPathResponse>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+async fn list_fact_paths(State(state): State<AppState>) -> AppResult<Json<Vec<FactPathResponse>>> {
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     let paths = puppetdb
         .get_fact_paths()

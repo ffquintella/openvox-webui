@@ -33,11 +33,7 @@ impl FacterService {
         let mut facts: HashMap<String, serde_json::Value> = HashMap::new();
 
         for fact_def in &template.facts {
-            let value = self.resolve_fact_value(
-                &fact_def.value,
-                classification,
-                existing_facts,
-            )?;
+            let value = self.resolve_fact_value(&fact_def.value, classification, existing_facts)?;
             facts.insert(fact_def.name.clone(), value);
         }
 
@@ -64,8 +60,11 @@ impl FacterService {
                     "environment" => Ok(serde_json::json!(classification.environment)),
                     "classes" => Ok(serde_json::json!(classification.classes)),
                     "groups" => {
-                        let group_names: Vec<&str> =
-                            classification.groups.iter().map(|g| g.name.as_str()).collect();
+                        let group_names: Vec<&str> = classification
+                            .groups
+                            .iter()
+                            .map(|g| g.name.as_str())
+                            .collect();
                         Ok(serde_json::json!(group_names))
                     }
                     "variables" => Ok(classification.variables.clone()),
@@ -76,15 +75,15 @@ impl FacterService {
                             .get(key)
                             .cloned()
                             .or_else(|| classification.parameters.get(key).cloned())
-                            .ok_or_else(|| anyhow::anyhow!("Classification key '{}' not found", key))
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("Classification key '{}' not found", key)
+                            })
                     }
                 }
             }
 
-            FactValueSource::FromFact(path) => {
-                get_fact_by_path(existing_facts, path)
-                    .ok_or_else(|| anyhow::anyhow!("Fact '{}' not found", path))
-            }
+            FactValueSource::FromFact(path) => get_fact_by_path(existing_facts, path)
+                .ok_or_else(|| anyhow::anyhow!("Fact '{}' not found", path)),
 
             FactValueSource::Template(template) => {
                 // Simple template substitution
@@ -153,7 +152,11 @@ impl FacterService {
                         serde_json::Value::String(s) => s.clone(),
                         _ => value.to_string(),
                     };
-                    output.push_str(&format!("export FACTER_{}=\"{}\"\n", key.to_uppercase(), value_str));
+                    output.push_str(&format!(
+                        "export FACTER_{}=\"{}\"\n",
+                        key.to_uppercase(),
+                        value_str
+                    ));
                 }
                 Ok(output)
             }
@@ -191,6 +194,8 @@ pub enum ExportFormat {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::default_organization_uuid;
+
     use super::*;
     use crate::models::{FactDefinition, GroupMatch, MatchType};
     use uuid::Uuid;
@@ -215,6 +220,7 @@ mod tests {
     fn test_generate_facts_static() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "basic".to_string(),
             description: Some("Basic facts".to_string()),
             facts: vec![FactDefinition {
@@ -227,15 +233,21 @@ mod tests {
         let classification = sample_classification();
         let facts = serde_json::json!({});
 
-        let result = service.generate_facts(&classification, &facts, "basic").unwrap();
+        let result = service
+            .generate_facts(&classification, &facts, "basic")
+            .unwrap();
 
-        assert_eq!(result.facts.get("custom_role"), Some(&serde_json::json!("webserver")));
+        assert_eq!(
+            result.facts.get("custom_role"),
+            Some(&serde_json::json!("webserver"))
+        );
     }
 
     #[test]
     fn test_generate_facts_from_classification() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "classification".to_string(),
             description: None,
             facts: vec![
@@ -268,6 +280,7 @@ mod tests {
     fn test_generate_facts_from_existing_fact() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "derived".to_string(),
             description: None,
             facts: vec![FactDefinition {
@@ -284,9 +297,14 @@ mod tests {
             }
         });
 
-        let result = service.generate_facts(&classification, &facts, "derived").unwrap();
+        let result = service
+            .generate_facts(&classification, &facts, "derived")
+            .unwrap();
 
-        assert_eq!(result.facts.get("os_family"), Some(&serde_json::json!("RedHat")));
+        assert_eq!(
+            result.facts.get("os_family"),
+            Some(&serde_json::json!("RedHat"))
+        );
     }
 
     #[test]
@@ -322,6 +340,7 @@ mod tests {
     fn test_generate_facts_from_variables() {
         let template = FactTemplate {
             id: None,
+            organization_id: default_organization_uuid(),
             name: "variables".to_string(),
             description: Some("Test variables".to_string()),
             facts: vec![
@@ -340,7 +359,9 @@ mod tests {
         let classification = sample_classification();
         let facts = serde_json::json!({});
 
-        let result = service.generate_facts(&classification, &facts, "variables").unwrap();
+        let result = service
+            .generate_facts(&classification, &facts, "variables")
+            .unwrap();
 
         // Test accessing individual variable
         assert_eq!(
@@ -350,7 +371,10 @@ mod tests {
 
         // Test accessing all variables
         let all_vars = result.facts.get("all_variables").unwrap();
-        assert_eq!(all_vars.get("datacenter"), Some(&serde_json::json!("us-west-1")));
+        assert_eq!(
+            all_vars.get("datacenter"),
+            Some(&serde_json::json!("us-west-1"))
+        );
         assert_eq!(all_vars.get("role"), Some(&serde_json::json!("webserver")));
     }
 }

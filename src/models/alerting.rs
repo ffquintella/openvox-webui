@@ -114,8 +114,8 @@ impl Default for AlertSeverity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConditionOperator {
-    All,  // AND - all conditions must match
-    Any,  // OR - any condition must match
+    All, // AND - all conditions must match
+    Any, // OR - any condition must match
 }
 
 impl ConditionOperator {
@@ -287,7 +287,7 @@ pub struct AlertCondition {
     /// Field to evaluate (e.g., "node.status", "compliance.rate", "drift.count")
     pub field: String,
     /// Comparison operator
-    pub operator: String,  // eq, ne, gt, gte, lt, lte, contains, regex
+    pub operator: String, // eq, ne, gt, gte, lt, lte, contains, regex
     /// Value to compare against
     pub value: serde_json::Value,
 }
@@ -526,13 +526,19 @@ mod tests {
     #[test]
     fn test_alert_rule_type_conversion() {
         assert_eq!(AlertRuleType::NodeStatus.as_str(), "node_status");
-        assert_eq!(AlertRuleType::from_str("compliance"), Some(AlertRuleType::Compliance));
+        assert_eq!(
+            AlertRuleType::from_str("compliance"),
+            Some(AlertRuleType::Compliance)
+        );
     }
 
     #[test]
     fn test_severity_conversion() {
         assert_eq!(AlertSeverity::Critical.as_str(), "critical");
-        assert_eq!(AlertSeverity::from_str("warning"), Some(AlertSeverity::Warning));
+        assert_eq!(
+            AlertSeverity::from_str("warning"),
+            Some(AlertSeverity::Warning)
+        );
     }
 
     #[test]

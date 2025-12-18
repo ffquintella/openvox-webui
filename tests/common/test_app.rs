@@ -19,6 +19,7 @@ use openvox_webui::{
     },
     db,
     middleware::auth::{Claims, TokenType},
+    models::default_organization_uuid,
     AppState, DbRbacService, RbacService,
 };
 
@@ -57,7 +58,14 @@ impl TestApp {
 
         // Build the router
         let router = Router::new()
-            .nest("/api/v1", api::routes())
+            .nest("/api/v1", api::public_routes())
+            .nest(
+                "/api/v1",
+                api::protected_routes().layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    openvox_webui::middleware::auth::auth_middleware,
+                )),
+            )
             .with_state(state.clone());
 
         Self { router, state }
@@ -173,7 +181,8 @@ impl TestResponse {
     /// Assert the response status
     pub fn assert_status(&self, expected: axum::http::StatusCode) -> &Self {
         assert_eq!(
-            self.status, expected,
+            self.status,
+            expected,
             "Expected status {}, got {}. Body: {}",
             expected,
             self.status,
@@ -273,6 +282,7 @@ pub fn generate_test_token(
         nbf: now,
         jti: Uuid::new_v4().to_string(),
         token_type: TokenType::Access,
+        organization_id: Some(default_organization_uuid().to_string()),
     };
 
     encode(

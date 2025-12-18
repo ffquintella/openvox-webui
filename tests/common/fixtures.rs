@@ -6,8 +6,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use openvox_webui::models::{
-    Action, Node, NodeGroup, Permission, Report, ReportStatus, Resource, Role, RuleMatchType,
-    Scope, SystemRole,
+    default_organization_uuid, Action, Node, NodeGroup, Permission, Report, ReportStatus, Resource,
+    Role, RuleMatchType, Scope, SystemRole,
 };
 
 /// Fixed UUIDs for testing (reproducible tests)
@@ -135,6 +135,7 @@ impl GroupFixtures {
     pub fn web_servers() -> NodeGroup {
         NodeGroup {
             id: ids::TEST_GROUP_ID,
+            organization_id: default_organization_uuid(),
             name: "web_servers".to_string(),
             description: Some("Production web servers".to_string()),
             parent_id: None,
@@ -142,6 +143,7 @@ impl GroupFixtures {
             rule_match_type: RuleMatchType::All,
             classes: vec!["role::webserver".to_string()],
             parameters: serde_json::json!({}),
+            variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
         }
@@ -151,6 +153,7 @@ impl GroupFixtures {
     pub fn db_servers() -> NodeGroup {
         NodeGroup {
             id: Uuid::new_v4(),
+            organization_id: default_organization_uuid(),
             name: "db_servers".to_string(),
             description: Some("Database servers".to_string()),
             parent_id: None,
@@ -158,6 +161,7 @@ impl GroupFixtures {
             rule_match_type: RuleMatchType::All,
             classes: vec!["role::database".to_string()],
             parameters: serde_json::json!({}),
+            variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
         }
@@ -220,15 +224,13 @@ impl RoleFixtures {
             description: Some("A custom test role".to_string()),
             is_system: false,
             parent_id: None,
-            permissions: vec![
-                Permission {
-                    id: Uuid::new_v4(),
-                    resource: Resource::Nodes,
-                    action: Action::Read,
-                    scope: Scope::All,
-                    constraint: None,
-                },
-            ],
+            permissions: vec![Permission {
+                id: Uuid::new_v4(),
+                resource: Resource::Nodes,
+                action: Action::Read,
+                scope: Scope::All,
+                constraint: None,
+            }],
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

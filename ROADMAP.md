@@ -915,12 +915,21 @@ Feature: Reporting
 - Modal forms for creating channels, rules, and silences
 
 ### 8.3 Multi-tenancy & Advanced RBAC
-- [ ] Organization/tenant support
-- [ ] Tenant isolation
-- [ ] Cross-tenant admin roles
-- [ ] Environment-based permissions
-- [ ] API key management with scoped permissions
-- [ ] Comprehensive audit logging
+- [x] Organization/tenant support
+- [x] Tenant isolation (tenant-scoped queries for core resources)
+- [x] Cross-tenant admin roles (`super_admin`)
+- [x] Environment-based permissions (RBAC scope type)
+- [x] API key management with scoped permissions
+- [x] Comprehensive audit logging (foundation: API + persisted events; expand coverage over time)
+
+**Backend Implementation (v0.8.x):**
+- Database: `organizations` table + `organization_id` columns across core tables; `api_key_roles` for key scoping
+- Auth: router split into public vs protected routes; API key auth supported via `Authorization: ApiKey <key>` or `X-API-Key`
+- APIs:
+  - `/api/v1/organizations/*` (super_admin; users can read their own organization via `/current`)
+  - `/api/v1/api-keys/*` (create/list/delete; scoped to tenant/user; super_admin can override tenant/user)
+  - `/api/v1/audit-logs/*` (admin/auditor/super_admin; super_admin can query across tenants)
+- Tenant override: selected endpoints accept `?organization_id=<uuid>` but only for `super_admin`
 
 ## Phase 9: Production Readiness
 

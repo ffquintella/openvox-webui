@@ -17,8 +17,8 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::db::{
-    AlertRepository, AlertRuleRepository, AlertSilenceRepository,
-    NotificationChannelRepository, NotificationHistoryRepository,
+    AlertRepository, AlertRuleRepository, AlertSilenceRepository, NotificationChannelRepository,
+    NotificationHistoryRepository,
 };
 use crate::models::{
     Alert, AlertCondition, AlertRule, AlertRuleType, AlertSeverity, AlertStats, AlertStatus,
@@ -100,10 +100,14 @@ impl AlertingService {
         req: &TestChannelRequest,
     ) -> Result<TestChannelResponse> {
         let repo = NotificationChannelRepository::new(&self.pool);
-        let channel = repo.get_by_id(id).await?
+        let channel = repo
+            .get_by_id(id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Channel not found"))?;
 
-        let test_message = req.message.clone()
+        let test_message = req
+            .message
+            .clone()
             .unwrap_or_else(|| "This is a test notification from OpenVox WebUI".to_string());
 
         // Create a test payload
@@ -287,7 +291,10 @@ impl AlertingService {
 
             // Check cooldown
             let alert_repo = AlertRepository::new(&self.pool);
-            if alert_repo.is_in_cooldown(rule.id, rule.cooldown_minutes).await? {
+            if alert_repo
+                .is_in_cooldown(rule.id, rule.cooldown_minutes)
+                .await?
+            {
                 debug!("Rule {} is in cooldown, skipping", rule.name);
                 continue;
             }
@@ -325,11 +332,15 @@ impl AlertingService {
         let mut failed_nodes = Vec::new();
         for node in &nodes {
             // Check if node matches any condition
-            let matches = self.evaluate_conditions(&rule.conditions, &json!({
-                "node.certname": node.certname,
-                "node.status": node.latest_report_status.as_deref().unwrap_or("unknown"),
-                "node.environment": node.report_environment.as_deref().unwrap_or(""),
-            }), rule.condition_operator);
+            let matches = self.evaluate_conditions(
+                &rule.conditions,
+                &json!({
+                    "node.certname": node.certname,
+                    "node.status": node.latest_report_status.as_deref().unwrap_or("unknown"),
+                    "node.environment": node.report_environment.as_deref().unwrap_or(""),
+                }),
+                rule.condition_operator,
+            );
 
             if matches {
                 failed_nodes.push(node.certname.clone());
@@ -337,12 +348,17 @@ impl AlertingService {
         }
 
         if !failed_nodes.is_empty() {
-            let alert = self.trigger_alert(
-                rule,
-                &format!("Node Status Alert: {} nodes affected", failed_nodes.len()),
-                &format!("The following nodes have triggered the alert: {}", failed_nodes.join(", ")),
-                Some(json!({ "affected_nodes": failed_nodes })),
-            ).await?;
+            let alert = self
+                .trigger_alert(
+                    rule,
+                    &format!("Node Status Alert: {} nodes affected", failed_nodes.len()),
+                    &format!(
+                        "The following nodes have triggered the alert: {}",
+                        failed_nodes.join(", ")
+                    ),
+                    Some(json!({ "affected_nodes": failed_nodes })),
+                )
+                .await?;
             return Ok(Some(alert));
         }
 
@@ -373,12 +389,17 @@ impl AlertingService {
         }
 
         if !non_compliant.is_empty() {
-            let alert = self.trigger_alert(
-                rule,
-                &format!("Compliance Alert: {} non-compliant nodes", non_compliant.len()),
-                &format!("Nodes failing compliance: {}", non_compliant.join(", ")),
-                Some(json!({ "non_compliant_nodes": non_compliant })),
-            ).await?;
+            let alert = self
+                .trigger_alert(
+                    rule,
+                    &format!(
+                        "Compliance Alert: {} non-compliant nodes",
+                        non_compliant.len()
+                    ),
+                    &format!("Nodes failing compliance: {}", non_compliant.join(", ")),
+                    Some(json!({ "non_compliant_nodes": non_compliant })),
+                )
+                .await?;
             return Ok(Some(alert));
         }
 
@@ -401,7 +422,9 @@ impl AlertingService {
         };
 
         // Get recent reports with failures
-        let reports = puppetdb.query_reports(None, Some("failed"), Some(100)).await?;
+        let reports = puppetdb
+            .query_reports(None, Some("failed"), Some(100))
+            .await?;
 
         let mut failed_reports = Vec::new();
         for report in &reports {
@@ -420,16 +443,26 @@ impl AlertingService {
         }
 
         if !failed_reports.is_empty() {
-            let affected_nodes: Vec<String> = failed_reports.iter()
-                .filter_map(|r| r.get("certname").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            let affected_nodes: Vec<String> = failed_reports
+                .iter()
+                .filter_map(|r| {
+                    r.get("certname")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
                 .collect();
 
-            let alert = self.trigger_alert(
-                rule,
-                &format!("Report Failure Alert: {} failures detected", failed_reports.len()),
-                &format!("Report failures on: {}", affected_nodes.join(", ")),
-                Some(json!({ "failed_reports": failed_reports })),
-            ).await?;
+            let alert = self
+                .trigger_alert(
+                    rule,
+                    &format!(
+                        "Report Failure Alert: {} failures detected",
+                        failed_reports.len()
+                    ),
+                    &format!("Report failures on: {}", affected_nodes.join(", ")),
+                    Some(json!({ "failed_reports": failed_reports })),
+                )
+                .await?;
             return Ok(Some(alert));
         }
 
@@ -454,7 +487,8 @@ impl AlertingService {
             return false;
         }
 
-        let results: Vec<bool> = conditions.iter()
+        let results: Vec<bool> = conditions
+            .iter()
             .map(|c| self.evaluate_condition(c, context))
             .collect();
 
@@ -472,63 +506,49 @@ impl AlertingService {
         match condition.operator.as_str() {
             "eq" | "=" | "==" => field_value == Some(&condition.value),
             "ne" | "!=" => field_value != Some(&condition.value),
-            "gt" | ">" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                        a.as_f64().unwrap_or(0.0) > b.as_f64().unwrap_or(0.0)
-                    }
-                    _ => false,
+            "gt" | ">" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
+                    a.as_f64().unwrap_or(0.0) > b.as_f64().unwrap_or(0.0)
                 }
-            }
-            "gte" | ">=" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                        a.as_f64().unwrap_or(0.0) >= b.as_f64().unwrap_or(0.0)
-                    }
-                    _ => false,
+                _ => false,
+            },
+            "gte" | ">=" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
+                    a.as_f64().unwrap_or(0.0) >= b.as_f64().unwrap_or(0.0)
                 }
-            }
-            "lt" | "<" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                        a.as_f64().unwrap_or(0.0) < b.as_f64().unwrap_or(0.0)
-                    }
-                    _ => false,
+                _ => false,
+            },
+            "lt" | "<" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
+                    a.as_f64().unwrap_or(0.0) < b.as_f64().unwrap_or(0.0)
                 }
-            }
-            "lte" | "<=" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                        a.as_f64().unwrap_or(0.0) <= b.as_f64().unwrap_or(0.0)
-                    }
-                    _ => false,
+                _ => false,
+            },
+            "lte" | "<=" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
+                    a.as_f64().unwrap_or(0.0) <= b.as_f64().unwrap_or(0.0)
                 }
-            }
-            "contains" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
-                        haystack.contains(needle)
-                    }
-                    (Some(serde_json::Value::Array(arr)), val) => arr.contains(val),
-                    _ => false,
+                _ => false,
+            },
+            "contains" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
+                    haystack.contains(needle)
                 }
-            }
-            "regex" | "~" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::String(s)), serde_json::Value::String(pattern)) => {
-                        regex::Regex::new(pattern)
-                            .map(|re| re.is_match(s))
-                            .unwrap_or(false)
-                    }
-                    _ => false,
+                (Some(serde_json::Value::Array(arr)), val) => arr.contains(val),
+                _ => false,
+            },
+            "regex" | "~" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::String(s)), serde_json::Value::String(pattern)) => {
+                    regex::Regex::new(pattern)
+                        .map(|re| re.is_match(s))
+                        .unwrap_or(false)
                 }
-            }
-            "in" => {
-                match (&condition.value, field_value) {
-                    (serde_json::Value::Array(arr), Some(val)) => arr.contains(val),
-                    _ => false,
-                }
-            }
+                _ => false,
+            },
+            "in" => match (&condition.value, field_value) {
+                (serde_json::Value::Array(arr), Some(val)) => arr.contains(val),
+                _ => false,
+            },
             _ => {
                 warn!("Unknown condition operator: {}", condition.operator);
                 false
@@ -537,7 +557,11 @@ impl AlertingService {
     }
 
     /// Get a field value from JSON using dot notation (e.g., "node.status")
-    fn get_field_value<'a>(&self, value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    fn get_field_value<'a>(
+        &self,
+        value: &'a serde_json::Value,
+        path: &str,
+    ) -> Option<&'a serde_json::Value> {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = value;
 
@@ -569,7 +593,9 @@ impl AlertingService {
 
         // Create the alert
         let alert_repo = AlertRepository::new(&self.pool);
-        let alert = alert_repo.create(rule.id, title, message, rule.severity, context).await?;
+        let alert = alert_repo
+            .create(rule.id, title, message, rule.severity, context)
+            .await?;
 
         // Send notifications to all associated channels
         self.send_alert_notifications(&alert, rule).await?;
@@ -585,7 +611,9 @@ impl AlertingService {
         message: &str,
         context: Option<serde_json::Value>,
     ) -> Result<Alert> {
-        let rule = self.get_rule(rule_id).await?
+        let rule = self
+            .get_rule(rule_id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Rule not found"))?;
 
         self.trigger_alert(&rule, title, message, context).await
@@ -630,12 +658,22 @@ impl AlertingService {
                 // Send the notification
                 match self.send_notification(&channel, &payload).await {
                     Ok(response_code) => {
-                        history_repo.mark_sent(notification.id, Some(response_code), None).await?;
-                        info!("Notification sent to channel {} for alert {}", channel.name, alert.id);
+                        history_repo
+                            .mark_sent(notification.id, Some(response_code), None)
+                            .await?;
+                        info!(
+                            "Notification sent to channel {} for alert {}",
+                            channel.name, alert.id
+                        );
                     }
                     Err(e) => {
-                        error!("Failed to send notification to channel {}: {}", channel.name, e);
-                        history_repo.mark_failed(notification.id, &e.to_string()).await?;
+                        error!(
+                            "Failed to send notification to channel {}: {}",
+                            channel.name, e
+                        );
+                        history_repo
+                            .mark_failed(notification.id, &e.to_string())
+                            .await?;
                     }
                 }
             }
@@ -668,8 +706,8 @@ impl AlertingService {
         channel: &NotificationChannel,
         payload: &WebhookPayload,
     ) -> Result<i32> {
-        let config: WebhookConfig = serde_json::from_value(channel.config.clone())
-            .context("Invalid webhook config")?;
+        let config: WebhookConfig =
+            serde_json::from_value(channel.config.clone()).context("Invalid webhook config")?;
 
         let mut request = match config.method.to_uppercase().as_str() {
             "POST" => self.http_client.post(&config.url),
@@ -697,7 +735,11 @@ impl AlertingService {
 
         if !response.status().is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Webhook returned error {}: {}", status, body));
+            return Err(anyhow::anyhow!(
+                "Webhook returned error {}: {}",
+                status,
+                body
+            ));
         }
 
         Ok(status)
@@ -709,8 +751,8 @@ impl AlertingService {
         channel: &NotificationChannel,
         payload: &WebhookPayload,
     ) -> Result<i32> {
-        let config: EmailConfig = serde_json::from_value(channel.config.clone())
-            .context("Invalid email config")?;
+        let config: EmailConfig =
+            serde_json::from_value(channel.config.clone()).context("Invalid email config")?;
 
         // Note: Full email implementation would require an SMTP library like lettre
         // For now, we'll log the attempt and return success for testing
@@ -742,8 +784,8 @@ impl AlertingService {
         channel: &NotificationChannel,
         payload: &WebhookPayload,
     ) -> Result<i32> {
-        let config: SlackConfig = serde_json::from_value(channel.config.clone())
-            .context("Invalid Slack config")?;
+        let config: SlackConfig =
+            serde_json::from_value(channel.config.clone()).context("Invalid Slack config")?;
 
         // Build Slack message with blocks for better formatting
         let color = match payload.alert.severity.as_str() {
@@ -786,7 +828,8 @@ impl AlertingService {
             }]
         });
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&config.webhook_url)
             .json(&slack_payload)
             .send()
@@ -809,8 +852,8 @@ impl AlertingService {
         channel: &NotificationChannel,
         payload: &WebhookPayload,
     ) -> Result<i32> {
-        let config: TeamsConfig = serde_json::from_value(channel.config.clone())
-            .context("Invalid Teams config")?;
+        let config: TeamsConfig =
+            serde_json::from_value(channel.config.clone()).context("Invalid Teams config")?;
 
         // Build Teams adaptive card
         let theme_color = match payload.alert.severity.as_str() {
@@ -846,7 +889,8 @@ impl AlertingService {
             }]
         });
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&config.webhook_url)
             .json(&teams_payload)
             .send()
@@ -907,13 +951,17 @@ impl AlertingService {
             // Retry the notification
             match self.send_notification(&channel, &payload).await {
                 Ok(response_code) => {
-                    history_repo.mark_sent(notification.id, Some(response_code), None).await?;
+                    history_repo
+                        .mark_sent(notification.id, Some(response_code), None)
+                        .await?;
                     processed += 1;
                 }
                 Err(e) => {
                     // Max 3 retries
                     if notification.attempt_count >= 3 {
-                        history_repo.mark_failed(notification.id, &e.to_string()).await?;
+                        history_repo
+                            .mark_failed(notification.id, &e.to_string())
+                            .await?;
                     } else {
                         history_repo.mark_retrying(notification.id).await?;
                     }
@@ -932,7 +980,10 @@ impl AlertingService {
         let deleted_alerts = alert_repo.delete_old_resolved(resolved_alert_days).await?;
         let deleted_silences = silence_repo.delete_expired().await?;
 
-        info!("Cleanup: deleted {} old alerts and {} expired silences", deleted_alerts, deleted_silences);
+        info!(
+            "Cleanup: deleted {} old alerts and {} expired silences",
+            deleted_alerts, deleted_silences
+        );
 
         Ok((deleted_alerts, deleted_silences))
     }
@@ -943,7 +994,10 @@ mod tests {
     use super::*;
 
     // Helper function to get a field value from JSON using dot notation
-    fn get_field_value<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    fn get_field_value<'a>(
+        value: &'a serde_json::Value,
+        path: &str,
+    ) -> Option<&'a serde_json::Value> {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = value;
 
@@ -970,15 +1024,13 @@ mod tests {
         match condition.operator.as_str() {
             "eq" | "=" | "==" => field_value == Some(&condition.value),
             "ne" | "!=" => field_value != Some(&condition.value),
-            "contains" => {
-                match (field_value, &condition.value) {
-                    (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
-                        haystack.contains(needle)
-                    }
-                    (Some(serde_json::Value::Array(arr)), val) => arr.contains(val),
-                    _ => false,
+            "contains" => match (field_value, &condition.value) {
+                (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
+                    haystack.contains(needle)
                 }
-            }
+                (Some(serde_json::Value::Array(arr)), val) => arr.contains(val),
+                _ => false,
+            },
             _ => false,
         }
     }

@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::models::{
-    Action, EffectivePermissions, Permission, PermissionCheck, PermissionConstraint,
-    Resource, Role, Scope, SystemRole,
+    Action, EffectivePermissions, Permission, PermissionCheck, PermissionConstraint, Resource,
+    Role, Scope, SystemRole,
 };
 
 /// Service for managing roles and permissions
@@ -76,7 +76,10 @@ impl RbacService {
 
     /// Update a role
     pub fn update_role(&mut self, id: Uuid, updates: Role) -> Result<&Role> {
-        let role = self.roles.iter_mut().find(|r| r.id == id)
+        let role = self
+            .roles
+            .iter_mut()
+            .find(|r| r.id == id)
             .context("Role not found")?;
 
         if role.is_system {
@@ -97,7 +100,10 @@ impl RbacService {
 
     /// Delete a role
     pub fn delete_role(&mut self, id: Uuid) -> Result<()> {
-        let role = self.roles.iter().find(|r| r.id == id)
+        let role = self
+            .roles
+            .iter()
+            .find(|r| r.id == id)
             .context("Role not found")?;
 
         if role.is_system {
@@ -170,9 +176,7 @@ impl RbacService {
             // Check scope
             let scope_matches = match &perm.scope {
                 Scope::All => true,
-                Scope::Environment(env) => {
-                    environment.map(|e| e == env).unwrap_or(false)
-                }
+                Scope::Environment(env) => environment.map(|e| e == env).unwrap_or(false),
                 Scope::Group(group_id) => {
                     // Check if resource_id matches group constraint
                     resource_id.map(|id| id == *group_id).unwrap_or(false)
@@ -184,9 +188,9 @@ impl RbacService {
                             PermissionConstraint::ResourceIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }
-                            PermissionConstraint::Environments(envs) => {
-                                environment.map(|e| envs.contains(&e.to_string())).unwrap_or(false)
-                            }
+                            PermissionConstraint::Environments(envs) => environment
+                                .map(|e| envs.contains(&e.to_string()))
+                                .unwrap_or(false),
                             PermissionConstraint::GroupIds(ids) => {
                                 resource_id.map(|id| ids.contains(&id)).unwrap_or(false)
                             }
@@ -239,13 +243,10 @@ impl RbacService {
     }
 
     /// Get all permissions for a specific resource
-    pub fn get_resource_permissions(
-        &self,
-        role_ids: &[Uuid],
-        resource: Resource,
-    ) -> Vec<Action> {
+    pub fn get_resource_permissions(&self, role_ids: &[Uuid], resource: Resource) -> Vec<Action> {
         let effective = self.get_effective_permissions(role_ids);
-        effective.permissions
+        effective
+            .permissions
             .iter()
             .filter(|p| p.resource == resource)
             .map(|p| p.action)
@@ -307,14 +308,12 @@ mod tests {
         let admin_id = SystemRole::Admin.uuid();
 
         for resource in Resource::all() {
-            let check = service.check_permission(
-                &[admin_id],
-                resource,
-                Action::Admin,
-                None,
-                None,
+            let check = service.check_permission(&[admin_id], resource, Action::Admin, None, None);
+            assert!(
+                check.allowed,
+                "Admin should have admin permission for {:?}",
+                resource
             );
-            assert!(check.allowed, "Admin should have admin permission for {:?}", resource);
         }
     }
 
@@ -324,23 +323,13 @@ mod tests {
         let viewer_id = SystemRole::Viewer.uuid();
 
         // Viewer should be able to read nodes
-        let read_check = service.check_permission(
-            &[viewer_id],
-            Resource::Nodes,
-            Action::Read,
-            None,
-            None,
-        );
+        let read_check =
+            service.check_permission(&[viewer_id], Resource::Nodes, Action::Read, None, None);
         assert!(read_check.allowed);
 
         // Viewer should NOT be able to create groups
-        let create_check = service.check_permission(
-            &[viewer_id],
-            Resource::Groups,
-            Action::Create,
-            None,
-            None,
-        );
+        let create_check =
+            service.check_permission(&[viewer_id], Resource::Groups, Action::Create, None, None);
         assert!(!create_check.allowed);
     }
 
@@ -350,30 +339,24 @@ mod tests {
         let operator_id = SystemRole::Operator.uuid();
 
         // Operator can read and create groups
-        assert!(service.check_permission(
-            &[operator_id],
-            Resource::Groups,
-            Action::Read,
-            None,
-            None,
-        ).allowed);
+        assert!(
+            service
+                .check_permission(&[operator_id], Resource::Groups, Action::Read, None, None,)
+                .allowed
+        );
 
-        assert!(service.check_permission(
-            &[operator_id],
-            Resource::Groups,
-            Action::Create,
-            None,
-            None,
-        ).allowed);
+        assert!(
+            service
+                .check_permission(&[operator_id], Resource::Groups, Action::Create, None, None,)
+                .allowed
+        );
 
         // Operator cannot delete groups
-        assert!(!service.check_permission(
-            &[operator_id],
-            Resource::Groups,
-            Action::Delete,
-            None,
-            None,
-        ).allowed);
+        assert!(
+            !service
+                .check_permission(&[operator_id], Resource::Groups, Action::Delete, None, None,)
+                .allowed
+        );
     }
 
     #[test]
@@ -381,13 +364,8 @@ mod tests {
         let service = RbacService::new();
         let auditor_id = SystemRole::Auditor.uuid();
 
-        let check = service.check_permission(
-            &[auditor_id],
-            Resource::AuditLogs,
-            Action::Read,
-            None,
-            None,
-        );
+        let check =
+            service.check_permission(&[auditor_id], Resource::AuditLogs, Action::Read, None, None);
         assert!(check.allowed);
     }
 
@@ -401,22 +379,18 @@ mod tests {
         let role_ids = vec![viewer_id, auditor_id];
 
         // Should have audit log access from auditor
-        assert!(service.check_permission(
-            &role_ids,
-            Resource::AuditLogs,
-            Action::Read,
-            None,
-            None,
-        ).allowed);
+        assert!(
+            service
+                .check_permission(&role_ids, Resource::AuditLogs, Action::Read, None, None,)
+                .allowed
+        );
 
         // Should have export from auditor
-        assert!(service.check_permission(
-            &role_ids,
-            Resource::Reports,
-            Action::Export,
-            None,
-            None,
-        ).allowed);
+        assert!(
+            service
+                .check_permission(&role_ids, Resource::Reports, Action::Export, None, None,)
+                .allowed
+        );
     }
 
     #[test]
@@ -430,15 +404,13 @@ mod tests {
             description: Some("A custom role".to_string()),
             is_system: false,
             parent_id: Some(SystemRole::Viewer.uuid()),
-            permissions: vec![
-                Permission {
-                    id: Uuid::new_v4(),
-                    resource: Resource::Groups,
-                    action: Action::Create,
-                    scope: Scope::All,
-                    constraint: None,
-                },
-            ],
+            permissions: vec![Permission {
+                id: Uuid::new_v4(),
+                resource: Resource::Groups,
+                action: Action::Create,
+                scope: Scope::All,
+                constraint: None,
+            }],
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -451,14 +423,16 @@ mod tests {
         let effective = service.get_effective_permissions(&[custom_id]);
 
         // Should have the custom create permission
-        assert!(effective.permissions.iter().any(|p|
-            p.resource == Resource::Groups && p.action == Action::Create
-        ));
+        assert!(effective
+            .permissions
+            .iter()
+            .any(|p| p.resource == Resource::Groups && p.action == Action::Create));
 
         // Should have inherited read permissions from viewer
-        assert!(effective.permissions.iter().any(|p|
-            p.resource == Resource::Nodes && p.action == Action::Read
-        ));
+        assert!(effective
+            .permissions
+            .iter()
+            .any(|p| p.resource == Resource::Nodes && p.action == Action::Read));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Classification step definitions
 
-use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestWorld};
+use cucumber::{given, then, when};
 
 fn get_fact_value(facts: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
     let parts: Vec<&str> = path.split('.').collect();

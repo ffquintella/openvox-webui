@@ -99,9 +99,7 @@ async fn main() -> Result<()> {
     info!("Connected to database: {}", db_url);
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
     // Create PuppetDB client if configured
     let puppetdb = if let Some(ref puppetdb_config) = config.puppetdb {
@@ -111,7 +109,10 @@ async fn main() -> Result<()> {
                 Some(Arc::new(client))
             }
             Err(e) => {
-                warn!("Failed to connect to PuppetDB: {}. Reports requiring PuppetDB will fail.", e);
+                warn!(
+                    "Failed to connect to PuppetDB: {}. Reports requiring PuppetDB will fail.",
+                    e
+                );
                 None
             }
         }
@@ -147,8 +148,10 @@ async fn main() -> Result<()> {
             } else {
                 println!("Schedules due to run:");
                 for schedule in due {
-                    println!("  - {} (report: {}, cron: {})",
-                             schedule.id, schedule.report_id, schedule.schedule_cron);
+                    println!(
+                        "  - {} (report: {}, cron: {})",
+                        schedule.id, schedule.report_id, schedule.schedule_cron
+                    );
                 }
             }
         }
@@ -171,17 +174,25 @@ async fn main() -> Result<()> {
     if results.is_empty() {
         info!("No schedules were due to run");
     } else {
-        info!("Executed {} schedules: {} successful, {} failed",
-              results.len(), successful, failed);
+        info!(
+            "Executed {} schedules: {} successful, {} failed",
+            results.len(),
+            successful,
+            failed
+        );
 
         for result in &results {
             if result.success {
-                info!("  [OK] Schedule {} completed in {}ms",
-                      result.schedule_id, result.execution_time_ms);
+                info!(
+                    "  [OK] Schedule {} completed in {}ms",
+                    result.schedule_id, result.execution_time_ms
+                );
             } else {
-                error!("  [FAIL] Schedule {}: {}",
-                       result.schedule_id,
-                       result.error.as_deref().unwrap_or("Unknown error"));
+                error!(
+                    "  [FAIL] Schedule {}: {}",
+                    result.schedule_id,
+                    result.error.as_deref().unwrap_or("Unknown error")
+                );
             }
         }
     }
@@ -209,7 +220,9 @@ fn print_help() {
     println!();
     println!("Example cron entries:");
     println!("  # Run every minute");
-    println!("  * * * * * /usr/local/bin/run-scheduled-reports --config /etc/openvox-webui/config.yaml");
+    println!(
+        "  * * * * * /usr/local/bin/run-scheduled-reports --config /etc/openvox-webui/config.yaml"
+    );
     println!();
     println!("  # Run every 5 minutes");
     println!("  */5 * * * * /usr/local/bin/run-scheduled-reports --config /etc/openvox-webui/config.yaml");

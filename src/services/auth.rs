@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{User, UserPublic};
+use crate::models::{default_organization_uuid, User, UserPublic};
 
 /// Authentication service for user management
 pub struct AuthService {
@@ -63,7 +63,7 @@ impl AuthService {
     /// Get a user by username
     pub async fn get_user_by_username(&self, username: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, username, email, password_hash, role, created_at, updated_at FROM users WHERE username = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE username = ?"
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -77,7 +77,7 @@ impl AuthService {
     pub async fn get_user_by_id(&self, id: &Uuid) -> Result<Option<User>> {
         let id_str = id.to_string();
         let row = sqlx::query(
-            "SELECT id, username, email, password_hash, role, created_at, updated_at FROM users WHERE id = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE id = ?"
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
@@ -90,7 +90,7 @@ impl AuthService {
     /// Get a user by email
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, username, email, password_hash, role, created_at, updated_at FROM users WHERE email = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE email = ?"
         )
         .bind(email)
         .fetch_optional(&self.pool)
@@ -108,6 +108,18 @@ impl AuthService {
         password: &str,
         role: &str,
     ) -> Result<User> {
+        self.create_user_in_org(username, email, password, role, default_organization_uuid())
+            .await
+    }
+
+    pub async fn create_user_in_org(
+        &self,
+        username: &str,
+        email: &str,
+        password: &str,
+        role: &str,
+        organization_id: Uuid,
+    ) -> Result<User> {
         // Check if username already exists
         if self.get_user_by_username(username).await?.is_some() {
             anyhow::bail!("Username already exists");
@@ -119,7 +131,8 @@ impl AuthService {
         }
 
         let password_hash = Self::hash_password(password)?;
-        let user = User::new(
+        let user = User::new_with_org(
+            organization_id,
             username.to_string(),
             email.to_string(),
             password_hash,
@@ -127,13 +140,15 @@ impl AuthService {
         );
 
         let id_str = user.id.to_string();
+        let org_id_str = user.organization_id.to_string();
         let created_at = user.created_at.to_rfc3339();
         let updated_at = user.updated_at.to_rfc3339();
 
         sqlx::query(
-            "INSERT INTO users (id, username, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (id, organization_id, username, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&id_str)
+        .bind(&org_id_str)
         .bind(&user.username)
         .bind(&user.email)
         .bind(&user.password_hash)
@@ -156,10 +171,7 @@ impl AuthService {
         password: Option<&str>,
         role: Option<&str>,
     ) -> Result<User> {
-        let existing = self
-            .get_user_by_id(id)
-            .await?
-            .context("User not found")?;
+        let existing = self.get_user_by_id(id).await?.context("User not found")?;
 
         let new_username = username.unwrap_or(&existing.username);
         let new_email = email.unwrap_or(&existing.email);
@@ -173,9 +185,7 @@ impl AuthService {
         }
 
         // Check email uniqueness if changed
-        if new_email != existing.email
-            && self.get_user_by_email(new_email).await?.is_some()
-        {
+        if new_email != existing.email && self.get_user_by_email(new_email).await?.is_some() {
             anyhow::bail!("Email already exists");
         }
 
@@ -220,13 +230,42 @@ impl AuthService {
     /// List all users
     pub async fn list_users(&self) -> Result<Vec<UserPublic>> {
         let rows = sqlx::query(
-            "SELECT id, username, email, password_hash, role, created_at, updated_at FROM users ORDER BY username"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users ORDER BY username"
         )
         .fetch_all(&self.pool)
         .await
         .context("Failed to list users")?;
 
         Ok(rows.iter().map(|r| row_to_user(r).into()).collect())
+    }
+
+    pub async fn list_users_in_org(&self, organization_id: Uuid) -> Result<Vec<UserPublic>> {
+        let rows = sqlx::query(
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE organization_id = ? ORDER BY username",
+        )
+        .bind(organization_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to list users for organization")?;
+
+        Ok(rows.iter().map(|r| row_to_user(r).into()).collect())
+    }
+
+    pub async fn get_user_by_id_in_org(
+        &self,
+        organization_id: Uuid,
+        id: &Uuid,
+    ) -> Result<Option<User>> {
+        let row = sqlx::query(
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE organization_id = ? AND id = ?",
+        )
+        .bind(organization_id.to_string())
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch user by ID (scoped)")?;
+
+        Ok(row.map(|r| row_to_user(&r)))
     }
 
     /// Get user roles from the user_roles table
@@ -323,7 +362,7 @@ impl AuthService {
         let now = chrono::Utc::now().to_rfc3339();
 
         let row = sqlx::query(
-            "SELECT user_id FROM password_reset_tokens WHERE token_hash = ? AND expires_at > ?"
+            "SELECT user_id FROM password_reset_tokens WHERE token_hash = ? AND expires_at > ?",
         )
         .bind(&token_hash)
         .bind(&now)
@@ -334,7 +373,10 @@ impl AuthService {
         match row {
             Some(row) => {
                 let user_id_str: String = row.get("user_id");
-                Ok(Some(Uuid::parse_str(&user_id_str).map_err(|_| anyhow::anyhow!("Invalid user ID"))?))
+                Ok(Some(
+                    Uuid::parse_str(&user_id_str)
+                        .map_err(|_| anyhow::anyhow!("Invalid user ID"))?,
+                ))
             }
             None => Ok(None),
         }
@@ -468,12 +510,17 @@ impl AuthService {
 /// Convert a database row to a User
 fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
     let id_str: String = row.get("id");
+    let org_id_str: String = row
+        .try_get("organization_id")
+        .unwrap_or_else(|_| default_organization_uuid().to_string());
     let created_at_str: String = row.get("created_at");
     let updated_at_str: String = row.get("updated_at");
     let force_password_change: bool = row.try_get("force_password_change").unwrap_or(false);
 
     User {
         id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::nil()),
+        organization_id: Uuid::parse_str(&org_id_str)
+            .unwrap_or_else(|_| default_organization_uuid()),
         username: row.get("username"),
         email: row.get("email"),
         password_hash: row.get("password_hash"),

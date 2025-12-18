@@ -16,10 +16,11 @@ use tower_http::{
 };
 use tracing::{info, Level};
 
-use openvox_webui::{api, config, db, middleware, services, AppConfig, AppState, DbRbacService, RbacService};
 use config::LogFormat;
+use openvox_webui::{
+    api, config, db, middleware, services, AppConfig, AppState, DbRbacService, RbacService,
+};
 use services::puppetdb::PuppetDbClient;
-use tower::ServiceBuilder;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -101,9 +102,7 @@ async fn main() -> Result<()> {
 
     info!("Server is ready to accept connections");
 
-    axum::serve(listener, app)
-        .await
-        .context("Server error")?;
+    axum::serve(listener, app).await.context("Server error")?;
 
     Ok(())
 }
@@ -112,8 +111,8 @@ async fn main() -> Result<()> {
 fn init_logging(config: &AppConfig) {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.logging.level));
 
     let subscriber = tracing_subscriber::registry().with(env_filter);
 
@@ -148,8 +147,7 @@ fn ensure_data_directory(config: &AppConfig) -> Result<()> {
     if let Some(path) = config.database.url.strip_prefix("sqlite://") {
         if let Some(parent) = std::path::Path::new(path).parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .context("Failed to create data directory")?;
+                std::fs::create_dir_all(parent).context("Failed to create data directory")?;
                 info!("Created data directory: {:?}", parent);
             }
         }
@@ -171,17 +169,20 @@ fn create_router(state: AppState) -> Router {
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
     // Build the router
+    //
+    // Note: Authentication must not be applied globally, otherwise public endpoints like
+    // `/api/v1/auth/login` become unusable. We keep public routes unauthenticated and apply
+    // auth middleware only to protected routes.
     Router::new()
-        .nest("/api/v1", api::routes())
-        .with_state(state.clone())
-        .layer(
-            ServiceBuilder::new()
-                .layer(axum::middleware::from_fn_with_state(
-                    state,
-                    middleware::auth::auth_middleware,
-                ))
-                .into_inner(),
+        .nest("/api/v1", api::public_routes())
+        .nest(
+            "/api/v1",
+            api::protected_routes().layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                middleware::auth::auth_middleware,
+            )),
         )
+        .with_state(state.clone())
         .layer(CompressionLayer::new())
         .layer(trace_layer)
         .layer(cors)

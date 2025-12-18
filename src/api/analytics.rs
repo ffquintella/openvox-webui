@@ -27,7 +27,10 @@ use crate::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         // Saved Reports
-        .route("/saved-reports", get(list_saved_reports).post(create_saved_report))
+        .route(
+            "/saved-reports",
+            get(list_saved_reports).post(create_saved_report),
+        )
         .route(
             "/saved-reports/{id}",
             get(get_saved_report)
@@ -35,7 +38,10 @@ pub fn routes() -> Router<AppState> {
                 .delete(delete_saved_report),
         )
         .route("/saved-reports/{id}/execute", post(execute_saved_report))
-        .route("/saved-reports/{id}/executions", get(list_report_executions))
+        .route(
+            "/saved-reports/{id}/executions",
+            get(list_report_executions),
+        )
         // Report Templates
         .route("/templates", get(list_report_templates))
         .route("/templates/{id}", get(get_report_template))
@@ -51,13 +57,19 @@ pub fn routes() -> Router<AppState> {
         .route("/generate", post(generate_report))
         .route("/generate/{report_type}", post(generate_report_by_type))
         // Compliance Baselines
-        .route("/compliance-baselines", get(list_compliance_baselines).post(create_compliance_baseline))
+        .route(
+            "/compliance-baselines",
+            get(list_compliance_baselines).post(create_compliance_baseline),
+        )
         .route(
             "/compliance-baselines/{id}",
             get(get_compliance_baseline).delete(delete_compliance_baseline),
         )
         // Drift Baselines
-        .route("/drift-baselines", get(list_drift_baselines).post(create_drift_baseline))
+        .route(
+            "/drift-baselines",
+            get(list_drift_baselines).post(create_drift_baseline),
+        )
         .route(
             "/drift-baselines/{id}",
             get(get_drift_baseline).delete(delete_drift_baseline),
@@ -152,7 +164,9 @@ async fn delete_saved_report(
     let deleted = repo.delete(id).await?;
 
     if deleted {
-        Ok(Json(serde_json::json!({"message": "Report deleted successfully"})))
+        Ok(Json(
+            serde_json::json!({"message": "Report deleted successfully"}),
+        ))
     } else {
         Err(AppError::not_found("Saved report not found"))
     }
@@ -287,7 +301,9 @@ async fn delete_schedule(
     let deleted = repo.delete(id).await?;
 
     if deleted {
-        Ok(Json(serde_json::json!({"message": "Schedule deleted successfully"})))
+        Ok(Json(
+            serde_json::json!({"message": "Schedule deleted successfully"}),
+        ))
     } else {
         Err(AppError::not_found("Schedule not found"))
     }
@@ -313,7 +329,9 @@ async fn generate_report(
     Json(req): Json<GenerateReportRequest>,
 ) -> AppResult<Json<ReportResult>> {
     let service = ReportingService::new(state.db.clone(), state.puppetdb.clone());
-    let (result, _) = service.generate_report(req.report_type, &req.config).await?;
+    let (result, _) = service
+        .generate_report(req.report_type, &req.config)
+        .await?;
     Ok(Json(result))
 }
 
@@ -376,7 +394,9 @@ async fn delete_compliance_baseline(
     let deleted = repo.delete(id).await?;
 
     if deleted {
-        Ok(Json(serde_json::json!({"message": "Baseline deleted successfully"})))
+        Ok(Json(
+            serde_json::json!({"message": "Baseline deleted successfully"}),
+        ))
     } else {
         Err(AppError::not_found("Compliance baseline not found"))
     }
@@ -427,7 +447,9 @@ async fn delete_drift_baseline(
     let deleted = repo.delete(id).await?;
 
     if deleted {
-        Ok(Json(serde_json::json!({"message": "Baseline deleted successfully"})))
+        Ok(Json(
+            serde_json::json!({"message": "Baseline deleted successfully"}),
+        ))
     } else {
         Err(AppError::not_found("Drift baseline not found"))
     }

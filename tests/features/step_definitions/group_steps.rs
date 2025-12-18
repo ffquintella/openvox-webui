@@ -1,16 +1,22 @@
 //! Node group step definitions
 
-use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestWorld};
+use cucumber::{given, then, when};
 
 #[given(expr = "a node group {string} exists")]
 async fn group_exists(world: &mut TestWorld, name: String) {
-    world.create_group(&name).await.expect("Failed to create group");
+    world
+        .create_group(&name)
+        .await
+        .expect("Failed to create group");
 }
 
 #[given(expr = "a node group {string} exists with parent {string}")]
 async fn group_exists_with_parent(world: &mut TestWorld, name: String, parent: String) {
-    world.create_group(&name).await.expect("Failed to create group");
+    world
+        .create_group(&name)
+        .await
+        .expect("Failed to create group");
     world.group_parents.insert(name, parent);
 }
 
@@ -72,7 +78,10 @@ async fn create_group(world: &mut TestWorld, name: String) {
 
 #[when(expr = "I create a node group named {string} with parent {string}")]
 async fn create_group_with_parent(world: &mut TestWorld, name: String, _parent: String) {
-    world.create_group(&name).await.expect("Failed to create group");
+    world
+        .create_group(&name)
+        .await
+        .expect("Failed to create group");
     world.last_response = Some(TestResponse {
         status: 201,
         body: serde_json::json!({

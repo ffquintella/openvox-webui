@@ -1,7 +1,7 @@
 //! CA step definitions
 
-use cucumber::{then, when};
 use crate::features::support::{TestResponse, TestWorld};
+use cucumber::{then, when};
 
 #[when("I request CA status")]
 async fn request_ca_status(world: &mut TestWorld) {
@@ -19,8 +19,14 @@ async fn request_ca_status(world: &mut TestWorld) {
 #[then("the CA status should include counts")]
 async fn ca_status_includes_counts(world: &mut TestWorld) {
     if let Some(response) = &world.last_response {
-        let pending = response.body.get("pending_requests").and_then(|v| v.as_u64());
-        let signed = response.body.get("signed_certificates").and_then(|v| v.as_u64());
+        let pending = response
+            .body
+            .get("pending_requests")
+            .and_then(|v| v.as_u64());
+        let signed = response
+            .body
+            .get("signed_certificates")
+            .and_then(|v| v.as_u64());
         assert!(pending.is_some());
         assert!(signed.is_some());
     }
@@ -80,10 +86,7 @@ async fn response_should_include_dns_alt_names(world: &mut TestWorld, alt_names_
             .get("dns_alt_names")
             .and_then(|v| v.as_array())
             .expect("dns_alt_names array expected");
-        let actual_strs: Vec<&str> = actual
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect();
+        let actual_strs: Vec<&str> = actual.iter().filter_map(|v| v.as_str()).collect();
         assert_eq!(actual_strs, expected);
     }
 }

@@ -117,9 +117,10 @@ async fn get_node(
     State(state): State<AppState>,
     Path(certname): Path<String>,
 ) -> AppResult<Json<Node>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     let node = puppetdb
         .get_node(&certname)
@@ -148,9 +149,10 @@ async fn get_node_facts(
     Path(certname): Path<String>,
     Query(query): Query<NodeFactsQuery>,
 ) -> AppResult<Json<Vec<Fact>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // First verify the node exists
     let node_exists = puppetdb
@@ -168,12 +170,7 @@ async fn get_node_facts(
         match puppetdb.get_node_fact(&certname, name).await {
             Ok(Some(fact)) => vec![fact],
             Ok(None) => vec![],
-            Err(e) => {
-                return Err(AppError::Internal(format!(
-                    "Failed to fetch fact: {}",
-                    e
-                )))
-            }
+            Err(e) => return Err(AppError::Internal(format!("Failed to fetch fact: {}", e))),
         }
     } else {
         // Get all facts
@@ -207,9 +204,10 @@ async fn get_node_reports(
     Path(certname): Path<String>,
     Query(query): Query<NodeReportsQuery>,
 ) -> AppResult<Json<Vec<Report>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // First verify the node exists
     let node_exists = puppetdb
@@ -260,9 +258,10 @@ async fn get_node_resources(
     Path(certname): Path<String>,
     Query(query): Query<NodeResourcesQuery>,
 ) -> AppResult<Json<Vec<Resource>>> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // First verify the node exists
     let node_exists = puppetdb
@@ -310,9 +309,10 @@ async fn get_node_catalog(
     State(state): State<AppState>,
     Path(certname): Path<String>,
 ) -> AppResult<(StatusCode, Json<CatalogResponse>)> {
-    let puppetdb = state.puppetdb.as_ref().ok_or_else(|| {
-        AppError::ServiceUnavailable("PuppetDB is not configured".to_string())
-    })?;
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     let catalog = puppetdb
         .get_node_catalog(&certname)

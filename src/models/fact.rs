@@ -2,6 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::models::default_organization_uuid;
 
 /// Represents a fact from a node
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +92,10 @@ pub struct FactTemplate {
     /// Unique identifier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+
+    /// Organization/tenant identifier
+    #[serde(default = "default_organization_uuid")]
+    pub organization_id: Uuid,
 
     /// Template name
     pub name: String,

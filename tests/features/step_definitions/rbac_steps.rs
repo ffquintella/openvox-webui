@@ -1,7 +1,7 @@
 //! RBAC step definitions
 
-use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestUser, TestWorld};
+use cucumber::{given, then, when};
 
 // Role management steps
 
@@ -35,7 +35,10 @@ async fn create_role(world: &mut TestWorld, name: String, display_name: String) 
 #[when(expr = "I try to delete the role {string}")]
 async fn try_delete_role(world: &mut TestWorld, name: String) {
     // System roles cannot be deleted
-    let is_system = matches!(name.as_str(), "admin" | "operator" | "viewer" | "group_admin" | "auditor");
+    let is_system = matches!(
+        name.as_str(),
+        "admin" | "operator" | "viewer" | "group_admin" | "auditor"
+    );
 
     if is_system {
         world.last_response = Some(TestResponse {
@@ -217,7 +220,9 @@ async fn authenticated_with_role(world: &mut TestWorld, role: String) {
 #[when(expr = "I try to create a node group named {string}")]
 async fn try_create_group(world: &mut TestWorld, _name: String) {
     // Check if user has permission
-    let has_permission = world.current_user.as_ref()
+    let has_permission = world
+        .current_user
+        .as_ref()
         .map(|u| matches!(u.role.as_str(), "admin" | "operator"))
         .unwrap_or(false);
 
@@ -344,7 +349,12 @@ async fn request_nodes_for_env(world: &mut TestWorld, env: String) {
 // Assertion steps
 
 #[then(expr = "the response should contain system roles {string}, {string}, {string}")]
-async fn response_contains_system_roles(world: &mut TestWorld, _r1: String, _r2: String, _r3: String) {
+async fn response_contains_system_roles(
+    world: &mut TestWorld,
+    _r1: String,
+    _r2: String,
+    _r3: String,
+) {
     assert!(world.last_response.is_some());
 }
 
@@ -371,8 +381,7 @@ async fn user_should_have_role(_world: &mut TestWorld, _user: String, _role: Str
 #[then(expr = "the response should include permission {string}")]
 async fn response_includes_permission(world: &mut TestWorld, permission: String) {
     if let Some(response) = &world.last_response {
-        let permissions = response.body.get("permissions")
-            .and_then(|p| p.as_array());
+        let permissions = response.body.get("permissions").and_then(|p| p.as_array());
 
         if let Some(perms) = permissions {
             let parts: Vec<&str> = permission.split(':').collect();
@@ -391,13 +400,10 @@ async fn response_includes_permission(world: &mut TestWorld, permission: String)
 async fn user_has_all_role_permissions(world: &mut TestWorld, role: String) {
     // Verify inherited permissions - check that the response includes the parent role
     if let Some(response) = &world.last_response {
-        let roles = response.body.get("roles")
-            .and_then(|r| r.as_array());
+        let roles = response.body.get("roles").and_then(|r| r.as_array());
 
         if let Some(role_list) = roles {
-            let has_role = role_list.iter().any(|r| {
-                r.as_str() == Some(&role)
-            });
+            let has_role = role_list.iter().any(|r| r.as_str() == Some(&role));
             assert!(has_role, "User should have inherited permissions from role '{}' but effective roles are: {:?}", role, role_list);
         } else {
             // If no roles array, just verify response was successful
@@ -415,9 +421,9 @@ async fn response_contains_resources(world: &mut TestWorld, step: &cucumber::ghe
             // Skip header row
             for row in table.rows.iter().skip(1) {
                 let expected_name = &row[0];
-                let found = body.iter().any(|item| {
-                    item.get("name").and_then(|n| n.as_str()) == Some(expected_name)
-                });
+                let found = body
+                    .iter()
+                    .any(|item| item.get("name").and_then(|n| n.as_str()) == Some(expected_name));
                 assert!(found, "Resource {} not found in response", expected_name);
             }
         }
@@ -433,9 +439,9 @@ async fn response_contains_actions(world: &mut TestWorld, step: &cucumber::gherk
             // Skip header row
             for row in table.rows.iter().skip(1) {
                 let expected_name = &row[0];
-                let found = body.iter().any(|item| {
-                    item.get("name").and_then(|n| n.as_str()) == Some(expected_name)
-                });
+                let found = body
+                    .iter()
+                    .any(|item| item.get("name").and_then(|n| n.as_str()) == Some(expected_name));
                 assert!(found, "Action {} not found in response", expected_name);
             }
         }

@@ -1,7 +1,7 @@
 //! Node-related step definitions
 
-use cucumber::{given, then, when};
 use crate::features::support::{TestResponse, TestWorld};
+use cucumber::{given, then, when};
 
 #[given(expr = "a node {string} exists")]
 async fn node_exists(world: &mut TestWorld, certname: String) {
@@ -18,10 +18,18 @@ async fn node_exists(world: &mut TestWorld, certname: String) {
 }
 
 #[given(expr = "a node {string} exists with facts:")]
-async fn node_exists_with_facts(world: &mut TestWorld, certname: String, step: &cucumber::gherkin::Step) {
-    let facts_json = step.docstring.as_ref().expect("facts_json not found").trim();
-    let facts: serde_json::Value = serde_json::from_str(facts_json)
-        .expect("Invalid JSON for facts");
+async fn node_exists_with_facts(
+    world: &mut TestWorld,
+    certname: String,
+    step: &cucumber::gherkin::Step,
+) {
+    let facts_json = step
+        .docstring
+        .as_ref()
+        .expect("facts_json not found")
+        .trim();
+    let facts: serde_json::Value =
+        serde_json::from_str(facts_json).expect("Invalid JSON for facts");
     world.add_node_with_facts(&certname, facts);
 }
 
@@ -70,7 +78,10 @@ async fn request_node_details(world: &mut TestWorld, certname: String) {
 #[then(expr = "the response should contain node {string}")]
 async fn response_contains_node(world: &mut TestWorld, certname: String) {
     if let Some(response) = &world.last_response {
-        assert_eq!(response.body.get("certname").and_then(|v| v.as_str()), Some(certname.as_str()));
+        assert_eq!(
+            response.body.get("certname").and_then(|v| v.as_str()),
+            Some(certname.as_str())
+        );
     } else {
         panic!("No response available");
     }

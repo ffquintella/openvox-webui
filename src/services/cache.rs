@@ -265,9 +265,7 @@ impl CachedPuppetDbService {
 
         // Also cache individual nodes
         for node in &nodes {
-            self.nodes
-                .set(node.certname.clone(), node.clone())
-                .await;
+            self.nodes.set(node.certname.clone(), node.clone()).await;
         }
 
         Ok(nodes)
@@ -414,9 +412,7 @@ impl CachedPuppetDbService {
         info!("Invalidating cache for node: {}", certname);
 
         self.nodes.remove(&certname.to_string()).await;
-        self.facts
-            .remove(&format!("facts:{}", certname))
-            .await;
+        self.facts.remove(&format!("facts:{}", certname)).await;
         self.resources
             .remove(&format!("resources:{}", certname))
             .await;

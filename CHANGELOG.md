@@ -18,26 +18,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation framework
 - Puppet CA client and management API (status, CSR list, sign, reject, revoke, renew)
 - Puppet CA configuration block (`puppet_ca`) and RBAC permissions for certificates
-- Classification service hierarchy inheritance tests
- - Classification engine (Phase 4.1): rule evaluation, operators coverage, hierarchical inheritance
- - Enabled BDD `node_classification.feature` scenarios
- - Cucumber scenarios for Puppet CA operations (status, requests, sign/reject/revoke, renew)
+- Classification engine (Phase 4.1): rule evaluation, operators coverage, hierarchical inheritance
+- Enabled BDD `node_classification.feature` scenarios
+- Cucumber scenarios for Puppet CA operations (status, requests, sign/reject/revoke, renew)
+- Multi-tenancy foundations: `organizations` table and per-tenant `organization_id` columns across core tables
+- `super_admin` system role for cross-tenant administration
+- API key management (`/api/v1/api-keys`) with role-scoped keys and API key authentication
+- Audit logging improvements with `/api/v1/audit-logs` endpoint
 
 ### Changed
 - Rust clippy lint fixes across config, middleware, models, and services
-- Auth middleware now applied globally via ServiceBuilder in main router to ensure all protected routes have access to authentication context
+- API routing split into public vs protected routes; auth middleware applies only to protected routes
+- Groups, fact templates, and users are tenant-scoped in repository queries
 
 ### Fixed
-- 401 Unauthorized on protected auth endpoints (change-password, me) - auth middleware now properly applied to all routes via ServiceBuilder
+- `/api/v1/auth/*` endpoints no longer blocked by global auth middleware
+- ESLint warning cleanup in Settings page (`no-console`)
 
 ### Deprecated
 - Nothing yet
 
 ### Removed
 - Nothing yet
-
-### Fixed
-- ESLint warning cleanup in Settings page (`no-console`)
 
 ### Security
 - Nothing yet

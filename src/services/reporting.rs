@@ -15,11 +15,11 @@ use crate::db::repository::{
     ComplianceBaselineRepository, DriftBaselineRepository, ReportExecutionRepository,
 };
 use crate::models::{
-    ChangeSummary, ChangeTrackingReport, ChangeTypeBreakdown, ComplianceReport,
-    ComplianceSummary, ComplianceViolation, DriftReport, DriftSummary, DriftedFact, DriftedNode,
-    EnvironmentHealth, ExecuteReportRequest, NodeHealthDetail, NodeHealthReport,
-    NodeHealthSummary, OutputFormat, ReportExecution, ReportQueryConfig, ReportResult, ReportType,
-    SavedReport, SeverityBreakdown, SeverityLevel,
+    ChangeSummary, ChangeTrackingReport, ChangeTypeBreakdown, ComplianceReport, ComplianceSummary,
+    ComplianceViolation, DriftReport, DriftSummary, DriftedFact, DriftedNode, EnvironmentHealth,
+    ExecuteReportRequest, NodeHealthDetail, NodeHealthReport, NodeHealthSummary, OutputFormat,
+    ReportExecution, ReportQueryConfig, ReportResult, ReportType, SavedReport, SeverityBreakdown,
+    SeverityLevel,
 };
 use crate::services::PuppetDbClient;
 
@@ -60,9 +60,7 @@ impl ReportingService {
             .unwrap_or(&report.query_config);
 
         // Generate the report
-        let result = self
-            .generate_report(report.report_type, config)
-            .await;
+        let result = self.generate_report(report.report_type, config).await;
 
         let execution_time_ms = start_time.elapsed().as_millis() as i32;
 
@@ -70,7 +68,13 @@ impl ReportingService {
             Ok((report_result, row_count)) => {
                 let output_data = serde_json::to_value(&report_result).ok();
                 exec_repo
-                    .complete(execution.id, row_count, output_data.clone(), None, execution_time_ms)
+                    .complete(
+                        execution.id,
+                        row_count,
+                        output_data.clone(),
+                        None,
+                        execution_time_ms,
+                    )
                     .await?;
                 execution.output_data = output_data;
                 execution.row_count = Some(row_count);
@@ -133,7 +137,10 @@ impl ReportingService {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("PuppetDB not configured"))?;
 
-        let time_range = config.time_range.clone().unwrap_or_else(|| "24h".to_string());
+        let time_range = config
+            .time_range
+            .clone()
+            .unwrap_or_else(|| "24h".to_string());
 
         // Get all nodes
         let nodes = puppetdb.get_nodes().await?;
@@ -145,15 +152,16 @@ impl ReportingService {
         // Build certname -> latest status map
         let mut node_statuses: HashMap<String, (String, Option<DateTime<Utc>>)> = HashMap::new();
         for report in &reports {
-            let status = report.status.as_ref().map(|s| s.as_str()).unwrap_or("unchanged");
+            let status = report
+                .status
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("unchanged");
             let certname = &report.certname;
 
             // Only keep the most recent report per node
             if !node_statuses.contains_key(certname) {
-                node_statuses.insert(
-                    certname.clone(),
-                    (status.to_string(), report.end_time),
-                );
+                node_statuses.insert(certname.clone(), (status.to_string(), report.end_time));
             }
         }
 
@@ -173,7 +181,8 @@ impl ReportingService {
             }
         }
 
-        let unreported_count = total_nodes - (changed_count + unchanged_count + failed_count + noop_count);
+        let unreported_count =
+            total_nodes - (changed_count + unchanged_count + failed_count + noop_count);
         let compliance_rate = if total_nodes > 0 {
             ((total_nodes - failed_count) as f64 / total_nodes as f64) * 100.0
         } else {
@@ -185,8 +194,12 @@ impl ReportingService {
             let mut env_map: HashMap<String, (i64, i64, i64, i64)> = HashMap::new();
 
             for node in &nodes {
-                let env = node.report_environment.clone().unwrap_or_else(|| "production".to_string());
-                let status = node_statuses.get(&node.certname)
+                let env = node
+                    .report_environment
+                    .clone()
+                    .unwrap_or_else(|| "production".to_string());
+                let status = node_statuses
+                    .get(&node.certname)
                     .map(|(s, _)| s.as_str())
                     .unwrap_or("unchanged");
 
@@ -203,13 +216,15 @@ impl ReportingService {
             Some(
                 env_map
                     .into_iter()
-                    .map(|(env, (total, changed, unchanged, failed))| EnvironmentHealth {
-                        environment: env,
-                        total_nodes: total,
-                        changed_count: changed,
-                        unchanged_count: unchanged,
-                        failed_count: failed,
-                    })
+                    .map(
+                        |(env, (total, changed, unchanged, failed))| EnvironmentHealth {
+                            environment: env,
+                            total_nodes: total,
+                            changed_count: changed,
+                            unchanged_count: unchanged,
+                            failed_count: failed,
+                        },
+                    )
                     .collect(),
             )
         } else {
@@ -301,11 +316,12 @@ impl ReportingService {
         let mut severity_counts: HashMap<SeverityLevel, (i64, i64)> = HashMap::new();
 
         for node in &nodes {
-            let facts = puppetdb.get_node_facts(&node.certname).await.unwrap_or_default();
-            let facts_map: HashMap<String, serde_json::Value> = facts
-                .into_iter()
-                .map(|f| (f.name, f.value))
-                .collect();
+            let facts = puppetdb
+                .get_node_facts(&node.certname)
+                .await
+                .unwrap_or_default();
+            let facts_map: HashMap<String, serde_json::Value> =
+                facts.into_iter().map(|f| (f.name, f.value)).collect();
 
             let mut node_has_violation = false;
 
@@ -335,7 +351,12 @@ impl ReportingService {
 
             if node_has_violation {
                 non_compliant_nodes += 1;
-                for severity in [SeverityLevel::Low, SeverityLevel::Medium, SeverityLevel::High, SeverityLevel::Critical] {
+                for severity in [
+                    SeverityLevel::Low,
+                    SeverityLevel::Medium,
+                    SeverityLevel::High,
+                    SeverityLevel::Critical,
+                ] {
                     let entry = severity_counts.entry(severity).or_insert((0, 0));
                     entry.1 += 1; // affected nodes (counted once per node)
                 }
@@ -354,11 +375,13 @@ impl ReportingService {
         let by_severity: Vec<SeverityBreakdown> = severity_counts
             .into_iter()
             .filter(|(_, (count, _))| *count > 0)
-            .map(|(severity, (violation_count, affected_nodes))| SeverityBreakdown {
-                severity,
-                violation_count,
-                affected_nodes,
-            })
+            .map(
+                |(severity, (violation_count, affected_nodes))| SeverityBreakdown {
+                    severity,
+                    violation_count,
+                    affected_nodes,
+                },
+            )
             .collect();
 
         Ok(ComplianceReport {
@@ -386,7 +409,10 @@ impl ReportingService {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("PuppetDB not configured"))?;
 
-        let time_range = config.time_range.clone().unwrap_or_else(|| "24h".to_string());
+        let time_range = config
+            .time_range
+            .clone()
+            .unwrap_or_else(|| "24h".to_string());
         let status_filter = config.status_filter.as_ref();
 
         // Get reports (filter by status if specified)
@@ -394,7 +420,8 @@ impl ReportingService {
         let reports = puppetdb.query_reports(None, status, Some(500)).await?;
 
         let mut changes = Vec::new();
-        let mut nodes_affected: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut nodes_affected: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut resource_type_counts: HashMap<String, i64> = HashMap::new();
         let mut resources_changed = 0i64;
         let mut resources_failed = 0i64;
@@ -413,9 +440,16 @@ impl ReportingService {
                 if let Some(events) = &report.resource_events {
                     if let Some(data) = &events.data {
                         for event_val in data {
-                            if let Ok(event) = serde_json::from_value::<ResourceEventData>(event_val.clone()) {
-                                let resource_type = event.resource_type.clone().unwrap_or_else(|| "Unknown".to_string());
-                                *resource_type_counts.entry(resource_type.clone()).or_insert(0) += 1;
+                            if let Ok(event) =
+                                serde_json::from_value::<ResourceEventData>(event_val.clone())
+                            {
+                                let resource_type = event
+                                    .resource_type
+                                    .clone()
+                                    .unwrap_or_else(|| "Unknown".to_string());
+                                *resource_type_counts
+                                    .entry(resource_type.clone())
+                                    .or_insert(0) += 1;
 
                                 if event.status.as_deref() == Some("success") {
                                     resources_changed += 1;
@@ -514,11 +548,12 @@ impl ReportingService {
         ];
 
         for node in &nodes {
-            let facts = puppetdb.get_node_facts(&node.certname).await.unwrap_or_default();
-            let facts_map: HashMap<String, serde_json::Value> = facts
-                .into_iter()
-                .map(|f| (f.name, f.value))
-                .collect();
+            let facts = puppetdb
+                .get_node_facts(&node.certname)
+                .await
+                .unwrap_or_default();
+            let facts_map: HashMap<String, serde_json::Value> =
+                facts.into_iter().map(|f| (f.name, f.value)).collect();
 
             let mut node_drifted_facts = Vec::new();
 
@@ -528,7 +563,9 @@ impl ReportingService {
                     if ignored_facts.contains(fact_name) {
                         continue;
                     }
-                    if config.ignore_volatile_facts && default_ignored.iter().any(|f| fact_name.contains(f)) {
+                    if config.ignore_volatile_facts
+                        && default_ignored.iter().any(|f| fact_name.contains(f))
+                    {
                         continue;
                     }
 
@@ -584,11 +621,7 @@ impl ReportingService {
     }
 
     /// Export report data to specified format
-    pub fn export_report(
-        &self,
-        result: &ReportResult,
-        format: OutputFormat,
-    ) -> Result<Vec<u8>> {
+    pub fn export_report(&self, result: &ReportResult, format: OutputFormat) -> Result<Vec<u8>> {
         match format {
             OutputFormat::Json => {
                 let json = serde_json::to_vec_pretty(result)
@@ -617,18 +650,16 @@ impl ReportingService {
                 "Node Health Report",
                 self.format_node_health_for_pdf(report),
             ),
-            ReportResult::Compliance(report) => (
-                "Compliance Report",
-                self.format_compliance_for_pdf(report),
-            ),
+            ReportResult::Compliance(report) => {
+                ("Compliance Report", self.format_compliance_for_pdf(report))
+            }
             ReportResult::ChangeTracking(report) => (
                 "Change Tracking Report",
                 self.format_change_tracking_for_pdf(report),
             ),
-            ReportResult::DriftDetection(report) => (
-                "Drift Detection Report",
-                self.format_drift_for_pdf(report),
-            ),
+            ReportResult::DriftDetection(report) => {
+                ("Drift Detection Report", self.format_drift_for_pdf(report))
+            }
             ReportResult::Custom(data) => (
                 "Custom Report",
                 serde_json::to_string_pretty(data).unwrap_or_default(),
@@ -636,19 +667,16 @@ impl ReportingService {
         };
 
         // Create PDF document (A4 size: 210mm x 297mm)
-        let (doc, page1, layer1) = PdfDocument::new(
-            title,
-            Mm(210.0),
-            Mm(297.0),
-            "Layer 1",
-        );
+        let (doc, page1, layer1) = PdfDocument::new(title, Mm(210.0), Mm(297.0), "Layer 1");
 
         let current_layer = doc.get_page(page1).get_layer(layer1);
 
         // Use built-in Helvetica font
-        let font = doc.add_builtin_font(BuiltinFont::Helvetica)
+        let font = doc
+            .add_builtin_font(BuiltinFont::Helvetica)
             .context("Failed to add builtin font")?;
-        let font_bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)
+        let font_bold = doc
+            .add_builtin_font(BuiltinFont::HelveticaBold)
             .context("Failed to add bold font")?;
 
         // Title
@@ -692,8 +720,7 @@ impl ReportingService {
         let mut buffer = Vec::new();
         {
             let mut writer = BufWriter::new(&mut buffer);
-            doc.save(&mut writer)
-                .context("Failed to save PDF")?;
+            doc.save(&mut writer).context("Failed to save PDF")?;
         }
 
         Ok(buffer)
@@ -701,7 +728,10 @@ impl ReportingService {
 
     fn format_node_health_for_pdf(&self, report: &NodeHealthReport) -> String {
         let mut content = String::new();
-        content.push_str(&format!("Generated: {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        content.push_str(&format!(
+            "Generated: {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         content.push_str(&format!("Time Range: {}\n\n", report.time_range));
 
         content.push_str("=== Summary ===\n");
@@ -710,8 +740,14 @@ impl ReportingService {
         content.push_str(&format!("Unchanged: {}\n", report.summary.unchanged_count));
         content.push_str(&format!("Failed: {}\n", report.summary.failed_count));
         content.push_str(&format!("Noop: {}\n", report.summary.noop_count));
-        content.push_str(&format!("Unreported: {}\n", report.summary.unreported_count));
-        content.push_str(&format!("Compliance Rate: {:.2}%\n\n", report.summary.compliance_rate));
+        content.push_str(&format!(
+            "Unreported: {}\n",
+            report.summary.unreported_count
+        ));
+        content.push_str(&format!(
+            "Compliance Rate: {:.2}%\n\n",
+            report.summary.compliance_rate
+        ));
 
         if let Some(ref by_env) = report.by_environment {
             content.push_str("=== By Environment ===\n");
@@ -728,22 +764,36 @@ impl ReportingService {
 
     fn format_compliance_for_pdf(&self, report: &ComplianceReport) -> String {
         let mut content = String::new();
-        content.push_str(&format!("Generated: {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        content.push_str(&format!(
+            "Generated: {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         content.push_str(&format!("Baseline: {}\n\n", report.baseline_name));
 
         content.push_str("=== Summary ===\n");
         content.push_str(&format!("Total Nodes: {}\n", report.summary.total_nodes));
         content.push_str(&format!("Compliant: {}\n", report.summary.compliant_nodes));
-        content.push_str(&format!("Non-Compliant: {}\n", report.summary.non_compliant_nodes));
-        content.push_str(&format!("Compliance Rate: {:.2}%\n", report.summary.compliance_rate));
-        content.push_str(&format!("Total Violations: {}\n\n", report.summary.total_violations));
+        content.push_str(&format!(
+            "Non-Compliant: {}\n",
+            report.summary.non_compliant_nodes
+        ));
+        content.push_str(&format!(
+            "Compliance Rate: {:.2}%\n",
+            report.summary.compliance_rate
+        ));
+        content.push_str(&format!(
+            "Total Violations: {}\n\n",
+            report.summary.total_violations
+        ));
 
         if !report.violations.is_empty() {
             content.push_str("=== Violations ===\n");
             for v in report.violations.iter().take(30) {
                 content.push_str(&format!(
                     "{}: {} [{}]\n",
-                    v.certname, v.fact_name, v.severity.as_str()
+                    v.certname,
+                    v.fact_name,
+                    v.severity.as_str()
                 ));
             }
             if report.violations.len() > 30 {
@@ -756,14 +806,29 @@ impl ReportingService {
 
     fn format_change_tracking_for_pdf(&self, report: &ChangeTrackingReport) -> String {
         let mut content = String::new();
-        content.push_str(&format!("Generated: {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        content.push_str(&format!(
+            "Generated: {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         content.push_str(&format!("Time Range: {}\n\n", report.time_range));
 
         content.push_str("=== Summary ===\n");
-        content.push_str(&format!("Total Changes: {}\n", report.summary.total_changes));
-        content.push_str(&format!("Nodes Affected: {}\n", report.summary.nodes_affected));
-        content.push_str(&format!("Resources Changed: {}\n", report.summary.resources_changed));
-        content.push_str(&format!("Resources Failed: {}\n\n", report.summary.resources_failed));
+        content.push_str(&format!(
+            "Total Changes: {}\n",
+            report.summary.total_changes
+        ));
+        content.push_str(&format!(
+            "Nodes Affected: {}\n",
+            report.summary.nodes_affected
+        ));
+        content.push_str(&format!(
+            "Resources Changed: {}\n",
+            report.summary.resources_changed
+        ));
+        content.push_str(&format!(
+            "Resources Failed: {}\n\n",
+            report.summary.resources_failed
+        ));
 
         if !report.changes_by_type.is_empty() {
             content.push_str("=== Changes by Type ===\n");
@@ -777,15 +842,27 @@ impl ReportingService {
 
     fn format_drift_for_pdf(&self, report: &DriftReport) -> String {
         let mut content = String::new();
-        content.push_str(&format!("Generated: {}\n", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        content.push_str(&format!(
+            "Generated: {}\n",
+            report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         content.push_str(&format!("Baseline: {}\n\n", report.baseline_name));
 
         content.push_str("=== Summary ===\n");
         content.push_str(&format!("Total Nodes: {}\n", report.summary.total_nodes));
-        content.push_str(&format!("Nodes With Drift: {}\n", report.summary.nodes_with_drift));
-        content.push_str(&format!("Nodes Without Drift: {}\n", report.summary.nodes_without_drift));
+        content.push_str(&format!(
+            "Nodes With Drift: {}\n",
+            report.summary.nodes_with_drift
+        ));
+        content.push_str(&format!(
+            "Nodes Without Drift: {}\n",
+            report.summary.nodes_without_drift
+        ));
         content.push_str(&format!("Drift Rate: {:.2}%\n", report.summary.drift_rate));
-        content.push_str(&format!("Total Drifted Facts: {}\n\n", report.summary.total_drifted_facts));
+        content.push_str(&format!(
+            "Total Drifted Facts: {}\n\n",
+            report.summary.total_drifted_facts
+        ));
 
         if !report.drifted_nodes.is_empty() {
             content.push_str("=== Drifted Nodes ===\n");
@@ -793,7 +870,10 @@ impl ReportingService {
                 content.push_str(&format!("{}: {} facts\n", node.certname, node.drift_count));
             }
             if report.drifted_nodes.len() > 15 {
-                content.push_str(&format!("... and {} more\n", report.drifted_nodes.len() - 15));
+                content.push_str(&format!(
+                    "... and {} more\n",
+                    report.drifted_nodes.len() - 15
+                ));
             }
         }
 
@@ -818,7 +898,10 @@ impl ReportingService {
                 csv.push_str(&format!("Failed,{}\n", report.summary.failed_count));
                 csv.push_str(&format!("Noop,{}\n", report.summary.noop_count));
                 csv.push_str(&format!("Unreported,{}\n", report.summary.unreported_count));
-                csv.push_str(&format!("Compliance Rate,{:.2}%\n", report.summary.compliance_rate));
+                csv.push_str(&format!(
+                    "Compliance Rate,{:.2}%\n",
+                    report.summary.compliance_rate
+                ));
 
                 if let Some(nodes) = &report.nodes {
                     csv.push_str("\nNode Details\n");
@@ -829,7 +912,9 @@ impl ReportingService {
                             node.certname,
                             node.environment.as_deref().unwrap_or(""),
                             node.status,
-                            node.last_report_at.map(|t| t.to_rfc3339()).unwrap_or_default()
+                            node.last_report_at
+                                .map(|t| t.to_rfc3339())
+                                .unwrap_or_default()
                         ));
                     }
                 }
@@ -842,8 +927,14 @@ impl ReportingService {
                 csv.push_str("Summary\n");
                 csv.push_str(&format!("Total Nodes,{}\n", report.summary.total_nodes));
                 csv.push_str(&format!("Compliant,{}\n", report.summary.compliant_nodes));
-                csv.push_str(&format!("Non-Compliant,{}\n", report.summary.non_compliant_nodes));
-                csv.push_str(&format!("Compliance Rate,{:.2}%\n", report.summary.compliance_rate));
+                csv.push_str(&format!(
+                    "Non-Compliant,{}\n",
+                    report.summary.non_compliant_nodes
+                ));
+                csv.push_str(&format!(
+                    "Compliance Rate,{:.2}%\n",
+                    report.summary.compliance_rate
+                ));
 
                 csv.push_str("\nViolations\n");
                 csv.push_str("Certname,Rule,Fact,Expected,Actual,Severity\n");
@@ -866,9 +957,18 @@ impl ReportingService {
 
                 csv.push_str("Summary\n");
                 csv.push_str(&format!("Total Changes,{}\n", report.summary.total_changes));
-                csv.push_str(&format!("Nodes Affected,{}\n", report.summary.nodes_affected));
-                csv.push_str(&format!("Resources Changed,{}\n", report.summary.resources_changed));
-                csv.push_str(&format!("Resources Failed,{}\n", report.summary.resources_failed));
+                csv.push_str(&format!(
+                    "Nodes Affected,{}\n",
+                    report.summary.nodes_affected
+                ));
+                csv.push_str(&format!(
+                    "Resources Changed,{}\n",
+                    report.summary.resources_changed
+                ));
+                csv.push_str(&format!(
+                    "Resources Failed,{}\n",
+                    report.summary.resources_failed
+                ));
 
                 csv.push_str("\nChanges\n");
                 csv.push_str("Certname,Time,Resource Type,Title,Property,Status\n");
@@ -891,8 +991,14 @@ impl ReportingService {
 
                 csv.push_str("Summary\n");
                 csv.push_str(&format!("Total Nodes,{}\n", report.summary.total_nodes));
-                csv.push_str(&format!("Nodes With Drift,{}\n", report.summary.nodes_with_drift));
-                csv.push_str(&format!("Nodes Without Drift,{}\n", report.summary.nodes_without_drift));
+                csv.push_str(&format!(
+                    "Nodes With Drift,{}\n",
+                    report.summary.nodes_with_drift
+                ));
+                csv.push_str(&format!(
+                    "Nodes Without Drift,{}\n",
+                    report.summary.nodes_without_drift
+                ));
                 csv.push_str(&format!("Drift Rate,{:.2}%\n", report.summary.drift_rate));
 
                 csv.push_str("\nDrifted Nodes\n");
@@ -939,30 +1045,22 @@ fn check_compliance(
     match operator {
         "=" | "==" | "equals" => actual == expected,
         "!=" | "not_equals" => actual != expected,
-        ">" | "greater_than" => {
-            match (actual.as_f64(), expected.as_f64()) {
-                (Some(a), Some(e)) => a > e,
-                _ => false,
-            }
-        }
-        ">=" | "greater_than_or_equal" => {
-            match (actual.as_f64(), expected.as_f64()) {
-                (Some(a), Some(e)) => a >= e,
-                _ => false,
-            }
-        }
-        "<" | "less_than" => {
-            match (actual.as_f64(), expected.as_f64()) {
-                (Some(a), Some(e)) => a < e,
-                _ => false,
-            }
-        }
-        "<=" | "less_than_or_equal" => {
-            match (actual.as_f64(), expected.as_f64()) {
-                (Some(a), Some(e)) => a <= e,
-                _ => false,
-            }
-        }
+        ">" | "greater_than" => match (actual.as_f64(), expected.as_f64()) {
+            (Some(a), Some(e)) => a > e,
+            _ => false,
+        },
+        ">=" | "greater_than_or_equal" => match (actual.as_f64(), expected.as_f64()) {
+            (Some(a), Some(e)) => a >= e,
+            _ => false,
+        },
+        "<" | "less_than" => match (actual.as_f64(), expected.as_f64()) {
+            (Some(a), Some(e)) => a < e,
+            _ => false,
+        },
+        "<=" | "less_than_or_equal" => match (actual.as_f64(), expected.as_f64()) {
+            (Some(a), Some(e)) => a <= e,
+            _ => false,
+        },
         "~" | "matches" | "regex" => {
             if let (Some(pattern), Some(value)) = (expected.as_str(), actual.as_str()) {
                 regex::Regex::new(pattern)

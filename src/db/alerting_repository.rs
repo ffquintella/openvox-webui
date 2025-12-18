@@ -6,10 +6,10 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::models::{
-    Alert, AlertRule, AlertRuleType, AlertSeverity, AlertSilence, AlertStats,
-    AlertStatus, AlertSeverityCount, ChannelType, ConditionOperator, CreateAlertRuleRequest,
-    CreateChannelRequest, CreateSilenceRequest, NotificationChannel, NotificationHistory,
-    NotificationStatus, UpdateAlertRuleRequest, UpdateChannelRequest,
+    Alert, AlertRule, AlertRuleType, AlertSeverity, AlertSeverityCount, AlertSilence, AlertStats,
+    AlertStatus, ChannelType, ConditionOperator, CreateAlertRuleRequest, CreateChannelRequest,
+    CreateSilenceRequest, NotificationChannel, NotificationHistory, NotificationStatus,
+    UpdateAlertRuleRequest, UpdateChannelRequest,
 };
 
 // ============================================================================
@@ -90,10 +90,13 @@ impl<'a> NotificationChannelRepository<'a> {
     }
 
     /// Create a new notification channel
-    pub async fn create(&self, req: &CreateChannelRequest, user_id: Option<Uuid>) -> Result<NotificationChannel> {
+    pub async fn create(
+        &self,
+        req: &CreateChannelRequest,
+        user_id: Option<Uuid>,
+    ) -> Result<NotificationChannel> {
         let id = Uuid::new_v4();
-        let config_json = serde_json::to_string(&req.config)
-            .unwrap_or_else(|_| "{}".to_string());
+        let config_json = serde_json::to_string(&req.config).unwrap_or_else(|_| "{}".to_string());
 
         sqlx::query(
             r#"
@@ -117,7 +120,11 @@ impl<'a> NotificationChannelRepository<'a> {
     }
 
     /// Update a notification channel
-    pub async fn update(&self, id: Uuid, req: &UpdateChannelRequest) -> Result<Option<NotificationChannel>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &UpdateChannelRequest,
+    ) -> Result<Option<NotificationChannel>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
@@ -127,8 +134,7 @@ impl<'a> NotificationChannelRepository<'a> {
         let name = req.name.as_ref().unwrap_or(&existing.name);
         let config = req.config.as_ref().unwrap_or(&existing.config);
         let is_enabled = req.is_enabled.unwrap_or(existing.is_enabled);
-        let config_json = serde_json::to_string(config)
-            .unwrap_or_else(|_| "{}".to_string());
+        let config_json = serde_json::to_string(config).unwrap_or_else(|_| "{}".to_string());
 
         sqlx::query(
             r#"
@@ -165,7 +171,8 @@ fn row_to_channel(row: ChannelRow) -> NotificationChannel {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),
         name: row.name,
         channel_type: ChannelType::from_str(&row.channel_type).unwrap_or(ChannelType::Webhook),
-        config: serde_json::from_str(&row.config).unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+        config: serde_json::from_str(&row.config)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
         is_enabled: row.is_enabled,
         created_by: row.created_by.and_then(|s| Uuid::parse_str(&s).ok()),
         created_at: DateTime::parse_from_rfc3339(&row.created_at)
@@ -299,10 +306,14 @@ impl<'a> AlertRuleRepository<'a> {
     }
 
     /// Create a new alert rule
-    pub async fn create(&self, req: &CreateAlertRuleRequest, user_id: Option<Uuid>) -> Result<AlertRule> {
+    pub async fn create(
+        &self,
+        req: &CreateAlertRuleRequest,
+        user_id: Option<Uuid>,
+    ) -> Result<AlertRule> {
         let id = Uuid::new_v4();
-        let conditions_json = serde_json::to_string(&req.conditions)
-            .unwrap_or_else(|_| "[]".to_string());
+        let conditions_json =
+            serde_json::to_string(&req.conditions).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query(
             r#"
@@ -336,7 +347,11 @@ impl<'a> AlertRuleRepository<'a> {
     }
 
     /// Update an alert rule
-    pub async fn update(&self, id: Uuid, req: &UpdateAlertRuleRequest) -> Result<Option<AlertRule>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &UpdateAlertRuleRequest,
+    ) -> Result<Option<AlertRule>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
@@ -346,13 +361,15 @@ impl<'a> AlertRuleRepository<'a> {
         let name = req.name.as_ref().unwrap_or(&existing.name);
         let description = req.description.as_ref().or(existing.description.as_ref());
         let conditions = req.conditions.as_ref().unwrap_or(&existing.conditions);
-        let condition_operator = req.condition_operator.unwrap_or(existing.condition_operator);
+        let condition_operator = req
+            .condition_operator
+            .unwrap_or(existing.condition_operator);
         let severity = req.severity.unwrap_or(existing.severity);
         let cooldown_minutes = req.cooldown_minutes.unwrap_or(existing.cooldown_minutes);
         let is_enabled = req.is_enabled.unwrap_or(existing.is_enabled);
 
-        let conditions_json = serde_json::to_string(conditions)
-            .unwrap_or_else(|_| "[]".to_string());
+        let conditions_json =
+            serde_json::to_string(conditions).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query(
             r#"
@@ -404,15 +421,15 @@ impl<'a> AlertRuleRepository<'a> {
 
     /// Get channels associated with a rule
     pub async fn get_channels(&self, rule_id: Uuid) -> Result<Vec<Uuid>> {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT channel_id FROM alert_rule_channels WHERE rule_id = ?",
-        )
-        .bind(rule_id.to_string())
-        .fetch_all(self.pool)
-        .await
-        .context("Failed to fetch rule channels")?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT channel_id FROM alert_rule_channels WHERE rule_id = ?")
+                .bind(rule_id.to_string())
+                .fetch_all(self.pool)
+                .await
+                .context("Failed to fetch rule channels")?;
 
-        Ok(rows.into_iter()
+        Ok(rows
+            .into_iter()
             .filter_map(|(id,)| Uuid::parse_str(&id).ok())
             .collect())
     }
@@ -436,14 +453,13 @@ impl<'a> AlertRuleRepository<'a> {
 
     /// Remove a channel from a rule
     pub async fn remove_channel(&self, rule_id: Uuid, channel_id: Uuid) -> Result<bool> {
-        let result = sqlx::query(
-            "DELETE FROM alert_rule_channels WHERE rule_id = ? AND channel_id = ?",
-        )
-        .bind(rule_id.to_string())
-        .bind(channel_id.to_string())
-        .execute(self.pool)
-        .await
-        .context("Failed to remove channel from rule")?;
+        let result =
+            sqlx::query("DELETE FROM alert_rule_channels WHERE rule_id = ? AND channel_id = ?")
+                .bind(rule_id.to_string())
+                .bind(channel_id.to_string())
+                .execute(self.pool)
+                .await
+                .context("Failed to remove channel from rule")?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -549,14 +565,18 @@ impl<'a> AlertRepository<'a> {
         }
         q = q.bind(limit);
 
-        let rows = q.fetch_all(self.pool).await.context("Failed to fetch alerts")?;
+        let rows = q
+            .fetch_all(self.pool)
+            .await
+            .context("Failed to fetch alerts")?;
 
         Ok(rows.into_iter().map(row_to_alert).collect())
     }
 
     /// Get active alerts
     pub async fn get_active(&self) -> Result<Vec<Alert>> {
-        self.get_all(Some(AlertStatus::Active), None, None, None).await
+        self.get_all(Some(AlertStatus::Active), None, None, None)
+            .await
     }
 
     /// Get an alert by ID
@@ -647,26 +667,22 @@ impl<'a> AlertRepository<'a> {
 
     /// Silence an alert
     pub async fn silence(&self, id: Uuid) -> Result<Option<Alert>> {
-        sqlx::query(
-            "UPDATE alerts SET status = 'silenced' WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .execute(self.pool)
-        .await
-        .context("Failed to silence alert")?;
+        sqlx::query("UPDATE alerts SET status = 'silenced' WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to silence alert")?;
 
         self.get_by_id(id).await
     }
 
     /// Update last notified timestamp
     pub async fn update_last_notified(&self, id: Uuid) -> Result<()> {
-        sqlx::query(
-            "UPDATE alerts SET last_notified_at = CURRENT_TIMESTAMP WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .execute(self.pool)
-        .await
-        .context("Failed to update last notified")?;
+        sqlx::query("UPDATE alerts SET last_notified_at = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to update last notified")?;
 
         Ok(())
     }
@@ -674,11 +690,10 @@ impl<'a> AlertRepository<'a> {
     /// Get alert statistics
     pub async fn get_stats(&self) -> Result<AlertStats> {
         // Total active alerts
-        let total_active: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM alerts WHERE status = 'active'",
-        )
-        .fetch_one(self.pool)
-        .await?;
+        let total_active: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM alerts WHERE status = 'active'")
+                .fetch_one(self.pool)
+                .await?;
 
         // Active alerts by severity
         let info: (i64,) = sqlx::query_as(
@@ -700,18 +715,16 @@ impl<'a> AlertRepository<'a> {
         .await?;
 
         // Alerts triggered today
-        let total_today: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM alerts WHERE DATE(triggered_at) = DATE('now')",
-        )
-        .fetch_one(self.pool)
-        .await?;
+        let total_today: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM alerts WHERE DATE(triggered_at) = DATE('now')")
+                .fetch_one(self.pool)
+                .await?;
 
         // Total acknowledged (not resolved yet)
-        let total_acknowledged: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM alerts WHERE status = 'acknowledged'",
-        )
-        .fetch_one(self.pool)
-        .await?;
+        let total_acknowledged: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM alerts WHERE status = 'acknowledged'")
+                .fetch_one(self.pool)
+                .await?;
 
         Ok(AlertStats {
             total_active: total_active.0,
@@ -771,15 +784,24 @@ fn row_to_alert(row: AlertRow) -> Alert {
         context: row.context.and_then(|s| serde_json::from_str(&s).ok()),
         status: AlertStatus::from_str(&row.status).unwrap_or(AlertStatus::Active),
         acknowledged_by: row.acknowledged_by.and_then(|s| Uuid::parse_str(&s).ok()),
-        acknowledged_at: row.acknowledged_at
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-        resolved_at: row.resolved_at
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        acknowledged_at: row.acknowledged_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
+        resolved_at: row.resolved_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
         triggered_at: DateTime::parse_from_rfc3339(&row.triggered_at)
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now()),
-        last_notified_at: row.last_notified_at
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        last_notified_at: row.last_notified_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
     }
 }
 
@@ -917,13 +939,11 @@ impl<'a> NotificationHistoryRepository<'a> {
 
     /// Mark notification for retry
     pub async fn mark_retrying(&self, id: Uuid) -> Result<()> {
-        sqlx::query(
-            "UPDATE notification_history SET status = 'retrying' WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .execute(self.pool)
-        .await
-        .context("Failed to mark notification retrying")?;
+        sqlx::query("UPDATE notification_history SET status = 'retrying' WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to mark notification retrying")?;
 
         Ok(())
     }
@@ -957,8 +977,11 @@ fn row_to_notification_history(row: NotificationHistoryRow) -> NotificationHisto
         response_code: row.response_code,
         response_body: row.response_body,
         error_message: row.error_message,
-        sent_at: row.sent_at
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        sent_at: row.sent_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
         created_at: DateTime::parse_from_rfc3339(&row.created_at)
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now()),
@@ -1043,10 +1066,16 @@ impl<'a> AlertSilenceRepository<'a> {
     }
 
     /// Create a new silence
-    pub async fn create(&self, req: &CreateSilenceRequest, user_id: Option<Uuid>) -> Result<AlertSilence> {
+    pub async fn create(
+        &self,
+        req: &CreateSilenceRequest,
+        user_id: Option<Uuid>,
+    ) -> Result<AlertSilence> {
         let id = Uuid::new_v4();
         let starts_at = req.starts_at.unwrap_or_else(Utc::now);
-        let matchers_json = req.matchers.as_ref()
+        let matchers_json = req
+            .matchers
+            .as_ref()
             .map(|m| serde_json::to_string(m).unwrap_or_default());
 
         sqlx::query(
@@ -1101,12 +1130,10 @@ impl<'a> AlertSilenceRepository<'a> {
 
     /// Delete expired silences
     pub async fn delete_expired(&self) -> Result<u64> {
-        let result = sqlx::query(
-            "DELETE FROM alert_silences WHERE ends_at < datetime('now')",
-        )
-        .execute(self.pool)
-        .await
-        .context("Failed to delete expired silences")?;
+        let result = sqlx::query("DELETE FROM alert_silences WHERE ends_at < datetime('now')")
+            .execute(self.pool)
+            .await
+            .context("Failed to delete expired silences")?;
 
         Ok(result.rows_affected())
     }

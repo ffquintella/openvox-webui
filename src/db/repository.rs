@@ -18,6 +18,7 @@ pub struct GroupRepository<'a> {
 #[derive(Debug, sqlx::FromRow)]
 struct GroupRow {
     id: String,
+    organization_id: String,
     name: String,
     description: Option<String>,
     parent_id: Option<String>,
@@ -49,15 +50,17 @@ impl<'a> GroupRepository<'a> {
     }
 
     /// Get all node groups with their rules and pinned nodes
-    pub async fn get_all(&self) -> Result<Vec<NodeGroup>> {
+    pub async fn get_all(&self, organization_id: Uuid) -> Result<Vec<NodeGroup>> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
-            SELECT id, name, description, parent_id, environment,
+            SELECT id, organization_id, name, description, parent_id, environment,
                    rule_match_type, classes, parameters, variables
             FROM node_groups
+            WHERE organization_id = ?
             ORDER BY name
             "#,
         )
+        .bind(organization_id.to_string())
         .fetch_all(self.pool)
         .await
         .context("Failed to fetch groups")?;
@@ -71,15 +74,16 @@ impl<'a> GroupRepository<'a> {
     }
 
     /// Get a node group by ID with its rules and pinned nodes
-    pub async fn get_by_id(&self, id: Uuid) -> Result<Option<NodeGroup>> {
+    pub async fn get_by_id(&self, organization_id: Uuid, id: Uuid) -> Result<Option<NodeGroup>> {
         let row = sqlx::query_as::<_, GroupRow>(
             r#"
-            SELECT id, name, description, parent_id, environment,
+            SELECT id, organization_id, name, description, parent_id, environment,
                    rule_match_type, classes, parameters, variables
             FROM node_groups
-            WHERE id = ?
+            WHERE organization_id = ? AND id = ?
             "#,
         )
+        .bind(organization_id.to_string())
         .bind(id.to_string())
         .fetch_optional(self.pool)
         .await
@@ -92,7 +96,11 @@ impl<'a> GroupRepository<'a> {
     }
 
     /// Create a new node group
-    pub async fn create(&self, req: &CreateGroupRequest) -> Result<NodeGroup> {
+    pub async fn create(
+        &self,
+        organization_id: Uuid,
+        req: &CreateGroupRequest,
+    ) -> Result<NodeGroup> {
         let id = Uuid::new_v4();
         let rule_match_type = req
             .rule_match_type
@@ -113,12 +121,13 @@ impl<'a> GroupRepository<'a> {
 
         sqlx::query(
             r#"
-            INSERT INTO node_groups (id, name, description, parent_id, environment,
+            INSERT INTO node_groups (id, organization_id, name, description, parent_id, environment,
                                      rule_match_type, classes, parameters, variables)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
+        .bind(organization_id.to_string())
         .bind(&req.name)
         .bind(&req.description)
         .bind(req.parent_id.map(|p| p.to_string()))
@@ -131,15 +140,20 @@ impl<'a> GroupRepository<'a> {
         .await
         .context("Failed to create group")?;
 
-        self.get_by_id(id)
+        self.get_by_id(organization_id, id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Failed to retrieve created group"))
     }
 
     /// Update a node group
-    pub async fn update(&self, id: Uuid, req: &UpdateGroupRequest) -> Result<Option<NodeGroup>> {
+    pub async fn update(
+        &self,
+        organization_id: Uuid,
+        id: Uuid,
+        req: &UpdateGroupRequest,
+    ) -> Result<Option<NodeGroup>> {
         // First check if the group exists
-        let existing = self.get_by_id(id).await?;
+        let existing = self.get_by_id(organization_id, id).await?;
         if existing.is_none() {
             return Ok(None);
         }
@@ -182,7 +196,7 @@ impl<'a> GroupRepository<'a> {
             SET name = ?, description = ?, parent_id = ?, environment = ?,
                 rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE organization_id = ? AND id = ?
             "#,
         )
         .bind(&name)
@@ -193,17 +207,19 @@ impl<'a> GroupRepository<'a> {
         .bind(&classes)
         .bind(&parameters)
         .bind(&variables)
+        .bind(organization_id.to_string())
         .bind(id.to_string())
         .execute(self.pool)
         .await
         .context("Failed to update group")?;
 
-        self.get_by_id(id).await
+        self.get_by_id(organization_id, id).await
     }
 
     /// Delete a node group (rules and pinned nodes are deleted via CASCADE)
-    pub async fn delete(&self, id: Uuid) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM node_groups WHERE id = ?")
+    pub async fn delete(&self, organization_id: Uuid, id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM node_groups WHERE organization_id = ? AND id = ?")
+            .bind(organization_id.to_string())
             .bind(id.to_string())
             .execute(self.pool)
             .await
@@ -315,13 +331,12 @@ impl<'a> GroupRepository<'a> {
 
     /// Remove a pinned node from a group
     pub async fn remove_pinned_node(&self, group_id: Uuid, certname: &str) -> Result<bool> {
-        let result =
-            sqlx::query("DELETE FROM pinned_nodes WHERE group_id = ? AND certname = ?")
-                .bind(group_id.to_string())
-                .bind(certname)
-                .execute(self.pool)
-                .await
-                .context("Failed to remove pinned node")?;
+        let result = sqlx::query("DELETE FROM pinned_nodes WHERE group_id = ? AND certname = ?")
+            .bind(group_id.to_string())
+            .bind(certname)
+            .execute(self.pool)
+            .await
+            .context("Failed to remove pinned node")?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -337,12 +352,13 @@ impl<'a> GroupRepository<'a> {
     /// Convert a database row to a NodeGroup with rules and pinned nodes
     async fn row_to_group(&self, row: GroupRow) -> Result<NodeGroup> {
         let id = Uuid::parse_str(&row.id).context("Invalid group ID")?;
+        let organization_id =
+            Uuid::parse_str(&row.organization_id).context("Invalid organization ID")?;
 
         let rules = self.get_rules(id).await?;
         let pinned_nodes = self.get_pinned_nodes(id).await?;
 
-        let classes: Vec<String> =
-            serde_json::from_str(&row.classes).unwrap_or_default();
+        let classes: Vec<String> = serde_json::from_str(&row.classes).unwrap_or_default();
         let parameters: serde_json::Value =
             serde_json::from_str(&row.parameters).unwrap_or(serde_json::json!({}));
         let variables: serde_json::Value =
@@ -350,6 +366,7 @@ impl<'a> GroupRepository<'a> {
 
         Ok(NodeGroup {
             id,
+            organization_id,
             name: row.name,
             description: row.description,
             parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
@@ -433,6 +450,7 @@ fn parse_operator(s: &str) -> RuleOperator {
 #[derive(Debug, sqlx::FromRow)]
 struct FactTemplateRow {
     id: String,
+    organization_id: String,
     name: String,
     description: Option<String>,
     facts: String,
@@ -449,14 +467,16 @@ impl<'a> FactTemplateRepository<'a> {
     }
 
     /// Get all fact templates
-    pub async fn get_all(&self) -> Result<Vec<FactTemplate>> {
+    pub async fn get_all(&self, organization_id: Uuid) -> Result<Vec<FactTemplate>> {
         let rows = sqlx::query_as::<_, FactTemplateRow>(
             r#"
-            SELECT id, name, description, facts
+            SELECT id, organization_id, name, description, facts
             FROM fact_templates
+            WHERE organization_id = ?
             ORDER BY name
             "#,
         )
+        .bind(organization_id.to_string())
         .fetch_all(self.pool)
         .await
         .context("Failed to fetch fact templates")?;
@@ -465,14 +485,15 @@ impl<'a> FactTemplateRepository<'a> {
     }
 
     /// Get a fact template by ID
-    pub async fn get_by_id(&self, id: Uuid) -> Result<Option<FactTemplate>> {
+    pub async fn get_by_id(&self, organization_id: Uuid, id: Uuid) -> Result<Option<FactTemplate>> {
         let row = sqlx::query_as::<_, FactTemplateRow>(
             r#"
-            SELECT id, name, description, facts
+            SELECT id, organization_id, name, description, facts
             FROM fact_templates
-            WHERE id = ?
+            WHERE organization_id = ? AND id = ?
             "#,
         )
+        .bind(organization_id.to_string())
         .bind(id.to_string())
         .fetch_optional(self.pool)
         .await
@@ -482,14 +503,19 @@ impl<'a> FactTemplateRepository<'a> {
     }
 
     /// Get a fact template by name
-    pub async fn get_by_name(&self, name: &str) -> Result<Option<FactTemplate>> {
+    pub async fn get_by_name(
+        &self,
+        organization_id: Uuid,
+        name: &str,
+    ) -> Result<Option<FactTemplate>> {
         let row = sqlx::query_as::<_, FactTemplateRow>(
             r#"
-            SELECT id, name, description, facts
+            SELECT id, organization_id, name, description, facts
             FROM fact_templates
-            WHERE name = ?
+            WHERE organization_id = ? AND name = ?
             "#,
         )
+        .bind(organization_id.to_string())
         .bind(name)
         .fetch_optional(self.pool)
         .await
@@ -501,21 +527,22 @@ impl<'a> FactTemplateRepository<'a> {
     /// Create a new fact template
     pub async fn create(
         &self,
+        organization_id: Uuid,
         name: &str,
         description: Option<&str>,
         facts: &[FactDefinition],
     ) -> Result<FactTemplate> {
         let id = Uuid::new_v4();
-        let facts_json =
-            serde_json::to_string(facts).unwrap_or_else(|_| "[]".to_string());
+        let facts_json = serde_json::to_string(facts).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query(
             r#"
-            INSERT INTO fact_templates (id, name, description, facts)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO fact_templates (id, organization_id, name, description, facts)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
+        .bind(organization_id.to_string())
         .bind(name)
         .bind(description)
         .bind(&facts_json)
@@ -525,6 +552,7 @@ impl<'a> FactTemplateRepository<'a> {
 
         Ok(FactTemplate {
             id: Some(id.to_string()),
+            organization_id,
             name: name.to_string(),
             description: description.map(|s| s.to_string()),
             facts: facts.to_vec(),
@@ -534,13 +562,14 @@ impl<'a> FactTemplateRepository<'a> {
     /// Update a fact template
     pub async fn update(
         &self,
+        organization_id: Uuid,
         id: Uuid,
         name: Option<&str>,
         description: Option<&str>,
         facts: Option<&[FactDefinition]>,
     ) -> Result<Option<FactTemplate>> {
         // First check if template exists
-        let existing = self.get_by_id(id).await?;
+        let existing = self.get_by_id(organization_id, id).await?;
         if existing.is_none() {
             return Ok(None);
         }
@@ -549,30 +578,31 @@ impl<'a> FactTemplateRepository<'a> {
         let new_name = name.unwrap_or(&existing.name);
         let new_description = description.or(existing.description.as_deref());
         let new_facts = facts.unwrap_or(&existing.facts);
-        let facts_json =
-            serde_json::to_string(new_facts).unwrap_or_else(|_| "[]".to_string());
+        let facts_json = serde_json::to_string(new_facts).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query(
             r#"
             UPDATE fact_templates
             SET name = ?, description = ?, facts = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE organization_id = ? AND id = ?
             "#,
         )
         .bind(new_name)
         .bind(new_description)
         .bind(&facts_json)
+        .bind(organization_id.to_string())
         .bind(id.to_string())
         .execute(self.pool)
         .await
         .context("Failed to update fact template")?;
 
-        self.get_by_id(id).await
+        self.get_by_id(organization_id, id).await
     }
 
     /// Delete a fact template
-    pub async fn delete(&self, id: Uuid) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM fact_templates WHERE id = ?")
+    pub async fn delete(&self, organization_id: Uuid, id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM fact_templates WHERE organization_id = ? AND id = ?")
+            .bind(organization_id.to_string())
             .bind(id.to_string())
             .execute(self.pool)
             .await
@@ -584,11 +614,12 @@ impl<'a> FactTemplateRepository<'a> {
 
 /// Convert a database row to a FactTemplate
 fn row_to_template(row: FactTemplateRow) -> FactTemplate {
-    let facts: Vec<FactDefinition> =
-        serde_json::from_str(&row.facts).unwrap_or_default();
+    let facts: Vec<FactDefinition> = serde_json::from_str(&row.facts).unwrap_or_default();
 
     FactTemplate {
         id: Some(row.id),
+        organization_id: Uuid::parse_str(&row.organization_id)
+            .unwrap_or_else(|_| crate::models::default_organization_uuid()),
         name: row.name,
         description: row.description,
         facts,
@@ -603,8 +634,8 @@ use crate::models::{
     ComplianceBaseline, ComplianceRule, CreateComplianceBaselineRequest,
     CreateDriftBaselineRequest, CreateSavedReportRequest, CreateScheduleRequest, DriftBaseline,
     DriftToleranceConfig, ExecutionStatus, OutputFormat, ReportExecution, ReportQueryConfig,
-    ReportSchedule, ReportTemplate, ReportType, SavedReport, SeverityLevel, UpdateSavedReportRequest,
-    UpdateScheduleRequest,
+    ReportSchedule, ReportTemplate, ReportType, SavedReport, SeverityLevel,
+    UpdateSavedReportRequest, UpdateScheduleRequest,
 };
 use chrono::{DateTime, Utc};
 
@@ -779,10 +810,14 @@ impl<'a> SavedReportRepository<'a> {
     }
 
     /// Create a new saved report
-    pub async fn create(&self, req: &CreateSavedReportRequest, user_id: Uuid) -> Result<SavedReport> {
+    pub async fn create(
+        &self,
+        req: &CreateSavedReportRequest,
+        user_id: Uuid,
+    ) -> Result<SavedReport> {
         let id = Uuid::new_v4();
-        let query_config = serde_json::to_string(&req.query_config)
-            .unwrap_or_else(|_| "{}".to_string());
+        let query_config =
+            serde_json::to_string(&req.query_config).unwrap_or_else(|_| "{}".to_string());
 
         sqlx::query(
             r#"
@@ -807,7 +842,11 @@ impl<'a> SavedReportRepository<'a> {
     }
 
     /// Update a saved report
-    pub async fn update(&self, id: Uuid, req: &UpdateSavedReportRequest) -> Result<Option<SavedReport>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &UpdateSavedReportRequest,
+    ) -> Result<Option<SavedReport>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
@@ -818,8 +857,8 @@ impl<'a> SavedReportRepository<'a> {
         let description = req.description.as_ref().or(existing.description.as_ref());
         let query_config = req.query_config.as_ref().unwrap_or(&existing.query_config);
         let is_public = req.is_public.unwrap_or(existing.is_public);
-        let query_config_str = serde_json::to_string(query_config)
-            .unwrap_or_else(|_| "{}".to_string());
+        let query_config_str =
+            serde_json::to_string(query_config).unwrap_or_else(|_| "{}".to_string());
 
         sqlx::query(
             r#"
@@ -971,7 +1010,9 @@ impl<'a> ReportScheduleRepository<'a> {
     /// Create a new schedule
     pub async fn create(&self, req: &CreateScheduleRequest) -> Result<ReportSchedule> {
         let id = Uuid::new_v4();
-        let email_recipients = req.email_recipients.as_ref()
+        let email_recipients = req
+            .email_recipients
+            .as_ref()
             .map(|r| serde_json::to_string(r).unwrap_or_else(|_| "[]".to_string()));
 
         sqlx::query(
@@ -997,18 +1038,27 @@ impl<'a> ReportScheduleRepository<'a> {
     }
 
     /// Update a schedule
-    pub async fn update(&self, id: Uuid, req: &UpdateScheduleRequest) -> Result<Option<ReportSchedule>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &UpdateScheduleRequest,
+    ) -> Result<Option<ReportSchedule>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
         }
 
         let existing = existing.unwrap();
-        let schedule_cron = req.schedule_cron.as_ref().unwrap_or(&existing.schedule_cron);
+        let schedule_cron = req
+            .schedule_cron
+            .as_ref()
+            .unwrap_or(&existing.schedule_cron);
         let timezone = req.timezone.as_ref().unwrap_or(&existing.timezone);
         let is_enabled = req.is_enabled.unwrap_or(existing.is_enabled);
         let output_format = req.output_format.unwrap_or(existing.output_format);
-        let email_recipients = req.email_recipients.as_ref()
+        let email_recipients = req
+            .email_recipients
+            .as_ref()
             .or(existing.email_recipients.as_ref())
             .map(|r| serde_json::to_string(r).unwrap_or_else(|_| "[]".to_string()));
 
@@ -1034,7 +1084,12 @@ impl<'a> ReportScheduleRepository<'a> {
     }
 
     /// Update next run time
-    pub async fn update_run_times(&self, id: Uuid, last_run: DateTime<Utc>, next_run: Option<DateTime<Utc>>) -> Result<()> {
+    pub async fn update_run_times(
+        &self,
+        id: Uuid,
+        last_run: DateTime<Utc>,
+        next_run: Option<DateTime<Utc>>,
+    ) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE report_schedules
@@ -1065,7 +1120,8 @@ impl<'a> ReportScheduleRepository<'a> {
 }
 
 fn row_to_schedule(row: ReportScheduleRow) -> ReportSchedule {
-    let email_recipients: Option<Vec<String>> = row.email_recipients
+    let email_recipients: Option<Vec<String>> = row
+        .email_recipients
         .and_then(|s| serde_json::from_str(&s).ok());
 
     ReportSchedule {
@@ -1076,8 +1132,16 @@ fn row_to_schedule(row: ReportScheduleRow) -> ReportSchedule {
         is_enabled: row.is_enabled,
         output_format: OutputFormat::from_str(&row.output_format).unwrap_or_default(),
         email_recipients,
-        last_run_at: row.last_run_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-        next_run_at: row.next_run_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        last_run_at: row.last_run_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
+        next_run_at: row.next_run_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
         created_at: DateTime::parse_from_rfc3339(&row.created_at)
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now()),
@@ -1102,7 +1166,11 @@ impl<'a> ReportExecutionRepository<'a> {
     }
 
     /// Get executions for a report
-    pub async fn get_by_report(&self, report_id: Uuid, limit: Option<u32>) -> Result<Vec<ReportExecution>> {
+    pub async fn get_by_report(
+        &self,
+        report_id: Uuid,
+        limit: Option<u32>,
+    ) -> Result<Vec<ReportExecution>> {
         let limit = limit.unwrap_or(100);
         let rows = sqlx::query_as::<_, ReportExecutionRow>(
             r#"
@@ -1175,13 +1243,11 @@ impl<'a> ReportExecutionRepository<'a> {
 
     /// Update execution status to running
     pub async fn mark_running(&self, id: Uuid) -> Result<()> {
-        sqlx::query(
-            "UPDATE report_executions SET status = 'running' WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .execute(self.pool)
-        .await
-        .context("Failed to update execution status")?;
+        sqlx::query("UPDATE report_executions SET status = 'running' WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to update execution status")?;
 
         Ok(())
     }
@@ -1240,21 +1306,19 @@ impl<'a> ReportExecutionRepository<'a> {
 
     /// Delete old executions
     pub async fn delete_old(&self, older_than: DateTime<Utc>) -> Result<u64> {
-        let result = sqlx::query(
-            "DELETE FROM report_executions WHERE started_at < ?",
-        )
-        .bind(older_than.to_rfc3339())
-        .execute(self.pool)
-        .await
-        .context("Failed to delete old executions")?;
+        let result = sqlx::query("DELETE FROM report_executions WHERE started_at < ?")
+            .bind(older_than.to_rfc3339())
+            .execute(self.pool)
+            .await
+            .context("Failed to delete old executions")?;
 
         Ok(result.rows_affected())
     }
 }
 
 fn row_to_execution(row: ReportExecutionRow) -> ReportExecution {
-    let output_data: Option<serde_json::Value> = row.output_data
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let output_data: Option<serde_json::Value> =
+        row.output_data.and_then(|s| serde_json::from_str(&s).ok());
 
     ReportExecution {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),
@@ -1265,7 +1329,11 @@ fn row_to_execution(row: ReportExecutionRow) -> ReportExecution {
         started_at: DateTime::parse_from_rfc3339(&row.started_at)
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now()),
-        completed_at: row.completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        completed_at: row.completed_at.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
         row_count: row.row_count,
         output_format: OutputFormat::from_str(&row.output_format).unwrap_or_default(),
         output_data,
@@ -1323,10 +1391,13 @@ impl<'a> ComplianceBaselineRepository<'a> {
     }
 
     /// Create a new baseline
-    pub async fn create(&self, req: &CreateComplianceBaselineRequest, user_id: Uuid) -> Result<ComplianceBaseline> {
+    pub async fn create(
+        &self,
+        req: &CreateComplianceBaselineRequest,
+        user_id: Uuid,
+    ) -> Result<ComplianceBaseline> {
         let id = Uuid::new_v4();
-        let rules_json = serde_json::to_string(&req.rules)
-            .unwrap_or_else(|_| "[]".to_string());
+        let rules_json = serde_json::to_string(&req.rules).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query(
             r#"
@@ -1448,11 +1519,17 @@ impl<'a> DriftBaselineRepository<'a> {
     }
 
     /// Create a new baseline
-    pub async fn create(&self, req: &CreateDriftBaselineRequest, user_id: Uuid) -> Result<DriftBaseline> {
+    pub async fn create(
+        &self,
+        req: &CreateDriftBaselineRequest,
+        user_id: Uuid,
+    ) -> Result<DriftBaseline> {
         let id = Uuid::new_v4();
-        let baseline_facts_json = serde_json::to_string(&req.baseline_facts)
-            .unwrap_or_else(|_| "{}".to_string());
-        let tolerance_config_json = req.tolerance_config.as_ref()
+        let baseline_facts_json =
+            serde_json::to_string(&req.baseline_facts).unwrap_or_else(|_| "{}".to_string());
+        let tolerance_config_json = req
+            .tolerance_config
+            .as_ref()
             .map(|c| serde_json::to_string(c).unwrap_or_else(|_| "{}".to_string()));
 
         sqlx::query(
@@ -1492,7 +1569,8 @@ impl<'a> DriftBaselineRepository<'a> {
 fn row_to_drift_baseline(row: DriftBaselineRow) -> DriftBaseline {
     let baseline_facts: serde_json::Value = serde_json::from_str(&row.baseline_facts)
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-    let tolerance_config: Option<DriftToleranceConfig> = row.tolerance_config
+    let tolerance_config: Option<DriftToleranceConfig> = row
+        .tolerance_config
         .and_then(|s| serde_json::from_str(&s).ok());
 
     DriftBaseline {
@@ -1579,7 +1657,8 @@ impl<'a> ReportTemplateRepository<'a> {
 }
 
 fn row_to_template_report(row: ReportTemplateRow) -> ReportTemplate {
-    let query_config: ReportQueryConfig = serde_json::from_str(&row.query_config).unwrap_or_default();
+    let query_config: ReportQueryConfig =
+        serde_json::from_str(&row.query_config).unwrap_or_default();
 
     ReportTemplate {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),

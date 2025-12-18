@@ -8,8 +8,8 @@ use rand::Rng;
 use uuid::Uuid;
 
 use openvox_webui::models::{
-    Action, Node, NodeGroup, Permission, Report, ReportMetrics, ReportStatus,
-    Resource, Role, RuleMatchType, Scope,
+    default_organization_uuid, Action, Node, NodeGroup, Permission, Report, ReportStatus, Resource,
+    Role, RuleMatchType, Scope,
 };
 
 /// Factory for creating test users
@@ -32,7 +32,9 @@ impl UserFactory {
 
     /// Create a unique test user
     pub fn create(&self) -> TestUserBuilder {
-        let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         TestUserBuilder {
             id: Uuid::new_v4(),
             username: format!("testuser_{}", n),
@@ -100,7 +102,9 @@ impl NodeFactory {
 
     /// Create a unique test node
     pub fn create(&self) -> NodeBuilder {
-        let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         NodeBuilder {
             certname: format!("node{}.example.com", n),
             environment: "production".to_string(),
@@ -178,7 +182,9 @@ impl GroupFactory {
 
     /// Create a unique test group
     pub fn create(&self) -> GroupBuilder {
-        let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         GroupBuilder {
             id: Uuid::new_v4(),
             name: format!("group_{}", n),
@@ -229,6 +235,7 @@ impl GroupBuilder {
     pub fn build(self) -> NodeGroup {
         NodeGroup {
             id: self.id,
+            organization_id: default_organization_uuid(),
             name: self.name,
             description: self.description,
             parent_id: self.parent_id,
@@ -236,6 +243,7 @@ impl GroupBuilder {
             rule_match_type: RuleMatchType::All,
             classes: self.classes,
             parameters: serde_json::json!({}),
+            variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
         }
@@ -262,7 +270,9 @@ impl ReportFactory {
 
     /// Create a unique test report
     pub fn create(&self) -> ReportBuilder {
-        let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         ReportBuilder {
             hash: format!("report_hash_{}", n),
             certname: format!("node{}.example.com", n),
@@ -347,7 +357,9 @@ impl RoleFactory {
 
     /// Create a unique test role
     pub fn create(&self) -> RoleBuilder {
-        let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         RoleBuilder {
             id: Uuid::new_v4(),
             name: format!("role_{}", n),

@@ -307,6 +307,7 @@ pub struct PermissionWithRole {
 /// Built-in system roles
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemRole {
+    SuperAdmin,
     Admin,
     Operator,
     Viewer,
@@ -318,6 +319,7 @@ impl SystemRole {
     /// Get the role name
     pub fn name(&self) -> &'static str {
         match self {
+            SystemRole::SuperAdmin => "super_admin",
             SystemRole::Admin => "admin",
             SystemRole::Operator => "operator",
             SystemRole::Viewer => "viewer",
@@ -329,6 +331,7 @@ impl SystemRole {
     /// Get the display name
     pub fn display_name(&self) -> &'static str {
         match self {
+            SystemRole::SuperAdmin => "Super Administrator",
             SystemRole::Admin => "Administrator",
             SystemRole::Operator => "Operator",
             SystemRole::Viewer => "Viewer",
@@ -340,6 +343,7 @@ impl SystemRole {
     /// Get the description
     pub fn description(&self) -> &'static str {
         match self {
+            SystemRole::SuperAdmin => "Cross-tenant administrator with full system access",
             SystemRole::Admin => "Full system access with all permissions",
             SystemRole::Operator => "Day-to-day operations access",
             SystemRole::Viewer => "Read-only access to all resources",
@@ -351,6 +355,7 @@ impl SystemRole {
     /// Get all system roles
     pub fn all() -> Vec<SystemRole> {
         vec![
+            SystemRole::SuperAdmin,
             SystemRole::Admin,
             SystemRole::Operator,
             SystemRole::Viewer,
@@ -377,10 +382,17 @@ impl SystemRole {
     /// Get the fixed UUID for this system role
     pub fn uuid(&self) -> Uuid {
         match self {
+            SystemRole::SuperAdmin => {
+                Uuid::parse_str("00000000-0000-0000-0000-000000000006").unwrap()
+            }
             SystemRole::Admin => Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
-            SystemRole::Operator => Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            SystemRole::Operator => {
+                Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap()
+            }
             SystemRole::Viewer => Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
-            SystemRole::GroupAdmin => Uuid::parse_str("00000000-0000-0000-0000-000000000004").unwrap(),
+            SystemRole::GroupAdmin => {
+                Uuid::parse_str("00000000-0000-0000-0000-000000000004").unwrap()
+            }
             SystemRole::Auditor => Uuid::parse_str("00000000-0000-0000-0000-000000000005").unwrap(),
         }
     }
@@ -388,6 +400,19 @@ impl SystemRole {
     /// Get default permissions for this role
     pub fn default_permissions(&self) -> Vec<Permission> {
         match self {
+            SystemRole::SuperAdmin => {
+                let mut perms = vec![];
+                for resource in Resource::all() {
+                    perms.push(Permission {
+                        id: Uuid::new_v4(),
+                        resource,
+                        action: Action::Admin,
+                        scope: Scope::All,
+                        constraint: None,
+                    });
+                }
+                perms
+            }
             SystemRole::Admin => {
                 // Admin has all permissions on all resources
                 let mut perms = vec![];
@@ -592,10 +617,15 @@ mod tests {
         let resources = Resource::all();
 
         for resource in resources {
-            let has_admin = admin_role.permissions.iter().any(|p| {
-                p.resource == resource && p.action == Action::Admin
-            });
-            assert!(has_admin, "Admin should have admin permission for {:?}", resource);
+            let has_admin = admin_role
+                .permissions
+                .iter()
+                .any(|p| p.resource == resource && p.action == Action::Admin);
+            assert!(
+                has_admin,
+                "Admin should have admin permission for {:?}",
+                resource
+            );
         }
     }
 
@@ -604,8 +634,12 @@ mod tests {
         let viewer_role = SystemRole::Viewer.to_role();
 
         for permission in &viewer_role.permissions {
-            assert_eq!(permission.action, Action::Read,
-                "Viewer should only have read permissions, found {:?}", permission.action);
+            assert_eq!(
+                permission.action,
+                Action::Read,
+                "Viewer should only have read permissions, found {:?}",
+                permission.action
+            );
         }
     }
 

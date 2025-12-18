@@ -118,12 +118,11 @@ pub fn check_permission(
     environment: Option<&str>,
 ) -> Result<(), RbacError> {
     // Convert role names to UUIDs
-    let role_ids: Vec<Uuid> = auth_user
-        .role_ids
-        .to_vec();
+    let role_ids: Vec<Uuid> = auth_user.role_ids.to_vec();
 
     // Check permission
-    let check = rbac_service.check_permission(&role_ids, resource, action, resource_id, environment);
+    let check =
+        rbac_service.check_permission(&role_ids, resource, action, resource_id, environment);
 
     if check.allowed {
         Ok(())
@@ -131,7 +130,9 @@ pub fn check_permission(
         Err(RbacError::PermissionDenied {
             resource,
             action,
-            reason: check.reason.unwrap_or_else(|| "No matching permission".to_string()),
+            reason: check
+                .reason
+                .unwrap_or_else(|| "No matching permission".to_string()),
         })
     }
 }
@@ -283,6 +284,7 @@ mod tests {
         let rbac_service = RbacService::new();
         let auth_user = AuthUser {
             id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
             username: "admin".to_string(),
             email: "admin@example.com".to_string(),
             roles: vec!["admin".to_string()],
@@ -306,6 +308,7 @@ mod tests {
         let rbac_service = RbacService::new();
         let auth_user = AuthUser {
             id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
             username: "viewer".to_string(),
             email: "viewer@example.com".to_string(),
             roles: vec!["viewer".to_string()],
@@ -330,6 +333,7 @@ mod tests {
         let rbac_service = RbacService::new();
         let auth_user = AuthUser {
             id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
             username: "operator".to_string(),
             email: "operator@example.com".to_string(),
             roles: vec!["operator".to_string()],
