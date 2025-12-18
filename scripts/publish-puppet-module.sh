@@ -23,8 +23,8 @@ set -e
 
 # Configuration
 MODULE_DIR="puppet"
-MODULE_NAME="openvox-webui"
-FORGE_USER="openvox"
+MODULE_NAME="openvox_webui"
+FORGE_USER="ffquintella"
 BUILD_DIR="pkg"
 
 # Color output
@@ -304,8 +304,9 @@ info "Checking Forge credentials..."
 
 FORGE_AUTH_TOKEN=$(get_forge_token)
 if [[ -z "$FORGE_AUTH_TOKEN" ]]; then
-    read -rp "Forge username: " FORGE_USER_INPUT
-    read -rsp "Forge password: " FORGE_PASS_INPUT
+    warning "No Forge API token found."
+    info "You can create one at: https://forge.puppet.com/settings/tokens"
+    read -rsp "Forge API token: " FORGE_AUTH_TOKEN
     echo
 fi
 
@@ -326,22 +327,29 @@ fi
 # Publish to Forge (always via Forge API; puppet module upload is not supported)
 info "Publishing to Puppet Forge via API..."
 
-CURL_AUTH=()
-if [[ -n "$FORGE_AUTH_TOKEN" ]]; then
-    CURL_AUTH=(-H "Authorization: Bearer ${FORGE_AUTH_TOKEN}")
-else
-    CURL_AUTH=(--user "${FORGE_USER_INPUT}:${FORGE_PASS_INPUT}")
-fi
+CURL_AUTH=(-H "Authorization: Bearer ${FORGE_AUTH_TOKEN}")
 
-if curl -sSf -X POST \
+FORGE_RESPONSE=$(mktemp)
+if curl -sS -w "%{http_code}" -o "$FORGE_RESPONSE" -X POST \
     "${CURL_AUTH[@]}" \
     -F "file=@${PACKAGE_FILE}" \
-    https://forgeapi.puppet.com/v3/releases >/dev/null; then
-    success "Module published successfully via Forge API!"
-    info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
+    https://forgeapi.puppet.com/v3/releases | {
+        read -r status
+        if [[ "$status" == "200" || "$status" == "201" ]]; then
+            success "Module published successfully via Forge API!"
+            info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
+        else
+            echo "HTTP $status"
+            cat "$FORGE_RESPONSE"
+            rm -f "$FORGE_RESPONSE"
+            exit 1
+        fi
+    }; then
+    :
 else
     fatal "Module publication failed via Forge API"
 fi
+rm -f "$FORGE_RESPONSE"
 
 # Tag release in Git
 info "Creating Git tag v${VERSION}..."

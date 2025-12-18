@@ -2,6 +2,10 @@
 
 This document explains how the application is put together so operators and contributors can reason about behavior, scale, and security.
 
+## Architecture Overview
+
+![OpenVox WebUI Architecture](openvox-webui.png)
+
 ## High-Level Components
 - **Frontend**: React + TypeScript (Vite) single-page app served by the backend or any static host.
 - **Backend**: Rust (Axum) API that handles auth, RBAC, multi-tenancy, PuppetDB access, and business logic.
