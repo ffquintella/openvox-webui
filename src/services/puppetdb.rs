@@ -316,14 +316,10 @@ impl PuppetDbClient {
     /// Create a new PuppetDB client with optional SSL/TLS configuration
     pub fn new(config: &PuppetDbConfig) -> Result<Self> {
         let mut builder = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs));
+            .timeout(Duration::from_secs(config.timeout_secs))
+            .use_rustls_tls();
 
-        // Configure SSL verification
-        if !config.ssl_verify {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-
-        // Load CA certificate if provided
+        // Load CA certificate if provided (must be done before identity for rustls)
         if let Some(ref ca_path) = config.ssl_ca {
             let ca_cert = fs::read(ca_path)
                 .with_context(|| format!("Failed to read CA certificate: {:?}", ca_path))?;
@@ -339,9 +335,19 @@ impl PuppetDbClient {
             let key = fs::read(key_path)
                 .with_context(|| format!("Failed to read client key: {:?}", key_path))?;
 
-            let identity = Identity::from_pkcs8_pem(&cert, &key)
+            // Combine cert and key into a single PEM bundle for rustls
+            let mut pem_bundle = cert.clone();
+            pem_bundle.push(b'\n');
+            pem_bundle.extend_from_slice(&key);
+
+            let identity = Identity::from_pem(&pem_bundle)
                 .context("Failed to create identity from certificate and key")?;
             builder = builder.identity(identity);
+        }
+
+        // Configure SSL verification (must be after identity for rustls compatibility)
+        if !config.ssl_verify {
+            builder = builder.danger_accept_invalid_certs(true);
         }
 
         let client = builder.build().context("Failed to create HTTP client")?;

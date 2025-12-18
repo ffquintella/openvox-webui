@@ -700,6 +700,23 @@ impl AppConfig {
             });
             puppetdb.url = url;
         }
+
+        // PuppetDB SSL certificate overrides
+        if let Ok(cert) = std::env::var("PUPPETDB_SSL_CERT") {
+            if let Some(ref mut puppetdb) = self.puppetdb {
+                puppetdb.ssl_cert = Some(PathBuf::from(cert));
+            }
+        }
+        if let Ok(key) = std::env::var("PUPPETDB_SSL_KEY") {
+            if let Some(ref mut puppetdb) = self.puppetdb {
+                puppetdb.ssl_key = Some(PathBuf::from(key));
+            }
+        }
+        if let Ok(ca) = std::env::var("PUPPETDB_SSL_CA") {
+            if let Some(ref mut puppetdb) = self.puppetdb {
+                puppetdb.ssl_ca = Some(PathBuf::from(ca));
+            }
+        }
     }
 
     /// Validate configuration

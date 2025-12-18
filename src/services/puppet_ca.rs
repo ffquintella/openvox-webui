@@ -22,7 +22,18 @@ impl PuppetCAService {
     pub fn new(config: &PuppetCAConfig) -> Result<Self, AppError> {
         let mut client_builder = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(!config.ssl_verify);
+            .use_rustls_tls();
+
+        // Add CA certificate if provided (must be done before identity for rustls)
+        if let Some(ca_path) = &config.ssl_ca {
+            let ca_pem = std::fs::read(ca_path).map_err(|e| {
+                AppError::Internal(format!("Failed to read CA bundle: {}", e))
+            })?;
+            let ca_cert = reqwest::Certificate::from_pem(&ca_pem).map_err(|e| {
+                AppError::Internal(format!("Failed to parse CA certificate: {}", e))
+            })?;
+            client_builder = client_builder.add_root_certificate(ca_cert);
+        }
 
         // Configure SSL certificates if provided
         if let (Some(cert_path), Some(key_path)) = (&config.ssl_cert, &config.ssl_key) {
@@ -33,22 +44,21 @@ impl PuppetCAService {
                 AppError::Internal(format!("Failed to read CA key: {}", e))
             })?;
 
-            let identity = Identity::from_pkcs8_pem(&cert_pem, &key_pem).map_err(|e| {
+            // Combine cert and key into a single PEM bundle for rustls
+            let mut pem_bundle = cert_pem.clone();
+            pem_bundle.push(b'\n');
+            pem_bundle.extend_from_slice(&key_pem);
+
+            let identity = Identity::from_pem(&pem_bundle).map_err(|e| {
                 AppError::Internal(format!("Failed to create identity: {}", e))
             })?;
 
             client_builder = client_builder.identity(identity);
         }
 
-        // Add CA certificate if provided
-        if let Some(ca_path) = &config.ssl_ca {
-            let ca_pem = std::fs::read(ca_path).map_err(|e| {
-                AppError::Internal(format!("Failed to read CA bundle: {}", e))
-            })?;
-            let ca_cert = reqwest::Certificate::from_pem(&ca_pem).map_err(|e| {
-                AppError::Internal(format!("Failed to parse CA certificate: {}", e))
-            })?;
-            client_builder = client_builder.add_root_certificate(ca_cert);
+        // Configure SSL verification (must be after identity for rustls compatibility)
+        if !config.ssl_verify {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
         }
 
         let client = client_builder.build().map_err(|e| {
