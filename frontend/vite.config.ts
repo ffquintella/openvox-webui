@@ -49,6 +49,18 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Vendor chunks - separating large dependencies
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-query': ['@tanstack/react-query'],
+            'vendor-charts': ['recharts'],
+            'vendor-ui': ['lucide-react', 'zustand'],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 500, // Keep warning at 500KB
     },
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),

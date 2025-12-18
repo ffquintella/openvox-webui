@@ -1,27 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AccessDenied } from './components/AccessDenied';
 import ForcePasswordChange from './components/ForcePasswordChange';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Nodes from './pages/Nodes';
-import NodeDetail from './pages/NodeDetail';
-import Groups from './pages/Groups';
-import Reports from './pages/Reports';
-import Facts from './pages/Facts';
-import FacterTemplates from './pages/FacterTemplates';
-import Analytics from './pages/Analytics';
-import Alerting from './pages/Alerting';
-import Settings from './pages/Settings';
-import Roles from './pages/Roles';
-import Users from './pages/Users';
-import Permissions from './pages/Permissions';
-import Profile from './pages/Profile';
-import CA from './pages/CA';
 import { useAuthStore } from './stores/authStore';
 import { usePermissionsStore } from './stores/permissionsStore';
+
+// Lazy load all page components for code splitting
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Nodes = lazy(() => import('./pages/Nodes'));
+const NodeDetail = lazy(() => import('./pages/NodeDetail'));
+const Groups = lazy(() => import('./pages/Groups'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Facts = lazy(() => import('./pages/Facts'));
+const FacterTemplates = lazy(() => import('./pages/FacterTemplates'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Alerting = lazy(() => import('./pages/Alerting'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Roles = lazy(() => import('./pages/Roles'));
+const Users = lazy(() => import('./pages/Users'));
+const Permissions = lazy(() => import('./pages/Permissions'));
+const Profile = lazy(() => import('./pages/Profile'));
+const CA = lazy(() => import('./pages/CA'));
+
+// Loading spinner component for Suspense fallback
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+  </div>
+);
 
 function App() {
   const user = useAuthStore((state) => state.user);
@@ -60,67 +69,71 @@ function App() {
         <ForcePasswordChange onSuccess={handlePasswordChangeSuccess} />
       )}
 
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/access-denied" element={<AccessDenied />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/access-denied" element={<AccessDenied />} />
 
-        {/* Protected routes */}
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/nodes" element={<Nodes />} />
-                  <Route path="/nodes/:certname" element={<NodeDetail />} />
-                  <Route path="/groups" element={<Groups />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/facts" element={<Facts />} />
-                  <Route path="/facter-templates" element={<FacterTemplates />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/alerting" element={<Alerting />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route
-                    path="/roles"
-                    element={
-                      <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
-                        <Roles />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/users"
-                    element={
-                      <ProtectedRoute requiredPermission={{ resource: 'users', action: 'read' }}>
-                        <Users />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/permissions"
-                    element={
-                      <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
-                        <Permissions />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/settings"
-                    element={
-                      <ProtectedRoute requiredPermission={{ resource: 'settings', action: 'read' }}>
-                        <Settings />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route path="/ca" element={<CA />} />
-                </Routes>
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+          {/* Protected routes */}
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Suspense fallback={<PageLoader />}>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/nodes" element={<Nodes />} />
+                      <Route path="/nodes/:certname" element={<NodeDetail />} />
+                      <Route path="/groups" element={<Groups />} />
+                      <Route path="/reports" element={<Reports />} />
+                      <Route path="/facts" element={<Facts />} />
+                      <Route path="/facter-templates" element={<FacterTemplates />} />
+                      <Route path="/analytics" element={<Analytics />} />
+                      <Route path="/alerting" element={<Alerting />} />
+                      <Route path="/profile" element={<Profile />} />
+                      <Route
+                        path="/roles"
+                        element={
+                          <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
+                            <Roles />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/users"
+                        element={
+                          <ProtectedRoute requiredPermission={{ resource: 'users', action: 'read' }}>
+                            <Users />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/permissions"
+                        element={
+                          <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
+                            <Permissions />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/settings"
+                        element={
+                          <ProtectedRoute requiredPermission={{ resource: 'settings', action: 'read' }}>
+                            <Settings />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route path="/ca" element={<CA />} />
+                    </Routes>
+                  </Suspense>
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Suspense>
     </>
   );
 }

@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::{
@@ -29,6 +30,16 @@ struct GroupRow {
     variables: String,
 }
 
+/// Row returned from classification_rules table (with group_id for batch loading)
+#[derive(Debug, sqlx::FromRow)]
+struct RuleRowWithGroup {
+    id: String,
+    group_id: String,
+    fact_path: String,
+    operator: String,
+    value: String,
+}
+
 /// Row returned from classification_rules table
 #[derive(Debug, sqlx::FromRow)]
 struct RuleRow {
@@ -36,6 +47,13 @@ struct RuleRow {
     fact_path: String,
     operator: String,
     value: String,
+}
+
+/// Row returned from pinned_nodes table (with group_id for batch loading)
+#[derive(Debug, sqlx::FromRow)]
+struct PinnedNodeRowWithGroup {
+    group_id: String,
+    certname: String,
 }
 
 /// Row returned from pinned_nodes table
@@ -50,6 +68,9 @@ impl<'a> GroupRepository<'a> {
     }
 
     /// Get all node groups with their rules and pinned nodes
+    ///
+    /// Optimized to use batch loading instead of N+1 queries.
+    /// Previously executed 1 + 2N queries, now executes only 3 queries total.
     pub async fn get_all(&self, organization_id: Uuid) -> Result<Vec<NodeGroup>> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
@@ -65,9 +86,23 @@ impl<'a> GroupRepository<'a> {
         .await
         .context("Failed to fetch groups")?;
 
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Collect all group IDs for batch loading
+        let group_ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+
+        // Batch load all rules for these groups (single query)
+        let rules_map = self.batch_get_rules(&group_ids).await?;
+
+        // Batch load all pinned nodes for these groups (single query)
+        let pinned_map = self.batch_get_pinned_nodes(&group_ids).await?;
+
+        // Convert rows to groups using the pre-loaded data
         let mut groups = Vec::with_capacity(rows.len());
         for row in rows {
-            let group = self.row_to_group(row).await?;
+            let group = self.row_to_group_with_data(row, &rules_map, &pinned_map)?;
             groups.push(group);
         }
         Ok(groups)
@@ -378,6 +413,140 @@ impl<'a> GroupRepository<'a> {
             rules,
             pinned_nodes,
         })
+    }
+
+    /// Convert a database row to a NodeGroup using pre-loaded rules and pinned nodes
+    ///
+    /// This is used by batch loading operations to avoid N+1 queries.
+    fn row_to_group_with_data(
+        &self,
+        row: GroupRow,
+        rules_map: &HashMap<String, Vec<ClassificationRule>>,
+        pinned_map: &HashMap<String, Vec<String>>,
+    ) -> Result<NodeGroup> {
+        let id = Uuid::parse_str(&row.id).context("Invalid group ID")?;
+        let organization_id =
+            Uuid::parse_str(&row.organization_id).context("Invalid organization ID")?;
+
+        let rules = rules_map.get(&row.id).cloned().unwrap_or_default();
+        let pinned_nodes = pinned_map.get(&row.id).cloned().unwrap_or_default();
+
+        let classes: Vec<String> = serde_json::from_str(&row.classes).unwrap_or_default();
+        let parameters: serde_json::Value =
+            serde_json::from_str(&row.parameters).unwrap_or(serde_json::json!({}));
+        let variables: serde_json::Value =
+            serde_json::from_str(&row.variables).unwrap_or(serde_json::json!({}));
+
+        Ok(NodeGroup {
+            id,
+            organization_id,
+            name: row.name,
+            description: row.description,
+            parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
+            environment: row.environment,
+            rule_match_type: parse_rule_match_type(&row.rule_match_type),
+            classes,
+            parameters,
+            variables,
+            rules,
+            pinned_nodes,
+        })
+    }
+
+    /// Batch load all rules for multiple groups in a single query
+    ///
+    /// This reduces N queries to 1 query for rule loading.
+    async fn batch_get_rules(
+        &self,
+        group_ids: &[String],
+    ) -> Result<HashMap<String, Vec<ClassificationRule>>> {
+        if group_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Build the IN clause placeholders
+        let placeholders: Vec<&str> = group_ids.iter().map(|_| "?").collect();
+        let query = format!(
+            r#"
+            SELECT id, group_id, fact_path, operator, value
+            FROM classification_rules
+            WHERE group_id IN ({})
+            ORDER BY group_id, fact_path
+            "#,
+            placeholders.join(", ")
+        );
+
+        let mut query_builder = sqlx::query_as::<_, RuleRowWithGroup>(&query);
+        for id in group_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let rows = query_builder
+            .fetch_all(self.pool)
+            .await
+            .context("Failed to batch fetch rules")?;
+
+        // Group rules by group_id
+        let mut rules_map: HashMap<String, Vec<ClassificationRule>> = HashMap::new();
+        for row in rows {
+            let rule = ClassificationRule {
+                id: Uuid::parse_str(&row.id).unwrap_or_else(|_| Uuid::new_v4()),
+                fact_path: row.fact_path,
+                operator: parse_operator(&row.operator),
+                value: serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null),
+            };
+            rules_map
+                .entry(row.group_id)
+                .or_insert_with(Vec::new)
+                .push(rule);
+        }
+
+        Ok(rules_map)
+    }
+
+    /// Batch load all pinned nodes for multiple groups in a single query
+    ///
+    /// This reduces N queries to 1 query for pinned node loading.
+    async fn batch_get_pinned_nodes(
+        &self,
+        group_ids: &[String],
+    ) -> Result<HashMap<String, Vec<String>>> {
+        if group_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Build the IN clause placeholders
+        let placeholders: Vec<&str> = group_ids.iter().map(|_| "?").collect();
+        let query = format!(
+            r#"
+            SELECT group_id, certname
+            FROM pinned_nodes
+            WHERE group_id IN ({})
+            ORDER BY group_id, certname
+            "#,
+            placeholders.join(", ")
+        );
+
+        let mut query_builder = sqlx::query_as::<_, PinnedNodeRowWithGroup>(&query);
+        for id in group_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let rows = query_builder
+            .fetch_all(self.pool)
+            .await
+            .context("Failed to batch fetch pinned nodes")?;
+
+        // Group pinned nodes by group_id
+        let mut pinned_map: HashMap<String, Vec<String>> = HashMap::new();
+        for row in rows {
+            pinned_map
+                .entry(row.group_id)
+                .or_insert_with(Vec::new)
+                .push(row.certname);
+        }
+
+        Ok(pinned_map)
     }
 }
 

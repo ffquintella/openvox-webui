@@ -43,6 +43,9 @@ pub struct DbRbacService {
     role_cache: RwLock<HashMap<Uuid, CacheEntry<Role>>>,
     /// User permissions cache (user_id -> EffectivePermissions)
     permission_cache: RwLock<HashMap<Uuid, CacheEntry<EffectivePermissions>>>,
+    /// Reverse lookup: role_id -> set of user_ids that have this role
+    /// Used for selective cache invalidation when a role changes
+    role_users_cache: RwLock<HashMap<Uuid, Vec<Uuid>>>,
 }
 
 impl DbRbacService {
@@ -53,6 +56,7 @@ impl DbRbacService {
             cache_ttl: Duration::from_secs(300), // 5 minutes default
             role_cache: RwLock::new(HashMap::new()),
             permission_cache: RwLock::new(HashMap::new()),
+            role_users_cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -63,6 +67,7 @@ impl DbRbacService {
             cache_ttl: ttl,
             role_cache: RwLock::new(HashMap::new()),
             permission_cache: RwLock::new(HashMap::new()),
+            role_users_cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -74,6 +79,9 @@ impl DbRbacService {
         if let Ok(mut cache) = self.permission_cache.write() {
             cache.clear();
         }
+        if let Ok(mut cache) = self.role_users_cache.write() {
+            cache.clear();
+        }
     }
 
     /// Invalidate cache for a specific user
@@ -83,14 +91,68 @@ impl DbRbacService {
         }
     }
 
-    /// Invalidate cache for a specific role
+    /// Invalidate cache for a specific role and affected users
+    ///
+    /// Selectively invalidates only the permission caches for users
+    /// who have the modified role, rather than clearing all user caches.
     pub fn invalidate_role_cache(&self, role_id: &Uuid) {
+        // Remove from role cache
         if let Ok(mut cache) = self.role_cache.write() {
             cache.remove(role_id);
         }
-        // Also clear all user permission caches since role permissions may have changed
-        if let Ok(mut cache) = self.permission_cache.write() {
-            cache.clear();
+
+        // Get users affected by this role change
+        let affected_users: Vec<Uuid> = if let Ok(cache) = self.role_users_cache.read() {
+            cache.get(role_id).cloned().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Selectively invalidate only affected users' permission caches
+        if !affected_users.is_empty() {
+            if let Ok(mut cache) = self.permission_cache.write() {
+                for user_id in &affected_users {
+                    cache.remove(user_id);
+                }
+            }
+        } else {
+            // If we don't have tracking info, fall back to clearing all
+            // This happens on startup or when the cache was cleared
+            if let Ok(mut cache) = self.permission_cache.write() {
+                cache.clear();
+            }
+        }
+    }
+
+    /// Track that a user has a specific role (for selective cache invalidation)
+    fn track_user_role(&self, user_id: &Uuid, role_id: &Uuid) {
+        if let Ok(mut cache) = self.role_users_cache.write() {
+            cache
+                .entry(*role_id)
+                .or_insert_with(Vec::new)
+                .push(*user_id);
+        }
+    }
+
+    /// Remove tracking of a user's role
+    fn untrack_user_role(&self, user_id: &Uuid, role_id: &Uuid) {
+        if let Ok(mut cache) = self.role_users_cache.write() {
+            if let Some(users) = cache.get_mut(role_id) {
+                users.retain(|id| id != user_id);
+            }
+        }
+    }
+
+    /// Update role-user tracking when fetching user roles
+    fn update_role_tracking(&self, user_id: &Uuid, role_ids: &[Uuid]) {
+        if let Ok(mut cache) = self.role_users_cache.write() {
+            // Add user to each role's user list
+            for role_id in role_ids {
+                let users = cache.entry(*role_id).or_insert_with(Vec::new);
+                if !users.contains(user_id) {
+                    users.push(*user_id);
+                }
+            }
         }
     }
 
@@ -99,6 +161,8 @@ impl DbRbacService {
     // =========================================================================
 
     /// Get all roles from database
+    ///
+    /// Optimized to batch load permissions in a single query instead of N+1 queries.
     pub async fn get_all_roles(&self) -> Result<Vec<Role>> {
         let rows = sqlx::query(
             "SELECT id, name, display_name, description, is_system, parent_id, created_at, updated_at
@@ -108,10 +172,23 @@ impl DbRbacService {
         .await
         .context("Failed to fetch roles")?;
 
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Collect role IDs for batch loading
+        let role_ids: Vec<String> = rows
+            .iter()
+            .map(|r| r.get::<String, _>("id"))
+            .collect();
+
+        // Batch load all permissions for all roles in a single query
+        let permissions_map = self.batch_get_role_permissions(&role_ids).await?;
+
         let mut roles = Vec::new();
         for row in rows {
-            let role_id = parse_uuid(row.get::<String, _>("id"))?;
-            let permissions = self.get_role_permissions_db(&role_id).await?;
+            let role_id_str: String = row.get("id");
+            let permissions = permissions_map.get(&role_id_str).cloned().unwrap_or_default();
             roles.push(row_to_role(&row, permissions));
         }
 
@@ -333,6 +410,51 @@ impl DbRbacService {
         Ok(permissions)
     }
 
+    /// Batch load permissions for multiple roles in a single query
+    ///
+    /// This reduces N queries to 1 query for permission loading.
+    async fn batch_get_role_permissions(
+        &self,
+        role_ids: &[String],
+    ) -> Result<HashMap<String, Vec<Permission>>> {
+        if role_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Build the IN clause placeholders
+        let placeholders: Vec<&str> = role_ids.iter().map(|_| "?").collect();
+        let query = format!(
+            "SELECT id, role_id, resource, action, scope_type, scope_value, constraint_type, constraint_value
+             FROM permissions
+             WHERE role_id IN ({})
+             ORDER BY role_id, resource, action",
+            placeholders.join(", ")
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        for id in role_ids {
+            query_builder = query_builder.bind(id);
+        }
+
+        let rows = query_builder
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to batch fetch permissions")?;
+
+        // Group permissions by role_id
+        let mut permissions_map: HashMap<String, Vec<Permission>> = HashMap::new();
+        for row in rows {
+            let role_id: String = row.get("role_id");
+            let permission = row_to_permission(&row)?;
+            permissions_map
+                .entry(role_id)
+                .or_insert_with(Vec::new)
+                .push(permission);
+        }
+
+        Ok(permissions_map)
+    }
+
     /// Add a permission to a role
     pub async fn add_permission_to_role(
         &self,
@@ -439,6 +561,9 @@ impl DbRbacService {
     // =========================================================================
 
     /// Get roles assigned to a user
+    ///
+    /// Optimized to batch load permissions in a single query instead of N+1 queries.
+    /// Also updates the role-user tracking for selective cache invalidation.
     pub async fn get_user_roles(&self, user_id: &Uuid) -> Result<Vec<Role>> {
         let user_id_str = user_id.to_string();
         let rows = sqlx::query(
@@ -453,10 +578,30 @@ impl DbRbacService {
         .await
         .context("Failed to fetch user roles")?;
 
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Collect role IDs for batch loading
+        let role_ids: Vec<String> = rows
+            .iter()
+            .map(|r| r.get::<String, _>("id"))
+            .collect();
+
+        // Update role-user tracking for selective cache invalidation
+        let role_uuids: Vec<Uuid> = role_ids
+            .iter()
+            .filter_map(|id| Uuid::parse_str(id).ok())
+            .collect();
+        self.update_role_tracking(user_id, &role_uuids);
+
+        // Batch load all permissions for all roles in a single query
+        let permissions_map = self.batch_get_role_permissions(&role_ids).await?;
+
         let mut roles = Vec::new();
         for row in rows {
-            let role_id = parse_uuid(row.get::<String, _>("id"))?;
-            let permissions = self.get_role_permissions_db(&role_id).await?;
+            let role_id_str: String = row.get("id");
+            let permissions = permissions_map.get(&role_id_str).cloned().unwrap_or_default();
             roles.push(row_to_role(&row, permissions));
         }
 
@@ -514,6 +659,9 @@ impl DbRbacService {
             .execute(&self.pool)
             .await
             .context("Failed to assign role")?;
+
+            // Track the new role assignment for selective cache invalidation
+            self.track_user_role(user_id, role_id);
         }
 
         self.invalidate_user_cache(user_id);
@@ -544,6 +692,8 @@ impl DbRbacService {
         .await
         .context("Failed to add role to user")?;
 
+        // Track the role assignment for selective cache invalidation
+        self.track_user_role(user_id, role_id);
         self.invalidate_user_cache(user_id);
 
         Ok(())
@@ -561,6 +711,8 @@ impl DbRbacService {
             .await
             .context("Failed to remove role from user")?;
 
+        // Update tracking
+        self.untrack_user_role(user_id, role_id);
         self.invalidate_user_cache(user_id);
 
         Ok(result.rows_affected() > 0)
