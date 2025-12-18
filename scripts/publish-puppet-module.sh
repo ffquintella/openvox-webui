@@ -241,16 +241,24 @@ if [[ "$PDK_COMPATIBLE" == "true" ]]; then
         fatal "Module build failed"
     fi
 else
-    if "${PUPPET_CMD[@]}" module build --help >/dev/null 2>&1; then
-        if ! "${PUPPET_CMD[@]}" module build --target-dir "$BUILD_DIR"; then
+    BUILD_LOG=$(mktemp)
+    if "${PUPPET_CMD[@]}" module build --target-dir "$BUILD_DIR" >"$BUILD_LOG" 2>&1; then
+        :
+    else
+        if grep -qi "no .*build" "$BUILD_LOG"; then
+            warning "Puppet CLI does not support 'module build'; attempting pdk build even though module is not PDK compatible"
+            if ! pdk build --force; then
+                cat "$BUILD_LOG"
+                rm -f "$BUILD_LOG"
+                fatal "Module build failed (Puppet CLI lacks build and PDK build failed)"
+            fi
+        else
+            cat "$BUILD_LOG"
+            rm -f "$BUILD_LOG"
             fatal "Module build failed"
         fi
-    else
-        warning "Puppet CLI does not support 'module build'; attempting pdk build even though module is not PDK compatible"
-        if ! pdk build --force; then
-            fatal "Module build failed (Puppet CLI lacks build and PDK build failed)"
-        fi
     fi
+    rm -f "$BUILD_LOG"
 fi
 
 # Find the built package
@@ -272,21 +280,33 @@ echo "... (showing first 20 files)"
 if [[ "$DRY_RUN" == "true" ]]; then
     success "DRY RUN MODE: Build successful but not publishing to Forge"
     info "Package ready: $PACKAGE_FILE"
-    info "To publish manually, run:"
-    info "  cd $MODULE_DIR"
-    info "  ${PUPPET_CMD[*]} module upload $PACKAGE_FILE"
     exit 0
 fi
+
+get_forge_token() {
+    if [[ -n "$FORGE_TOKEN" ]]; then
+        echo "$FORGE_TOKEN"
+        return
+    fi
+    if [[ -f "$HOME/.puppetlabs/token" ]]; then
+        head -n1 "$HOME/.puppetlabs/token"
+        return
+    fi
+    if [[ -f "$HOME/.puppetlabs/puppet-forge.conf" ]]; then
+        # shellcheck disable=SC2002
+        cat "$HOME/.puppetlabs/puppet-forge.conf" | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f4
+        return
+    fi
+}
 
 # Check for Forge credentials
 info "Checking Forge credentials..."
 
-if [[ ! -f ~/.puppetlabs/puppet-forge.conf ]] && [[ -z "$FORGE_TOKEN" ]]; then
-    warning "No Forge credentials found"
-    info "To configure Forge credentials:"
-    info "  puppet config set forge_authorization <your-api-token>"
-    info "Or set FORGE_TOKEN environment variable"
-    fatal "Forge credentials required for publishing"
+FORGE_AUTH_TOKEN=$(get_forge_token)
+if [[ -z "$FORGE_AUTH_TOKEN" ]]; then
+    read -rp "Forge username: " FORGE_USER_INPUT
+    read -rsp "Forge password: " FORGE_PASS_INPUT
+    echo
 fi
 
 # Confirm publication
@@ -306,21 +326,46 @@ fi
 # Publish to Forge
 info "Publishing to Puppet Forge..."
 
-if "${PUPPET_CMD[@]}" module upload "$PACKAGE_FILE"; then
-    success "Module published successfully!"
-    info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
-    
-    # Tag release in Git
-    info "Creating Git tag v${VERSION}..."
-    cd ..
-    if git tag -a "puppet-v${VERSION}" -m "Puppet module release ${VERSION}"; then
-        success "Git tag created: puppet-v${VERSION}"
-        info "Push tag with: git push origin puppet-v${VERSION}"
+PUPPET_UPLOAD_SUPPORTED=false
+if "${PUPPET_CMD[@]}" module upload --help >/dev/null 2>&1; then
+    PUPPET_UPLOAD_SUPPORTED=true
+fi
+
+if [[ "$PUPPET_UPLOAD_SUPPORTED" == "true" ]]; then
+    if "${PUPPET_CMD[@]}" module upload "$PACKAGE_FILE"; then
+        success "Module published successfully!"
+        info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
     else
-        warning "Failed to create Git tag (tag may already exist)"
+        fatal "Module publication failed"
     fi
 else
-    fatal "Module publication failed"
+    info "puppet module upload not available; using Forge API via curl"
+    CURL_AUTH=()
+    if [[ -n "$FORGE_AUTH_TOKEN" ]]; then
+        CURL_AUTH=(-H "Authorization: Bearer ${FORGE_AUTH_TOKEN}")
+    else
+        CURL_AUTH=(--user "${FORGE_USER_INPUT}:${FORGE_PASS_INPUT}")
+    fi
+
+    if curl -sSf -X POST \
+        "${CURL_AUTH[@]}" \
+        -F "file=@${PACKAGE_FILE}" \
+        https://forgeapi.puppet.com/v3/releases >/dev/null; then
+        success "Module published successfully via Forge API!"
+        info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
+    else
+        fatal "Module publication failed via Forge API"
+    fi
+fi
+
+# Tag release in Git
+info "Creating Git tag v${VERSION}..."
+cd ..
+if git tag -a "puppet-v${VERSION}" -m "Puppet module release ${VERSION}"; then
+    success "Git tag created: puppet-v${VERSION}"
+    info "Push tag with: git push origin puppet-v${VERSION}"
+else
+    warning "Failed to create Git tag (tag may already exist)"
 fi
 
 # Step 11: Verify publication
