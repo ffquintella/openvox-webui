@@ -25,11 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `super_admin` system role for cross-tenant administration
 - API key management (`/api/v1/api-keys`) with role-scoped keys and API key authentication
 - Audit logging improvements with `/api/v1/audit-logs` endpoint
+- User-selectable theme: light/dark toggle with persistence (localStorage) and early application to avoid FOUC
+- Tailwind dark mode enabled (`darkMode: 'class'`) and ThemeToggle component added to sidebar
 
 ### Changed
 - Rust clippy lint fixes across config, middleware, models, and services
 - API routing split into public vs protected routes; auth middleware applies only to protected routes
 - Groups, fact templates, and users are tenant-scoped in repository queries
+- Consistent dark theme styles across layout, navigations, cards, inputs, and alerting UI
 
 ### Fixed
 - `/api/v1/auth/*` endpoints no longer blocked by global auth middleware

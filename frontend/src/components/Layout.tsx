@@ -19,6 +19,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
+import ThemeToggle from './ThemeToggle';
 import { useAuthStore } from '../stores/authStore';
 
 interface LayoutProps {
@@ -70,14 +71,17 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200">
+      <aside className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center h-16 px-6 border-b border-gray-200">
-            <span className="text-xl font-bold text-primary-600">OpenVox</span>
-            <span className="ml-1 text-xl font-light text-gray-600">WebUI</span>
+          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center">
+              <span className="text-xl font-bold text-primary-600 dark:text-primary-400">OpenVox</span>
+              <span className="ml-1 text-xl font-light text-gray-600 dark:text-gray-300">WebUI</span>
+            </div>
+            <ThemeToggle />
           </div>
 
           {/* Navigation */}
@@ -96,8 +100,8 @@ export default function Layout({ children }: LayoutProps) {
                     className={clsx(
                       'flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'text-gray-700 hover:bg-gray-100'
+                        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-100'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
                     )}
                   >
                     <item.icon className="w-5 h-5 mr-3" />
@@ -109,7 +113,7 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Admin Section */}
             <div className="mt-8">
-              <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <p className="px-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                 Administration
               </p>
               <div className="mt-2 space-y-1">
@@ -123,8 +127,8 @@ export default function Layout({ children }: LayoutProps) {
                       className={clsx(
                         'flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-primary-50 text-primary-700'
-                          : 'text-gray-700 hover:bg-gray-100'
+                          ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-100'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
                       )}
                     >
                       <item.icon className="w-5 h-5 mr-3" />
@@ -141,7 +145,7 @@ export default function Layout({ children }: LayoutProps) {
             <div className="relative">
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 <div className="flex items-center min-w-0">
                   <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
@@ -157,18 +161,18 @@ export default function Layout({ children }: LayoutProps) {
 
               {/* Dropdown Menu */}
               {userMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-md shadow-lg border border-gray-200 py-1">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 py-1">
                   <Link
                     to="/profile"
                     onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                   >
                     <User className="w-4 h-4 mr-3" />
                     Profile
                   </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                   >
                     <LogOut className="w-4 h-4 mr-3" />
                     Logout
@@ -176,7 +180,7 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
               )}
             </div>
-            <p className="mt-3 text-xs text-gray-500">OpenVox WebUI v{__APP_VERSION__}</p>
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">OpenVox WebUI v{__APP_VERSION__}</p>
           </div>
         </div>
       </aside>
