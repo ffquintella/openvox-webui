@@ -10,8 +10,8 @@
         const storageKey = 'ov-theme';
         try {
           const saved = localStorage.getItem(storageKey);
-          const preferDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          const theme = saved || (preferDark ? 'dark' : 'light');
+          // Default to light theme if no preference saved
+          const theme = saved || 'light';
           if (theme === 'dark') {
             document.documentElement.classList.add('dark');
           } else {

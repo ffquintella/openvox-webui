@@ -33,8 +33,8 @@ function initialTheme(): Theme {
   } catch {
     /* noop */
   }
-  const preferDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return preferDark ? 'dark' : 'light';
+  // Default to light theme
+  return 'light';
 }
 
 export const useThemeStore = create<ThemeState>()(

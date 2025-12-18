@@ -17,6 +17,7 @@ import {
   Clock,
   Volume2,
   VolumeX,
+  Pencil,
 } from 'lucide-react';
 import { api } from '../services/api';
 import type {
@@ -29,6 +30,7 @@ import type {
   ChannelType,
   CreateChannelRequest,
   CreateAlertRuleRequest,
+  UpdateAlertRuleRequest,
   CreateSilenceRequest,
 } from '../types';
 
@@ -107,6 +109,7 @@ export default function Alerting() {
   const [showNewRuleModal, setShowNewRuleModal] = useState(false);
   const [showNewSilenceModal, setShowNewSilenceModal] = useState(false);
   const [_selectedAlert, _setSelectedAlert] = useState<Alert | null>(null);
+  const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
 
   // Queries
   const { data: alerts = [], isLoading: alertsLoading, refetch: refetchAlerts } = useQuery({
@@ -485,13 +488,23 @@ export default function Alerting() {
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-right">
-                          <button
-                            onClick={() => deleteRuleMutation.mutate(rule.id)}
-                            disabled={deleteRuleMutation.isPending}
-                            className="text-red-600 hover:text-red-900 dark:text-red-400"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center justify-end space-x-2">
+                            <button
+                              onClick={() => setEditingRule(rule)}
+                              className="text-blue-600 hover:text-blue-900 dark:text-blue-400"
+                              title="Edit rule"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteRuleMutation.mutate(rule.id)}
+                              disabled={deleteRuleMutation.isPending}
+                              className="text-red-600 hover:text-red-900 dark:text-red-400"
+                              title="Delete rule"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -671,7 +684,14 @@ export default function Alerting() {
         <NewChannelModal onClose={() => setShowNewChannelModal(false)} />
       )}
       {showNewRuleModal && (
-        <NewRuleModal channels={channels} onClose={() => setShowNewRuleModal(false)} />
+        <RuleModal channels={channels} onClose={() => setShowNewRuleModal(false)} />
+      )}
+      {editingRule && (
+        <RuleModal
+          channels={channels}
+          rule={editingRule}
+          onClose={() => setEditingRule(null)}
+        />
       )}
       {showNewSilenceModal && (
         <NewSilenceModal rules={rules} onClose={() => setShowNewSilenceModal(false)} />
@@ -773,19 +793,24 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function NewRuleModal({
+function RuleModal({
   channels,
+  rule,
   onClose,
 }: {
   channels: NotificationChannel[];
+  rule?: AlertRule;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [ruleType, setRuleType] = useState<AlertRuleType>('node_status');
-  const [severity, setSeverity] = useState<AlertSeverity>('warning');
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const isEditing = !!rule;
+
+  const [name, setName] = useState(rule?.name || '');
+  const [description, setDescription] = useState(rule?.description || '');
+  const [ruleType, setRuleType] = useState<AlertRuleType>(rule?.rule_type || 'node_status');
+  const [severity, setSeverity] = useState<AlertSeverity>(rule?.severity || 'warning');
+  const [isEnabled, setIsEnabled] = useState(rule?.is_enabled ?? true);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(rule?.channels || []);
 
   const createMutation = useMutation({
     mutationFn: api.createRule,
@@ -795,24 +820,45 @@ function NewRuleModal({
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (request: UpdateAlertRuleRequest) => api.updateRule(rule!.id, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alertRules'] });
+      onClose();
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const request: CreateAlertRuleRequest = {
-      name,
-      description: description || undefined,
-      rule_type: ruleType,
-      severity,
-      conditions: [{ field: 'node.status', operator: 'eq', value: 'failed' }],
-      channel_ids: selectedChannels,
-    };
-    createMutation.mutate(request);
+    if (isEditing) {
+      const request: UpdateAlertRuleRequest = {
+        name,
+        description: description || undefined,
+        severity,
+        is_enabled: isEnabled,
+        channel_ids: selectedChannels,
+      };
+      updateMutation.mutate(request);
+    } else {
+      const request: CreateAlertRuleRequest = {
+        name,
+        description: description || undefined,
+        rule_type: ruleType,
+        severity,
+        conditions: [{ field: 'node.status', operator: 'eq', value: 'failed' }],
+        channel_ids: selectedChannels,
+      };
+      createMutation.mutate(request);
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="w-full max-w-md rounded-lg bg-white p-6 dark:bg-gray-800">
         <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">
-          New Alert Rule
+          {isEditing ? 'Edit Alert Rule' : 'New Alert Rule'}
         </h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -847,6 +893,7 @@ function NewRuleModal({
                 value={ruleType}
                 onChange={(e) => setRuleType(e.target.value as AlertRuleType)}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
+                disabled={isEditing}
               >
                 <option value="node_status">Node Status</option>
                 <option value="compliance">Compliance</option>
@@ -870,6 +917,21 @@ function NewRuleModal({
               </select>
             </div>
           </div>
+          {isEditing && (
+            <div>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={isEnabled}
+                  onChange={(e) => setIsEnabled(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Enabled
+                </span>
+              </label>
+            </div>
+          )}
           {channels.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -906,10 +968,10 @@ function NewRuleModal({
             </button>
             <button
               type="submit"
-              disabled={createMutation.isPending}
+              disabled={isPending}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              Create
+              {isEditing ? 'Save' : 'Create'}
             </button>
           </div>
         </form>

@@ -19,7 +19,6 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
-import ThemeToggle from './ThemeToggle';
 import { useAuthStore } from '../stores/authStore';
 
 interface LayoutProps {
@@ -76,12 +75,9 @@ export default function Layout({ children }: LayoutProps) {
       <aside className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center">
-              <span className="text-xl font-bold text-primary-600 dark:text-primary-400">OpenVox</span>
-              <span className="ml-1 text-xl font-light text-gray-600 dark:text-gray-300">WebUI</span>
-            </div>
-            <ThemeToggle />
+          <div className="flex items-center h-16 px-6 border-b border-gray-200 dark:border-gray-700">
+            <span className="text-xl font-bold text-primary-600 dark:text-primary-400">OpenVox</span>
+            <span className="ml-1 text-xl font-light text-gray-600 dark:text-gray-300">WebUI</span>
           </div>
 
           {/* Navigation */}

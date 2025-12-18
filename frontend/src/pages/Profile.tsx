@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Lock, Mail, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Mail, AlertCircle, CheckCircle, Eye, EyeOff, Sun, Moon } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import { useThemeStore } from '../stores/themeStore';
 
 export default function Profile() {
   const user = useAuthStore((state) => state.user);
   const queryClient = useQueryClient();
+  const theme = useThemeStore((state) => state.theme);
+  const setTheme = useThemeStore((state) => state.setTheme);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -70,28 +73,28 @@ export default function Profile() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
-        <p className="text-gray-500 mt-1">Manage your account settings</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Profile</h1>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your account settings</p>
       </div>
 
       {/* User Info Card */}
       <div className="card mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Account Information</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Account Information</h2>
         <div className="space-y-4">
           <div className="flex items-center">
-            <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center mr-4">
-              <User className="w-8 h-8 text-primary-600" />
+            <div className="w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center mr-4">
+              <User className="w-8 h-8 text-primary-600 dark:text-primary-400" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">{user?.username}</p>
-              <div className="flex items-center text-gray-500 text-sm">
+              <p className="font-medium text-gray-900 dark:text-gray-100">{user?.username}</p>
+              <div className="flex items-center text-gray-500 dark:text-gray-400 text-sm">
                 <Mail className="w-4 h-4 mr-1" />
                 {user?.email}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Role:</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">Role:</span>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800 capitalize">
               {user?.role}
             </span>
@@ -99,9 +102,41 @@ export default function Profile() {
         </div>
       </div>
 
+      {/* Theme Selection Card */}
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Appearance</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Choose your preferred theme for the interface.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setTheme('light')}
+            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-colors ${
+              theme === 'light'
+                ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-500'
+            }`}
+          >
+            <Sun className="w-5 h-5" />
+            <span className="font-medium">Light</span>
+          </button>
+          <button
+            onClick={() => setTheme('dark')}
+            className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-colors ${
+              theme === 'dark'
+                ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-500'
+            }`}
+          >
+            <Moon className="w-5 h-5" />
+            <span className="font-medium">Dark</span>
+          </button>
+        </div>
+      </div>
+
       {/* Change Password Card */}
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Change Password</h2>
 
         {/* Success Message */}
         {success && (
