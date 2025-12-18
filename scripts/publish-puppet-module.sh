@@ -241,8 +241,15 @@ if [[ "$PDK_COMPATIBLE" == "true" ]]; then
         fatal "Module build failed"
     fi
 else
-    if ! "${PUPPET_CMD[@]}" module build --target-dir "$BUILD_DIR"; then
-        fatal "Module build failed"
+    if "${PUPPET_CMD[@]}" module build --help >/dev/null 2>&1; then
+        if ! "${PUPPET_CMD[@]}" module build --target-dir "$BUILD_DIR"; then
+            fatal "Module build failed"
+        fi
+    else
+        warning "Puppet CLI does not support 'module build'; attempting pdk build even though module is not PDK compatible"
+        if ! pdk build --force; then
+            fatal "Module build failed (Puppet CLI lacks build and PDK build failed)"
+        fi
     fi
 fi
 
