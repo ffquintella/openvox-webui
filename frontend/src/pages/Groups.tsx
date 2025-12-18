@@ -14,6 +14,7 @@ import {
   GitBranch,
   Edit2,
   AlertCircle,
+  Variable,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
@@ -42,7 +43,7 @@ export default function Groups() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<NodeGroup | null>(null);
-  const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'settings'>('rules');
+  const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'variables'>('rules');
 
   // Create/Edit form state
   const [formName, setFormName] = useState('');
@@ -69,6 +70,11 @@ export default function Groups() {
   const [isAddParamOpen, setIsAddParamOpen] = useState(false);
   const [newParamKey, setNewParamKey] = useState('');
   const [newParamValue, setNewParamValue] = useState('');
+
+  // Variable form state (for facter facts)
+  const [isAddVarOpen, setIsAddVarOpen] = useState(false);
+  const [newVarKey, setNewVarKey] = useState('');
+  const [newVarValue, setNewVarValue] = useState('');
 
   const queryClient = useQueryClient();
 
@@ -315,6 +321,40 @@ export default function Groups() {
     updateMutation.mutate({
       id: selectedGroup.id,
       data: { parameters: params },
+    });
+  };
+
+  const handleAddVariable = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGroup || !newVarKey.trim()) return;
+
+    let parsedValue: unknown = newVarValue;
+    try {
+      parsedValue = JSON.parse(newVarValue);
+    } catch {
+      // Keep as string if not valid JSON
+    }
+
+    const updatedVars = {
+      ...(selectedGroup.variables as Record<string, unknown>),
+      [newVarKey.trim()]: parsedValue,
+    };
+    updateMutation.mutate({
+      id: selectedGroup.id,
+      data: { variables: updatedVars },
+    });
+    setIsAddVarOpen(false);
+    setNewVarKey('');
+    setNewVarValue('');
+  };
+
+  const handleRemoveVariable = (key: string) => {
+    if (!selectedGroup) return;
+    const vars = { ...(selectedGroup.variables as Record<string, unknown>) };
+    delete vars[key];
+    updateMutation.mutate({
+      id: selectedGroup.id,
+      data: { variables: vars },
     });
   };
 
@@ -621,6 +661,7 @@ export default function Groups() {
                     { id: 'rules', label: 'Classification Rules', icon: Filter },
                     { id: 'pinned', label: 'Pinned Nodes', icon: Pin },
                     { id: 'classes', label: 'Classes', icon: Settings },
+                    { id: 'variables', label: 'Variables', icon: Variable },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -647,6 +688,11 @@ export default function Groups() {
                       {tab.id === 'classes' && (
                         <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
                           {selectedGroup.classes?.length || 0}
+                        </span>
+                      )}
+                      {tab.id === 'variables' && (
+                        <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+                          {Object.keys(selectedGroup.variables || {}).length}
                         </span>
                       )}
                     </button>
@@ -1041,6 +1087,106 @@ export default function Groups() {
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Variables Tab */}
+              {activeTab === 'variables' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Facter Variables</h3>
+                      <p className="text-sm text-gray-600">
+                        Variables that will be exported as external facts (key =&gt; value)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setIsAddVarOpen(true)}
+                      className="btn btn-secondary text-sm flex items-center"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Variable
+                    </button>
+                  </div>
+
+                  {isAddVarOpen && (
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                      <form onSubmit={handleAddVariable} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="label">Key (fact name)</label>
+                            <input
+                              type="text"
+                              value={newVarKey}
+                              onChange={(e) => setNewVarKey(e.target.value)}
+                              className="input"
+                              placeholder="e.g., role, datacenter, tier"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="label">Value (JSON or string)</label>
+                            <input
+                              type="text"
+                              value={newVarValue}
+                              onChange={(e) => setNewVarValue(e.target.value)}
+                              className="input"
+                              placeholder='e.g., webserver, ["a", "b"]'
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddVarOpen(false);
+                              setNewVarKey('');
+                              setNewVarValue('');
+                            }}
+                            className="btn btn-secondary text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button type="submit" className="btn btn-primary text-sm">
+                            Add Variable
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {selectedGroup.variables && Object.keys(selectedGroup.variables as Record<string, unknown>).length > 0 ? (
+                      Object.entries(selectedGroup.variables as Record<string, unknown>).map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3 font-mono text-sm">
+                            <Variable className="w-4 h-4 text-green-500" />
+                            <span className="font-medium text-gray-900">{key}</span>
+                            <span className="text-gray-400">=&gt;</span>
+                            <span className="text-green-600">
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveVariable(key)}
+                            className="text-gray-400 hover:text-red-600 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                        <Variable className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p>No variables defined</p>
+                        <p className="text-sm mt-1">Add variables to export as external facts via Facter</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

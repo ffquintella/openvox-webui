@@ -226,6 +226,7 @@ async fn generate_facts(
         groups: vec![],
         classes: vec![],
         parameters: serde_json::json!({}),
+        variables: serde_json::json!({}),
         environment: None,
     };
 
@@ -289,6 +290,7 @@ async fn export_facts(
         groups: vec![],
         classes: vec![],
         parameters: serde_json::json!({}),
+        variables: serde_json::json!({}),
         environment: None,
     };
 

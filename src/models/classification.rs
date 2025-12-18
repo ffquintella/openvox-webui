@@ -18,6 +18,9 @@ pub struct ClassificationResult {
     /// Combined parameters from all groups
     pub parameters: serde_json::Value,
 
+    /// Combined variables from all groups (exported as external facts)
+    pub variables: serde_json::Value,
+
     /// Environment (from highest priority group)
     pub environment: Option<String>,
 }
@@ -87,6 +90,7 @@ mod tests {
             groups: vec![],
             classes: vec!["profile::base".to_string()],
             parameters: serde_json::json!({}),
+            variables: serde_json::json!({}),
             environment: Some("production".to_string()),
         };
 

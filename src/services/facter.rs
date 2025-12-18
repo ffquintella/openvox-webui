@@ -68,12 +68,14 @@ impl FacterService {
                             classification.groups.iter().map(|g| g.name.as_str()).collect();
                         Ok(serde_json::json!(group_names))
                     }
+                    "variables" => Ok(classification.variables.clone()),
                     _ => {
-                        // Try to get from parameters
+                        // Try to get from variables first, then parameters
                         classification
-                            .parameters
+                            .variables
                             .get(key)
                             .cloned()
+                            .or_else(|| classification.parameters.get(key).cloned())
                             .ok_or_else(|| anyhow::anyhow!("Classification key '{}' not found", key))
                     }
                 }
@@ -107,6 +109,21 @@ impl FacterService {
         if let Some(env) = &classification.environment {
             result = result.replace("{{environment}}", env);
         }
+
+        // Replace variable references: {{var:key}}
+        let var_regex = regex::Regex::new(r"\{\{var:([^}]+)\}\}")?;
+        let replaced = var_regex.replace_all(&result, |caps: &regex::Captures| {
+            let key = &caps[1];
+            classification
+                .variables
+                .get(key)
+                .and_then(|v| match v {
+                    serde_json::Value::String(s) => Some(s.clone()),
+                    _ => Some(v.to_string()),
+                })
+                .unwrap_or_else(|| format!("{{{{var:{}}}}}", key))
+        });
+        result = replaced.to_string();
 
         // Replace fact variables: {{fact:path}}
         let fact_regex = regex::Regex::new(r"\{\{fact:([^}]+)\}\}")?;
@@ -189,6 +206,7 @@ mod tests {
             }],
             classes: vec!["profile::webserver".to_string()],
             parameters: serde_json::json!({"http_port": 8080}),
+            variables: serde_json::json!({"datacenter": "us-west-1", "role": "webserver"}),
             environment: Some("production".to_string()),
         }
     }
@@ -298,5 +316,41 @@ mod tests {
 
         let output = FacterService::export_facts(&facts, ExportFormat::Shell).unwrap();
         assert!(output.contains("export FACTER_MY_FACT=\"my_value\""));
+    }
+
+    #[test]
+    fn test_generate_facts_from_variables() {
+        let template = FactTemplate {
+            id: None,
+            name: "variables".to_string(),
+            description: Some("Test variables".to_string()),
+            facts: vec![
+                FactDefinition {
+                    name: "node_datacenter".to_string(),
+                    value: FactValueSource::FromClassification("datacenter".to_string()),
+                },
+                FactDefinition {
+                    name: "all_variables".to_string(),
+                    value: FactValueSource::FromClassification("variables".to_string()),
+                },
+            ],
+        };
+
+        let service = FacterService::new(vec![template]);
+        let classification = sample_classification();
+        let facts = serde_json::json!({});
+
+        let result = service.generate_facts(&classification, &facts, "variables").unwrap();
+
+        // Test accessing individual variable
+        assert_eq!(
+            result.facts.get("node_datacenter"),
+            Some(&serde_json::json!("us-west-1"))
+        );
+
+        // Test accessing all variables
+        let all_vars = result.facts.get("all_variables").unwrap();
+        assert_eq!(all_vars.get("datacenter"), Some(&serde_json::json!("us-west-1")));
+        assert_eq!(all_vars.get("role"), Some(&serde_json::json!("webserver")));
     }
 }

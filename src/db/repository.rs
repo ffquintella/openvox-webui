@@ -25,6 +25,7 @@ struct GroupRow {
     rule_match_type: String,
     classes: String,
     parameters: String,
+    variables: String,
 }
 
 /// Row returned from classification_rules table
@@ -52,7 +53,7 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, name, description, parent_id, environment,
-                   rule_match_type, classes, parameters
+                   rule_match_type, classes, parameters, variables
             FROM node_groups
             ORDER BY name
             "#,
@@ -74,7 +75,7 @@ impl<'a> GroupRepository<'a> {
         let row = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, name, description, parent_id, environment,
-                   rule_match_type, classes, parameters
+                   rule_match_type, classes, parameters, variables
             FROM node_groups
             WHERE id = ?
             "#,
@@ -104,12 +105,17 @@ impl<'a> GroupRepository<'a> {
             .clone()
             .map(|p| serde_json::to_string(&p).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|| "{}".to_string());
+        let variables = req
+            .variables
+            .clone()
+            .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|| "{}".to_string());
 
         sqlx::query(
             r#"
             INSERT INTO node_groups (id, name, description, parent_id, environment,
-                                     rule_match_type, classes, parameters)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                     rule_match_type, classes, parameters, variables)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -120,6 +126,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&rule_match_type)
         .bind(&classes)
         .bind(&parameters)
+        .bind(&variables)
         .execute(self.pool)
         .await
         .context("Failed to create group")?;
@@ -161,12 +168,19 @@ impl<'a> GroupRepository<'a> {
             .unwrap_or_else(|| {
                 serde_json::to_string(&existing.parameters).unwrap_or_else(|_| "{}".to_string())
             });
+        let variables = req
+            .variables
+            .clone()
+            .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|| {
+                serde_json::to_string(&existing.variables).unwrap_or_else(|_| "{}".to_string())
+            });
 
         sqlx::query(
             r#"
             UPDATE node_groups
             SET name = ?, description = ?, parent_id = ?, environment = ?,
-                rule_match_type = ?, classes = ?, parameters = ?,
+                rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             "#,
@@ -178,6 +192,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&rule_match_type)
         .bind(&classes)
         .bind(&parameters)
+        .bind(&variables)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -330,6 +345,8 @@ impl<'a> GroupRepository<'a> {
             serde_json::from_str(&row.classes).unwrap_or_default();
         let parameters: serde_json::Value =
             serde_json::from_str(&row.parameters).unwrap_or(serde_json::json!({}));
+        let variables: serde_json::Value =
+            serde_json::from_str(&row.variables).unwrap_or(serde_json::json!({}));
 
         Ok(NodeGroup {
             id,
@@ -340,6 +357,7 @@ impl<'a> GroupRepository<'a> {
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
             parameters,
+            variables,
             rules,
             pinned_nodes,
         })

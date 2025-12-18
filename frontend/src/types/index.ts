@@ -37,6 +37,7 @@ export interface NodeGroup {
   rule_match_type: RuleMatchType;
   classes: string[];
   parameters: Record<string, unknown>;
+  variables: Record<string, unknown>;
   rules: ClassificationRule[];
   pinned_nodes: string[];
 }
@@ -49,6 +50,7 @@ export interface CreateGroupRequest {
   rule_match_type?: RuleMatchType;
   classes?: string[];
   parameters?: Record<string, unknown>;
+  variables?: Record<string, unknown>;
 }
 
 export interface UpdateGroupRequest {
@@ -59,6 +61,7 @@ export interface UpdateGroupRequest {
   rule_match_type?: RuleMatchType;
   classes?: string[];
   parameters?: Record<string, unknown>;
+  variables?: Record<string, unknown>;
 }
 
 export interface CreateRuleRequest {

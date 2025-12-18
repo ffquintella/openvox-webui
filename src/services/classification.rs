@@ -25,6 +25,7 @@ impl ClassificationService {
         let mut matched_groups: Vec<GroupMatch> = vec![];
         let mut all_classes: Vec<String> = vec![];
         let mut all_parameters = serde_json::json!({});
+        let mut all_variables = serde_json::json!({});
         let mut environment: Option<String> = None;
 
         // Index groups by id and build parent -> children map
@@ -91,6 +92,7 @@ impl ClassificationService {
 
                 all_classes.extend(group.classes.clone());
                 merge_parameters(&mut all_parameters, &group.parameters);
+                merge_parameters(&mut all_variables, &group.variables);
 
                 if environment.is_none() {
                     environment = group.environment.clone();
@@ -114,6 +116,7 @@ impl ClassificationService {
             groups: matched_groups,
             classes: all_classes,
             parameters: all_parameters,
+            variables: all_variables,
             environment,
         }
     }

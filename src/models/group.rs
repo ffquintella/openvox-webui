@@ -30,6 +30,9 @@ pub struct NodeGroup {
     /// Parameters for the classes
     pub parameters: serde_json::Value,
 
+    /// Variables that become external facts (key => value)
+    pub variables: serde_json::Value,
+
     /// Classification rules
     pub rules: Vec<ClassificationRule>,
 
@@ -48,6 +51,7 @@ impl Default for NodeGroup {
             rule_match_type: RuleMatchType::All,
             classes: vec![],
             parameters: serde_json::json!({}),
+            variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
         }
@@ -75,6 +79,7 @@ pub struct CreateGroupRequest {
     pub rule_match_type: Option<RuleMatchType>,
     pub classes: Option<Vec<String>>,
     pub parameters: Option<serde_json::Value>,
+    pub variables: Option<serde_json::Value>,
 }
 
 /// Request to update an existing node group
@@ -87,6 +92,7 @@ pub struct UpdateGroupRequest {
     pub rule_match_type: Option<RuleMatchType>,
     pub classes: Option<Vec<String>>,
     pub parameters: Option<serde_json::Value>,
+    pub variables: Option<serde_json::Value>,
 }
 
 /// Request to create a classification rule
