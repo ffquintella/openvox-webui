@@ -323,39 +323,24 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# Publish to Forge
-info "Publishing to Puppet Forge..."
+# Publish to Forge (always via Forge API; puppet module upload is not supported)
+info "Publishing to Puppet Forge via API..."
 
-PUPPET_UPLOAD_SUPPORTED=false
-if "${PUPPET_CMD[@]}" module upload --help >/dev/null 2>&1; then
-    PUPPET_UPLOAD_SUPPORTED=true
+CURL_AUTH=()
+if [[ -n "$FORGE_AUTH_TOKEN" ]]; then
+    CURL_AUTH=(-H "Authorization: Bearer ${FORGE_AUTH_TOKEN}")
+else
+    CURL_AUTH=(--user "${FORGE_USER_INPUT}:${FORGE_PASS_INPUT}")
 fi
 
-if [[ "$PUPPET_UPLOAD_SUPPORTED" == "true" ]]; then
-    if "${PUPPET_CMD[@]}" module upload "$PACKAGE_FILE"; then
-        success "Module published successfully!"
-        info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
-    else
-        fatal "Module publication failed"
-    fi
+if curl -sSf -X POST \
+    "${CURL_AUTH[@]}" \
+    -F "file=@${PACKAGE_FILE}" \
+    https://forgeapi.puppet.com/v3/releases >/dev/null; then
+    success "Module published successfully via Forge API!"
+    info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
 else
-    info "puppet module upload not available; using Forge API via curl"
-    CURL_AUTH=()
-    if [[ -n "$FORGE_AUTH_TOKEN" ]]; then
-        CURL_AUTH=(-H "Authorization: Bearer ${FORGE_AUTH_TOKEN}")
-    else
-        CURL_AUTH=(--user "${FORGE_USER_INPUT}:${FORGE_PASS_INPUT}")
-    fi
-
-    if curl -sSf -X POST \
-        "${CURL_AUTH[@]}" \
-        -F "file=@${PACKAGE_FILE}" \
-        https://forgeapi.puppet.com/v3/releases >/dev/null; then
-        success "Module published successfully via Forge API!"
-        info "View on Forge: https://forge.puppet.com/modules/${FORGE_USER}/${MODULE_NAME}"
-    else
-        fatal "Module publication failed via Forge API"
-    fi
+    fatal "Module publication failed via Forge API"
 fi
 
 # Tag release in Git
