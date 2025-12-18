@@ -301,7 +301,9 @@ pub struct GenerateReportRequest {
     pub report_type: ReportType,
     #[serde(default)]
     pub config: ReportQueryConfig,
+    /// Output format (reserved for future use when exporting generated reports)
     #[serde(default)]
+    #[allow(dead_code)]
     pub output_format: OutputFormat,
 }
 
