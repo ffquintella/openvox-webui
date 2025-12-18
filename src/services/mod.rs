@@ -1,5 +1,6 @@
 //! Business logic services
 
+pub mod alerting;
 pub mod auth;
 pub mod cache;
 pub mod classification;
@@ -8,7 +9,10 @@ pub mod puppet_ca;
 pub mod puppetdb;
 pub mod rbac;
 pub mod rbac_db;
+pub mod reporting;
+pub mod scheduler;
 
+pub use alerting::AlertingService;
 pub use auth::AuthService;
 pub use cache::{
     Cache, CacheEntry, CacheEvictionStats, CacheServiceStats, CacheStats, CacheSyncJob,
@@ -23,3 +27,5 @@ pub use puppetdb::{
 };
 pub use rbac::RbacService;
 pub use rbac_db::DbRbacService;
+pub use reporting::ReportingService;
+pub use scheduler::{ReportScheduler, ScheduleExecutionResult};

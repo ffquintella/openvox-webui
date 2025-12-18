@@ -808,12 +808,49 @@ Integrate with existing backend endpoints:
 
 ## Phase 8: Advanced Features
 
-### 8.1 Reporting & Analytics
-- [ ] Custom report builder
-- [ ] Scheduled report generation
-- [ ] Report export (PDF, CSV, JSON)
-- [ ] Compliance reporting
-- [ ] Drift detection reports
+### 8.1 Reporting & Analytics - COMPLETE
+- [x] Custom report builder (SavedReports with ReportQueryConfig)
+- [x] Scheduled report generation (ReportSchedule with cron expressions)
+- [x] Report export (CSV, JSON formats - PDF pending)
+- [x] Compliance reporting (ComplianceBaseline, ComplianceReport)
+- [x] Drift detection reports (DriftBaseline, DriftReport)
+
+**Backend Implementation:**
+- Database tables: saved_reports, report_schedules, report_executions, compliance_baselines, drift_baselines, report_templates
+- Models: ReportType (node_health, compliance, change_tracking, drift_detection, custom), OutputFormat, ExecutionStatus
+- Repositories: SavedReportRepository, ReportScheduleRepository, ReportExecutionRepository, ComplianceBaselineRepository, DriftBaselineRepository, ReportTemplateRepository
+- ReportingService: generate_report, execute_report, export_report methods
+- Report types: NodeHealthReport, ComplianceReport, ChangeTrackingReport, DriftReport
+
+**API Endpoints:**
+- GET/POST /api/v1/analytics/saved-reports - Saved reports CRUD
+- POST /api/v1/analytics/saved-reports/:id/execute - Execute report
+- GET /api/v1/analytics/saved-reports/:id/executions - Execution history
+- GET /api/v1/analytics/templates - Report templates
+- GET/POST /api/v1/analytics/schedules - Schedule management
+- POST /api/v1/analytics/generate - On-demand report generation
+- POST /api/v1/analytics/generate/:report_type - Generate by type
+- GET/POST /api/v1/analytics/compliance-baselines - Compliance baselines
+- GET/POST /api/v1/analytics/drift-baselines - Drift baselines
+- GET /api/v1/analytics/executions/:id/export - Export execution results
+
+**Frontend Components:**
+- Enhanced Analytics.tsx with Reports, Compliance, and Drift tabs
+- Quick generate report buttons for all report types
+- Report result visualization (summary cards for each report type)
+- Saved reports management (create, run, delete)
+- Report templates display
+- Scheduled reports display
+- Compliance baselines management (create, delete)
+- Drift baselines management (create, delete)
+- React Query hooks: useAnalytics.ts with all reporting hooks
+
+**Completed:**
+- [x] Background cron job for scheduled report execution
+  - `run-scheduled-reports` CLI binary for cron invocation
+  - `ReportScheduler` service for executing due schedules
+  - `scripts/setup-report-scheduler.sh` for cron setup
+- [x] PDF export format using printpdf library
 
 ### 8.x Testing Requirements
 **Unit tests to add:**
@@ -842,12 +879,40 @@ Feature: Reporting
 - Mock webhook endpoint for testing deliveries
 - Email sending tests (with mock SMTP)
 
-### 8.2 Alerting & Notifications
-- [ ] Alert rule configuration
-- [ ] Webhook notifications
-- [ ] Email notifications
-- [ ] Slack/Teams integration
-- [ ] Alert history and acknowledgment
+### 8.2 Alerting & Notifications - COMPLETE
+- [x] Alert rule configuration
+- [x] Webhook notifications
+- [x] Email notifications
+- [x] Slack/Teams integration
+- [x] Alert history and acknowledgment
+
+**Backend Implementation:**
+- Database tables: notification_channels, alert_rules, alert_rule_channels, alerts, notification_history, alert_silences
+- Models: ChannelType (webhook, email, slack, teams), AlertRuleType (node_status, compliance, drift, report_failure, custom), AlertSeverity, AlertStatus
+- Repositories: NotificationChannelRepository, AlertRuleRepository, AlertRepository, NotificationHistoryRepository, AlertSilenceRepository
+- AlertingService: channel CRUD, rule CRUD, alert management, rule evaluation, notification dispatch
+
+**API Endpoints:**
+- GET/POST /api/v1/alerting/channels - Channel management
+- POST /api/v1/alerting/channels/:id/test - Test channel
+- GET/POST /api/v1/alerting/rules - Rule management
+- GET /api/v1/alerting/alerts - List/filter alerts
+- GET /api/v1/alerting/alerts/stats - Alert statistics
+- POST /api/v1/alerting/alerts/:id/acknowledge - Acknowledge alert
+- POST /api/v1/alerting/alerts/:id/resolve - Resolve alert
+- POST /api/v1/alerting/alerts/:id/silence - Silence alert
+- GET/POST /api/v1/alerting/silences - Silence management
+- POST /api/v1/alerting/trigger - Manual alert trigger
+- POST /api/v1/alerting/evaluate - Evaluate all rules
+
+**Frontend Components:**
+- Alerting.tsx with tabs: Active Alerts, Alert Rules, Notification Channels, Silences
+- Stats cards showing active alerts, severity breakdown, today's alerts
+- Alert list with acknowledge/resolve/silence actions
+- Rule management with create/delete
+- Channel management with test/delete
+- Silence management with time-based duration
+- Modal forms for creating channels, rules, and silences
 
 ### 8.3 Multi-tenancy & Advanced RBAC
 - [ ] Organization/tenant support

@@ -43,6 +43,39 @@ import type {
   RevokeResponse,
   RenewCARequest,
   RenewCAResponse,
+  SavedReport,
+  CreateSavedReportRequest,
+  UpdateSavedReportRequest,
+  ReportSchedule,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+  ReportExecution,
+  ExecuteReportRequest,
+  ReportTemplate,
+  ComplianceBaseline,
+  CreateComplianceBaselineRequest,
+  DriftBaseline,
+  CreateDriftBaselineRequest,
+  GenerateReportRequest,
+  ReportType,
+  ReportQueryConfig,
+  // Alerting types
+  NotificationChannel,
+  CreateChannelRequest,
+  UpdateChannelRequest,
+  AlertRule,
+  CreateAlertRuleRequest,
+  UpdateAlertRuleRequest,
+  Alert,
+  AlertSilence,
+  CreateSilenceRequest,
+  AlertStats,
+  TestChannelRequest,
+  TestChannelResponse,
+  TriggerAlertRequest,
+  AlertRuleType,
+  AlertSeverity,
+  AlertStatus,
 } from '../types';
 
 const client = axios.create({
@@ -455,5 +488,263 @@ export const api = {
   renewCA: async (request: RenewCARequest): Promise<RenewCAResponse> => {
     const response = await client.post('/ca/renew', request);
     return response.data;
+  },
+
+  // Analytics & Reporting
+  getSavedReports: async (reportType?: ReportType): Promise<SavedReport[]> => {
+    const params = reportType ? { report_type: reportType } : {};
+    const response = await client.get('/analytics/saved-reports', { params });
+    return response.data;
+  },
+
+  getSavedReport: async (id: string): Promise<SavedReport> => {
+    const response = await client.get(`/analytics/saved-reports/${id}`);
+    return response.data;
+  },
+
+  createSavedReport: async (request: CreateSavedReportRequest): Promise<SavedReport> => {
+    const response = await client.post('/analytics/saved-reports', request);
+    return response.data;
+  },
+
+  updateSavedReport: async (id: string, request: UpdateSavedReportRequest): Promise<SavedReport> => {
+    const response = await client.put(`/analytics/saved-reports/${id}`, request);
+    return response.data;
+  },
+
+  deleteSavedReport: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/saved-reports/${id}`);
+  },
+
+  executeReport: async (id: string, request?: ExecuteReportRequest): Promise<ReportExecution> => {
+    const response = await client.post(`/analytics/saved-reports/${id}/execute`, request || {});
+    return response.data;
+  },
+
+  getReportExecutions: async (id: string, limit?: number): Promise<ReportExecution[]> => {
+    const params = limit ? { limit } : {};
+    const response = await client.get(`/analytics/saved-reports/${id}/executions`, { params });
+    return response.data;
+  },
+
+  getReportTemplates: async (reportType?: ReportType): Promise<ReportTemplate[]> => {
+    const params = reportType ? { report_type: reportType } : {};
+    const response = await client.get('/analytics/templates', { params });
+    return response.data;
+  },
+
+  getReportTemplate: async (id: string): Promise<ReportTemplate> => {
+    const response = await client.get(`/analytics/templates/${id}`);
+    return response.data;
+  },
+
+  getSchedules: async (): Promise<ReportSchedule[]> => {
+    const response = await client.get('/analytics/schedules');
+    return response.data;
+  },
+
+  getSchedule: async (id: string): Promise<ReportSchedule> => {
+    const response = await client.get(`/analytics/schedules/${id}`);
+    return response.data;
+  },
+
+  createSchedule: async (request: CreateScheduleRequest): Promise<ReportSchedule> => {
+    const response = await client.post('/analytics/schedules', request);
+    return response.data;
+  },
+
+  updateSchedule: async (id: string, request: UpdateScheduleRequest): Promise<ReportSchedule> => {
+    const response = await client.put(`/analytics/schedules/${id}`, request);
+    return response.data;
+  },
+
+  deleteSchedule: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/schedules/${id}`);
+  },
+
+  generateReport: async (request: GenerateReportRequest): Promise<unknown> => {
+    const response = await client.post('/analytics/generate', request);
+    return response.data;
+  },
+
+  generateReportByType: async (reportType: ReportType, config?: ReportQueryConfig): Promise<unknown> => {
+    const response = await client.post(`/analytics/generate/${reportType}`, config || {});
+    return response.data;
+  },
+
+  getComplianceBaselines: async (): Promise<ComplianceBaseline[]> => {
+    const response = await client.get('/analytics/compliance-baselines');
+    return response.data;
+  },
+
+  getComplianceBaseline: async (id: string): Promise<ComplianceBaseline> => {
+    const response = await client.get(`/analytics/compliance-baselines/${id}`);
+    return response.data;
+  },
+
+  createComplianceBaseline: async (request: CreateComplianceBaselineRequest): Promise<ComplianceBaseline> => {
+    const response = await client.post('/analytics/compliance-baselines', request);
+    return response.data;
+  },
+
+  deleteComplianceBaseline: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/compliance-baselines/${id}`);
+  },
+
+  getDriftBaselines: async (): Promise<DriftBaseline[]> => {
+    const response = await client.get('/analytics/drift-baselines');
+    return response.data;
+  },
+
+  getDriftBaseline: async (id: string): Promise<DriftBaseline> => {
+    const response = await client.get(`/analytics/drift-baselines/${id}`);
+    return response.data;
+  },
+
+  createDriftBaseline: async (request: CreateDriftBaselineRequest): Promise<DriftBaseline> => {
+    const response = await client.post('/analytics/drift-baselines', request);
+    return response.data;
+  },
+
+  deleteDriftBaseline: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/drift-baselines/${id}`);
+  },
+
+  exportExecution: async (id: string, format?: string): Promise<Blob> => {
+    const params = format ? { format } : {};
+    const response = await client.get(`/analytics/executions/${id}/export`, {
+      params,
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  // ============================================================================
+  // Alerting
+  // ============================================================================
+
+  // Notification Channels
+  getChannels: async (): Promise<NotificationChannel[]> => {
+    const response = await client.get('/alerting/channels');
+    return response.data.data;
+  },
+
+  getChannel: async (id: string): Promise<NotificationChannel> => {
+    const response = await client.get(`/alerting/channels/${id}`);
+    return response.data.data;
+  },
+
+  createChannel: async (request: CreateChannelRequest): Promise<NotificationChannel> => {
+    const response = await client.post('/alerting/channels', request);
+    return response.data.data;
+  },
+
+  updateChannel: async (id: string, request: UpdateChannelRequest): Promise<NotificationChannel> => {
+    const response = await client.put(`/alerting/channels/${id}`, request);
+    return response.data.data;
+  },
+
+  deleteChannel: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/channels/${id}`);
+  },
+
+  testChannel: async (id: string, request?: TestChannelRequest): Promise<TestChannelResponse> => {
+    const response = await client.post(`/alerting/channels/${id}/test`, request || {});
+    return response.data.data;
+  },
+
+  // Alert Rules
+  getRules: async (ruleType?: AlertRuleType, enabled?: boolean): Promise<AlertRule[]> => {
+    const params: Record<string, string | boolean> = {};
+    if (ruleType) params.rule_type = ruleType;
+    if (enabled !== undefined) params.enabled = enabled;
+    const response = await client.get('/alerting/rules', { params });
+    return response.data.data;
+  },
+
+  getRule: async (id: string): Promise<AlertRule> => {
+    const response = await client.get(`/alerting/rules/${id}`);
+    return response.data.data;
+  },
+
+  createRule: async (request: CreateAlertRuleRequest): Promise<AlertRule> => {
+    const response = await client.post('/alerting/rules', request);
+    return response.data.data;
+  },
+
+  updateRule: async (id: string, request: UpdateAlertRuleRequest): Promise<AlertRule> => {
+    const response = await client.put(`/alerting/rules/${id}`, request);
+    return response.data.data;
+  },
+
+  deleteRule: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/rules/${id}`);
+  },
+
+  // Alerts
+  getAlerts: async (
+    status?: AlertStatus,
+    severity?: AlertSeverity,
+    ruleId?: string,
+    limit?: number
+  ): Promise<Alert[]> => {
+    const params: Record<string, string | number> = {};
+    if (status) params.status = status;
+    if (severity) params.severity = severity;
+    if (ruleId) params.rule_id = ruleId;
+    if (limit) params.limit = limit;
+    const response = await client.get('/alerting/alerts', { params });
+    return response.data.data;
+  },
+
+  getAlert: async (id: string): Promise<Alert> => {
+    const response = await client.get(`/alerting/alerts/${id}`);
+    return response.data.data;
+  },
+
+  getAlertStats: async (): Promise<AlertStats> => {
+    const response = await client.get('/alerting/alerts/stats');
+    return response.data.data;
+  },
+
+  acknowledgeAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/acknowledge`);
+    return response.data.data;
+  },
+
+  resolveAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/resolve`);
+    return response.data.data;
+  },
+
+  silenceAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/silence`);
+    return response.data.data;
+  },
+
+  // Silences
+  getSilences: async (): Promise<AlertSilence[]> => {
+    const response = await client.get('/alerting/silences');
+    return response.data.data;
+  },
+
+  createSilence: async (request: CreateSilenceRequest): Promise<AlertSilence> => {
+    const response = await client.post('/alerting/silences', request);
+    return response.data.data;
+  },
+
+  deleteSilence: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/silences/${id}`);
+  },
+
+  // Trigger & Evaluate
+  triggerAlert: async (request: TriggerAlertRequest): Promise<Alert> => {
+    const response = await client.post('/alerting/trigger', request);
+    return response.data.data;
+  },
+
+  evaluateRules: async (): Promise<{ alerts_triggered: number; alerts: Alert[] }> => {
+    const response = await client.post('/alerting/evaluate');
+    return response.data.data;
   },
 };

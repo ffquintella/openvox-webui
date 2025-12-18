@@ -8,6 +8,7 @@ import {
   Database,
   FileCode2,
   BarChart3,
+  Bell,
   Settings,
   Shield,
   ShieldCheck,
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Facts', href: '/facts', icon: Database },
   { name: 'Facter Templates', href: '/facter-templates', icon: FileCode2 },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Alerting', href: '/alerting', icon: Bell },
 ];
 
 const adminNavigation = [

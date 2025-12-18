@@ -5,9 +5,16 @@
 //! - User accounts and authentication
 //! - Configuration data
 //! - Cached PuppetDB data
+//! - Alerting and notifications
 
+pub mod alerting_repository;
 pub mod migrations;
 pub mod repository;
+
+pub use alerting_repository::{
+    AlertRepository, AlertRuleRepository, AlertSilenceRepository,
+    NotificationChannelRepository, NotificationHistoryRepository,
+};
 
 use std::time::Duration;
 

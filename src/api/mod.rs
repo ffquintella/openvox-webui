@@ -6,6 +6,8 @@ use axum::{routing::get, Router};
 
 use crate::AppState;
 
+mod alerting;
+mod analytics;
 mod auth;
 mod ca;
 mod facter;
@@ -42,6 +44,10 @@ pub fn routes() -> Router<AppState> {
         .nest("/users", users::routes())
         .nest("/permissions", permissions::routes())
         .nest("/settings", settings::routes())
+        // Analytics and reporting endpoints
+        .nest("/analytics", analytics::routes())
+        // Alerting endpoints
+        .nest("/alerting", alerting::routes())
         // PQL query endpoint
         .nest("/query", query::routes())
         // CA management endpoints

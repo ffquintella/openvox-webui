@@ -99,6 +99,16 @@ pub enum ReportStatus {
     Failed,
 }
 
+impl ReportStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReportStatus::Changed => "changed",
+            ReportStatus::Unchanged => "unchanged",
+            ReportStatus::Failed => "failed",
+        }
+    }
+}
+
 /// Report metrics
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReportMetrics {

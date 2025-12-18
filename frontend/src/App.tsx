@@ -13,6 +13,7 @@ import Reports from './pages/Reports';
 import Facts from './pages/Facts';
 import FacterTemplates from './pages/FacterTemplates';
 import Analytics from './pages/Analytics';
+import Alerting from './pages/Alerting';
 import Settings from './pages/Settings';
 import Roles from './pages/Roles';
 import Users from './pages/Users';
@@ -79,6 +80,7 @@ function App() {
                   <Route path="/facts" element={<Facts />} />
                   <Route path="/facter-templates" element={<FacterTemplates />} />
                   <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/alerting" element={<Alerting />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route
                     path="/roles"

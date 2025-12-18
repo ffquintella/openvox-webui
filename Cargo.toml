@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -62,6 +62,12 @@ async-trait = "0.1"
 # Validation
 validator = { version = "0.19", features = ["derive"] }
 
+# PDF generation
+printpdf = "0.7"
+
+# Cron scheduling
+cron = "0.15"
+
 [dev-dependencies]
 # Testing
 cucumber = "0.21"
@@ -70,6 +76,14 @@ wiremock = "0.6"
 fake = { version = "3.0", features = ["derive"] }
 rstest = "0.23"
 bytes = "1.9"
+
+[[bin]]
+name = "openvox-webui"
+path = "src/main.rs"
+
+[[bin]]
+name = "run-scheduled-reports"
+path = "src/bin/run-scheduled-reports.rs"
 
 [[test]]
 name = "cucumber"

@@ -1,5 +1,7 @@
 //! Data models
 
+mod alerting;
+mod analytics;
 mod certificate;
 mod classification;
 mod fact;
@@ -9,6 +11,8 @@ mod rbac;
 mod report;
 mod user;
 
+pub use alerting::*;
+pub use analytics::*;
 pub use certificate::*;
 pub use classification::*;
 pub use fact::*;
