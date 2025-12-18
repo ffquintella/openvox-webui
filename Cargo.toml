@@ -47,7 +47,7 @@ rand = "0.8"
 base64 = "0.22"
 
 # Configuration
-config = "0.14"
+config = "0.15"
 
 # Logging and tracing
 tracing = "0.1"
