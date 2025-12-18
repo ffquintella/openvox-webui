@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - React frontend skeleton with TypeScript
 - YAML configuration system design
 - Documentation framework
+- Architecture overview and user guide (docs/architecture, docs/user-guide)
 - Puppet CA client and management API (status, CSR list, sign, reject, revoke, renew)
 - Puppet CA configuration block (`puppet_ca`) and RBAC permissions for certificates
 - Classification engine (Phase 4.1): rule evaluation, operators coverage, hierarchical inheritance

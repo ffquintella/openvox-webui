@@ -1051,7 +1051,7 @@ Feature: Package Installation
 - [x] PuppetDB connection auto-configuration (custom facter for auto-discovery)
 - [x] RBAC initial setup via Puppet (admin account configuration)
 - [x] Module documentation and examples (README with examples for basic and PuppetDB setups)
-- [ ] Publish to Puppet Forge
+- [x] Publish to Puppet Forge
 
 **Puppet Module Features:**
 - Complete metadata.json with OS support matrix
