@@ -70,7 +70,7 @@ urlencoding = "2.1"
 async-trait = "0.1"
 
 # Validation
-validator = { version = "0.19", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 # PDF generation
 printpdf = "0.7"
