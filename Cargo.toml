@@ -9,6 +9,7 @@ repository = "https://github.com/openvoxproject/openvox-webui"
 readme = "README.md"
 keywords = ["openvox", "puppet", "infrastructure", "webui", "configuration-management"]
 categories = ["web-programming", "config"]
+default-run = "openvox-webui"
 
 [dependencies]
 # Web framework
