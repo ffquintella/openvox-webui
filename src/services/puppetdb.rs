@@ -387,10 +387,25 @@ impl PuppetDbClient {
 
             let ca_cert = fs::read(ca_path)
                 .with_context(|| format!("Failed to read CA certificate: {:?}", ca_path))?;
-            let cert =
-                Certificate::from_pem(&ca_cert).context("Failed to parse CA certificate as PEM")?;
-            builder = builder.add_root_certificate(cert);
-            info!("Loaded CA certificate from {}", ca_path_ref.display());
+
+            // Parse all certificates from the CA file (may contain a chain)
+            let certs = Certificate::from_pem_bundle(&ca_cert)
+                .context("Failed to parse CA certificate(s) as PEM")?;
+
+            info!(
+                "Found {} CA certificate(s) in {}",
+                certs.len(),
+                ca_path_ref.display()
+            );
+
+            // Disable built-in root certs when using custom CA
+            // This ensures we only trust our Puppet CA, not system CAs
+            builder = builder.tls_built_in_root_certs(false);
+
+            for cert in certs {
+                builder = builder.add_root_certificate(cert);
+            }
+            info!("Loaded CA certificate(s) from {}", ca_path_ref.display());
         }
 
         // Check and load client certificate and key if provided
