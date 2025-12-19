@@ -21,9 +21,12 @@ Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          adduser,
+         curl,
          libssl3 | libssl1.1,
          libsqlite3-0
-Recommends: puppet-agent | openvox-agent
+Recommends: puppet-agent | openvox-agent,
+            puppetdb,
+            puppetserver
 Description: Web UI for OpenVox infrastructure management
  OpenVox WebUI provides a modern web interface for managing and monitoring
  OpenVox infrastructure. Features include:

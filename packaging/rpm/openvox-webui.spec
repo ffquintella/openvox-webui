@@ -23,10 +23,15 @@ BuildRequires:  make
 
 Requires:       openssl
 Requires:       sqlite
+Requires:       curl
 Requires(pre):  shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
+
+# Recommended for full functionality
+Recommends:     puppetdb
+Recommends:     puppetserver
 
 %description
 OpenVox WebUI provides a modern web interface for managing and monitoring
@@ -63,6 +68,7 @@ install -d %{buildroot}%{_bindir}
 install -d %{buildroot}%{_sysconfdir}/openvox-webui
 install -d %{buildroot}%{_sysconfdir}/openvox-webui/ssl
 install -d %{buildroot}%{_datadir}/openvox-webui/static
+install -d %{buildroot}%{_datadir}/openvox-webui/scripts
 install -d %{buildroot}%{_localstatedir}/lib/openvox-webui
 install -d %{buildroot}%{_localstatedir}/log/openvox/webui
 install -d %{buildroot}%{_unitdir}
@@ -84,6 +90,9 @@ install -m 640 config/config.example.yaml %{buildroot}%{_sysconfdir}/openvox-web
 # Install systemd units
 install -m 644 packaging/systemd/openvox-webui.service %{buildroot}%{_unitdir}/openvox-webui.service
 
+# Install configuration script
+install -m 755 packaging/scripts/configure-openvox-webui.sh %{buildroot}%{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
+
 %pre
 # Create openvox-webui group if it doesn't exist
 getent group openvox-webui >/dev/null || groupadd -r openvox-webui
@@ -99,21 +108,63 @@ getent passwd openvox-webui >/dev/null || \
 # Set proper ownership on first install
 chown -R openvox-webui:openvox-webui %{_localstatedir}/lib/openvox-webui
 chown -R openvox-webui:openvox-webui %{_localstatedir}/log/openvox/webui
-chown root:openvox-webui %{_sysconfdir}/openvox-webui/config.yaml
 
-echo ""
-echo "OpenVox WebUI has been installed!"
-echo ""
-echo "Next steps:"
-echo "  1. Edit /etc/openvox-webui/config.yaml"
-echo "  2. Generate or install TLS certificates in /etc/openvox-webui/ssl/"
-echo "  3. Start the service: systemctl start openvox-webui"
-echo "  4. Enable on boot: systemctl enable openvox-webui"
-echo ""
-echo "Default admin credentials (change immediately!):"
-echo "  Username: admin"
-echo "  Password: admin"
-echo ""
+# Run interactive configuration on first install (not upgrade)
+if [ $1 -eq 1 ]; then
+    # Check if we're in an interactive terminal
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║     OpenVox WebUI - Interactive Configuration Available          ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "OpenVox WebUI can automatically detect and configure integration"
+        echo "with PuppetDB and Puppet CA on this system."
+        echo ""
+
+        # Prompt for interactive configuration
+        read -p "Would you like to run the interactive configuration now? [Y/n] " -r REPLY
+        REPLY=${REPLY:-Y}
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
+        else
+            # Set basic permissions and show manual instructions
+            chown root:openvox-webui %{_sysconfdir}/openvox-webui/config.yaml
+
+            echo ""
+            echo "Skipping interactive configuration."
+            echo ""
+            echo "You can run the configuration script later:"
+            echo "  %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh"
+            echo ""
+            echo "Or manually configure:"
+            echo "  1. Edit /etc/openvox-webui/config.yaml"
+            echo "  2. Generate or install TLS certificates in /etc/openvox-webui/ssl/"
+            echo "  3. Start the service: systemctl start openvox-webui"
+            echo "  4. Enable on boot: systemctl enable openvox-webui"
+            echo ""
+            echo "Default admin credentials (change immediately!):"
+            echo "  Username: admin"
+            echo "  Password: admin"
+            echo ""
+        fi
+    else
+        # Non-interactive installation (e.g., automated deployment)
+        # Run configuration in non-interactive mode
+        %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh --non-interactive
+    fi
+else
+    # Upgrade - just set permissions
+    chown root:openvox-webui %{_sysconfdir}/openvox-webui/config.yaml 2>/dev/null || true
+    echo ""
+    echo "OpenVox WebUI has been upgraded to version %{version}!"
+    echo ""
+    echo "Your existing configuration has been preserved."
+    echo "To reconfigure, run:"
+    echo "  %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh"
+    echo ""
+fi
 
 %preun
 %systemd_preun openvox-webui.service
@@ -134,7 +185,9 @@ fi
 %dir %{_sysconfdir}/openvox-webui
 %dir %attr(750,root,openvox-webui) %{_sysconfdir}/openvox-webui/ssl
 %config(noreplace) %attr(640,root,openvox-webui) %{_sysconfdir}/openvox-webui/config.yaml
-%{_datadir}/openvox-webui
+%{_datadir}/openvox-webui/static
+%{_datadir}/openvox-webui/scripts
+%attr(755,root,root) %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/lib/openvox-webui
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox/webui
 %{_unitdir}/openvox-webui.service

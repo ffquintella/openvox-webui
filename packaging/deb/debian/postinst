@@ -31,32 +31,79 @@ case "$1" in
         chown openvox-webui:openvox-webui /var/log/openvox/webui
         chmod 750 /var/log/openvox/webui
 
-        # Set config file permissions
-        if [ -f /etc/openvox-webui/config.yaml ]; then
-            chown root:openvox-webui /etc/openvox-webui/config.yaml
-            chmod 640 /etc/openvox-webui/config.yaml
-        fi
-
         # Set SSL directory permissions
         if [ -d /etc/openvox-webui/ssl ]; then
             chown root:openvox-webui /etc/openvox-webui/ssl
             chmod 750 /etc/openvox-webui/ssl
         fi
 
-        # Print post-installation message
-        echo ""
-        echo "OpenVox WebUI has been installed!"
-        echo ""
-        echo "Next steps:"
-        echo "  1. Edit /etc/openvox-webui/config.yaml"
-        echo "  2. Set up TLS certificates in /etc/openvox-webui/ssl/"
-        echo "  3. Start the service: systemctl start openvox-webui"
-        echo "  4. Enable on boot: systemctl enable openvox-webui"
-        echo ""
-        echo "Default admin credentials (change immediately!):"
-        echo "  Username: admin"
-        echo "  Password: admin"
-        echo ""
+        # Check if this is a fresh install (not upgrade)
+        # dpkg passes the previously installed version as $2 for upgrades
+        if [ -z "$2" ]; then
+            # Fresh install - run interactive configuration
+            if [ -t 0 ] && [ -t 1 ]; then
+                echo ""
+                echo "╔══════════════════════════════════════════════════════════════════╗"
+                echo "║     OpenVox WebUI - Interactive Configuration Available          ║"
+                echo "╚══════════════════════════════════════════════════════════════════╝"
+                echo ""
+                echo "OpenVox WebUI can automatically detect and configure integration"
+                echo "with PuppetDB and Puppet CA on this system."
+                echo ""
+
+                # Prompt for interactive configuration
+                printf "Would you like to run the interactive configuration now? [Y/n] "
+                read -r REPLY
+                REPLY=${REPLY:-Y}
+
+                case "$REPLY" in
+                    [Yy]*)
+                        /usr/share/openvox-webui/scripts/configure-openvox-webui.sh
+                        ;;
+                    *)
+                        # Set basic permissions and show manual instructions
+                        if [ -f /etc/openvox-webui/config.yaml ]; then
+                            chown root:openvox-webui /etc/openvox-webui/config.yaml
+                            chmod 640 /etc/openvox-webui/config.yaml
+                        fi
+
+                        echo ""
+                        echo "Skipping interactive configuration."
+                        echo ""
+                        echo "You can run the configuration script later:"
+                        echo "  /usr/share/openvox-webui/scripts/configure-openvox-webui.sh"
+                        echo ""
+                        echo "Or manually configure:"
+                        echo "  1. Edit /etc/openvox-webui/config.yaml"
+                        echo "  2. Set up TLS certificates in /etc/openvox-webui/ssl/"
+                        echo "  3. Start the service: systemctl start openvox-webui"
+                        echo "  4. Enable on boot: systemctl enable openvox-webui"
+                        echo ""
+                        echo "Default admin credentials (change immediately!):"
+                        echo "  Username: admin"
+                        echo "  Password: admin"
+                        echo ""
+                        ;;
+                esac
+            else
+                # Non-interactive installation (e.g., automated deployment)
+                /usr/share/openvox-webui/scripts/configure-openvox-webui.sh --non-interactive
+            fi
+        else
+            # Upgrade - preserve existing configuration
+            if [ -f /etc/openvox-webui/config.yaml ]; then
+                chown root:openvox-webui /etc/openvox-webui/config.yaml 2>/dev/null || true
+                chmod 640 /etc/openvox-webui/config.yaml 2>/dev/null || true
+            fi
+
+            echo ""
+            echo "OpenVox WebUI has been upgraded!"
+            echo ""
+            echo "Your existing configuration has been preserved."
+            echo "To reconfigure, run:"
+            echo "  /usr/share/openvox-webui/scripts/configure-openvox-webui.sh"
+            echo ""
+        fi
         ;;
 esac
 

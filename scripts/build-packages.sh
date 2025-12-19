@@ -3,16 +3,22 @@
 # Build RPM and DEB packages for OpenVox WebUI
 #
 # This script creates native Linux packages (RPM and DEB) for distribution.
-# It handles versioning, source tarball creation, and package building.
+# It uses Docker by default to ensure consistent amd64/x86_64 builds regardless
+# of the host architecture (supports building on Apple Silicon, ARM servers, etc.)
+#
+# When using Docker (default), the full build process happens inside the container:
+#   - Frontend is built with npm
+#   - Backend is compiled with Rust/Cargo
+#   - Package is created with rpmbuild/dpkg-buildpackage
 #
 # Usage:
 #   ./build-packages.sh [OPTIONS] [TARGETS]
 #
 # Examples:
-#   ./build-packages.sh                    # Build all packages using version from Cargo.toml
-#   ./build-packages.sh rpm                # Build RPM only
+#   ./build-packages.sh                    # Build all packages using Docker (default)
+#   ./build-packages.sh rpm                # Build RPM only (using Docker)
 #   ./build-packages.sh -v 1.0.0 deb       # Build DEB with explicit version
-#   ./build-packages.sh --docker rpm       # Build RPM using Docker
+#   ./build-packages.sh --no-docker rpm    # Build RPM natively (requires local tools)
 #
 set -e
 
@@ -26,24 +32,16 @@ get_version_from_cargo() {
 VERSION="${VERSION:-$(get_version_from_cargo)}"
 RELEASE="${RELEASE:-1}"
 BUILD_DIR="${BUILD_DIR:-$(pwd)/build}"
-ARCH="${ARCH:-$(uname -m)}"
-USE_DOCKER="${USE_DOCKER:-false}"
+# Always build for amd64/x86_64 architecture (Docker handles cross-compilation)
+ARCH="${ARCH:-x86_64}"
+# Docker is enabled by default for package builds
+USE_DOCKER="${USE_DOCKER:-true}"
 
-# Map architecture names
-case "$ARCH" in
-    x86_64)
-        DEB_ARCH="amd64"
-        RPM_ARCH="x86_64"
-        ;;
-    aarch64|arm64)
-        DEB_ARCH="arm64"
-        RPM_ARCH="aarch64"
-        ;;
-    *)
-        DEB_ARCH="$ARCH"
-        RPM_ARCH="$ARCH"
-        ;;
-esac
+# Force amd64/x86_64 architecture for package builds
+DEB_ARCH="amd64"
+RPM_ARCH="x86_64"
+DOCKER_PLATFORM="linux/amd64"
+RUST_TARGET="x86_64-unknown-linux-gnu"
 
 # Colors for output
 RED='\033[0;31m'
@@ -79,7 +77,8 @@ usage() {
     echo "  -r RELEASE       Set release number (default: 1)"
     echo "  -o OUTPUT_DIR    Set output directory (default: ./build)"
     echo "  -a ARCH          Set target architecture (default: $(uname -m))"
-    echo "  --docker         Use Docker for building (for cross-distro builds)"
+    echo "  --docker         Use Docker for building (default: enabled)"
+    echo "  --no-docker      Disable Docker and build natively (requires local tools)"
     echo "  --clean          Clean build directory before building"
     echo "  --sign           Sign packages after building (requires GPG key)"
     echo ""
@@ -91,10 +90,10 @@ usage() {
     echo "  binary           Build binary tarball only (no package manager)"
     echo ""
     echo "Examples:"
-    echo "  $0                       # Build all packages"
+    echo "  $0                       # Build all packages (Docker builds everything)"
     echo "  $0 rpm                   # Build RPM only"
     echo "  $0 -v 1.0.0 deb          # Build DEB with version 1.0.0"
-    echo "  $0 --docker rpm          # Build RPM using Docker"
+    echo "  $0 --no-docker rpm       # Build RPM natively (requires local Rust/Node.js)"
     echo "  $0 --clean --sign all    # Clean build, then build and sign all"
     echo ""
     echo "Environment Variables:"
@@ -102,7 +101,9 @@ usage() {
     echo "  RELEASE          Release number (overrides -r)"
     echo "  BUILD_DIR        Build directory (overrides -o)"
     echo "  GPG_KEY_ID       GPG key ID for signing packages"
-    echo "  CARGO_TARGET     Rust target triple for cross-compilation"
+    echo ""
+    echo "Note: Docker builds compile everything inside the container (Rust + Node.js)."
+    echo "      First build may take 10-15 minutes; subsequent builds use cached layers."
 }
 
 check_dependencies() {
@@ -399,54 +400,106 @@ CHANGELOG_EOF
 }
 
 build_rpm_docker() {
-    log_step "Building RPM package using Docker..."
+    log_step "Building RPM package using Docker (platform: ${DOCKER_PLATFORM})..."
 
-    # Create Dockerfile for RPM build
+    # Create Dockerfile for RPM build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.rpm"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
-FROM rockylinux:9
+FROM --platform=linux/amd64 rockylinux:9
 
 RUN dnf install -y \
     rpm-build \
     rpmdevtools \
     gcc \
+    make \
     openssl-devel \
     sqlite-devel \
-    nodejs \
-    npm \
+    git \
+    && dnf clean all
+
+# Install Node.js 20 from NodeSource
+RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - \
+    && dnf install -y nodejs \
     && dnf clean all
 
 # Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /build
 DOCKERFILE_EOF
 
-    # Build image
-    docker build -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
+    # Build image with platform specification
+    log_info "Building Docker image for RPM (this may take a while on first run)..."
+    docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
 
-    # Run build
+    # Run build and packaging in Docker container
+    log_info "Running RPM build in Docker container..."
     docker run --rm \
+        --platform "${DOCKER_PLATFORM}" \
         -v "${SOURCE_DIR}:/source:ro" \
-        -v "${BUILD_DIR}:/build" \
+        -v "${BUILD_DIR}:/output" \
+        -e VERSION="${VERSION}" \
+        -e RELEASE="${RELEASE}" \
         openvox-webui-rpm-builder \
-        /bin/bash -c "
-            cd /build
-            cp -r /source/* .
-            ./scripts/build-packages.sh -v ${VERSION} -r ${RELEASE} -o /build rpm
-        "
+        /bin/bash -c '
+            set -e
+            cd /tmp
+            cp -r /source openvox-webui-${VERSION}
+            cd openvox-webui-${VERSION}
+
+            # Build frontend
+            echo "Building frontend..."
+            cd frontend
+            npm ci --prefer-offline 2>/dev/null || npm ci
+            npm run build
+            cd ..
+
+            # Build backend
+            echo "Building backend..."
+            cargo build --release
+
+            # Create source tarball for rpmbuild
+            cd /tmp
+            tar czf openvox-webui-${VERSION}.tar.gz openvox-webui-${VERSION}
+
+            # Setup rpmbuild directories
+            mkdir -p /root/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+            cp openvox-webui-${VERSION}.tar.gz /root/rpmbuild/SOURCES/
+
+            # Update and copy spec file
+            sed -e "s/%define version.*/%define version ${VERSION}/" \
+                -e "s/%define release.*/%define release ${RELEASE}%{?dist}/" \
+                /tmp/openvox-webui-${VERSION}/packaging/rpm/openvox-webui.spec \
+                > /root/rpmbuild/SPECS/openvox-webui.spec
+
+            # Build RPM
+            echo "Building RPM package..."
+            rpmbuild -bb /root/rpmbuild/SPECS/openvox-webui.spec
+
+            # Copy output
+            mkdir -p /output/output
+            find /root/rpmbuild/RPMS -name "*.rpm" -exec cp {} /output/output/ \;
+
+            # Create checksums
+            cd /output/output
+            for rpm in *.rpm; do
+                [ -f "$rpm" ] && sha256sum "$rpm" > "${rpm}.sha256"
+            done
+
+            echo "RPM build complete!"
+        '
 
     log_info "RPM packages built successfully using Docker"
 }
 
 build_deb_docker() {
-    log_step "Building DEB package using Docker..."
+    log_step "Building DEB package using Docker (platform: ${DOCKER_PLATFORM})..."
 
-    # Create Dockerfile for DEB build
+    # Create Dockerfile for DEB build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.deb"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
-FROM debian:bookworm
+FROM --platform=linux/amd64 debian:bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -458,31 +511,83 @@ RUN apt-get update && apt-get install -y \
     fakeroot \
     libssl-dev \
     libsqlite3-dev \
-    nodejs \
-    npm \
+    pkg-config \
     curl \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20 from NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /build
 DOCKERFILE_EOF
 
-    # Build image
-    docker build -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
+    # Build image with platform specification
+    log_info "Building Docker image for DEB (this may take a while on first run)..."
+    docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
 
-    # Run build
+    # Run build and packaging in Docker container
+    log_info "Running DEB build in Docker container..."
     docker run --rm \
+        --platform "${DOCKER_PLATFORM}" \
         -v "${SOURCE_DIR}:/source:ro" \
-        -v "${BUILD_DIR}:/build" \
+        -v "${BUILD_DIR}:/output" \
+        -e VERSION="${VERSION}" \
+        -e RELEASE="${RELEASE}" \
         openvox-webui-deb-builder \
-        /bin/bash -c "
-            cd /build
-            cp -r /source/* .
-            ./scripts/build-packages.sh -v ${VERSION} -r ${RELEASE} -o /build deb
-        "
+        /bin/bash -c '
+            set -e
+            cd /tmp
+            cp -r /source openvox-webui-${VERSION}
+            cd openvox-webui-${VERSION}
+
+            # Build frontend
+            echo "Building frontend..."
+            cd frontend
+            npm ci --prefer-offline 2>/dev/null || npm ci
+            npm run build
+            cd ..
+
+            # Build backend
+            echo "Building backend..."
+            cargo build --release
+
+            # Copy debian directory
+            cp -r packaging/deb/debian .
+
+            # Update changelog with version
+            cat > debian/changelog << CHANGELOG_EOF
+openvox-webui (${VERSION}-${RELEASE}) unstable; urgency=medium
+
+  * Release version ${VERSION}
+
+ -- OpenVox Team <team@openvox.io>  $(date -R)
+CHANGELOG_EOF
+
+            # Build package
+            echo "Building DEB package..."
+            dpkg-buildpackage -us -uc -b
+
+            # Copy output
+            mkdir -p /output/output
+            find /tmp -maxdepth 1 -name "*.deb" -exec cp {} /output/output/ \;
+            find /tmp -maxdepth 1 -name "*.changes" -exec cp {} /output/output/ \;
+
+            # Create checksums
+            cd /output/output
+            for deb in *.deb; do
+                [ -f "$deb" ] && sha256sum "$deb" > "${deb}.sha256"
+            done
+
+            echo "DEB build complete!"
+        '
 
     log_info "DEB packages built successfully using Docker"
 }
@@ -561,6 +666,10 @@ while [[ $# -gt 0 ]]; do
             USE_DOCKER=true
             shift
             ;;
+        --no-docker)
+            USE_DOCKER=false
+            shift
+            ;;
         --clean)
             CLEAN_BUILD=true
             shift
@@ -616,9 +725,12 @@ echo "========================================"
 log_info "OpenVox WebUI Package Builder"
 echo "========================================"
 log_info "Version:         ${VERSION}-${RELEASE}"
-log_info "Architecture:    ${ARCH}"
+log_info "Architecture:    ${ARCH} (${DEB_ARCH}/${RPM_ARCH})"
 log_info "Build directory: ${BUILD_DIR}"
 log_info "Use Docker:      ${USE_DOCKER}"
+if [[ "$USE_DOCKER" == "true" ]]; then
+log_info "Docker platform: ${DOCKER_PLATFORM}"
+fi
 echo "========================================"
 echo ""
 
