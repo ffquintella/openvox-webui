@@ -936,6 +936,27 @@ fn parse_uuid(s: String) -> Result<Uuid> {
     Uuid::parse_str(&s).map_err(|_| anyhow::anyhow!("Invalid UUID: {}", s))
 }
 
+/// Parse a database timestamp in either RFC3339 or SQLite native format
+fn parse_db_timestamp(ts: &str) -> chrono::DateTime<chrono::Utc> {
+    // Try RFC3339 format first (e.g., "2024-12-16T00:00:00+00:00")
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        return dt.with_timezone(&chrono::Utc);
+    }
+    // Try SQLite's native CURRENT_TIMESTAMP format (e.g., "2024-12-16 00:00:00")
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S") {
+        return chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc);
+    }
+    // Fallback to current time
+    chrono::Utc::now()
+}
+
+/// Parse a SQLite boolean (stored as INTEGER 0 or 1) safely
+fn parse_db_bool(row: &sqlx::sqlite::SqliteRow, column: &str) -> bool {
+    row.try_get::<bool, _>(column)
+        .or_else(|_| row.try_get::<i32, _>(column).map(|v| v != 0))
+        .unwrap_or(false)
+}
+
 fn row_to_role(row: &sqlx::sqlite::SqliteRow, permissions: Vec<Permission>) -> Role {
     let id_str: String = row.get("id");
     let parent_id_str: Option<String> = row.get("parent_id");
@@ -947,15 +968,11 @@ fn row_to_role(row: &sqlx::sqlite::SqliteRow, permissions: Vec<Permission>) -> R
         name: row.get("name"),
         display_name: row.get("display_name"),
         description: row.get("description"),
-        is_system: row.get("is_system"),
+        is_system: parse_db_bool(row, "is_system"),
         parent_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
         permissions,
-        created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now()),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at_str)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now()),
+        created_at: parse_db_timestamp(&created_at_str),
+        updated_at: parse_db_timestamp(&updated_at_str),
     }
 }
 
