@@ -74,6 +74,7 @@ class openvox_webui::config {
         tls_cert_file           => $openvox_webui::tls_cert_file,
         tls_key_file            => $openvox_webui::tls_key_file,
         tls_min_version         => $openvox_webui::tls_min_version,
+        tls_ciphers             => $openvox_webui::tls_ciphers,
         puppetdb_url            => $effective_puppetdb_url,
         puppetdb_ssl_cert       => $effective_puppetdb_ssl_cert,
         puppetdb_ssl_key        => $effective_puppetdb_ssl_key,

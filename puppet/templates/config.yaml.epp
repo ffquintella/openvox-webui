@@ -20,7 +20,8 @@
   Boolean $enable_tls,
   Optional[Stdlib::Absolutepath] $tls_cert_file,
   Optional[Stdlib::Absolutepath] $tls_key_file,
-  Optional[String] $tls_min_version,
+  Enum['1.2', '1.3'] $tls_min_version,
+  Array[String] $tls_ciphers,
   Stdlib::Absolutepath $static_dir,
   Boolean $serve_frontend,
   Integer $cache_ttl,
@@ -44,6 +45,12 @@ server:
     cert_file: "<%= $tls_cert_file %>"
     key_file: "<%= $tls_key_file %>"
     min_version: "<%= $tls_min_version %>"
+<% if !$tls_ciphers.empty { -%>
+    ciphers:
+<% $tls_ciphers.each |$cipher| { -%>
+      - "<%= $cipher %>"
+<% } -%>
+<% } -%>
 <% } -%>
 
 database:

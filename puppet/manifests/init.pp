@@ -42,6 +42,9 @@
 # @param log_level
 #   Logging verbosity. Valid values: 'trace', 'debug', 'info', 'warn', 'error'.
 #
+# @param tls_ciphers
+#   List of TLS cipher suites to allow. If empty, uses secure defaults.
+#
 # @param puppetdb_url
 #   URL of the PuppetDB server to connect to.
 #
@@ -125,7 +128,8 @@ class openvox_webui (
   Boolean                             $enable_tls         = false,
   Optional[Stdlib::Absolutepath]      $tls_cert_file      = undef,
   Optional[Stdlib::Absolutepath]      $tls_key_file       = undef,
-  Optional[String[1]]                 $tls_min_version    = 'TLS1.3',
+  Enum['1.2', '1.3']                  $tls_min_version    = '1.3',
+  Array[String[1]]                    $tls_ciphers        = [],
 
   # PuppetDB settings
   Optional[Stdlib::HTTPUrl]           $puppetdb_url           = undef,
