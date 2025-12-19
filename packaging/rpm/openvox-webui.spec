@@ -74,7 +74,6 @@ install -d %{buildroot}%{_datadir}/openvox-webui/scripts
 install -d %{buildroot}%{_localstatedir}/lib/openvox-webui
 install -d %{buildroot}%{_localstatedir}/log/openvox
 install -d %{buildroot}%{_localstatedir}/log/openvox/webui
-install -d %{buildroot}%{_localstatedir}/log/openvox-webui
 install -d %{buildroot}%{_unitdir}
 
 # Install binary
@@ -113,13 +112,10 @@ getent passwd openvox-webui >/dev/null || \
 chown -R openvox-webui:openvox-webui %{_localstatedir}/lib/openvox-webui
 
 # Ensure log directory hierarchy is accessible by the service user
-# Support both default path (/var/log/openvox/webui) and Puppet-managed path (/var/log/openvox-webui)
 chown openvox-webui:openvox-webui %{_localstatedir}/log/openvox
 chmod 750 %{_localstatedir}/log/openvox
 chown -R openvox-webui:openvox-webui %{_localstatedir}/log/openvox/webui
 chmod 750 %{_localstatedir}/log/openvox/webui
-chown openvox-webui:openvox-webui %{_localstatedir}/log/openvox-webui
-chmod 750 %{_localstatedir}/log/openvox-webui
 
 # Run interactive configuration on first install (not upgrade)
 if [ $1 -eq 1 ]; then
@@ -204,7 +200,6 @@ fi
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/lib/openvox-webui
 %dir %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox/webui
-%attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox-webui
 %{_unitdir}/openvox-webui.service
 
 %changelog

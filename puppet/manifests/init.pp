@@ -117,7 +117,7 @@ class openvox_webui (
   Stdlib::Port                        $listen_port        = 5051,
   Stdlib::Absolutepath                $database_path      = '/var/lib/openvox-webui/openvox.db',
   Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level = 'info',
-  Stdlib::Absolutepath                $log_dir            = '/var/log/openvox-webui',
+  Stdlib::Absolutepath                $log_dir            = '/var/log/openvox/webui',
   Boolean                             $serve_frontend     = true,
   Stdlib::Absolutepath                $static_dir         = '/usr/share/openvox-webui/frontend',
 

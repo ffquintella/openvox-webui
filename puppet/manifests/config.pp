@@ -41,11 +41,20 @@ class openvox_webui::config {
       mode   => '0750',
     }
 
-    file { $openvox_webui::log_dir:
+    # Create parent log directory /var/log/openvox first
+    file { '/var/log/openvox':
       ensure => directory,
       owner  => $openvox_webui::user,
       group  => $openvox_webui::group,
-      mode   => '0755',
+      mode   => '0750',
+    }
+
+    file { $openvox_webui::log_dir:
+      ensure  => directory,
+      owner   => $openvox_webui::user,
+      group   => $openvox_webui::group,
+      mode    => '0750',
+      require => File['/var/log/openvox'],
     }
 
     file { "${openvox_webui::config_dir}/config.yaml":
