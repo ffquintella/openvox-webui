@@ -62,11 +62,14 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 # Security hardening - System calls
 SystemCallArchitectures=native
-SystemCallFilter=@system-service
-SystemCallFilter=~@privileged @resources
+# Note: Using permissive filter - Rust async runtime needs various syscalls
+SystemCallFilter=@system-service @resources
+SystemCallFilter=~@privileged
 
 # Security hardening - Memory
-MemoryDenyWriteExecute=yes
+# Note: MemoryDenyWriteExecute disabled - Rust binaries may require W^X pages
+# for certain operations (crypto, regex JIT, etc.)
+MemoryDenyWriteExecute=no
 LockPersonality=yes
 
 # Security hardening - Misc
