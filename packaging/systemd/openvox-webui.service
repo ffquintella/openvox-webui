@@ -48,7 +48,8 @@ ProtectHostname=yes
 
 # Security hardening - Read/Write paths
 ReadWritePaths=/var/lib/openvox-webui
-ReadWritePaths=/var/log/openvox/webui
+# Allow writing to the entire /var/log/openvox tree (default is /var/log/openvox/webui)
+ReadWritePaths=/var/log/openvox
 ReadOnlyPaths=/etc/openvox-webui
 
 # Security hardening - Network
