@@ -111,9 +111,9 @@ async fn main() -> Result<()> {
 
         info!("HTTPS server is ready to accept connections");
 
-        // Use axum-server for TLS
+        // Use axum-server for TLS with ConnectInfo support
         axum_server::from_tcp_rustls(listener.into_std()?, rustls_config)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .context("HTTPS server error")?;
     } else {
@@ -125,7 +125,12 @@ async fn main() -> Result<()> {
 
         info!("HTTP server is ready to accept connections");
 
-        axum::serve(listener, app).await.context("HTTP server error")?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .context("HTTP server error")?;
     }
 
     Ok(())
