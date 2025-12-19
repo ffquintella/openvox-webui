@@ -6,6 +6,7 @@
 use anyhow::{Context, Result};
 use reqwest::{Certificate, Client, Identity};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::error::Error as StdError;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -977,12 +978,33 @@ impl PuppetDbClient {
 
     /// Internal GET request handler
     async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
+        debug!("Sending GET request to {}", url);
         let response = self
             .client
             .get(url)
             .send()
             .await
-            .with_context(|| format!("Failed to send request to {}", url))?;
+            .map_err(|e| {
+                // Log detailed error information
+                error!(
+                    "HTTP request failed to {}: {} (is_connect: {}, is_timeout: {}, is_request: {})",
+                    url,
+                    e,
+                    e.is_connect(),
+                    e.is_timeout(),
+                    e.is_request()
+                );
+                if let Some(source) = e.source() {
+                    error!("Underlying error: {}", source);
+                    // Try to get more details from the error chain
+                    let mut current: &dyn StdError = source;
+                    while let Some(next) = current.source() {
+                        error!("Caused by: {}", next);
+                        current = next;
+                    }
+                }
+                anyhow::anyhow!("Failed to send request to {}: {}", url, e)
+            })?;
 
         self.handle_response(response).await
     }
