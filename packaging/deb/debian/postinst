@@ -25,7 +25,7 @@ case "$1" in
         chmod 750 /var/lib/openvox-webui
 
         # Create and set permissions on log directory hierarchy
-        # The parent /var/log/openvox needs to be traversable by the service user
+        # Support both default path (/var/log/openvox/webui) and Puppet-managed path (/var/log/openvox-webui)
         if [ ! -d /var/log/openvox ]; then
             mkdir -p /var/log/openvox
         fi
@@ -37,6 +37,13 @@ case "$1" in
         fi
         chown openvox-webui:openvox-webui /var/log/openvox/webui
         chmod 750 /var/log/openvox/webui
+
+        # Alternative log path used by Puppet module
+        if [ ! -d /var/log/openvox-webui ]; then
+            mkdir -p /var/log/openvox-webui
+        fi
+        chown openvox-webui:openvox-webui /var/log/openvox-webui
+        chmod 750 /var/log/openvox-webui
 
         # Set SSL directory permissions
         if [ -d /etc/openvox-webui/ssl ]; then
