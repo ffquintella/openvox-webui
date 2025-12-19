@@ -36,12 +36,14 @@ pub fn public_routes() -> Router<AppState> {
         .route("/health/live", get(health::liveness))
         .route("/health/ready", get(health::readiness))
         // Authentication endpoints (no auth required)
-        .nest("/auth", auth::routes())
+        .nest("/auth", auth::public_routes())
 }
 
 /// Protected API routes (authentication required)
 pub fn protected_routes() -> Router<AppState> {
     Router::new()
+        // Protected auth endpoints (change-password, me)
+        .nest("/auth", auth::protected_routes())
         // Resource endpoints
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())

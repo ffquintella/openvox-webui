@@ -20,24 +20,22 @@ use crate::{
     AppState,
 };
 
-/// Create routes for authentication endpoints
-pub fn routes() -> Router<AppState> {
-    // Public routes (no authentication required)
-    let public_routes = Router::new()
+/// Create public routes for authentication endpoints (no auth required)
+pub fn public_routes() -> Router<AppState> {
+    Router::new()
         .route("/login", post(login))
         .route("/refresh", post(refresh_token))
         .route("/logout", post(logout))
         .route("/register", post(register))
         .route("/forgot-password", post(forgot_password))
-        .route("/reset-password", post(reset_password));
+        .route("/reset-password", post(reset_password))
+}
 
-    // Protected routes (authentication required)
-    // These routes require authentication via AuthUser extractor
-    let protected_routes = Router::new()
+/// Create protected routes for authentication endpoints (auth required)
+pub fn protected_routes() -> Router<AppState> {
+    Router::new()
         .route("/change-password", post(change_password))
-        .route("/me", get(get_current_user));
-
-    public_routes.merge(protected_routes)
+        .route("/me", get(get_current_user))
 }
 
 /// Login request body for registration
