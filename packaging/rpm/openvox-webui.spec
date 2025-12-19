@@ -2,6 +2,8 @@
 %define version 0.9.0
 %define release 1%{?dist}
 %define _builddir %{_topdir}/BUILD/%{name}-%{version}
+%define _unitdir /usr/lib/systemd/system
+%define debug_package %{nil}
 
 Name:           %{name}
 Version:        %{version}
@@ -182,11 +184,12 @@ fi
 %license LICENSE
 %doc README.md CHANGELOG.md ROADMAP.md
 %{_bindir}/openvox-webui
+%{_bindir}/openvox-webui-scheduled-reports
 %dir %{_sysconfdir}/openvox-webui
 %dir %attr(750,root,openvox-webui) %{_sysconfdir}/openvox-webui/ssl
 %config(noreplace) %attr(640,root,openvox-webui) %{_sysconfdir}/openvox-webui/config.yaml
 %{_datadir}/openvox-webui/static
-%{_datadir}/openvox-webui/scripts
+%dir %{_datadir}/openvox-webui/scripts
 %attr(755,root,root) %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/lib/openvox-webui
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox/webui

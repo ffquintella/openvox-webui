@@ -473,9 +473,14 @@ DOCKERFILE_EOF
                 /tmp/openvox-webui-${VERSION}/packaging/rpm/openvox-webui.spec \
                 > /root/rpmbuild/SPECS/openvox-webui.spec
 
-            # Build RPM
+            # Patch spec file to skip the build phase since we already compiled above
+            # Replace %build section content with no-op (code already built in Docker)
+            sed -i "/%build/,/%install/{/%build/!{/%install/!d}}" /root/rpmbuild/SPECS/openvox-webui.spec
+            sed -i "s/^%build$/%build\n# Pre-built in Docker - skipping recompilation/" /root/rpmbuild/SPECS/openvox-webui.spec
+
+            # Build RPM (--nodeps skips BuildRequires check since we compiled manually)
             echo "Building RPM package..."
-            rpmbuild -bb /root/rpmbuild/SPECS/openvox-webui.spec
+            rpmbuild -bb --nodeps /root/rpmbuild/SPECS/openvox-webui.spec
 
             # Copy output
             mkdir -p /output/output
@@ -571,9 +576,14 @@ openvox-webui (${VERSION}-${RELEASE}) unstable; urgency=medium
  -- OpenVox Team <team@openvox.io>  $(date -R)
 CHANGELOG_EOF
 
-            # Build package
+            # Patch debian/rules to skip build and clean phases (code already built in Docker)
+            sed -i "s/override_dh_auto_build:/override_dh_auto_build:\n\t# Pre-built in Docker - skipping recompilation\n\ttrue\n\noriginal_dh_auto_build_disabled:/" debian/rules
+            # Also prevent cargo clean from removing our pre-built binaries
+            sed -i "s/override_dh_auto_clean:/override_dh_auto_clean:\n\t# Skip clean to preserve pre-built binaries\n\ttrue\n\noriginal_dh_auto_clean_disabled:/" debian/rules
+
+            # Build package (dependencies already satisfied since we compiled above)
             echo "Building DEB package..."
-            dpkg-buildpackage -us -uc -b
+            dpkg-buildpackage -us -uc -b -d
 
             # Copy output
             mkdir -p /output/output
