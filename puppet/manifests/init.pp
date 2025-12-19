@@ -119,7 +119,7 @@ class openvox_webui (
   Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level = 'info',
   Stdlib::Absolutepath                $log_dir            = '/var/log/openvox/webui',
   Boolean                             $serve_frontend     = true,
-  Stdlib::Absolutepath                $static_dir         = '/usr/share/openvox-webui/frontend',
+  Stdlib::Absolutepath                $static_dir         = '/usr/share/openvox-webui/static',
 
   # TLS settings
   Boolean                             $enable_tls         = false,
