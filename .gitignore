@@ -104,3 +104,5 @@ logs/
 *.db-journal
 *.sqlite
 *.sqlite3
+
+puppet/pkg/
