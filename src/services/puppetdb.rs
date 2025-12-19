@@ -7,10 +7,65 @@ use anyhow::{Context, Result};
 use reqwest::{Certificate, Client, Identity};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 use crate::config::PuppetDbConfig;
 use crate::models::{Fact, Node, Report, ResourceEvent};
+
+/// Check if an SSL file exists and is readable, logging the result
+fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<(), String> {
+    if !path.exists() {
+        let msg = format!("{} file does not exist: {}", file_type, path.display());
+        error!("{}", msg);
+        return Err(msg);
+    }
+
+    // Try to read the file to check permissions
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            if metadata.is_file() {
+                // Try to actually read a few bytes to verify read permission
+                match fs::read(path) {
+                    Ok(contents) => {
+                        info!(
+                            "{} file is accessible: {} ({} bytes)",
+                            file_type,
+                            path.display(),
+                            contents.len()
+                        );
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let msg = format!(
+                            "{} file exists but cannot be read: {} - {}",
+                            file_type,
+                            path.display(),
+                            e
+                        );
+                        error!("{}", msg);
+                        Err(msg)
+                    }
+                }
+            } else {
+                let msg = format!("{} path is not a file: {}", file_type, path.display());
+                error!("{}", msg);
+                Err(msg)
+            }
+        }
+        Err(e) => {
+            let msg = format!(
+                "Cannot access {} file metadata: {} - {}",
+                file_type,
+                path.display(),
+                e
+            );
+            error!("{}", msg);
+            Err(msg)
+        }
+    }
+}
 
 /// PuppetDB API client
 #[derive(Clone)]
@@ -313,21 +368,45 @@ impl Default for QueryBuilder {
 impl PuppetDbClient {
     /// Create a new PuppetDB client with optional SSL/TLS configuration
     pub fn new(config: &PuppetDbConfig) -> Result<Self> {
+        info!("Initializing PuppetDB client for {}", config.url);
+
         let mut builder = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .use_rustls_tls();
 
-        // Load CA certificate if provided (must be done before identity for rustls)
+        // Check and load CA certificate if provided (must be done before identity for rustls)
         if let Some(ref ca_path) = config.ssl_ca {
+            let ca_path_ref = Path::new(ca_path);
+            debug!("Checking CA certificate file: {}", ca_path_ref.display());
+
+            if let Err(e) = check_ssl_file_access(ca_path_ref, "CA certificate") {
+                warn!("CA certificate check failed: {}", e);
+                // Continue anyway - the actual read will provide a more detailed error
+            }
+
             let ca_cert = fs::read(ca_path)
                 .with_context(|| format!("Failed to read CA certificate: {:?}", ca_path))?;
             let cert =
                 Certificate::from_pem(&ca_cert).context("Failed to parse CA certificate as PEM")?;
             builder = builder.add_root_certificate(cert);
+            info!("Loaded CA certificate from {}", ca_path_ref.display());
         }
 
-        // Load client certificate and key if provided
+        // Check and load client certificate and key if provided
         if let (Some(ref cert_path), Some(ref key_path)) = (&config.ssl_cert, &config.ssl_key) {
+            let cert_path_ref = Path::new(cert_path);
+            let key_path_ref = Path::new(key_path);
+
+            debug!("Checking SSL client certificate: {}", cert_path_ref.display());
+            if let Err(e) = check_ssl_file_access(cert_path_ref, "SSL client certificate") {
+                warn!("SSL client certificate check failed: {}", e);
+            }
+
+            debug!("Checking SSL private key: {}", key_path_ref.display());
+            if let Err(e) = check_ssl_file_access(key_path_ref, "SSL private key") {
+                warn!("SSL private key check failed: {}", e);
+            }
+
             let cert = fs::read(cert_path)
                 .with_context(|| format!("Failed to read client certificate: {:?}", cert_path))?;
             let key = fs::read(key_path)
@@ -341,14 +420,31 @@ impl PuppetDbClient {
             let identity = Identity::from_pem(&pem_bundle)
                 .context("Failed to create identity from certificate and key")?;
             builder = builder.identity(identity);
+            info!(
+                "Loaded SSL client identity from {} and {}",
+                cert_path_ref.display(),
+                key_path_ref.display()
+            );
+        } else if config.ssl_cert.is_some() || config.ssl_key.is_some() {
+            warn!(
+                "Partial SSL configuration: cert={:?}, key={:?}. Both must be provided for client authentication.",
+                config.ssl_cert.is_some(),
+                config.ssl_key.is_some()
+            );
         }
 
         // Configure SSL verification (must be after identity for rustls compatibility)
         if !config.ssl_verify {
+            warn!("SSL certificate verification is DISABLED - this is insecure!");
             builder = builder.danger_accept_invalid_certs(true);
         }
 
         let client = builder.build().context("Failed to create HTTP client")?;
+
+        info!(
+            "PuppetDB client initialized successfully for {}",
+            config.url
+        );
 
         Ok(Self {
             client,
