@@ -7,6 +7,9 @@
   "source": "https://github.com/openvoxproject/openvox-webui",
   "project_page": "https://github.com/openvoxproject/openvox-webui",
   "issues_url": "https://github.com/openvoxproject/openvox-webui/issues",
+  "pdk-version": "3.0.0",
+  "template-url": "pdk-default#3.0.0",
+  "template-ref": "tags/3.0.0-0-g056e610",
   "dependencies": [
     {
       "name": "puppetlabs/stdlib",
