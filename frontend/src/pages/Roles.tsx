@@ -376,7 +376,8 @@ export default function Roles() {
                             {perm.scope && perm.scope.type !== 'all' && (
                               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
                                 {perm.scope.type}
-                                {'value' in perm.scope && `: ${perm.scope.value}`}
+                                {(perm.scope.type === 'environment' || perm.scope.type === 'group') &&
+                                  `: ${perm.scope.value}`}
                               </span>
                             )}
                           </div>
