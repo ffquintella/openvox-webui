@@ -30,11 +30,9 @@ pub struct NodeGroup {
     /// Whether to match all rules (AND) or any rule (OR)
     pub rule_match_type: RuleMatchType,
 
-    /// Classes to apply to nodes in this group
-    pub classes: Vec<String>,
-
-    /// Parameters for the classes
-    pub parameters: serde_json::Value,
+    /// Classes to apply to nodes in this group (Puppet Enterprise format)
+    /// Each class name maps to its parameters: {"ntp": {"servers": ["ntp1.example.com"]}, "apache": {}}
+    pub classes: serde_json::Value,
 
     /// Variables that become external facts (key => value)
     pub variables: serde_json::Value,
@@ -56,8 +54,7 @@ impl Default for NodeGroup {
             parent_id: None,
             environment: None,
             rule_match_type: RuleMatchType::All,
-            classes: vec![],
-            parameters: serde_json::json!({}),
+            classes: serde_json::json!({}),
             variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
@@ -84,8 +81,8 @@ pub struct CreateGroupRequest {
     pub parent_id: Option<Uuid>,
     pub environment: Option<String>,
     pub rule_match_type: Option<RuleMatchType>,
-    pub classes: Option<Vec<String>>,
-    pub parameters: Option<serde_json::Value>,
+    /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+    pub classes: Option<serde_json::Value>,
     pub variables: Option<serde_json::Value>,
 }
 
@@ -97,8 +94,8 @@ pub struct UpdateGroupRequest {
     pub parent_id: Option<Uuid>,
     pub environment: Option<String>,
     pub rule_match_type: Option<RuleMatchType>,
-    pub classes: Option<Vec<String>>,
-    pub parameters: Option<serde_json::Value>,
+    /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+    pub classes: Option<serde_json::Value>,
     pub variables: Option<serde_json::Value>,
 }
 

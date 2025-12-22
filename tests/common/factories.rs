@@ -191,7 +191,7 @@ impl GroupFactory {
             description: Some(format!("Test group {}", n)),
             environment: Some("production".to_string()),
             parent_id: None,
-            classes: vec![],
+            classes: serde_json::json!({}),
         }
     }
 }
@@ -203,7 +203,7 @@ pub struct GroupBuilder {
     description: Option<String>,
     environment: Option<String>,
     parent_id: Option<Uuid>,
-    classes: Vec<String>,
+    classes: serde_json::Value,
 }
 
 impl GroupBuilder {
@@ -227,7 +227,7 @@ impl GroupBuilder {
         self
     }
 
-    pub fn with_classes(mut self, classes: Vec<String>) -> Self {
+    pub fn with_classes(mut self, classes: serde_json::Value) -> Self {
         self.classes = classes;
         self
     }
@@ -242,7 +242,6 @@ impl GroupBuilder {
             environment: self.environment,
             rule_match_type: RuleMatchType::All,
             classes: self.classes,
-            parameters: serde_json::json!({}),
             variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],

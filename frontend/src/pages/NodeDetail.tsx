@@ -497,7 +497,7 @@ function GroupMembership({
                 </div>
                 <div className="text-right text-sm">
                   <p className="text-primary-600">
-                    {group.classes.length} classes
+                    {Object.keys(group.classes || {}).length} classes
                   </p>
                   <p className="text-primary-500">
                     {group.pinned_nodes.length} nodes

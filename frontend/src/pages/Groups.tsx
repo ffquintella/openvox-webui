@@ -66,10 +66,10 @@ export default function Groups() {
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [newClassName, setNewClassName] = useState('');
 
-  // Parameter form state
-  const [isAddParamOpen, setIsAddParamOpen] = useState(false);
-  const [newParamKey, setNewParamKey] = useState('');
-  const [newParamValue, setNewParamValue] = useState('');
+  // Per-class parameter form state (which class is being edited)
+  const [editingClassParams, setEditingClassParams] = useState<string | null>(null);
+  const [newClassParamKey, setNewClassParamKey] = useState('');
+  const [newClassParamValue, setNewClassParamValue] = useState('');
 
   // Variable form state (for facter facts)
   const [isAddVarOpen, setIsAddVarOpen] = useState(false);
@@ -272,7 +272,11 @@ export default function Groups() {
     e.preventDefault();
     if (!selectedGroup || !newClassName.trim()) return;
 
-    const updatedClasses = [...selectedGroup.classes, newClassName.trim()];
+    // Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+    const updatedClasses = {
+      ...selectedGroup.classes,
+      [newClassName.trim()]: {},
+    };
     updateMutation.mutate({
       id: selectedGroup.id,
       data: { classes: updatedClasses },
@@ -283,44 +287,51 @@ export default function Groups() {
 
   const handleRemoveClass = (className: string) => {
     if (!selectedGroup) return;
-    const updatedClasses = selectedGroup.classes.filter(c => c !== className);
+    const updatedClasses = { ...selectedGroup.classes };
+    delete updatedClasses[className];
     updateMutation.mutate({
       id: selectedGroup.id,
       data: { classes: updatedClasses },
     });
   };
 
-  const handleAddParameter = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedGroup || !newParamKey.trim()) return;
+  // Add a parameter to a specific class
+  const handleAddClassParameter = (className: string, paramKey: string, paramValue: string) => {
+    if (!selectedGroup || !paramKey.trim()) return;
 
-    let parsedValue: unknown = newParamValue;
+    let parsedValue: unknown = paramValue;
     try {
-      parsedValue = JSON.parse(newParamValue);
+      parsedValue = JSON.parse(paramValue);
     } catch {
       // Keep as string if not valid JSON
     }
 
-    const updatedParams = {
-      ...(selectedGroup.parameters as Record<string, unknown>),
-      [newParamKey.trim()]: parsedValue,
+    const classParams = selectedGroup.classes[className] || {};
+    const updatedClasses = {
+      ...selectedGroup.classes,
+      [className]: {
+        ...classParams,
+        [paramKey.trim()]: parsedValue,
+      },
     };
     updateMutation.mutate({
       id: selectedGroup.id,
-      data: { parameters: updatedParams },
+      data: { classes: updatedClasses },
     });
-    setIsAddParamOpen(false);
-    setNewParamKey('');
-    setNewParamValue('');
   };
 
-  const handleRemoveParameter = (key: string) => {
+  // Remove a parameter from a specific class
+  const handleRemoveClassParameter = (className: string, paramKey: string) => {
     if (!selectedGroup) return;
-    const params = { ...(selectedGroup.parameters as Record<string, unknown>) };
-    delete params[key];
+    const classParams = { ...(selectedGroup.classes[className] || {}) };
+    delete classParams[paramKey];
+    const updatedClasses = {
+      ...selectedGroup.classes,
+      [className]: classParams,
+    };
     updateMutation.mutate({
       id: selectedGroup.id,
-      data: { parameters: params },
+      data: { classes: updatedClasses },
     });
   };
 
@@ -687,7 +698,7 @@ export default function Groups() {
                       )}
                       {tab.id === 'classes' && (
                         <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                          {selectedGroup.classes?.length || 0}
+                          {Object.keys(selectedGroup.classes || {}).length}
                         </span>
                       )}
                       {tab.id === 'variables' && (
@@ -929,164 +940,180 @@ export default function Groups() {
               {/* Classes Tab */}
               {activeTab === 'classes' && (
                 <div>
-                  {/* Classes Section */}
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Puppet Classes</h3>
-                        <p className="text-sm text-gray-600">Classes applied to nodes in this group</p>
-                      </div>
-                      <button
-                        onClick={() => setIsAddClassOpen(true)}
-                        className="btn btn-secondary text-sm flex items-center"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Class
-                      </button>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Puppet Classes</h3>
+                      <p className="text-sm text-gray-600">
+                        Classes applied to nodes in this group (Puppet Enterprise format)
+                      </p>
                     </div>
-
-                    {isAddClassOpen && (
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
-                        <form onSubmit={handleAddClass} className="flex gap-4">
-                          <input
-                            type="text"
-                            value={newClassName}
-                            onChange={(e) => setNewClassName(e.target.value)}
-                            className="input flex-1"
-                            placeholder="e.g., profile::webserver"
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsAddClassOpen(false);
-                              setNewClassName('');
-                            }}
-                            className="btn btn-secondary"
-                          >
-                            Cancel
-                          </button>
-                          <button type="submit" className="btn btn-primary">
-                            Add
-                          </button>
-                        </form>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-2">
-                      {selectedGroup.classes && selectedGroup.classes.length > 0 ? (
-                        selectedGroup.classes.map((className: string) => (
-                          <span
-                            key={className}
-                            className="inline-flex items-center bg-primary-100 text-primary-700 px-3 py-1.5 rounded-full text-sm"
-                          >
-                            {className}
-                            <button
-                              onClick={() => handleRemoveClass(className)}
-                              className="ml-2 text-primary-500 hover:text-primary-700"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))
-                      ) : (
-                        <p className="text-gray-500 text-sm">No classes assigned</p>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => setIsAddClassOpen(true)}
+                      className="btn btn-secondary text-sm flex items-center"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Class
+                    </button>
                   </div>
 
-                  {/* Parameters Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Class Parameters</h3>
-                        <p className="text-sm text-gray-600">Parameters passed to Puppet classes</p>
-                      </div>
-                      <button
-                        onClick={() => setIsAddParamOpen(true)}
-                        className="btn btn-secondary text-sm flex items-center"
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Parameter
-                      </button>
+                  {/* Add Class Form */}
+                  {isAddClassOpen && (
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                      <form onSubmit={handleAddClass} className="flex gap-4">
+                        <input
+                          type="text"
+                          value={newClassName}
+                          onChange={(e) => setNewClassName(e.target.value)}
+                          className="input flex-1"
+                          placeholder="e.g., profile::webserver"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddClassOpen(false);
+                            setNewClassName('');
+                          }}
+                          className="btn btn-secondary"
+                        >
+                          Cancel
+                        </button>
+                        <button type="submit" className="btn btn-primary">
+                          Add
+                        </button>
+                      </form>
                     </div>
+                  )}
 
-                    {isAddParamOpen && (
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
-                        <form onSubmit={handleAddParameter} className="space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="label">Key</label>
-                              <input
-                                type="text"
-                                value={newParamKey}
-                                onChange={(e) => setNewParamKey(e.target.value)}
-                                className="input"
-                                placeholder="e.g., port"
-                                required
-                              />
+                  {/* Classes List with Parameters */}
+                  <div className="space-y-3">
+                    {selectedGroup.classes && Object.keys(selectedGroup.classes).length > 0 ? (
+                      Object.entries(selectedGroup.classes).map(([className, params]) => (
+                        <div
+                          key={className}
+                          className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+                        >
+                          {/* Class Header */}
+                          <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-medium text-gray-900">{className}</span>
+                              {Object.keys(params as Record<string, unknown>).length > 0 && (
+                                <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+                                  {Object.keys(params as Record<string, unknown>).length} params
+                                </span>
+                              )}
                             </div>
-                            <div>
-                              <label className="label">Value (JSON or string)</label>
-                              <input
-                                type="text"
-                                value={newParamValue}
-                                onChange={(e) => setNewParamValue(e.target.value)}
-                                className="input"
-                                placeholder='e.g., 8080 or ["a", "b"]'
-                                required
-                              />
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setEditingClassParams(editingClassParams === className ? null : className);
+                                  setNewClassParamKey('');
+                                  setNewClassParamValue('');
+                                }}
+                                className="text-gray-500 hover:text-primary-600 transition-colors text-sm flex items-center"
+                              >
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add Param
+                              </button>
+                              <button
+                                onClick={() => handleRemoveClass(className)}
+                                className="text-gray-400 hover:text-red-600 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsAddParamOpen(false);
-                                setNewParamKey('');
-                                setNewParamValue('');
-                              }}
-                              className="btn btn-secondary text-sm"
-                            >
-                              Cancel
-                            </button>
-                            <button type="submit" className="btn btn-primary text-sm">
-                              Add Parameter
-                            </button>
+
+                          {/* Class Parameters */}
+                          <div className="px-4 py-2">
+                            {/* Add Parameter Form (inline per class) */}
+                            {editingClassParams === className && (
+                              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleAddClassParameter(className, newClassParamKey, newClassParamValue);
+                                    setNewClassParamKey('');
+                                    setNewClassParamValue('');
+                                    setEditingClassParams(null);
+                                  }}
+                                  className="flex gap-2 items-end"
+                                >
+                                  <div className="flex-1">
+                                    <label className="label text-xs">Parameter Key</label>
+                                    <input
+                                      type="text"
+                                      value={newClassParamKey}
+                                      onChange={(e) => setNewClassParamKey(e.target.value)}
+                                      className="input input-sm"
+                                      placeholder="e.g., port"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="label text-xs">Value (JSON or string)</label>
+                                    <input
+                                      type="text"
+                                      value={newClassParamValue}
+                                      onChange={(e) => setNewClassParamValue(e.target.value)}
+                                      className="input input-sm"
+                                      placeholder='e.g., 8080 or ["a", "b"]'
+                                      required
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingClassParams(null)}
+                                    className="btn btn-secondary btn-sm"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button type="submit" className="btn btn-primary btn-sm">
+                                    Add
+                                  </button>
+                                </form>
+                              </div>
+                            )}
+
+                            {/* Parameter List */}
+                            {Object.keys(params as Record<string, unknown>).length > 0 ? (
+                              <div className="space-y-1">
+                                {Object.entries(params as Record<string, unknown>).map(([key, value]) => (
+                                  <div
+                                    key={key}
+                                    className="flex items-center justify-between py-1.5 px-2 hover:bg-gray-50 rounded group"
+                                  >
+                                    <div className="flex items-center gap-2 font-mono text-sm">
+                                      <span className="text-gray-600">{key}</span>
+                                      <span className="text-gray-400">=</span>
+                                      <span className="text-primary-600">
+                                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleRemoveClassParameter(className, key)}
+                                      className="text-gray-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-gray-400 text-sm py-2">No parameters</p>
+                            )}
                           </div>
-                        </form>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                        <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">No classes assigned</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Add classes to apply Puppet modules to nodes in this group
+                        </p>
                       </div>
                     )}
-
-                    <div className="space-y-2">
-                      {selectedGroup.parameters && Object.keys(selectedGroup.parameters as Record<string, unknown>).length > 0 ? (
-                        Object.entries(selectedGroup.parameters as Record<string, unknown>).map(([key, value]) => (
-                          <div
-                            key={key}
-                            className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
-                          >
-                            <div className="flex items-center gap-3 font-mono text-sm">
-                              <span className="font-medium text-gray-900">{key}</span>
-                              <span className="text-gray-400">=</span>
-                              <span className="text-primary-600">
-                                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveParameter(key)}
-                              className="text-gray-400 hover:text-red-600 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg">
-                          <AlertCircle className="w-6 h-6 mx-auto mb-2 text-gray-300" />
-                          <p className="text-sm">No parameters defined</p>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}

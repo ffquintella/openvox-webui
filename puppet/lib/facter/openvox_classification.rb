@@ -180,14 +180,16 @@ Facter.add(:openvox_classification) do
       when 200
         data = JSON.parse(response.body)
 
+        # Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+        classes_data = data['classes'] || {}
+
         # Return structured classification data
         result = {
           'certname'    => data['certname'] || certname,
           'groups'      => data['groups']&.map { |g| g['name'] } || [],
-          'classes'     => data['classes'] || [],
+          'classes'     => classes_data,
           'environment' => data['environment'],
           'variables'   => data['variables'] || {},
-          'parameters'  => data['parameters'] || {},
           'timestamp'   => Time.now.utc.iso8601
         }
 
@@ -246,14 +248,7 @@ Facter.add(:openvox_variables) do
   end
 end
 
-Facter.add(:openvox_parameters) do
-  setcode do
-    classification = Facter.value(:openvox_classification)
-    classification['parameters'] if classification
-  end
-end
-
-# Register dynamic facts for variables and parameters as top-level facts
+# Register dynamic facts for variables as top-level facts
 # This runs at load time to discover and register facts from classification
 begin
   require 'net/http'
@@ -319,13 +314,6 @@ begin
 
           # Register each variable as a top-level fact
           (data['variables'] || {}).each do |key, value|
-            Facter.add(key.to_sym) do
-              setcode { value }
-            end
-          end
-
-          # Register each parameter as a top-level fact
-          (data['parameters'] || {}).each do |key, value|
             Facter.add(key.to_sym) do
               setcode { value }
             end

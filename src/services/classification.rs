@@ -99,8 +99,7 @@ impl ClassificationService {
                 certname: certname.to_string(),
                 organization_id: Some(default_org_id),
                 groups: vec![],
-                classes: vec![],
-                parameters: serde_json::json!({}),
+                classes: serde_json::json!({}),
                 variables: serde_json::json!({}),
                 environment: None,
                 conflict_error: None,
@@ -116,8 +115,8 @@ impl ClassificationService {
         organization_id: Option<Uuid>,
     ) -> ClassificationResult {
         let mut matched_groups: Vec<GroupMatch> = vec![];
-        let mut all_classes: Vec<String> = vec![];
-        let mut all_parameters = serde_json::json!({});
+        // Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+        let mut all_classes = serde_json::json!({});
         let mut all_variables = serde_json::json!({});
         let mut environment: Option<String> = None;
 
@@ -187,8 +186,8 @@ impl ClassificationService {
                     matched_rules,
                 });
 
-                all_classes.extend(group.classes.clone());
-                merge_parameters(&mut all_parameters, &group.parameters);
+                // Deep merge classes (Puppet Enterprise format with per-class parameters)
+                merge_classes(&mut all_classes, &group.classes);
                 merge_parameters(&mut all_variables, &group.variables);
 
                 if environment.is_none() {
@@ -204,16 +203,11 @@ impl ClassificationService {
             }
         }
 
-        // Remove duplicate classes
-        all_classes.sort();
-        all_classes.dedup();
-
         ClassificationResult {
             certname: certname.to_string(),
             organization_id,
             groups: matched_groups,
             classes: all_classes,
-            parameters: all_parameters,
             variables: all_variables,
             environment,
             conflict_error: None,
@@ -350,10 +344,47 @@ fn compare_values(a: &serde_json::Value, b: &serde_json::Value) -> i32 {
 }
 
 /// Merge parameters from a group into the accumulated parameters
+/// Merge parameters (flat object merge, last value wins)
 fn merge_parameters(target: &mut serde_json::Value, source: &serde_json::Value) {
     if let (Some(target_obj), Some(source_obj)) = (target.as_object_mut(), source.as_object()) {
         for (key, value) in source_obj {
             target_obj.insert(key.clone(), value.clone());
+        }
+    }
+}
+
+/// Deep merge classes in Puppet Enterprise format
+/// Classes are objects like: {"ntp": {"servers": ["ntp1.example.com"]}, "apache": {"port": 8080}}
+/// When the same class appears in multiple groups, their parameters are deep merged
+fn merge_classes(target: &mut serde_json::Value, source: &serde_json::Value) {
+    if let (Some(target_obj), Some(source_obj)) = (target.as_object_mut(), source.as_object()) {
+        for (class_name, class_params) in source_obj {
+            if let Some(existing_params) = target_obj.get_mut(class_name) {
+                // Class already exists, deep merge its parameters
+                deep_merge(existing_params, class_params);
+            } else {
+                // New class, insert it
+                target_obj.insert(class_name.clone(), class_params.clone());
+            }
+        }
+    }
+}
+
+/// Deep merge two JSON values (recursively merges objects, overwrites other types)
+fn deep_merge(target: &mut serde_json::Value, source: &serde_json::Value) {
+    match (target, source) {
+        (serde_json::Value::Object(target_obj), serde_json::Value::Object(source_obj)) => {
+            for (key, value) in source_obj {
+                if let Some(existing) = target_obj.get_mut(key) {
+                    deep_merge(existing, value);
+                } else {
+                    target_obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        (target, source) => {
+            // For non-objects, source overwrites target
+            *target = source.clone();
         }
     }
 }
@@ -520,7 +551,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "webservers".to_string(),
             pinned_nodes: vec!["web1.example.com".to_string()],
-            classes: vec!["profile::webserver".to_string()],
+            classes: serde_json::json!({"profile::webserver": {}}),
             ..Default::default()
         };
 
@@ -531,7 +562,7 @@ mod tests {
 
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
-        assert!(result.classes.contains(&"profile::webserver".to_string()));
+        assert!(result.classes.as_object().unwrap().contains_key("profile::webserver"));
     }
 
     #[test]
@@ -545,7 +576,7 @@ mod tests {
                 operator: RuleOperator::Equals,
                 value: serde_json::json!("RedHat"),
             }],
-            classes: vec!["profile::base".to_string()],
+            classes: serde_json::json!({"profile::base": {}}),
             ..Default::default()
         };
 
@@ -574,8 +605,7 @@ mod tests {
                 operator: RuleOperator::Equals,
                 value: serde_json::json!("RedHat"),
             }],
-            classes: vec!["class_parent".to_string()],
-            parameters: serde_json::json!({"p": "root"}),
+            classes: serde_json::json!({"class_parent": {"p": "root"}}),
             ..Default::default()
         };
 
@@ -583,8 +613,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "child".to_string(),
             parent_id: Some(parent_id),
-            classes: vec!["class_child".to_string()],
-            parameters: serde_json::json!({"p": "child", "child": true}),
+            classes: serde_json::json!({"class_child": {"child": true}, "class_parent": {"p": "child"}}),
             ..Default::default()
         };
 
@@ -598,12 +627,12 @@ mod tests {
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[1].match_type, MatchType::Inherited);
-        assert_eq!(
-            result.classes,
-            vec!["class_child".to_string(), "class_parent".to_string()]
-        );
-        assert_eq!(result.parameters["p"], serde_json::json!("child"));
-        assert_eq!(result.parameters["child"], serde_json::json!(true));
+        // Classes should be merged with deep merge
+        assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
+        assert!(result.classes.as_object().unwrap().contains_key("class_child"));
+        // Deep merge: child's parameters override parent's for same class
+        assert_eq!(result.classes["class_parent"]["p"], serde_json::json!("child"));
+        assert_eq!(result.classes["class_child"]["child"], serde_json::json!(true));
     }
 
     #[test]
@@ -613,7 +642,7 @@ mod tests {
             id: parent_id,
             name: "parent".to_string(),
             pinned_nodes: vec!["web1.example.com".to_string()],
-            classes: vec!["class_parent".to_string()],
+            classes: serde_json::json!({"class_parent": {}}),
             ..Default::default()
         };
 
@@ -621,7 +650,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "child".to_string(),
             parent_id: Some(parent_id),
-            classes: vec!["class_child".to_string()],
+            classes: serde_json::json!({"class_child": {}}),
             ..Default::default()
         };
 
@@ -633,8 +662,8 @@ mod tests {
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
         assert_eq!(result.groups[1].match_type, MatchType::Inherited);
-        assert!(result.classes.contains(&"class_parent".to_string()));
-        assert!(result.classes.contains(&"class_child".to_string()));
+        assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
+        assert!(result.classes.as_object().unwrap().contains_key("class_child"));
     }
 
     #[test]
@@ -657,7 +686,7 @@ mod tests {
                     value: serde_json::json!("9"),
                 },
             ],
-            classes: vec!["class_any".to_string()],
+            classes: serde_json::json!({"class_any": {}}),
             ..Default::default()
         };
 
@@ -674,6 +703,6 @@ mod tests {
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[0].matched_rules.len(), 1);
-        assert!(result.classes.contains(&"class_any".to_string()));
+        assert!(result.classes.as_object().unwrap().contains_key("class_any"));
     }
 }

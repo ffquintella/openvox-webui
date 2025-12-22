@@ -17,11 +17,9 @@ pub struct ClassificationResult {
     /// Groups the node belongs to
     pub groups: Vec<GroupMatch>,
 
-    /// Combined classes from all groups
-    pub classes: Vec<String>,
-
-    /// Combined parameters from all groups
-    pub parameters: serde_json::Value,
+    /// Combined classes from all groups (Puppet Enterprise format)
+    /// Each class name maps to its parameters: {"ntp": {"servers": ["ntp1.example.com"]}, "apache": {}}
+    pub classes: serde_json::Value,
 
     /// Combined variables from all groups (exported as external facts)
     pub variables: serde_json::Value,
@@ -98,15 +96,14 @@ mod tests {
             certname: "node1.example.com".to_string(),
             organization_id: None,
             groups: vec![],
-            classes: vec!["profile::base".to_string()],
-            parameters: serde_json::json!({}),
+            classes: serde_json::json!({"profile::base": {}}),
             variables: serde_json::json!({}),
             environment: Some("production".to_string()),
             conflict_error: None,
         };
 
         assert_eq!(result.certname, "node1.example.com");
-        assert_eq!(result.classes.len(), 1);
+        assert!(result.classes.as_object().unwrap().contains_key("profile::base"));
     }
 
     #[test]

@@ -28,6 +28,9 @@ export interface ClassificationRule {
   value: unknown;
 }
 
+// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+export type PuppetClasses = Record<string, Record<string, unknown>>;
+
 export interface NodeGroup {
   id: string;
   name: string;
@@ -35,8 +38,7 @@ export interface NodeGroup {
   parent_id?: string | null;
   environment?: string | null;
   rule_match_type: RuleMatchType;
-  classes: string[];
-  parameters: Record<string, unknown>;
+  classes: PuppetClasses;
   variables: Record<string, unknown>;
   rules: ClassificationRule[];
   pinned_nodes: string[];
@@ -48,8 +50,7 @@ export interface CreateGroupRequest {
   parent_id?: string;
   environment?: string;
   rule_match_type?: RuleMatchType;
-  classes?: string[];
-  parameters?: Record<string, unknown>;
+  classes?: PuppetClasses;
   variables?: Record<string, unknown>;
 }
 
@@ -59,8 +60,7 @@ export interface UpdateGroupRequest {
   parent_id?: string | null;
   environment?: string | null;
   rule_match_type?: RuleMatchType;
-  classes?: string[];
-  parameters?: Record<string, unknown>;
+  classes?: PuppetClasses;
   variables?: Record<string, unknown>;
 }
 

@@ -26,6 +26,7 @@ struct GroupRow {
     environment: Option<String>,
     rule_match_type: String,
     classes: String,
+    #[allow(dead_code)] // Kept for database backward compatibility
     parameters: String,
     variables: String,
 }
@@ -180,13 +181,9 @@ impl<'a> GroupRepository<'a> {
             .rule_match_type
             .unwrap_or(RuleMatchType::All)
             .to_string();
-        let classes = serde_json::to_string(&req.classes.clone().unwrap_or_default())
-            .unwrap_or_else(|_| "[]".to_string());
-        let parameters = req
-            .parameters
-            .clone()
-            .map(|p| serde_json::to_string(&p).unwrap_or_else(|_| "{}".to_string()))
-            .unwrap_or_else(|| "{}".to_string());
+        // Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
+        let classes = serde_json::to_string(&req.classes.clone().unwrap_or(serde_json::json!({})))
+            .unwrap_or_else(|_| "{}".to_string());
         let variables = req
             .variables
             .clone()
@@ -208,7 +205,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&req.environment)
         .bind(&rule_match_type)
         .bind(&classes)
-        .bind(&parameters)
+        .bind("{}") // parameters column kept for backward compatibility but now empty
         .bind(&variables)
         .execute(self.pool)
         .await
@@ -242,19 +239,13 @@ impl<'a> GroupRepository<'a> {
             .rule_match_type
             .unwrap_or(existing.rule_match_type)
             .to_string();
+        // Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
         let classes = req
             .classes
             .clone()
-            .map(|c| serde_json::to_string(&c).unwrap_or_else(|_| "[]".to_string()))
+            .map(|c| serde_json::to_string(&c).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|| {
-                serde_json::to_string(&existing.classes).unwrap_or_else(|_| "[]".to_string())
-            });
-        let parameters = req
-            .parameters
-            .clone()
-            .map(|p| serde_json::to_string(&p).unwrap_or_else(|_| "{}".to_string()))
-            .unwrap_or_else(|| {
-                serde_json::to_string(&existing.parameters).unwrap_or_else(|_| "{}".to_string())
+                serde_json::to_string(&existing.classes).unwrap_or_else(|_| "{}".to_string())
             });
         let variables = req
             .variables
@@ -279,7 +270,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&environment)
         .bind(&rule_match_type)
         .bind(&classes)
-        .bind(&parameters)
+        .bind("{}") // parameters column kept for backward compatibility but now empty
         .bind(&variables)
         .bind(organization_id.to_string())
         .bind(id.to_string())
@@ -432,9 +423,23 @@ impl<'a> GroupRepository<'a> {
         let rules = self.get_rules(id).await?;
         let pinned_nodes = self.get_pinned_nodes(id).await?;
 
-        let classes: Vec<String> = serde_json::from_str(&row.classes).unwrap_or_default();
-        let parameters: serde_json::Value =
-            serde_json::from_str(&row.parameters).unwrap_or(serde_json::json!({}));
+        // Parse classes - support both old array format and new object format
+        let classes: serde_json::Value = serde_json::from_str(&row.classes)
+            .map(|v: serde_json::Value| {
+                // If it's an array (old format), convert to object format
+                if let Some(arr) = v.as_array() {
+                    let mut obj = serde_json::Map::new();
+                    for class_name in arr {
+                        if let Some(name) = class_name.as_str() {
+                            obj.insert(name.to_string(), serde_json::json!({}));
+                        }
+                    }
+                    serde_json::Value::Object(obj)
+                } else {
+                    v
+                }
+            })
+            .unwrap_or(serde_json::json!({}));
         let variables: serde_json::Value =
             serde_json::from_str(&row.variables).unwrap_or(serde_json::json!({}));
 
@@ -447,7 +452,6 @@ impl<'a> GroupRepository<'a> {
             environment: row.environment,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
-            parameters,
             variables,
             rules,
             pinned_nodes,
@@ -470,9 +474,23 @@ impl<'a> GroupRepository<'a> {
         let rules = rules_map.get(&row.id).cloned().unwrap_or_default();
         let pinned_nodes = pinned_map.get(&row.id).cloned().unwrap_or_default();
 
-        let classes: Vec<String> = serde_json::from_str(&row.classes).unwrap_or_default();
-        let parameters: serde_json::Value =
-            serde_json::from_str(&row.parameters).unwrap_or(serde_json::json!({}));
+        // Parse classes - support both old array format and new object format
+        let classes: serde_json::Value = serde_json::from_str(&row.classes)
+            .map(|v: serde_json::Value| {
+                // If it's an array (old format), convert to object format
+                if let Some(arr) = v.as_array() {
+                    let mut obj = serde_json::Map::new();
+                    for class_name in arr {
+                        if let Some(name) = class_name.as_str() {
+                            obj.insert(name.to_string(), serde_json::json!({}));
+                        }
+                    }
+                    serde_json::Value::Object(obj)
+                } else {
+                    v
+                }
+            })
+            .unwrap_or(serde_json::json!({}));
         let variables: serde_json::Value =
             serde_json::from_str(&row.variables).unwrap_or(serde_json::json!({}));
 
@@ -485,7 +503,6 @@ impl<'a> GroupRepository<'a> {
             environment: row.environment,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
-            parameters,
             variables,
             rules,
             pinned_nodes,

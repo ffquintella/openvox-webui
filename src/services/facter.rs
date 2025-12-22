@@ -69,12 +69,11 @@ impl FacterService {
                     }
                     "variables" => Ok(classification.variables.clone()),
                     _ => {
-                        // Try to get from variables first, then parameters
+                        // Try to get from variables
                         classification
                             .variables
                             .get(key)
                             .cloned()
-                            .or_else(|| classification.parameters.get(key).cloned())
                             .ok_or_else(|| {
                                 anyhow::anyhow!("Classification key '{}' not found", key)
                             })
@@ -203,16 +202,17 @@ mod tests {
     fn sample_classification() -> ClassificationResult {
         ClassificationResult {
             certname: "node1.example.com".to_string(),
+            organization_id: None,
             groups: vec![GroupMatch {
                 id: Uuid::new_v4(),
                 name: "webservers".to_string(),
                 match_type: MatchType::Rules,
                 matched_rules: vec![],
             }],
-            classes: vec!["profile::webserver".to_string()],
-            parameters: serde_json::json!({"http_port": 8080}),
+            classes: serde_json::json!({"profile::webserver": {"http_port": 8080}}),
             variables: serde_json::json!({"datacenter": "us-west-1", "role": "webserver"}),
             environment: Some("production".to_string()),
+            conflict_error: None,
         }
     }
 
