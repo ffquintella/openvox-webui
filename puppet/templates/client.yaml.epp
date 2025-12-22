@@ -1,0 +1,47 @@
+<%- |
+  Stdlib::HTTPUrl                $api_url,
+  Optional[Sensitive[String[1]]] $api_token,
+  Optional[Sensitive[String[1]]] $api_key,
+  Optional[Stdlib::Absolutepath] $ssl_ca,
+  Optional[Stdlib::Absolutepath] $ssl_cert,
+  Optional[Stdlib::Absolutepath] $ssl_key,
+  Boolean                        $ssl_verify,
+  Integer                        $timeout,
+  String[1]                      $template,
+| -%>
+# OpenVox WebUI Client Configuration
+# Managed by Puppet - DO NOT EDIT
+#
+# This file configures the openvox_classification fact to fetch
+# classification data from the OpenVox WebUI API.
+
+# API endpoint URL
+api_url: <%= $api_url %>
+
+# Template to use for fact generation
+template: <%= $template %>
+
+<%- if $api_token { -%>
+# API authentication token
+api_token: <%= $api_token.unwrap %>
+
+<%- } -%>
+<%- if $api_key { -%>
+# API key for authentication
+api_key: <%= $api_key.unwrap %>
+
+<%- } -%>
+# SSL/TLS Configuration
+<%- if $ssl_ca { -%>
+ssl_ca: <%= $ssl_ca %>
+<%- } -%>
+<%- if $ssl_cert { -%>
+ssl_cert: <%= $ssl_cert %>
+<%- } -%>
+<%- if $ssl_key { -%>
+ssl_key: <%= $ssl_key %>
+<%- } -%>
+ssl_verify: <%= $ssl_verify %>
+
+# Request timeout in seconds
+timeout: <%= $timeout %>

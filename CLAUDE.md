@@ -113,6 +113,7 @@ GET  /api/v1/nodes
 GET  /api/v1/nodes/:certname
 GET  /api/v1/nodes/:certname/facts
 GET  /api/v1/nodes/:certname/reports
+GET  /api/v1/nodes/:certname/classification  # Get classification for Puppet agents
 
 # Groups (full CRUD)
 GET    /api/v1/groups

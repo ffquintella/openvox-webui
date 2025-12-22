@@ -11,8 +11,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::{Fact, Node, Report},
-    services::puppetdb::{QueryBuilder, QueryParams, Resource},
+    db::repository::GroupRepository,
+    middleware::OptionalClientCert,
+    models::{ClassificationResult, Fact, Node, Report},
+    services::{
+        classification::ClassificationService,
+        puppetdb::{QueryBuilder, QueryParams, Resource},
+    },
     utils::error::{AppError, AppResult},
     AppState,
 };
@@ -26,6 +31,7 @@ pub fn routes() -> Router<AppState> {
         .route("/{certname}/reports", get(get_node_reports))
         .route("/{certname}/resources", get(get_node_resources))
         .route("/{certname}/catalog", get(get_node_catalog))
+        .route("/{certname}/classification", get(get_node_classification))
 }
 
 /// Query parameters for listing nodes
@@ -332,4 +338,100 @@ async fn get_node_catalog(
     };
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+/// Query parameters for classification endpoint
+#[derive(Debug, Deserialize)]
+pub struct ClassificationQuery {
+    /// Organization ID (super_admin only)
+    pub organization_id: Option<uuid::Uuid>,
+}
+
+/// Get classification for a specific node
+///
+/// GET /api/v1/nodes/:certname/classification
+///
+/// Returns the classification result for a node including:
+/// - Groups the node belongs to
+/// - Classes assigned via classification
+/// - Variables from matched groups
+/// - Parameters from matched groups
+/// - Environment assignment
+///
+/// ## Authentication
+///
+/// This endpoint supports two authentication methods:
+///
+/// 1. **Client Certificate (mTLS)**: When a client certificate is provided via
+///    headers (X-SSL-Client-CN, X-SSL-Client-DN, or X-SSL-Client-Cert), the
+///    certificate's CN must match the requested certname. This ensures nodes
+///    can only fetch their own classification.
+///
+/// 2. **API Token/Key**: Standard JWT or API key authentication allows fetching
+///    classification for any node (for administrative use).
+///
+/// When using client certificates, the reverse proxy must be configured to pass
+/// the certificate information via headers. See the client_cert module for details.
+async fn get_node_classification(
+    State(state): State<AppState>,
+    Path(certname): Path<String>,
+    Query(query): Query<ClassificationQuery>,
+    client_cert: OptionalClientCert,
+) -> AppResult<Json<ClassificationResult>> {
+    // If a client certificate is provided, verify it matches the requested certname
+    // This prevents nodes from fetching classification data for other nodes
+    if let Some(ref cert) = client_cert.0 {
+        if !cert.matches_certname(&certname) {
+            tracing::warn!(
+                "Client certificate CN '{}' does not match requested certname '{}'",
+                cert.cn,
+                certname
+            );
+            return Err(AppError::Forbidden(format!(
+                "Certificate CN '{}' does not match requested node '{}'",
+                cert.cn, certname
+            )));
+        }
+        tracing::debug!(
+            "Client certificate authentication successful for node '{}'",
+            certname
+        );
+    }
+
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
+
+    // Get facts for the node from PuppetDB
+    let facts = puppetdb
+        .get_node_facts(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
+
+    // Convert facts to JSON object for classification
+    let mut facts_obj = serde_json::Map::new();
+    for fact in facts {
+        facts_obj.insert(fact.name, fact.value);
+    }
+    let facts_json = serde_json::Value::Object(facts_obj);
+
+    // Get organization ID - use default if not specified
+    // In production, this would come from authentication context
+    let org_id = query.organization_id.unwrap_or_else(|| {
+        uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()
+    });
+
+    // Get all groups for classification
+    let group_repo = GroupRepository::new(&state.db);
+    let all_groups = group_repo
+        .get_all(org_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
+
+    // Classify the node
+    let classification_service = ClassificationService::new(all_groups);
+    let classification = classification_service.classify(&certname, &facts_json);
+
+    Ok(Json(classification))
 }
