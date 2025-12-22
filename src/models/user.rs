@@ -68,8 +68,19 @@ pub struct UserPublic {
     pub role: String,
     #[serde(default)]
     pub force_password_change: bool,
+    /// RBAC roles assigned to the user (optional for backwards compatibility)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<UserRoleInfo>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Simplified role info for user responses
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserRoleInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub display_name: String,
 }
 
 impl From<User> for UserPublic {
@@ -81,9 +92,18 @@ impl From<User> for UserPublic {
             email: user.email,
             role: user.role,
             force_password_change: user.force_password_change,
+            roles: None,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
+    }
+}
+
+impl UserPublic {
+    /// Set roles on a UserPublic instance
+    pub fn with_roles(mut self, roles: Vec<UserRoleInfo>) -> Self {
+        self.roles = Some(roles);
+        self
     }
 }
 

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     middleware::AuthUser,
-    models::{AssignRolesRequest, EffectivePermissions, Role, UserPublic},
+    models::{AssignRolesRequest, EffectivePermissions, Role, UserPublic, UserRoleInfo},
     services::AuthService,
     utils::error::ErrorResponse,
     AppState,
@@ -120,7 +120,26 @@ async fn list_users(
         )
     })?;
 
-    Ok(Json(users))
+    // Fetch roles for each user
+    let mut users_with_roles = Vec::with_capacity(users.len());
+    for user in users {
+        let roles = state
+            .rbac_db
+            .get_user_roles(&user.id)
+            .await
+            .unwrap_or_default();
+        let role_infos: Vec<UserRoleInfo> = roles
+            .into_iter()
+            .map(|r| UserRoleInfo {
+                id: r.id,
+                name: r.name,
+                display_name: r.display_name,
+            })
+            .collect();
+        users_with_roles.push(user.with_roles(role_infos));
+    }
+
+    Ok(Json(users_with_roles))
 }
 
 /// Create a new user
@@ -284,7 +303,23 @@ async fn get_user(
         )
     })?;
 
-    Ok(Json(user.into()))
+    // Fetch user's roles
+    let roles = state
+        .rbac_db
+        .get_user_roles(&user.id)
+        .await
+        .unwrap_or_default();
+    let role_infos: Vec<UserRoleInfo> = roles
+        .into_iter()
+        .map(|r| UserRoleInfo {
+            id: r.id,
+            name: r.name,
+            display_name: r.display_name,
+        })
+        .collect();
+
+    let user_public: UserPublic = user.into();
+    Ok(Json(user_public.with_roles(role_infos)))
 }
 
 /// Update a user
