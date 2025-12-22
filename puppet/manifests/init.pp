@@ -105,6 +105,30 @@
 # @param manage_config
 #   Whether to manage configuration files.
 #
+# @param manage_puppetserver_auth
+#   Whether to manage Puppet Server auth.conf for OpenVox WebUI access.
+#   Creates a drop-in config file granting CA API access to the client certificate.
+#
+# @param manage_puppetdb_auth
+#   Whether to manage PuppetDB auth.conf for OpenVox WebUI access.
+#   Creates a drop-in config file granting query/command API access to the client certificate.
+#
+# @param auth_client_certname
+#   The certificate CN to authorize in auth.conf files. If not specified,
+#   auto-discovers from puppet_settings fact or uses the node's FQDN.
+#
+# @param puppetserver_confdir
+#   Directory where Puppet Server configuration files are stored.
+#
+# @param puppetdb_confdir
+#   Directory where PuppetDB configuration files are stored.
+#
+# @param puppetserver_service
+#   Name of the Puppet Server service (for notifications on auth.conf changes).
+#
+# @param puppetdb_service
+#   Name of the PuppetDB service (for notifications on auth.conf changes).
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -121,6 +145,13 @@
 #   # openvox_webui::listen_port: 8080
 #   # openvox_webui::puppetdb_url: 'https://puppetdb.example.com:8081'
 #   include openvox_webui
+#
+# @example Managing auth.conf for Puppet Server and PuppetDB
+#   class { 'openvox_webui':
+#     manage_puppetserver_auth => true,
+#     manage_puppetdb_auth     => true,
+#     auth_client_certname     => 'webui.example.com',
+#   }
 #
 class openvox_webui (
   Enum['present', 'absent', 'latest'] $ensure         = 'present',
@@ -194,10 +225,28 @@ class openvox_webui (
   Boolean                             $manage_service         = true,
   Boolean                             $manage_config          = true,
   Boolean                             $manage_firewall        = false,
+
+  # Auth configuration management
+  # These options manage auth.conf files for Puppet Server and PuppetDB
+  Boolean                             $manage_puppetserver_auth   = false,
+  Boolean                             $manage_puppetdb_auth       = false,
+  Optional[String[1]]                 $auth_client_certname       = undef,
+  Stdlib::Absolutepath                $puppetserver_confdir       = '/etc/puppetlabs/puppetserver/conf.d',
+  Stdlib::Absolutepath                $puppetdb_confdir           = '/etc/puppetlabs/puppetdb/conf.d',
+  String[1]                           $puppetserver_service       = 'puppetserver',
+  String[1]                           $puppetdb_service           = 'puppetdb',
 ) {
   contain openvox_webui::install
   contain openvox_webui::config
   contain openvox_webui::service
+
+  # Optionally manage auth.conf files
+  if $manage_puppetserver_auth or $manage_puppetdb_auth {
+    contain openvox_webui::auth
+
+    Class['openvox_webui::config']
+    -> Class['openvox_webui::auth']
+  }
 
   Class['openvox_webui::install']
   -> Class['openvox_webui::config']
