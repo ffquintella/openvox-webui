@@ -16,7 +16,7 @@ use crate::config::PuppetDbConfig;
 use crate::models::{Fact, Node, Report, ResourceEvent};
 
 /// Check if an SSL file exists and is readable, logging the result
-fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<(), String> {
+fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<usize, String> {
     if !path.exists() {
         let msg = format!("{} file does not exist: {}", file_type, path.display());
         error!("{}", msg);
@@ -30,13 +30,13 @@ fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<(), String> {
                 // Try to actually read a few bytes to verify read permission
                 match fs::read(path) {
                     Ok(contents) => {
-                        info!(
+                        debug!(
                             "{} file is accessible: {} ({} bytes)",
                             file_type,
                             path.display(),
                             contents.len()
                         );
-                        Ok(())
+                        Ok(contents.len())
                     }
                     Err(e) => {
                         let msg = format!(
@@ -378,7 +378,6 @@ impl PuppetDbClient {
         // Check and load CA certificate if provided (must be done before identity for rustls)
         if let Some(ref ca_path) = config.ssl_ca {
             let ca_path_ref = Path::new(ca_path);
-            debug!("Checking CA certificate file: {}", ca_path_ref.display());
 
             if let Err(e) = check_ssl_file_access(ca_path_ref, "CA certificate") {
                 warn!("CA certificate check failed: {}", e);
@@ -393,7 +392,7 @@ impl PuppetDbClient {
                 .context("Failed to parse CA certificate(s) as PEM")?;
 
             info!(
-                "Found {} CA certificate(s) in {}",
+                "PuppetDB SSL: Loading {} CA certificate(s) from: {}",
                 certs.len(),
                 ca_path_ref.display()
             );
@@ -405,7 +404,6 @@ impl PuppetDbClient {
             for cert in certs {
                 builder = builder.add_root_certificate(cert);
             }
-            info!("Loaded CA certificate(s) from {}", ca_path_ref.display());
         }
 
         // Check and load client certificate and key if provided
@@ -413,15 +411,22 @@ impl PuppetDbClient {
             let cert_path_ref = Path::new(cert_path);
             let key_path_ref = Path::new(key_path);
 
-            debug!("Checking SSL client certificate: {}", cert_path_ref.display());
             if let Err(e) = check_ssl_file_access(cert_path_ref, "SSL client certificate") {
                 warn!("SSL client certificate check failed: {}", e);
             }
 
-            debug!("Checking SSL private key: {}", key_path_ref.display());
             if let Err(e) = check_ssl_file_access(key_path_ref, "SSL private key") {
                 warn!("SSL private key check failed: {}", e);
             }
+
+            info!(
+                "PuppetDB SSL: Loading client certificate from: {}",
+                cert_path_ref.display()
+            );
+            info!(
+                "PuppetDB SSL: Loading client private key from: {}",
+                key_path_ref.display()
+            );
 
             let cert = fs::read(cert_path)
                 .with_context(|| format!("Failed to read client certificate: {:?}", cert_path))?;
@@ -436,11 +441,6 @@ impl PuppetDbClient {
             let identity = Identity::from_pem(&pem_bundle)
                 .context("Failed to create identity from certificate and key")?;
             builder = builder.identity(identity);
-            info!(
-                "Loaded SSL client identity from {} and {}",
-                cert_path_ref.display(),
-                key_path_ref.display()
-            );
         } else if config.ssl_cert.is_some() || config.ssl_key.is_some() {
             warn!(
                 "Partial SSL configuration: cert={:?}, key={:?}. Both must be provided for client authentication.",
