@@ -10,13 +10,16 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    db::repository::FactTemplateRepository,
+    db::repository::{FactTemplateRepository, GroupRepository},
     middleware::AuthUser,
     models::{
         CreateFactTemplateRequest, ExportFormat, Fact, FactTemplate, GenerateFactsRequest,
         UpdateFactTemplateRequest,
     },
-    services::facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
+    services::{
+        classification::ClassificationService,
+        facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
+    },
     utils::{
         validation::{format_validation_errors, validate_fact_template},
         AppError,
@@ -268,15 +271,16 @@ async fn generate_facts(
         }
     };
 
-    // Get classification for the node (mock for now if not classified)
-    let classification = crate::models::ClassificationResult {
-        certname: payload.certname.clone(),
-        groups: vec![],
-        classes: vec![],
-        parameters: serde_json::json!({}),
-        variables: serde_json::json!({}),
-        environment: None,
-    };
+    // Get all groups for classification
+    let group_repo = GroupRepository::new(&state.db);
+    let all_groups = group_repo.get_all(org_id).await.map_err(|e| {
+        tracing::error!("Failed to get groups for classification: {}", e);
+        AppError::internal("Failed to get groups for classification")
+    })?;
+
+    // Classify the node to get variables from matched groups
+    let classification_service = ClassificationService::new(all_groups);
+    let classification = classification_service.classify(&payload.certname, &existing_facts);
 
     // Create facter service with the template
     let service = FacterService::new(vec![template]);
@@ -339,15 +343,16 @@ async fn export_facts(
         serde_json::json!({})
     };
 
-    // Get classification (mock for now)
-    let classification = crate::models::ClassificationResult {
-        certname: certname.clone(),
-        groups: vec![],
-        classes: vec![],
-        parameters: serde_json::json!({}),
-        variables: serde_json::json!({}),
-        environment: None,
-    };
+    // Get all groups for classification
+    let group_repo = GroupRepository::new(&state.db);
+    let all_groups = group_repo.get_all(org_id).await.map_err(|e| {
+        tracing::error!("Failed to get groups for classification: {}", e);
+        AppError::internal("Failed to get groups for classification")
+    })?;
+
+    // Classify the node to get variables from matched groups
+    let classification_service = ClassificationService::new(all_groups);
+    let classification = classification_service.classify(&certname, &existing_facts);
 
     // Generate facts
     let service = FacterService::new(vec![template]);
