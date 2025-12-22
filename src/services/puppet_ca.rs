@@ -20,22 +20,57 @@ pub struct PuppetCAService {
 impl PuppetCAService {
     /// Create a new Puppet CA service from configuration
     pub fn new(config: &PuppetCAConfig) -> Result<Self, AppError> {
+        tracing::info!("Initializing Puppet CA client for {}", config.url);
+
         let mut client_builder = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .use_rustls_tls();
 
+        // Use effective methods to support both flat and nested SSL config formats
+        let effective_ca = config.effective_ssl_ca();
+        let effective_cert = config.effective_ssl_cert();
+        let effective_key = config.effective_ssl_key();
+        let effective_verify = config.effective_ssl_verify();
+
+        // Log which SSL configuration format is being used
+        if config.ssl.is_some() {
+            tracing::info!("Puppet CA SSL: Using nested ssl configuration block");
+        } else if effective_ca.is_some() || effective_cert.is_some() {
+            tracing::info!("Puppet CA SSL: Using flat ssl_* configuration");
+        } else {
+            tracing::info!("Puppet CA SSL: No SSL client configuration provided");
+        }
+
         // Add CA certificate if provided (must be done before identity for rustls)
-        if let Some(ca_path) = &config.ssl_ca {
+        if let Some(ca_path) = effective_ca {
+            tracing::info!("Puppet CA SSL: Loading CA certificate from {:?}", ca_path);
             let ca_pem = std::fs::read(ca_path)
                 .map_err(|e| AppError::Internal(format!("Failed to read CA bundle: {}", e)))?;
-            let ca_cert = reqwest::Certificate::from_pem(&ca_pem).map_err(|e| {
-                AppError::Internal(format!("Failed to parse CA certificate: {}", e))
+
+            // Parse all certificates from the CA file (may contain a chain)
+            let certs = reqwest::Certificate::from_pem_bundle(&ca_pem).map_err(|e| {
+                AppError::Internal(format!("Failed to parse CA certificate(s): {}", e))
             })?;
-            client_builder = client_builder.add_root_certificate(ca_cert);
+
+            tracing::info!(
+                "Puppet CA SSL: Parsed {} certificate(s) from CA bundle",
+                certs.len()
+            );
+
+            // Disable built-in root certs when using custom CA
+            client_builder = client_builder.tls_built_in_root_certs(false);
+
+            for cert in certs {
+                client_builder = client_builder.add_root_certificate(cert);
+            }
         }
 
         // Configure SSL certificates if provided
-        if let (Some(cert_path), Some(key_path)) = (&config.ssl_cert, &config.ssl_key) {
+        if let (Some(cert_path), Some(key_path)) = (effective_cert, effective_key) {
+            tracing::info!(
+                "Puppet CA SSL: Loading client certificate from {:?}",
+                cert_path
+            );
             let cert_pem = std::fs::read(cert_path)
                 .map_err(|e| AppError::Internal(format!("Failed to read CA certificate: {}", e)))?;
             let key_pem = std::fs::read(key_path)
@@ -50,16 +85,20 @@ impl PuppetCAService {
                 .map_err(|e| AppError::Internal(format!("Failed to create identity: {}", e)))?;
 
             client_builder = client_builder.identity(identity);
+            tracing::info!("Puppet CA SSL: Client identity configured successfully");
         }
 
         // Configure SSL verification (must be after identity for rustls compatibility)
-        if !config.ssl_verify {
+        if !effective_verify {
+            tracing::warn!("Puppet CA SSL: Certificate verification is DISABLED - this is insecure!");
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
 
         let client = client_builder
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+
+        tracing::info!("Puppet CA client initialized successfully for {}", config.url);
 
         Ok(Self {
             client,

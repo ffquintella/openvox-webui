@@ -60,6 +60,24 @@
 # @param puppetdb_timeout
 #   Timeout in seconds for PuppetDB requests.
 #
+# @param puppet_ca_url
+#   URL of the Puppet CA server to connect to (e.g., 'https://puppet:8140').
+#
+# @param puppet_ca_ssl_cert
+#   Path to SSL certificate for Puppet CA connection.
+#
+# @param puppet_ca_ssl_key
+#   Path to SSL private key for Puppet CA connection.
+#
+# @param puppet_ca_ssl_ca
+#   Path to SSL CA certificate for Puppet CA connection.
+#
+# @param puppet_ca_timeout
+#   Timeout in seconds for Puppet CA requests.
+#
+# @param puppet_ca_auto_discover
+#   Whether to auto-discover Puppet CA connection from local Puppet agent.
+#
 # @param jwt_secret
 #   Secret key for JWT token signing. Should be at least 32 characters.
 #
@@ -138,6 +156,14 @@ class openvox_webui (
   Optional[Stdlib::Absolutepath]      $puppetdb_ssl_ca        = undef,
   Integer[1, 300]                     $puppetdb_timeout       = 30,
   Boolean                             $puppetdb_auto_discover = true,
+
+  # Puppet CA settings
+  Optional[Stdlib::HTTPUrl]           $puppet_ca_url          = undef,
+  Optional[Stdlib::Absolutepath]      $puppet_ca_ssl_cert     = undef,
+  Optional[Stdlib::Absolutepath]      $puppet_ca_ssl_key      = undef,
+  Optional[Stdlib::Absolutepath]      $puppet_ca_ssl_ca       = undef,
+  Integer[1, 300]                     $puppet_ca_timeout      = 30,
+  Boolean                             $puppet_ca_auto_discover = true,
 
   # Authentication settings
   String[32]                          $jwt_secret             = fqdn_rand_string(64),

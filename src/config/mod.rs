@@ -179,17 +179,73 @@ fn default_ssl_verify() -> bool {
     true
 }
 
+/// Puppet CA SSL configuration (nested format from Puppet module)
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct PuppetCASslConfig {
+    /// Path to client certificate (cert_path in Puppet config)
+    #[serde(alias = "cert_path")]
+    pub cert_path: Option<PathBuf>,
+    /// Path to client private key (key_path in Puppet config)
+    #[serde(alias = "key_path")]
+    pub key_path: Option<PathBuf>,
+    /// Path to CA certificate (ca_path in Puppet config)
+    #[serde(alias = "ca_path")]
+    pub ca_path: Option<PathBuf>,
+    /// Verify SSL certificates
+    #[serde(default = "default_ssl_verify")]
+    pub verify: bool,
+}
+
 /// Puppet CA connection configuration
+/// Supports both flat format (ssl_cert, ssl_key, ssl_ca) and nested format (ssl.cert_path, etc.)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PuppetCAConfig {
     pub url: String,
-    #[serde(default = "default_timeout")]
+    /// Timeout in seconds (supports both timeout_secs and timeout field names)
+    #[serde(default = "default_timeout", alias = "timeout")]
     pub timeout_secs: u64,
     #[serde(default = "default_ssl_verify")]
     pub ssl_verify: bool,
+    /// Flat format: ssl_cert path
     pub ssl_cert: Option<PathBuf>,
+    /// Flat format: ssl_key path
     pub ssl_key: Option<PathBuf>,
+    /// Flat format: ssl_ca path
     pub ssl_ca: Option<PathBuf>,
+    /// Nested format: ssl configuration block (from Puppet module)
+    #[serde(default)]
+    pub ssl: Option<PuppetCASslConfig>,
+}
+
+impl PuppetCAConfig {
+    /// Get the effective SSL cert path (checks nested config first, then flat)
+    pub fn effective_ssl_cert(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.cert_path.as_ref())
+            .or(self.ssl_cert.as_ref())
+    }
+
+    /// Get the effective SSL key path (checks nested config first, then flat)
+    pub fn effective_ssl_key(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.key_path.as_ref())
+            .or(self.ssl_key.as_ref())
+    }
+
+    /// Get the effective SSL CA path (checks nested config first, then flat)
+    pub fn effective_ssl_ca(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.ca_path.as_ref())
+            .or(self.ssl_ca.as_ref())
+    }
+
+    /// Get the effective SSL verify setting (checks nested config first, then flat)
+    pub fn effective_ssl_verify(&self) -> bool {
+        self.ssl.as_ref().map(|s| s.verify).unwrap_or(self.ssl_verify)
+    }
 }
 
 /// Authentication configuration
@@ -871,6 +927,37 @@ impl AppConfig {
         if let Ok(ca) = std::env::var("PUPPETDB_SSL_CA") {
             if let Some(ref mut puppetdb) = self.puppetdb {
                 puppetdb.ssl_ca = Some(PathBuf::from(ca));
+            }
+        }
+
+        // Puppet CA overrides
+        if let Ok(url) = std::env::var("PUPPET_CA_URL") {
+            let puppet_ca = self.puppet_ca.get_or_insert_with(|| PuppetCAConfig {
+                url: url.clone(),
+                timeout_secs: default_timeout(),
+                ssl_verify: default_ssl_verify(),
+                ssl_cert: None,
+                ssl_key: None,
+                ssl_ca: None,
+                ssl: None,
+            });
+            puppet_ca.url = url;
+        }
+
+        // Puppet CA SSL certificate overrides
+        if let Ok(cert) = std::env::var("PUPPET_CA_SSL_CERT") {
+            if let Some(ref mut puppet_ca) = self.puppet_ca {
+                puppet_ca.ssl_cert = Some(PathBuf::from(cert));
+            }
+        }
+        if let Ok(key) = std::env::var("PUPPET_CA_SSL_KEY") {
+            if let Some(ref mut puppet_ca) = self.puppet_ca {
+                puppet_ca.ssl_key = Some(PathBuf::from(key));
+            }
+        }
+        if let Ok(ca) = std::env::var("PUPPET_CA_SSL_CA") {
+            if let Some(ref mut puppet_ca) = self.puppet_ca {
+                puppet_ca.ssl_ca = Some(PathBuf::from(ca));
             }
         }
 

@@ -9,6 +9,11 @@
   Optional[Stdlib::Absolutepath] $puppetdb_ssl_key,
   Optional[Stdlib::Absolutepath] $puppetdb_ssl_ca,
   Integer $puppetdb_timeout,
+  Optional[Stdlib::HTTPUrl] $puppet_ca_url,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_cert,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_key,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_ca,
+  Integer $puppet_ca_timeout,
   String $jwt_secret,
   String $jwt_expiry,
   Integer $session_timeout,
@@ -83,6 +88,30 @@ puppetdb:
 <% } else { -%>
 # puppetdb:
 #   url: "https://puppetdb.example.com:8081"
+#   timeout_secs: 30
+#   ssl_verify: true
+#   ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
+#   ssl_key: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
+#   ssl_ca: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
+<% } -%>
+
+<% if $puppet_ca_url { -%>
+puppet_ca:
+  url: "<%= $puppet_ca_url %>"
+  timeout_secs: <%= $puppet_ca_timeout %>
+  ssl_verify: true
+<% if $puppet_ca_ssl_cert { -%>
+  ssl_cert: "<%= $puppet_ca_ssl_cert %>"
+<% } -%>
+<% if $puppet_ca_ssl_key { -%>
+  ssl_key: "<%= $puppet_ca_ssl_key %>"
+<% } -%>
+<% if $puppet_ca_ssl_ca { -%>
+  ssl_ca: "<%= $puppet_ca_ssl_ca %>"
+<% } -%>
+<% } else { -%>
+# puppet_ca:
+#   url: "https://puppet.example.com:8140"
 #   timeout_secs: 30
 #   ssl_verify: true
 #   ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"

@@ -27,6 +27,27 @@ class openvox_webui::config {
       $effective_puppetdb_ssl_ca   = $openvox_webui::puppetdb_ssl_ca
     }
 
+    # Auto-discover Puppet CA connection if enabled and not explicitly configured
+    if $openvox_webui::puppet_ca_auto_discover and !$openvox_webui::puppet_ca_url {
+      $puppet_settings = $facts['puppet_settings']
+      if $puppet_settings {
+        $effective_puppet_ca_url      = pick($openvox_webui::puppet_ca_url, "https://${puppet_settings['server']}:8140")
+        $effective_puppet_ca_ssl_cert = pick($openvox_webui::puppet_ca_ssl_cert, $puppet_settings['hostcert'])
+        $effective_puppet_ca_ssl_key  = pick($openvox_webui::puppet_ca_ssl_key, $puppet_settings['hostprivkey'])
+        $effective_puppet_ca_ssl_ca   = pick($openvox_webui::puppet_ca_ssl_ca, $puppet_settings['localcacert'])
+      } else {
+        $effective_puppet_ca_url      = $openvox_webui::puppet_ca_url
+        $effective_puppet_ca_ssl_cert = $openvox_webui::puppet_ca_ssl_cert
+        $effective_puppet_ca_ssl_key  = $openvox_webui::puppet_ca_ssl_key
+        $effective_puppet_ca_ssl_ca   = $openvox_webui::puppet_ca_ssl_ca
+      }
+    } else {
+      $effective_puppet_ca_url      = $openvox_webui::puppet_ca_url
+      $effective_puppet_ca_ssl_cert = $openvox_webui::puppet_ca_ssl_cert
+      $effective_puppet_ca_ssl_key  = $openvox_webui::puppet_ca_ssl_key
+      $effective_puppet_ca_ssl_ca   = $openvox_webui::puppet_ca_ssl_ca
+    }
+
     file { $openvox_webui::config_dir:
       ensure => directory,
       owner  => 'root',
@@ -80,6 +101,11 @@ class openvox_webui::config {
         puppetdb_ssl_key        => $effective_puppetdb_ssl_key,
         puppetdb_ssl_ca         => $effective_puppetdb_ssl_ca,
         puppetdb_timeout        => $openvox_webui::puppetdb_timeout,
+        puppet_ca_url           => $effective_puppet_ca_url,
+        puppet_ca_ssl_cert      => $effective_puppet_ca_ssl_cert,
+        puppet_ca_ssl_key       => $effective_puppet_ca_ssl_key,
+        puppet_ca_ssl_ca        => $effective_puppet_ca_ssl_ca,
+        puppet_ca_timeout       => $openvox_webui::puppet_ca_timeout,
         jwt_secret              => $openvox_webui::jwt_secret,
         jwt_expiry              => $openvox_webui::jwt_expiry,
         session_timeout         => $openvox_webui::session_timeout,
