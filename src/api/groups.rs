@@ -226,7 +226,15 @@ async fn get_group_nodes(
             let classification = classification_service.classify(&node.certname, &facts);
 
             // Check if this node was classified into the target group
-            if classification.groups.iter().any(|g| g.id == uuid) {
+            let matches_group = classification.groups.iter().any(|g| g.id == uuid);
+            tracing::debug!(
+                "Node '{}' classification for group {}: matched={}, matched_groups={:?}",
+                node.certname,
+                uuid,
+                matches_group,
+                classification.groups.iter().map(|g| (&g.name, &g.match_type)).collect::<Vec<_>>()
+            );
+            if matches_group {
                 matched_nodes.push(node.certname);
             }
         }

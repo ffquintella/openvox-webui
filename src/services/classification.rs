@@ -45,6 +45,13 @@ impl ClassificationService {
         }
 
         while let Some((group, inherited)) = queue.pop_front() {
+            tracing::debug!(
+                "Classifying node '{}' against group '{}' (id={}, inherited={})",
+                certname,
+                group.name,
+                group.id,
+                inherited
+            );
             let mut matched = false;
             let mut matched_rules = vec![];
             let match_type = if inherited {
@@ -139,8 +146,25 @@ impl ClassificationService {
         let fact_value = get_fact_value(facts, &rule.fact_path);
 
         let matched = match &fact_value {
-            Some(value) => match_value(value, &rule.operator, &rule.value),
-            None => false,
+            Some(value) => {
+                let result = match_value(value, &rule.operator, &rule.value);
+                tracing::debug!(
+                    "Rule evaluation: path='{}' operator='{:?}' rule_value={:?} fact_value={:?} matched={}",
+                    rule.fact_path,
+                    rule.operator,
+                    rule.value,
+                    value,
+                    result
+                );
+                result
+            }
+            None => {
+                tracing::debug!(
+                    "Rule evaluation: path='{}' fact not found, matched=false",
+                    rule.fact_path
+                );
+                false
+            }
         };
 
         RuleEvaluation {
