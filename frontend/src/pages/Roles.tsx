@@ -24,6 +24,8 @@ export default function Roles() {
   const { data: resources = [] } = useQuery<ResourceInfo[]>({
     queryKey: ['resources'],
     queryFn: api.getResources,
+    retry: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes - resources rarely change
   });
 
   const { data: usersWithRole = [] } = useQuery({
