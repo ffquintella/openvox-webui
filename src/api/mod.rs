@@ -37,6 +37,8 @@ pub fn public_routes() -> Router<AppState> {
         .route("/health/ready", get(health::readiness))
         // Authentication endpoints (no auth required)
         .nest("/auth", auth::public_routes())
+        // Node classification endpoint for Puppet agents (uses client cert auth)
+        .nest("/nodes", nodes::public_routes())
 }
 
 /// Protected API routes (authentication required)

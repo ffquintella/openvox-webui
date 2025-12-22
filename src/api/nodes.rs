@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     db::repository::GroupRepository,
-    middleware::OptionalClientCert,
-    models::{ClassificationResult, Fact, Node, Report},
+    middleware::{AuthUser, OptionalClientCert},
+    models::{default_organization_uuid, ClassificationResult, Fact, Node, Report},
     services::{
         classification::ClassificationService,
         puppetdb::{QueryBuilder, QueryParams, Resource},
@@ -22,7 +22,7 @@ use crate::{
     AppState,
 };
 
-/// Create routes for node endpoints
+/// Create routes for node endpoints (protected, requires JWT auth)
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_nodes))
@@ -32,6 +32,14 @@ pub fn routes() -> Router<AppState> {
         .route("/{certname}/resources", get(get_node_resources))
         .route("/{certname}/catalog", get(get_node_catalog))
         .route("/{certname}/classification", get(get_node_classification))
+}
+
+/// Public routes for node endpoints (no JWT required, uses client cert auth)
+/// These endpoints are used by Puppet agents to fetch their own classification
+pub fn public_routes() -> Router<AppState> {
+    Router::new()
+        // Use /classify path to avoid conflict with protected /classification endpoint
+        .route("/{certname}/classify", get(get_node_classification_public))
 }
 
 /// Query parameters for listing nodes
@@ -376,6 +384,7 @@ async fn get_node_classification(
     State(state): State<AppState>,
     Path(certname): Path<String>,
     Query(query): Query<ClassificationQuery>,
+    auth_user: AuthUser,
     client_cert: OptionalClientCert,
 ) -> AppResult<Json<ClassificationResult>> {
     // If a client certificate is provided, verify it matches the requested certname
@@ -416,11 +425,8 @@ async fn get_node_classification(
     }
     let facts_json = serde_json::Value::Object(facts_obj);
 
-    // Get organization ID - use default if not specified
-    // In production, this would come from authentication context
-    let org_id = query.organization_id.unwrap_or_else(|| {
-        uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()
-    });
+    // Get organization ID from authenticated user, or allow override for super_admin
+    let org_id = query.organization_id.unwrap_or(auth_user.organization_id);
 
     // Get all groups for classification
     let group_repo = GroupRepository::new(&state.db);
@@ -432,6 +438,98 @@ async fn get_node_classification(
     // Classify the node
     let classification_service = ClassificationService::new(all_groups);
     let classification = classification_service.classify(&certname, &facts_json);
+
+    Ok(Json(classification))
+}
+
+/// Public classification endpoint for Puppet agents
+///
+/// GET /api/v1/nodes/:certname/classify (public route)
+///
+/// This endpoint does NOT require JWT authentication. When deployed behind
+/// a reverse proxy with mTLS enabled, the proxy should pass client certificate
+/// headers (X-SSL-Client-CN, X-SSL-Client-DN, X-SSL-Client-Verify) and the
+/// endpoint will verify that the certificate CN matches the requested certname.
+///
+/// When no client certificate headers are present (e.g., direct access without
+/// mTLS proxy), the endpoint allows access but logs a warning. In production,
+/// you should configure a reverse proxy to handle client certificate validation.
+///
+/// This endpoint classifies the node against ALL organizations and:
+/// - Returns the classification from the matching organization
+/// - Returns an error if the node matches groups from multiple organizations
+/// - Uses the default organization if no groups match
+///
+/// This is the endpoint Puppet agents should use via the openvox_classification fact.
+async fn get_node_classification_public(
+    State(state): State<AppState>,
+    Path(certname): Path<String>,
+    client_cert: OptionalClientCert,
+) -> AppResult<Json<ClassificationResult>> {
+    // Check client certificate if provided via proxy headers
+    match &client_cert.0 {
+        Some(cert) => {
+            // Client cert headers present - verify CN matches certname
+            if !cert.matches_certname(&certname) {
+                tracing::warn!(
+                    "Public classification: Certificate CN '{}' does not match requested certname '{}'",
+                    cert.cn,
+                    certname
+                );
+                return Err(AppError::Forbidden(format!(
+                    "Certificate CN '{}' does not match requested node '{}'",
+                    cert.cn, certname
+                )));
+            }
+            tracing::debug!(
+                "Public classification: Client certificate authentication successful for node '{}'",
+                certname
+            );
+        }
+        None => {
+            // No client certificate headers - allow but log for awareness
+            // In production, a reverse proxy should be configured to pass client cert headers
+            tracing::debug!(
+                "Public classification: No client certificate headers for node '{}' (direct access or proxy not configured for mTLS)",
+                certname
+            );
+        }
+    }
+
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
+
+    // Get facts for the node from PuppetDB
+    let facts = puppetdb
+        .get_node_facts(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
+
+    // Convert facts to JSON object for classification
+    let mut facts_obj = serde_json::Map::new();
+    for fact in facts {
+        facts_obj.insert(fact.name, fact.value);
+    }
+    let facts_json = serde_json::Value::Object(facts_obj);
+
+    // Get ALL groups from ALL organizations for cross-org classification
+    let group_repo = GroupRepository::new(&state.db);
+    let all_groups = group_repo
+        .get_all_across_organizations()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
+
+    // Classify the node against all organizations
+    // This will detect if the node matches groups from multiple orgs (conflict)
+    // and use the default org if no matches are found
+    let classification_service = ClassificationService::new(all_groups);
+    let classification = classification_service.classify_across_organizations(
+        &certname,
+        &facts_json,
+        default_organization_uuid(),
+    );
 
     Ok(Json(classification))
 }

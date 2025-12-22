@@ -9,6 +9,11 @@ pub struct ClassificationResult {
     /// Certificate name of the classified node
     pub certname: String,
 
+    /// Organization ID that owns this node's classification
+    /// This is determined by which organization's groups matched the node
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<Uuid>,
+
     /// Groups the node belongs to
     pub groups: Vec<GroupMatch>,
 
@@ -23,6 +28,10 @@ pub struct ClassificationResult {
 
     /// Environment (from highest priority group)
     pub environment: Option<String>,
+
+    /// Error if node matches groups from multiple organizations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_error: Option<String>,
 }
 
 /// A group that a node matches
@@ -87,11 +96,13 @@ mod tests {
     fn test_classification_result() {
         let result = ClassificationResult {
             certname: "node1.example.com".to_string(),
+            organization_id: None,
             groups: vec![],
             classes: vec!["profile::base".to_string()],
             parameters: serde_json::json!({}),
             variables: serde_json::json!({}),
             environment: Some("production".to_string()),
+            conflict_error: None,
         };
 
         assert_eq!(result.certname, "node1.example.com");

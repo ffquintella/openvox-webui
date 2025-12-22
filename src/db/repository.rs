@@ -108,6 +108,45 @@ impl<'a> GroupRepository<'a> {
         Ok(groups)
     }
 
+    /// Get all node groups from ALL organizations with their rules and pinned nodes
+    ///
+    /// This is used for public classification where we need to classify a node
+    /// against all organizations and detect conflicts.
+    pub async fn get_all_across_organizations(&self) -> Result<Vec<NodeGroup>> {
+        let rows = sqlx::query_as::<_, GroupRow>(
+            r#"
+            SELECT id, organization_id, name, description, parent_id, environment,
+                   rule_match_type, classes, parameters, variables
+            FROM node_groups
+            ORDER BY organization_id, name
+            "#,
+        )
+        .fetch_all(self.pool)
+        .await
+        .context("Failed to fetch groups across organizations")?;
+
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Collect all group IDs for batch loading
+        let group_ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+
+        // Batch load all rules for these groups (single query)
+        let rules_map = self.batch_get_rules(&group_ids).await?;
+
+        // Batch load all pinned nodes for these groups (single query)
+        let pinned_map = self.batch_get_pinned_nodes(&group_ids).await?;
+
+        // Convert rows to groups using the pre-loaded data
+        let mut groups = Vec::with_capacity(rows.len());
+        for row in rows {
+            let group = self.row_to_group_with_data(row, &rules_map, &pinned_map)?;
+            groups.push(group);
+        }
+        Ok(groups)
+    }
+
     /// Get a node group by ID with its rules and pinned nodes
     pub async fn get_by_id(&self, organization_id: Uuid, id: Uuid) -> Result<Option<NodeGroup>> {
         let row = sqlx::query_as::<_, GroupRow>(

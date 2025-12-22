@@ -21,7 +21,100 @@ impl ClassificationService {
     }
 
     /// Classify a node based on its facts (supports hierarchical groups and inheritance)
+    ///
+    /// This method classifies against groups from a single organization.
+    /// For multi-organization classification with conflict detection, use `classify_across_organizations`.
     pub fn classify(&self, certname: &str, facts: &serde_json::Value) -> ClassificationResult {
+        self.classify_internal(certname, facts, None)
+    }
+
+    /// Classify a node against groups from all organizations and detect conflicts
+    ///
+    /// This method:
+    /// 1. Groups the input groups by organization
+    /// 2. Classifies the node against each organization's groups
+    /// 3. Detects if the node matches groups from multiple organizations (conflict)
+    /// 4. Returns the classification from the matching organization, or an error if conflicted
+    /// 5. If no groups match, uses the default organization
+    pub fn classify_across_organizations(
+        &self,
+        certname: &str,
+        facts: &serde_json::Value,
+        default_org_id: Uuid,
+    ) -> ClassificationResult {
+        // Group all groups by organization
+        let mut org_groups: HashMap<Uuid, Vec<&NodeGroup>> = HashMap::new();
+        for group in &self.groups {
+            org_groups
+                .entry(group.organization_id)
+                .or_default()
+                .push(group);
+        }
+
+        // Classify against each organization and track which ones have matches
+        let mut org_results: Vec<(Uuid, ClassificationResult)> = Vec::new();
+
+        for (org_id, groups) in &org_groups {
+            let org_service = ClassificationService {
+                groups: groups.iter().map(|g| (*g).clone()).collect(),
+            };
+            let result = org_service.classify_internal(certname, facts, Some(*org_id));
+
+            // Check if this organization had any non-inherited matches
+            // (inherited matches don't count as the node being "in" that org)
+            let has_direct_matches = result.groups.iter().any(|g| {
+                g.match_type == MatchType::Rules || g.match_type == MatchType::Pinned
+            });
+
+            if has_direct_matches {
+                org_results.push((*org_id, result));
+            }
+        }
+
+        // Check for conflicts (node matches in multiple organizations)
+        if org_results.len() > 1 {
+            let org_names: Vec<String> = org_results
+                .iter()
+                .map(|(id, _)| id.to_string())
+                .collect();
+
+            // Return the first result but with a conflict error
+            let mut result = org_results.remove(0).1;
+            result.conflict_error = Some(format!(
+                "Node '{}' matches groups from multiple organizations: {}. \
+                 Please ensure nodes are assigned to only one organization.",
+                certname,
+                org_names.join(", ")
+            ));
+            return result;
+        }
+
+        // Return the single matching org's result, or empty result with default org
+        if let Some((org_id, mut result)) = org_results.pop() {
+            result.organization_id = Some(org_id);
+            result
+        } else {
+            // No matches - return empty classification with default org
+            ClassificationResult {
+                certname: certname.to_string(),
+                organization_id: Some(default_org_id),
+                groups: vec![],
+                classes: vec![],
+                parameters: serde_json::json!({}),
+                variables: serde_json::json!({}),
+                environment: None,
+                conflict_error: None,
+            }
+        }
+    }
+
+    /// Internal classification method that handles the actual matching logic
+    fn classify_internal(
+        &self,
+        certname: &str,
+        facts: &serde_json::Value,
+        organization_id: Option<Uuid>,
+    ) -> ClassificationResult {
         let mut matched_groups: Vec<GroupMatch> = vec![];
         let mut all_classes: Vec<String> = vec![];
         let mut all_parameters = serde_json::json!({});
@@ -117,11 +210,13 @@ impl ClassificationService {
 
         ClassificationResult {
             certname: certname.to_string(),
+            organization_id,
             groups: matched_groups,
             classes: all_classes,
             parameters: all_parameters,
             variables: all_variables,
             environment,
+            conflict_error: None,
         }
     }
 

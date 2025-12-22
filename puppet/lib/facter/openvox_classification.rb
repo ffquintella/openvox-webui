@@ -52,23 +52,47 @@ Facter.add(:openvox_classification) do
       return nil
     end
 
-    # Get authentication
+    # Get authentication (optional - the public /classify endpoint doesn't require auth)
     api_token = config['api_token'] || config['token']
     api_key = config['api_key']
     ssl_cert = config['ssl_cert']
     ssl_key = config['ssl_key']
 
-    # Authentication can be via token, API key, or client certificate
-    has_token_auth = api_token || api_key
-    has_cert_auth = ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+    # Get certname from multiple sources (in priority order):
+    # 1. Config file override
+    # 2. Facter clientcert (set by Puppet agent)
+    # 3. puppet.conf certname setting
+    # 4. FQDN as fallback
+    certname = config['certname'] || Facter.value(:clientcert)
 
-    unless has_token_auth || has_cert_auth
-      Facter.warn('openvox_classification: No authentication configured (api_token, api_key, or ssl_cert/ssl_key required)')
-      return nil
+    # Try to read certname from puppet.conf if not found yet
+    if certname.nil? || certname.empty?
+      puppet_conf_paths = [
+        '/etc/puppetlabs/puppet/puppet.conf',
+        '/etc/puppet/puppet.conf'
+      ]
+      puppet_conf_paths.each do |conf_path|
+        next unless File.exist?(conf_path)
+
+        begin
+          File.readlines(conf_path).each do |line|
+            # Match certname = value (allowing for spaces and comments)
+            if line =~ /^\s*certname\s*=\s*(\S+)/
+              certname = Regexp.last_match(1)
+              Facter.debug("openvox_classification: Found certname '#{certname}' in #{conf_path}")
+              break
+            end
+          end
+        rescue StandardError => e
+          Facter.debug("openvox_classification: Could not read #{conf_path}: #{e.message}")
+        end
+        break if certname
+      end
     end
 
-    # Get certname (use facter value or config override)
-    certname = config['certname'] || Facter.value(:clientcert) || Facter.value(:fqdn)
+    # Fall back to FQDN if still not found
+    certname ||= Facter.value(:fqdn)
+
     unless certname
       Facter.warn('openvox_classification: Could not determine certname')
       return nil
@@ -77,9 +101,14 @@ Facter.add(:openvox_classification) do
     # Get template name (defaults to 'classification')
     template = config['template'] || 'classification'
 
+    # Get organization ID (optional - uses server default if not specified)
+    organization_id = config['organization_id']
+
     # Build the API URL for classification endpoint
-    # Use the nodes classification endpoint which returns full classification
-    classification_url = "#{api_url.chomp('/')}/api/v1/nodes/#{certname}/classification"
+    # Use the public /classify endpoint which accepts client certificate auth
+    # (the /classification endpoint requires JWT authentication)
+    classification_url = "#{api_url.chomp('/')}/api/v1/nodes/#{certname}/classify"
+    classification_url += "?organization_id=#{organization_id}" if organization_id
 
     begin
       uri = URI.parse(classification_url)
