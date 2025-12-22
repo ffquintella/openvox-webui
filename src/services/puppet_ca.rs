@@ -6,9 +6,32 @@ use crate::models::{
     RenewCAResponse, RevokeResponse, SignRequest, SignResponse,
 };
 use crate::utils::error::AppError;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{Client, Identity, StatusCode};
 use std::time::Duration;
+
+/// Parse Puppet CA date format (e.g., "2030-12-17T10:50:34UTC")
+/// Puppet CA returns dates with "UTC" suffix instead of "Z" or offset
+fn parse_puppet_date(date_str: &str) -> Option<DateTime<Utc>> {
+    // Try RFC3339 first (standard format with Z or offset)
+    if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
+        return Some(dt.with_timezone(&Utc));
+    }
+
+    // Try Puppet CA format: "2030-12-17T10:50:34UTC"
+    let normalized = date_str.trim_end_matches("UTC");
+    if let Ok(naive) = NaiveDateTime::parse_from_str(normalized, "%Y-%m-%dT%H:%M:%S") {
+        return Some(DateTime::from_naive_utc_and_offset(naive, Utc));
+    }
+
+    // Try without time zone suffix
+    if let Ok(naive) = NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S") {
+        return Some(DateTime::from_naive_utc_and_offset(naive, Utc));
+    }
+
+    tracing::warn!("Failed to parse Puppet CA date: {}", date_str);
+    None
+}
 
 /// Puppet CA client for managing certificates
 #[derive(Clone)]
@@ -123,8 +146,7 @@ impl PuppetCAService {
             ca_expires_at: ca_info.as_ref()
                 .and_then(|c| c.get("not_after"))
                 .and_then(|v| v.as_str())
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
+                .and_then(parse_puppet_date),
             pending_requests: requests.len(),
             signed_certificates: certificates.len(),
         })
@@ -441,8 +463,7 @@ impl PuppetCAService {
                         .to_string(),
                     expires_at: result["not_after"]
                         .as_str()
-                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                        .map(|dt| dt.with_timezone(&Utc))
+                        .and_then(parse_puppet_date)
                         .unwrap_or_else(Utc::now),
                     message: "CA certificate renewed successfully".to_string(),
                 })
@@ -468,8 +489,7 @@ impl PuppetCAService {
                 .to_string(),
             requested_at: data["requested_at"]
                 .as_str()
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc))
+                .and_then(parse_puppet_date)
                 .unwrap_or_else(Utc::now),
             dns_alt_names: data["dns_alt_names"]
                 .as_array()
@@ -496,6 +516,24 @@ impl PuppetCAService {
             _ => CertificateStatus::Requested,
         };
 
+        // Parse dates using Puppet CA format helper
+        let not_before = data["not_before"]
+            .as_str()
+            .and_then(parse_puppet_date)
+            .unwrap_or_else(Utc::now);
+
+        let not_after = data["not_after"]
+            .as_str()
+            .and_then(parse_puppet_date)
+            .unwrap_or_else(|| {
+                // Default to 5 years from now if not_after is missing (shouldn't happen for signed certs)
+                tracing::warn!(
+                    "Certificate {} missing not_after date, using default",
+                    data["name"].as_str().unwrap_or("unknown")
+                );
+                Utc::now() + chrono::Duration::days(365 * 5)
+            });
+
         Ok(Certificate {
             certname: data["name"]
                 .as_str()
@@ -506,16 +544,8 @@ impl PuppetCAService {
                 .or(data["serial"].as_str())
                 .unwrap_or("unknown")
                 .to_string(),
-            not_before: data["not_before"]
-                .as_str()
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(Utc::now),
-            not_after: data["not_after"]
-                .as_str()
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(Utc::now),
+            not_before,
+            not_after,
             dns_alt_names: data["dns_alt_names"]
                 .as_array()
                 .map(|arr| {
