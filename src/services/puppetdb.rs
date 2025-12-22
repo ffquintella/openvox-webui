@@ -404,8 +404,23 @@ impl PuppetDbClient {
             .timeout(Duration::from_secs(config.timeout_secs))
             .use_rustls_tls();
 
+        // Use effective methods to support both flat and nested SSL config formats
+        let effective_ca = config.effective_ssl_ca();
+        let effective_cert = config.effective_ssl_cert();
+        let effective_key = config.effective_ssl_key();
+        let effective_verify = config.effective_ssl_verify();
+
+        // Log which SSL configuration format is being used
+        if config.ssl.is_some() {
+            info!("PuppetDB SSL: Using nested ssl configuration block");
+        } else if effective_ca.is_some() || effective_cert.is_some() {
+            info!("PuppetDB SSL: Using flat ssl_* configuration");
+        } else {
+            info!("PuppetDB SSL: No SSL client configuration provided");
+        }
+
         // Check and load CA certificate if provided (must be done before identity for rustls)
-        if let Some(ref ca_path) = config.ssl_ca {
+        if let Some(ca_path) = effective_ca {
             let ca_path_ref = Path::new(ca_path);
 
             // Check file access - this logs success/failure
@@ -435,7 +450,7 @@ impl PuppetDbClient {
         }
 
         // Check and load client certificate and key if provided
-        if let (Some(ref cert_path), Some(ref key_path)) = (&config.ssl_cert, &config.ssl_key) {
+        if let (Some(cert_path), Some(key_path)) = (effective_cert, effective_key) {
             let cert_path_ref = Path::new(cert_path);
             let key_path_ref = Path::new(key_path);
 
@@ -461,16 +476,16 @@ impl PuppetDbClient {
             let identity = Identity::from_pem(&pem_bundle)
                 .context("Failed to create identity from certificate and key")?;
             builder = builder.identity(identity);
-        } else if config.ssl_cert.is_some() || config.ssl_key.is_some() {
+        } else if effective_cert.is_some() || effective_key.is_some() {
             warn!(
                 "Partial SSL configuration: cert={:?}, key={:?}. Both must be provided for client authentication.",
-                config.ssl_cert.is_some(),
-                config.ssl_key.is_some()
+                effective_cert.is_some(),
+                effective_key.is_some()
             );
         }
 
         // Configure SSL verification (must be after identity for rustls compatibility)
-        if !config.ssl_verify {
+        if !effective_verify {
             warn!("SSL certificate verification is DISABLED - this is insecure!");
             builder = builder.danger_accept_invalid_certs(true);
         }
@@ -1147,6 +1162,7 @@ mod tests {
             ssl_cert: None,
             ssl_key: None,
             ssl_ca: None,
+            ssl: None,
         };
 
         let client = PuppetDbClient::new(&config).unwrap();

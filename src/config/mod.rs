@@ -102,17 +102,73 @@ fn default_min_tls_version() -> String {
     "1.3".to_string()
 }
 
+/// PuppetDB SSL configuration (nested format from Puppet module)
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct PuppetDbSslConfig {
+    /// Path to client certificate (cert_path in Puppet config)
+    #[serde(alias = "cert_path")]
+    pub cert_path: Option<PathBuf>,
+    /// Path to client private key (key_path in Puppet config)
+    #[serde(alias = "key_path")]
+    pub key_path: Option<PathBuf>,
+    /// Path to CA certificate (ca_path in Puppet config)
+    #[serde(alias = "ca_path")]
+    pub ca_path: Option<PathBuf>,
+    /// Verify SSL certificates
+    #[serde(default = "default_ssl_verify")]
+    pub verify: bool,
+}
+
 /// PuppetDB connection configuration
+/// Supports both flat format (ssl_cert, ssl_key, ssl_ca) and nested format (ssl.cert_path, etc.)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PuppetDbConfig {
     pub url: String,
-    #[serde(default = "default_timeout")]
+    /// Timeout in seconds (supports both timeout_secs and timeout field names)
+    #[serde(default = "default_timeout", alias = "timeout")]
     pub timeout_secs: u64,
     #[serde(default = "default_ssl_verify")]
     pub ssl_verify: bool,
+    /// Flat format: ssl_cert path
     pub ssl_cert: Option<PathBuf>,
+    /// Flat format: ssl_key path
     pub ssl_key: Option<PathBuf>,
+    /// Flat format: ssl_ca path
     pub ssl_ca: Option<PathBuf>,
+    /// Nested format: ssl configuration block (from Puppet module)
+    #[serde(default)]
+    pub ssl: Option<PuppetDbSslConfig>,
+}
+
+impl PuppetDbConfig {
+    /// Get the effective SSL cert path (checks nested config first, then flat)
+    pub fn effective_ssl_cert(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.cert_path.as_ref())
+            .or(self.ssl_cert.as_ref())
+    }
+
+    /// Get the effective SSL key path (checks nested config first, then flat)
+    pub fn effective_ssl_key(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.key_path.as_ref())
+            .or(self.ssl_key.as_ref())
+    }
+
+    /// Get the effective SSL CA path (checks nested config first, then flat)
+    pub fn effective_ssl_ca(&self) -> Option<&PathBuf> {
+        self.ssl
+            .as_ref()
+            .and_then(|s| s.ca_path.as_ref())
+            .or(self.ssl_ca.as_ref())
+    }
+
+    /// Get the effective SSL verify setting (checks nested config first, then flat)
+    pub fn effective_ssl_verify(&self) -> bool {
+        self.ssl.as_ref().map(|s| s.verify).unwrap_or(self.ssl_verify)
+    }
 }
 
 fn default_timeout() -> u64 {
@@ -796,6 +852,7 @@ impl AppConfig {
                 ssl_cert: None,
                 ssl_key: None,
                 ssl_ca: None,
+                ssl: None,
             });
             puppetdb.url = url;
         }

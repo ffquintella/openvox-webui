@@ -69,27 +69,25 @@ logging:
 <% if $puppetdb_url { -%>
 puppetdb:
   url: "<%= $puppetdb_url %>"
-  timeout: <%= $puppetdb_timeout %>
+  timeout_secs: <%= $puppetdb_timeout %>
+  ssl_verify: true
 <% if $puppetdb_ssl_cert { -%>
-  ssl:
-    cert_path: "<%= $puppetdb_ssl_cert %>"
+  ssl_cert: "<%= $puppetdb_ssl_cert %>"
+<% } -%>
 <% if $puppetdb_ssl_key { -%>
-    key_path: "<%= $puppetdb_ssl_key %>"
+  ssl_key: "<%= $puppetdb_ssl_key %>"
 <% } -%>
 <% if $puppetdb_ssl_ca { -%>
-    ca_path: "<%= $puppetdb_ssl_ca %>"
-<% } -%>
-    verify: true
+  ssl_ca: "<%= $puppetdb_ssl_ca %>"
 <% } -%>
 <% } else { -%>
 # puppetdb:
 #   url: "https://puppetdb.example.com:8081"
-#   timeout: 30
-#   ssl:
-#     cert_path: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
-#     key_path: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
-#     ca_path: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
-#     verify: true
+#   timeout_secs: 30
+#   ssl_verify: true
+#   ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
+#   ssl_key: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
+#   ssl_ca: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
 <% } -%>
 
 auth:
