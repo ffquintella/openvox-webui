@@ -108,11 +108,41 @@ impl PuppetCAService {
 
     /// Get CA status information
     pub async fn get_status(&self) -> Result<CAStatus, AppError> {
-        let url = format!("{}/puppet-ca/v1/certificate_status/ca", self.base_url);
+        tracing::debug!("Puppet CA: Fetching CA status");
+
+        // Get counts from the working endpoints
+        let requests = self.list_requests().await?;
+        let certificates = self.list_certificates().await?;
+
+        // Try to find the CA certificate in the list of all certificates
+        let ca_info = self.get_ca_certificate_info().await.ok();
+
+        Ok(CAStatus {
+            available: true,
+            ca_fingerprint: ca_info.as_ref().and_then(|c| c.get("fingerprint")).and_then(|v| v.as_str()).map(String::from),
+            ca_expires_at: ca_info.as_ref()
+                .and_then(|c| c.get("not_after"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+            pending_requests: requests.len(),
+            signed_certificates: certificates.len(),
+        })
+    }
+
+    /// Get CA certificate info from the certificate list
+    async fn get_ca_certificate_info(&self) -> Result<serde_json::Value, AppError> {
+        // Fetch all certificates and look for the CA cert (usually named "ca" or the puppet server certname)
+        let url = format!(
+            "{}/puppet-ca/v1/certificate_statuses/all?environment=production",
+            self.base_url
+        );
+        tracing::debug!("Puppet CA: Fetching all certificates to find CA info from {}", url);
 
         let response = self
             .client
             .get(&url)
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("CA service error: {}", e)))?;
@@ -124,35 +154,42 @@ impl PuppetCAService {
             )));
         }
 
-        // Parse CA certificate info
-        let ca_info: serde_json::Value = response
+        let certs: Vec<serde_json::Value> = response
             .json()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to parse CA response: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to parse certificates: {}", e)))?;
 
-        // Get counts
-        let requests = self.list_requests().await?;
-        let certificates = self.list_certificates().await?;
+        // Look for the CA certificate - it's typically the one with name "ca"
+        // or we can look for the certificate that has the earliest not_before date
+        for cert in &certs {
+            if let Some(name) = cert.get("name").and_then(|v| v.as_str()) {
+                if name == "ca" || name.ends_with(" CA") || name.contains("Puppet CA") {
+                    tracing::debug!("Found CA certificate: {}", name);
+                    return Ok(cert.clone());
+                }
+            }
+        }
 
-        Ok(CAStatus {
-            available: true,
-            ca_fingerprint: ca_info["fingerprint"].as_str().map(String::from),
-            ca_expires_at: ca_info["not_after"]
-                .as_str()
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
-            pending_requests: requests.len(),
-            signed_certificates: certificates.len(),
-        })
+        // If no explicit CA found, return the first signed certificate as a fallback
+        // (this gives us at least some info about the CA infrastructure)
+        certs.into_iter()
+            .find(|c| c.get("state").and_then(|v| v.as_str()) == Some("signed"))
+            .ok_or_else(|| AppError::NotFound("CA certificate not found in certificate list".to_string()))
     }
 
     /// List pending certificate requests
     pub async fn list_requests(&self) -> Result<Vec<CertificateRequest>, AppError> {
-        let url = format!("{}/puppet-ca/v1/certificate_requests/all", self.base_url);
+        // Use certificate_statuses with state=requested to get pending CSRs
+        let url = format!(
+            "{}/puppet-ca/v1/certificate_statuses/all?environment=production&state=requested",
+            self.base_url
+        );
+        tracing::debug!("Puppet CA: Fetching certificate requests from {}", url);
 
         let response = self
             .client
             .get(&url)
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("CA service error: {}", e)))?;
@@ -179,11 +216,17 @@ impl PuppetCAService {
 
     /// List signed certificates
     pub async fn list_certificates(&self) -> Result<Vec<Certificate>, AppError> {
-        let url = format!("{}/puppet-ca/v1/certificate_status/all", self.base_url);
+        // Use certificate_statuses (plural) with state=signed to list signed certs
+        let url = format!(
+            "{}/puppet-ca/v1/certificate_statuses/all?environment=production&state=signed",
+            self.base_url
+        );
+        tracing::debug!("Puppet CA: Fetching signed certificates from {}", url);
 
         let response = self
             .client
             .get(&url)
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("CA service error: {}", e)))?;
@@ -211,13 +254,15 @@ impl PuppetCAService {
     /// Get certificate details by certname
     pub async fn get_certificate(&self, certname: &str) -> Result<Certificate, AppError> {
         let url = format!(
-            "{}/puppet-ca/v1/certificate_status/{}",
+            "{}/puppet-ca/v1/certificate_status/{}?environment=production",
             self.base_url, certname
         );
+        tracing::debug!("Puppet CA: Fetching certificate {} from {}", certname, url);
 
         let response = self
             .client
             .get(&url)
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("CA service error: {}", e)))?;
@@ -247,9 +292,10 @@ impl PuppetCAService {
         request: &SignRequest,
     ) -> Result<SignResponse, AppError> {
         let url = format!(
-            "{}/puppet-ca/v1/certificate_status/{}",
+            "{}/puppet-ca/v1/certificate_status/{}?environment=production",
             self.base_url, certname
         );
+        tracing::info!("Puppet CA: Signing certificate {}", certname);
 
         let mut body = serde_json::json!({
             "desired_state": "signed"
@@ -262,6 +308,7 @@ impl PuppetCAService {
         let response = self
             .client
             .put(&url)
+            .header("Content-Type", "text/pson")
             .json(&body)
             .send()
             .await
@@ -294,9 +341,10 @@ impl PuppetCAService {
     /// Reject a certificate request
     pub async fn reject_certificate(&self, certname: &str) -> Result<RejectResponse, AppError> {
         let url = format!(
-            "{}/puppet-ca/v1/certificate_status/{}",
+            "{}/puppet-ca/v1/certificate_status/{}?environment=production",
             self.base_url, certname
         );
+        tracing::info!("Puppet CA: Rejecting certificate {}", certname);
 
         let body = serde_json::json!({
             "desired_state": "revoked"
@@ -305,6 +353,7 @@ impl PuppetCAService {
         let response = self
             .client
             .put(&url)
+            .header("Content-Type", "text/pson")
             .json(&body)
             .send()
             .await
@@ -329,13 +378,15 @@ impl PuppetCAService {
     /// Revoke a signed certificate
     pub async fn revoke_certificate(&self, certname: &str) -> Result<RevokeResponse, AppError> {
         let url = format!(
-            "{}/puppet-ca/v1/certificate_status/{}",
+            "{}/puppet-ca/v1/certificate_status/{}?environment=production",
             self.base_url, certname
         );
+        tracing::info!("Puppet CA: Revoking certificate {}", certname);
 
         let response = self
             .client
             .delete(&url)
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("CA service error: {}", e)))?;
@@ -358,7 +409,11 @@ impl PuppetCAService {
 
     /// Renew the CA certificate
     pub async fn renew_ca(&self, request: &RenewCARequest) -> Result<RenewCAResponse, AppError> {
-        let url = format!("{}/puppet-ca/v1/certificate/ca", self.base_url);
+        let url = format!(
+            "{}/puppet-ca/v1/certificate/ca?environment=production",
+            self.base_url
+        );
+        tracing::info!("Puppet CA: Renewing CA certificate for {} days", request.days);
 
         let body = serde_json::json!({
             "ttl": format!("{}d", request.days)
@@ -367,6 +422,7 @@ impl PuppetCAService {
         let response = self
             .client
             .post(&url)
+            .header("Accept", "application/json")
             .json(&body)
             .send()
             .await

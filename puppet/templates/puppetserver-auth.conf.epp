@@ -21,7 +21,8 @@ authorization: {
             sort-order: 100
             name: "openvox-webui-certificate-status"
         },
-        # Allow OpenVox WebUI to access certificate_statuses API (bulk operations)
+        # Allow OpenVox WebUI to access certificate_statuses API (list all certificates)
+        # Used for listing signed, requested, and revoked certificates
         {
             match-request: {
                 path: "^/puppet-ca/v1/certificate_statuses"

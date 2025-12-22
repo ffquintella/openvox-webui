@@ -1,7 +1,10 @@
-# @summary Manages authentication configuration for Puppet Server and PuppetDB
+# @summary Manages authentication and CA configuration for Puppet Server and PuppetDB
 #
-# This class configures the auth.conf files for Puppet Server and PuppetDB
+# This class configures the auth.conf and ca.conf files for Puppet Server and PuppetDB
 # to allow the OpenVox WebUI client certificate to access the required APIs.
+#
+# The ca.conf management enables the certificate_status endpoint which is disabled
+# by default in Puppet Server. This is required for certificate management operations.
 #
 # @api private
 #
@@ -55,6 +58,24 @@ class openvox_webui::auth {
           client_certname => $client_certname,
       }),
       notify  => Service[$openvox_webui::puppetdb_service],
+    }
+  }
+
+  # Manage Puppet Server ca.conf to enable certificate_status endpoint
+  # This endpoint is disabled by default in Puppet Server
+  if $openvox_webui::manage_puppetserver_ca_conf {
+    $puppetserver_confdir = $openvox_webui::puppetserver_confdir
+
+    file { "${puppetserver_confdir}/ca.conf":
+      ensure  => file,
+      owner   => 'puppet',
+      group   => 'puppet',
+      mode    => '0640',
+      content => epp('openvox_webui/ca.conf.epp', {
+          client_certname         => $client_certname,
+          allow_subject_alt_names => $openvox_webui::ca_allow_subject_alt_names,
+      }),
+      notify  => Service[$openvox_webui::puppetserver_service],
     }
   }
 }

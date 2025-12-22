@@ -1,0 +1,27 @@
+<%- |
+  String $client_certname,
+  Boolean $allow_subject_alt_names = true,
+| -%>
+# OpenVox WebUI CA Configuration for Puppet Server
+# Managed by Puppet - DO NOT EDIT MANUALLY
+#
+# This file configures the Puppet CA to allow the OpenVox WebUI client
+# certificate to access the certificate_status and certificate_statuses
+# endpoints for certificate management operations.
+
+certificate-authority: {
+    # Allow SANs in certificate requests
+    allow-subject-alt-names: <%= $allow_subject_alt_names %>
+
+    # Enable the infrastructure CRL
+    enable-infra-crl: true
+
+    # Allow specific client certificates to access the certificate_status endpoint
+    # This is required for OpenVox WebUI to manage certificates
+    certificate-status: {
+        # Allow the OpenVox WebUI client certificate to access the CA status endpoints
+        client-whitelist: [
+            "<%= $client_certname %>"
+        ]
+    }
+}

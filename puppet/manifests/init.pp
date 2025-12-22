@@ -129,6 +129,14 @@
 # @param puppetdb_service
 #   Name of the PuppetDB service (for notifications on auth.conf changes).
 #
+# @param manage_puppetserver_ca_conf
+#   Whether to manage Puppet Server ca.conf to enable the certificate_status endpoint.
+#   This is required for OpenVox WebUI to manage certificates via the CA API.
+#   The certificate_status endpoint is disabled by default in Puppet Server.
+#
+# @param ca_allow_subject_alt_names
+#   Whether to allow Subject Alternative Names in certificate requests.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -235,13 +243,18 @@ class openvox_webui (
   Stdlib::Absolutepath                $puppetdb_confdir           = '/etc/puppetlabs/puppetdb/conf.d',
   String[1]                           $puppetserver_service       = 'puppetserver',
   String[1]                           $puppetdb_service           = 'puppetdb',
+
+  # CA configuration management
+  # Manages ca.conf to enable the certificate_status endpoint (disabled by default)
+  Boolean                             $manage_puppetserver_ca_conf = false,
+  Boolean                             $ca_allow_subject_alt_names  = true,
 ) {
   contain openvox_webui::install
   contain openvox_webui::config
   contain openvox_webui::service
 
-  # Optionally manage auth.conf files
-  if $manage_puppetserver_auth or $manage_puppetdb_auth {
+  # Optionally manage auth.conf and ca.conf files
+  if $manage_puppetserver_auth or $manage_puppetdb_auth or $manage_puppetserver_ca_conf {
     contain openvox_webui::auth
 
     Class['openvox_webui::config']
