@@ -252,3 +252,89 @@ Facter.add(:openvox_parameters) do
     classification['parameters'] if classification
   end
 end
+
+# Register dynamic facts for variables and parameters as top-level facts
+# This runs at load time to discover and register facts from classification
+begin
+  require 'net/http'
+  require 'uri'
+  require 'json'
+  require 'yaml'
+
+  config_paths = [
+    '/etc/openvox-webui/client.yaml',
+    '/etc/puppetlabs/facter/openvox-client.yaml',
+    '/etc/puppetlabs/puppet/openvox-client.yaml'
+  ]
+
+  config_file = config_paths.find { |p| File.exist?(p) }
+
+  if config_file
+    config = YAML.load_file(config_file)
+    api_url = config['api_url'] || config['url']
+
+    if api_url
+      # Get certname
+      certname = config['certname']
+
+      if certname.nil? || certname.to_s.empty?
+        puppet_conf_paths = [
+          '/etc/puppetlabs/puppet/puppet.conf',
+          '/etc/puppet/puppet.conf'
+        ]
+        puppet_conf_paths.each do |conf_path|
+          next unless File.exist?(conf_path)
+
+          File.readlines(conf_path).each do |line|
+            if line =~ /^\s*certname\s*=\s*(\S+)/
+              certname = Regexp.last_match(1)
+              break
+            end
+          end
+          break if certname
+        end
+      end
+
+      certname ||= Facter.value(:fqdn)
+
+      if certname
+        # Fetch classification to discover variable/parameter names
+        uri = URI.parse("#{api_url.chomp('/')}/api/v1/nodes/#{certname}/classify")
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.open_timeout = 5
+        http.read_timeout = 10
+
+        if uri.scheme == 'https'
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE # Quick check, full verification in main fact
+        end
+
+        request = Net::HTTP::Get.new(uri.request_uri)
+        request['Accept'] = 'application/json'
+
+        response = http.request(request)
+
+        if response.code.to_i == 200
+          data = JSON.parse(response.body)
+
+          # Register each variable as a top-level fact
+          (data['variables'] || {}).each do |key, value|
+            Facter.add(key.to_sym) do
+              setcode { value }
+            end
+          end
+
+          # Register each parameter as a top-level fact
+          (data['parameters'] || {}).each do |key, value|
+            Facter.add(key.to_sym) do
+              setcode { value }
+            end
+          end
+        end
+      end
+    end
+  end
+rescue StandardError
+  # Silently ignore errors during dynamic fact registration
+  # The main openvox_classification fact will report any issues
+end
