@@ -18,7 +18,11 @@ use crate::models::{Fact, Node, Report, ResourceEvent};
 /// Check if an SSL file exists and is readable, logging the result
 fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<usize, String> {
     if !path.exists() {
-        let msg = format!("{} file does not exist: {}", file_type, path.display());
+        let msg = format!(
+            "PuppetDB SSL ERROR: {} file does not exist: {}",
+            file_type,
+            path.display()
+        );
         error!("{}", msg);
         return Err(msg);
     }
@@ -27,37 +31,62 @@ fn check_ssl_file_access(path: &Path, file_type: &str) -> Result<usize, String> 
     match fs::metadata(path) {
         Ok(metadata) => {
             if metadata.is_file() {
-                // Try to actually read a few bytes to verify read permission
+                // Log file permissions on Unix
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    let mode = metadata.mode();
+                    let uid = metadata.uid();
+                    let gid = metadata.gid();
+                    debug!(
+                        "{} file permissions: mode={:o}, uid={}, gid={}, path={}",
+                        file_type,
+                        mode & 0o777,
+                        uid,
+                        gid,
+                        path.display()
+                    );
+                }
+
+                // Try to actually read the file to verify read permission
                 match fs::read(path) {
                     Ok(contents) => {
-                        debug!(
-                            "{} file is accessible: {} ({} bytes)",
+                        info!(
+                            "PuppetDB SSL: {} loaded successfully ({} bytes): {}",
                             file_type,
-                            path.display(),
-                            contents.len()
+                            contents.len(),
+                            path.display()
                         );
                         Ok(contents.len())
                     }
                     Err(e) => {
                         let msg = format!(
-                            "{} file exists but cannot be read: {} - {}",
+                            "PuppetDB SSL ERROR: {} file exists but cannot be read (permission denied?): {} - {}",
                             file_type,
                             path.display(),
                             e
                         );
                         error!("{}", msg);
+                        warn!(
+                            "Check that the openvox-webui service user has read access to: {}",
+                            path.display()
+                        );
                         Err(msg)
                     }
                 }
             } else {
-                let msg = format!("{} path is not a file: {}", file_type, path.display());
+                let msg = format!(
+                    "PuppetDB SSL ERROR: {} path is not a file: {}",
+                    file_type,
+                    path.display()
+                );
                 error!("{}", msg);
                 Err(msg)
             }
         }
         Err(e) => {
             let msg = format!(
-                "Cannot access {} file metadata: {} - {}",
+                "PuppetDB SSL ERROR: Cannot access {} file metadata: {} - {}",
                 file_type,
                 path.display(),
                 e
@@ -379,9 +408,9 @@ impl PuppetDbClient {
         if let Some(ref ca_path) = config.ssl_ca {
             let ca_path_ref = Path::new(ca_path);
 
+            // Check file access - this logs success/failure
             if let Err(e) = check_ssl_file_access(ca_path_ref, "CA certificate") {
-                warn!("CA certificate check failed: {}", e);
-                // Continue anyway - the actual read will provide a more detailed error
+                return Err(anyhow::anyhow!("{}", e));
             }
 
             let ca_cert = fs::read(ca_path)
@@ -392,9 +421,8 @@ impl PuppetDbClient {
                 .context("Failed to parse CA certificate(s) as PEM")?;
 
             info!(
-                "PuppetDB SSL: Loading {} CA certificate(s) from: {}",
-                certs.len(),
-                ca_path_ref.display()
+                "PuppetDB SSL: Parsed {} certificate(s) from CA bundle",
+                certs.len()
             );
 
             // Disable built-in root certs when using custom CA
@@ -411,22 +439,14 @@ impl PuppetDbClient {
             let cert_path_ref = Path::new(cert_path);
             let key_path_ref = Path::new(key_path);
 
-            if let Err(e) = check_ssl_file_access(cert_path_ref, "SSL client certificate") {
-                warn!("SSL client certificate check failed: {}", e);
+            // Check file access for both files - these log success/failure
+            if let Err(e) = check_ssl_file_access(cert_path_ref, "Client certificate") {
+                return Err(anyhow::anyhow!("{}", e));
             }
 
-            if let Err(e) = check_ssl_file_access(key_path_ref, "SSL private key") {
-                warn!("SSL private key check failed: {}", e);
+            if let Err(e) = check_ssl_file_access(key_path_ref, "Client private key") {
+                return Err(anyhow::anyhow!("{}", e));
             }
-
-            info!(
-                "PuppetDB SSL: Loading client certificate from: {}",
-                cert_path_ref.display()
-            );
-            info!(
-                "PuppetDB SSL: Loading client private key from: {}",
-                key_path_ref.display()
-            );
 
             let cert = fs::read(cert_path)
                 .with_context(|| format!("Failed to read client certificate: {:?}", cert_path))?;
@@ -993,7 +1013,7 @@ impl PuppetDbClient {
 
     /// Internal GET request handler
     async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
-        debug!("Sending GET request to {}", url);
+        debug!("PuppetDB: Sending GET request to {}", url);
         let response = self
             .client
             .get(url)
@@ -1002,20 +1022,50 @@ impl PuppetDbClient {
             .map_err(|e| {
                 // Log detailed error information
                 error!(
-                    "HTTP request failed to {}: {} (is_connect: {}, is_timeout: {}, is_request: {})",
-                    url,
-                    e,
+                    "PuppetDB ERROR: HTTP request failed to {}: {}",
+                    url, e
+                );
+                error!(
+                    "PuppetDB ERROR: Error flags - is_connect: {}, is_timeout: {}, is_request: {}",
                     e.is_connect(),
                     e.is_timeout(),
                     e.is_request()
                 );
+
+                // Provide helpful messages based on error type
+                if e.is_connect() {
+                    error!("PuppetDB ERROR: Connection failed. Check:");
+                    error!("  - PuppetDB URL is correct and reachable");
+                    error!("  - Network/firewall allows connection to PuppetDB port");
+                    error!("  - SSL certificates are valid and trusted");
+                }
+                if e.is_timeout() {
+                    error!("PuppetDB ERROR: Request timed out. Check:");
+                    error!("  - PuppetDB server is responsive");
+                    error!("  - Network latency is acceptable");
+                    error!("  - Consider increasing puppetdb.timeout setting");
+                }
+
+                // Walk through error chain for root cause
                 if let Some(source) = e.source() {
-                    error!("Underlying error: {}", source);
-                    // Try to get more details from the error chain
+                    error!("PuppetDB ERROR: Underlying cause: {}", source);
                     let mut current: &dyn StdError = source;
                     while let Some(next) = current.source() {
-                        error!("Caused by: {}", next);
+                        error!("PuppetDB ERROR: Caused by: {}", next);
                         current = next;
+                    }
+
+                    // Check for common SSL errors
+                    let error_str = format!("{}", source);
+                    if error_str.contains("UnknownIssuer") {
+                        error!("PuppetDB SSL ERROR: Server certificate not trusted!");
+                        error!("  - Verify puppetdb.ssl.ca_path points to correct CA certificate");
+                        error!("  - Ensure CA certificate matches the one that signed PuppetDB's cert");
+                    } else if error_str.contains("certificate") || error_str.contains("Certificate") {
+                        error!("PuppetDB SSL ERROR: Certificate validation failed");
+                        error!("  - Check SSL certificate paths in configuration");
+                        error!("  - Verify certificates are in PEM format");
+                        error!("  - Ensure certificates are not expired");
                     }
                 }
                 anyhow::anyhow!("Failed to send request to {}: {}", url, e)
