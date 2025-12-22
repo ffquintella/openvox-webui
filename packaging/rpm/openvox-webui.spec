@@ -175,10 +175,20 @@ else
 fi
 
 %preun
-%systemd_preun openvox-webui.service
+# Stop and disable service on uninstall (not upgrade)
+if [ $1 -eq 0 ]; then
+    # Package removal
+    /usr/bin/systemctl --no-reload disable openvox-webui.service >/dev/null 2>&1 || :
+    /usr/bin/systemctl stop openvox-webui.service >/dev/null 2>&1 || :
+fi
 
 %postun
-%systemd_postun_with_restart openvox-webui.service
+# Reload systemd and restart service on upgrade
+/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || :
+if [ $1 -ge 1 ]; then
+    # Package upgrade
+    /usr/bin/systemctl try-restart openvox-webui.service >/dev/null 2>&1 || :
+fi
 
 # On complete removal (not upgrade)
 if [ $1 -eq 0 ]; then
