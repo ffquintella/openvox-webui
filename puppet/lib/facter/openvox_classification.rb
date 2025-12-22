@@ -94,20 +94,39 @@ Facter.add(:openvox_classification) do
 
         # SSL verification
         if config['ssl_verify'] == false
+          Facter.debug('openvox_classification: SSL verification disabled')
           http.verify_mode = OpenSSL::SSL::VERIFY_NONE
         else
           http.verify_mode = OpenSSL::SSL::VERIFY_PEER
 
-          # Custom CA certificate
-          if config['ssl_ca'] && File.exist?(config['ssl_ca'])
-            http.ca_file = config['ssl_ca']
+          # Custom CA certificate - try multiple locations
+          ca_file = config['ssl_ca']
+
+          # If not configured, try common Puppet CA locations
+          if ca_file.nil? || !File.exist?(ca_file)
+            puppet_ca_paths = [
+              '/etc/puppetlabs/puppet/ssl/certs/ca.pem',
+              '/etc/puppet/ssl/certs/ca.pem',
+              '/var/lib/puppet/ssl/certs/ca.pem'
+            ]
+            ca_file = puppet_ca_paths.find { |p| File.exist?(p) }
+          end
+
+          if ca_file && File.exist?(ca_file)
+            Facter.debug("openvox_classification: Using CA file: #{ca_file}")
+            http.ca_file = ca_file
+          else
+            Facter.debug('openvox_classification: No CA file found, using system defaults')
           end
 
           # Client certificate authentication
-          if config['ssl_cert'] && config['ssl_key']
-            if File.exist?(config['ssl_cert']) && File.exist?(config['ssl_key'])
-              http.cert = OpenSSL::X509::Certificate.new(File.read(config['ssl_cert']))
-              http.key = OpenSSL::PKey::RSA.new(File.read(config['ssl_key']))
+          if ssl_cert && ssl_key
+            if File.exist?(ssl_cert) && File.exist?(ssl_key)
+              Facter.debug("openvox_classification: Using client cert: #{ssl_cert}")
+              http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
+              http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+            else
+              Facter.warn("openvox_classification: Client cert/key files not found: #{ssl_cert}, #{ssl_key}")
             end
           end
         end
