@@ -24,7 +24,7 @@ hyper = { version = "1.5", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
 # TLS support
-axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 rustls = "0.23"
 rustls-pemfile = "2.2"
 tokio-rustls = "0.26"
