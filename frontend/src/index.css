@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode (like Tailwind v3's darkMode: 'class') */
+@variant dark (&:where(.dark, .dark *));
+
 /* Custom theme configuration for Tailwind v4 */
 @theme {
   /* Gray colors - override defaults for proper light theme */
