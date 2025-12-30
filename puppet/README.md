@@ -56,6 +56,56 @@ Install with default settings (listens on localhost:3000):
 include openvox_webui
 ```
 
+### Node Classification (Client-Side)
+
+Configure Puppet agents to fetch and apply classification from OpenVox WebUI:
+
+```puppet
+# Step 1: Configure the client to fetch classification data
+class { 'openvox_webui::client':
+  api_url          => 'https://openvox.example.com:5051',
+  use_puppet_certs => true,
+}
+
+# Step 2: Apply classified classes with their parameters
+include openvox_webui::classification
+```
+
+This enables centralized node classification similar to Puppet Enterprise's Node Classifier.
+Classes defined in OpenVox WebUI groups will be automatically included with their parameters.
+
+#### How It Works
+
+1. **openvox_webui::client** - Configures the custom fact that fetches classification
+   data from the OpenVox WebUI API at `/api/v1/nodes/{certname}/classify`
+
+2. **openvox_webui::classification** - Reads the classification fact and uses
+   `create_resources('class', ...)` to declare all classified classes with parameters
+
+#### Available Facts
+
+After configuring the client, these facts become available:
+
+- `$facts['openvox_classification']` - Full classification data (groups, classes, variables)
+- `$facts['openvox_groups']` - Array of group names the node belongs to
+- `$facts['openvox_classes']` - Hash of classes with their parameters
+- `$facts['openvox_variables']` - Variables defined in matched groups
+- `$facts['openvox_environment']` - Classified environment name
+- Top-level facts for each variable (e.g., `$facts['role']`, `$facts['datacenter']`)
+
+#### Classification Options
+
+```puppet
+class { 'openvox_webui::classification':
+  apply_classes          => true,           # Apply classified classes
+  fail_on_missing_class  => false,          # Don't fail if class not found
+  class_prefix           => 'profile::',    # Prefix all class names
+  excluded_classes       => ['deprecated*'], # Exclude matching classes
+  require_classification => false,          # Don't fail if no classification
+  log_level              => 'debug',        # Logging level
+}
+```
+
 ### PuppetDB Integration
 
 Configure connection to PuppetDB with SSL:
