@@ -437,6 +437,7 @@ DOCKERFILE_EOF
     log_info "Running RPM build in Docker container..."
     docker run --rm \
         --platform "${DOCKER_PLATFORM}" \
+        --tmpfs /tmp:exec,size=8g \
         -v "${SOURCE_DIR}:/source:ro" \
         -v "${BUILD_DIR}:/output" \
         -e VERSION="${VERSION}" \
@@ -542,6 +543,7 @@ DOCKERFILE_EOF
     log_info "Running DEB build in Docker container..."
     docker run --rm \
         --platform "${DOCKER_PLATFORM}" \
+        --tmpfs /tmp:exec,size=8g \
         -v "${SOURCE_DIR}:/source:ro" \
         -v "${BUILD_DIR}:/output" \
         -e VERSION="${VERSION}" \
