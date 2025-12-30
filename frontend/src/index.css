@@ -2,6 +2,19 @@
 
 /* Custom theme configuration for Tailwind v4 */
 @theme {
+  /* Gray colors - override defaults for proper light theme */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-gray-950: #030712;
+
   /* Primary colors (sky-based) */
   --color-primary-50: #f0f9ff;
   --color-primary-100: #e0f2fe;
@@ -39,13 +52,13 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #213547;
-  background-color: #f8fafc;
+  color: #111827; /* gray-900 - dark text for light mode */
+  background-color: #f9fafb; /* gray-50 - light gray background */
 }
 
 html.dark {
-  color: #e5e7eb;
-  background-color: #0f172a; /* slate-900 */
+  color: #f3f4f6; /* gray-100 - light text for dark mode */
+  background-color: #111827; /* gray-900 - dark background */
 }
 
 body {
@@ -117,19 +130,31 @@ body {
   display: block;
   width: 100%;
   border-radius: 0.375rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid #d1d5db; /* gray-300 */
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  background-color: #ffffff; /* white background for inputs */
+  color: #111827; /* gray-900 - ensure readable text */
+  padding: 0.5rem 0.75rem;
+}
+
+.input::placeholder {
+  color: #9ca3af; /* gray-400 - visible but lighter placeholder */
 }
 
 .input:focus {
   border-color: var(--color-primary-500);
   box-shadow: 0 0 0 2px var(--color-primary-500);
+  outline: none;
 }
 
 .dark .input {
-  background-color: #1f2937;
-  border-color: #374151;
-  color: #f3f4f6;
+  background-color: #1f2937; /* gray-800 */
+  border-color: #4b5563; /* gray-600 */
+  color: #f3f4f6; /* gray-100 - light text */
+}
+
+.dark .input::placeholder {
+  color: #6b7280; /* gray-500 */
 }
 
 .label {
@@ -142,4 +167,55 @@ body {
 
 .dark .label {
   color: #d1d5db;
+}
+
+/* Global form element styling for better contrast */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select {
+  background-color: #ffffff;
+  color: #111827;
+  border-color: #d1d5db;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+input[type="number"]::placeholder,
+input[type="search"]::placeholder,
+input[type="tel"]::placeholder,
+input[type="url"]::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="number"],
+.dark input[type="search"],
+.dark input[type="tel"],
+.dark input[type="url"],
+.dark textarea,
+.dark select {
+  background-color: #1f2937;
+  color: #f3f4f6;
+  border-color: #4b5563;
+}
+
+.dark input[type="text"]::placeholder,
+.dark input[type="email"]::placeholder,
+.dark input[type="password"]::placeholder,
+.dark input[type="number"]::placeholder,
+.dark input[type="search"]::placeholder,
+.dark input[type="tel"]::placeholder,
+.dark input[type="url"]::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280;
 }
