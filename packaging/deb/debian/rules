@@ -31,6 +31,14 @@ override_dh_auto_install:
 	install -D -m 755 packaging/scripts/configure-openvox-webui.sh \
 		debian/openvox-webui/usr/share/openvox-webui/scripts/configure-openvox-webui.sh
 
+	# Install classification instructions
+	install -D -m 644 packaging/scripts/classification-instructions.txt \
+		debian/openvox-webui/usr/share/openvox-webui/scripts/classification-instructions.txt
+
+	# Install Puppet module
+	mkdir -p debian/openvox-webui/usr/share/openvox-webui/puppet
+	cp -r puppet/* debian/openvox-webui/usr/share/openvox-webui/puppet/
+
 	# Install configuration
 	install -D -m 640 config/config.example.yaml \
 		debian/openvox-webui/etc/openvox-webui/config.yaml

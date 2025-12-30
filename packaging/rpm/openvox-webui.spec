@@ -96,6 +96,13 @@ install -m 644 packaging/systemd/openvox-webui.service %{buildroot}%{_unitdir}/o
 # Install configuration script
 install -m 755 packaging/scripts/configure-openvox-webui.sh %{buildroot}%{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
 
+# Install classification instructions
+install -m 644 packaging/scripts/classification-instructions.txt %{buildroot}%{_datadir}/openvox-webui/scripts/classification-instructions.txt
+
+# Install Puppet module
+install -d %{buildroot}%{_datadir}/openvox-webui/puppet
+cp -r puppet/* %{buildroot}%{_datadir}/openvox-webui/puppet/
+
 %pre
 # Create openvox-webui group if it doesn't exist
 getent group openvox-webui >/dev/null || groupadd -r openvox-webui
@@ -174,6 +181,30 @@ else
     echo ""
 fi
 
+# Always show Puppet classification instructions
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║          PUPPET NODE CLASSIFICATION - Quick Start                ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "To enable automatic class assignment to Puppet agents:"
+echo ""
+echo "1. Copy the Puppet module to your Puppet server:"
+echo "   cp -r %{_datadir}/openvox-webui/puppet \\"
+echo "     /etc/puppetlabs/code/environments/production/modules/openvox_webui"
+echo ""
+echo "2. Add to your site.pp or node classification:"
+echo "   class { 'openvox_webui::client':"
+echo "     api_url          => 'https://<YOUR_SERVER>:5051',"
+echo "     use_puppet_certs => true,"
+echo "   }"
+echo "   include openvox_webui::classification"
+echo ""
+echo "3. Define groups with classes in OpenVox WebUI"
+echo ""
+echo "Full instructions: %{_datadir}/openvox-webui/scripts/classification-instructions.txt"
+echo ""
+
 %preun
 # Stop and disable service on uninstall (not upgrade)
 if [ $1 -eq 0 ]; then
@@ -207,6 +238,8 @@ fi
 %{_datadir}/openvox-webui/static
 %dir %{_datadir}/openvox-webui/scripts
 %attr(755,root,root) %{_datadir}/openvox-webui/scripts/configure-openvox-webui.sh
+%attr(644,root,root) %{_datadir}/openvox-webui/scripts/classification-instructions.txt
+%{_datadir}/openvox-webui/puppet
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/lib/openvox-webui
 %dir %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox
 %attr(750,openvox-webui,openvox-webui) %{_localstatedir}/log/openvox/webui
