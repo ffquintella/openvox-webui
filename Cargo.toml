@@ -86,7 +86,7 @@ cron = "0.15"
 cucumber = "0.22"
 tokio-test = "0.4"
 wiremock = "0.6"
-fake = { version = "3.0", features = ["derive"] }
+fake = { version = "4.4", features = ["derive"] }
 rstest = "0.23"
 bytes = "1.9"
 
