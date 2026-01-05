@@ -731,11 +731,11 @@ impl PuppetDbClient {
             query = query.equals("status", st);
         }
 
-        let params = if let Some(l) = limit {
-            QueryParams::new().limit(l)
-        } else {
-            QueryParams::default()
-        };
+        // Order by producer_timestamp descending (newest first)
+        let mut params = QueryParams::new().order_by("producer_timestamp", false);
+        if let Some(l) = limit {
+            params = params.limit(l);
+        }
 
         self.query_reports_advanced(&query, params).await
     }
