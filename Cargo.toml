@@ -19,7 +19,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs", "set-header"] }
 
 # Rate limiting
-governor = "0.8"
+governor = "0.10"
 hyper = { version = "1.5", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
