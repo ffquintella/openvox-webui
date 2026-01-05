@@ -166,18 +166,7 @@ async fn get_report_events(
         .as_ref()
         .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
-    // First verify the report exists
-    let report_exists = puppetdb
-        .get_report(&hash)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to check report: {}", e)))?
-        .is_some();
-
-    if !report_exists {
-        return Err(AppError::NotFound(format!("Report '{}' not found", hash)));
-    }
-
-    // Build query for events
+    // Build query for events - filter by report hash
     let mut qb = QueryBuilder::new();
     qb = qb.equals("report", &hash);
 

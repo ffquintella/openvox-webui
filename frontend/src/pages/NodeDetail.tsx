@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -19,9 +19,11 @@ import {
   RefreshCw,
   FolderTree,
   Tag,
+  ArrowRightLeft,
+  Loader2,
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { Report, NodeGroup } from '../types';
+import type { Report, NodeGroup, ResourceEvent } from '../types';
 
 type TabId = 'overview' | 'facts' | 'reports' | 'groups';
 
@@ -300,6 +302,228 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
   );
 }
 
+// Helper function to get event status color
+function getEventStatusColor(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'text-success-600 bg-success-50 border-success-200';
+    case 'failure':
+      return 'text-danger-600 bg-danger-50 border-danger-200';
+    case 'noop':
+      return 'text-amber-600 bg-amber-50 border-amber-200';
+    case 'skipped':
+      return 'text-gray-600 bg-gray-50 border-gray-200';
+    default:
+      return 'text-gray-600 bg-gray-50 border-gray-200';
+  }
+}
+
+// Helper to format value for display
+function formatEventValue(value: unknown): string {
+  if (value === null || value === undefined) return 'nil';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+// Resource Events Component
+function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
+  const [events, setEvents] = useState<ResourceEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'success' | 'failure' | 'noop'>('all');
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    api.getReportEvents(reportHash)
+      .then((data) => {
+        setEvents(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || 'Failed to load events');
+        setLoading(false);
+      });
+  }, [reportHash]);
+
+  const filteredEvents = useMemo(() => {
+    if (filter === 'all') return events;
+    return events.filter((e) => e.status === filter);
+  }, [events, filter]);
+
+  const failureCount = events.filter((e) => e.status === 'failure').length;
+  const successCount = events.filter((e) => e.status === 'success').length;
+  const noopCount = events.filter((e) => e.status === 'noop').length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
+        <span className="ml-2 text-sm text-gray-500">Loading events...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-6">
+        <AlertCircle className="w-8 h-8 mx-auto text-danger-500 mb-2" />
+        <p className="text-sm text-danger-600">{error}</p>
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-6 text-gray-500">
+        <CheckCircle className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+        <p className="text-sm">No resource events in this report</p>
+        <p className="text-xs text-gray-400 mt-1">This usually means no changes were made</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Filter tabs */}
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => setFilter('all')}
+          className={`px-3 py-1 text-xs rounded-full transition-colors ${
+            filter === 'all'
+              ? 'bg-primary-100 text-primary-700 border border-primary-300'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          All ({events.length})
+        </button>
+        {failureCount > 0 && (
+          <button
+            onClick={() => setFilter('failure')}
+            className={`px-3 py-1 text-xs rounded-full transition-colors ${
+              filter === 'failure'
+                ? 'bg-danger-100 text-danger-700 border border-danger-300'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Failed ({failureCount})
+          </button>
+        )}
+        {successCount > 0 && (
+          <button
+            onClick={() => setFilter('success')}
+            className={`px-3 py-1 text-xs rounded-full transition-colors ${
+              filter === 'success'
+                ? 'bg-success-100 text-success-700 border border-success-300'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Changed ({successCount})
+          </button>
+        )}
+        {noopCount > 0 && (
+          <button
+            onClick={() => setFilter('noop')}
+            className={`px-3 py-1 text-xs rounded-full transition-colors ${
+              filter === 'noop'
+                ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Noop ({noopCount})
+          </button>
+        )}
+      </div>
+
+      {/* Events list */}
+      <div className="space-y-2 max-h-96 overflow-y-auto">
+        {filteredEvents.map((event, idx) => (
+          <div
+            key={`${event.resource_type}-${event.resource_title}-${idx}`}
+            className={`p-3 rounded-lg border ${getEventStatusColor(event.status)}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide">
+                    {event.status}
+                  </span>
+                  {event.corrective_change && (
+                    <span className="text-xs px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded">
+                      Corrective
+                    </span>
+                  )}
+                </div>
+                <p className="font-mono text-sm mt-1 break-all">
+                  {event.resource_type}[{event.resource_title}]
+                </p>
+                {event.property && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    Property: <span className="font-mono">{event.property}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Value change display */}
+            {(event.old_value !== undefined || event.new_value !== undefined) && (
+              <div className="mt-2 pt-2 border-t border-current/10">
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-500 mb-0.5">Old value:</p>
+                    <p className="font-mono bg-white/50 px-2 py-1 rounded truncate">
+                      {formatEventValue(event.old_value)}
+                    </p>
+                  </div>
+                  <ArrowRightLeft className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-500 mb-0.5">New value:</p>
+                    <p className="font-mono bg-white/50 px-2 py-1 rounded truncate">
+                      {formatEventValue(event.new_value)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Message */}
+            {event.message && (
+              <div className="mt-2 pt-2 border-t border-current/10">
+                <p className="text-xs text-gray-700 whitespace-pre-wrap">{event.message}</p>
+              </div>
+            )}
+
+            {/* Source location and containment path */}
+            {(event.file || event.containing_class || (event.containment_path && event.containment_path.length > 0)) && (
+              <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
+                {event.containing_class && (
+                  <p className="text-xs text-gray-500">
+                    Class: <span className="font-mono">{event.containing_class}</span>
+                  </p>
+                )}
+                {event.file && (
+                  <p className="text-xs text-gray-500">
+                    File: <span className="font-mono">{event.file}{event.line ? `:${event.line}` : ''}</span>
+                  </p>
+                )}
+                {event.containment_path && event.containment_path.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    Path: {event.containment_path.join(' → ')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Reports Timeline Component
 function ReportsTimeline({ reports }: { reports: Report[] }) {
   const [expandedReport, setExpandedReport] = useState<string | null>(null);
@@ -366,7 +590,7 @@ function ReportsTimeline({ reports }: { reports: Report[] }) {
 
                 {/* Expanded details */}
                 {isExpanded && (
-                  <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                  <div className="mt-4 pt-4 border-t border-gray-200 space-y-3" onClick={(e) => e.stopPropagation()}>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-gray-500">Report Hash</p>
@@ -436,6 +660,12 @@ function ReportsTimeline({ reports }: { reports: Report[] }) {
                       {report.metrics?.time?.total !== undefined && (
                         <p>Duration: {report.metrics.time.total.toFixed(2)}s</p>
                       )}
+                    </div>
+
+                    {/* Resource Events */}
+                    <div className="bg-white rounded-lg p-3 border border-gray-100">
+                      <p className="text-sm font-medium text-gray-700 mb-3">Resource Events</p>
+                      <ResourceEventsPanel reportHash={report.hash} />
                     </div>
                   </div>
                 )}

@@ -80,38 +80,12 @@ class openvox_webui::classification (
     }
   } else {
     # Extract classification data
-    $groups = $classification['groups']
     $classes = $classification['classes']
-    $variables = $classification['variables']
-    $environment_name = $classification['environment']
-    $certname = $classification['certname']
 
-    # Calculate counts safely
-    $group_count = $groups ? {
-      undef   => 0,
-      default => $groups.length,
-    }
+    # Calculate class count safely
     $class_count = $classes ? {
       undef   => 0,
       default => $classes.keys.length,
-    }
-    $var_count = $variables ? {
-      undef   => 0,
-      default => $variables.keys.length,
-    }
-
-    # Log classification summary
-    notify { 'openvox_classification_summary':
-      message  => "OpenVox classification for ${certname}: ${group_count} groups, ${class_count} classes, ${var_count} variables",
-      loglevel => $log_level,
-    }
-
-    # Log environment if set
-    if $environment_name != undef and $environment_name != '' {
-      notify { 'openvox_environment_info':
-        message  => "OpenVox classified environment: ${environment_name}",
-        loglevel => $log_level,
-      }
     }
 
     # Apply classes if configured and there are classes to apply
@@ -145,23 +119,7 @@ class openvox_webui::classification (
           }
         }
 
-        if $is_excluded {
-          notify { "openvox_class_excluded_${full_class_name}":
-            message  => "OpenVox: Skipping excluded class ${full_class_name}",
-            loglevel => $log_level,
-          }
-        } else {
-          # Declare the class with its parameters using resource-like syntax
-          # This is wrapped in a defined() check for safety
-          $param_count = $class_params.keys.length
-          $param_list = $class_params.keys.join(', ')
-
-          notify { "openvox_class_apply_${full_class_name}":
-            message  => "OpenVox: Applying class ${full_class_name} (${param_count} params: ${param_list})",
-            loglevel => $log_level,
-            before   => Class[$full_class_name],
-          }
-
+        unless $is_excluded {
           # Use create_resources to declare the class with parameters
           # The 'class' type in Puppet accepts a hash of { 'classname' => { params } }
           $class_declaration = {
@@ -172,12 +130,6 @@ class openvox_webui::classification (
           create_resources('class', $class_declaration)
         }
       }
-    }
-
-    # Log final status
-    notify { 'openvox_classification_complete':
-      message  => "OpenVox classification applied for ${certname}",
-      loglevel => $log_level,
     }
   }
 }

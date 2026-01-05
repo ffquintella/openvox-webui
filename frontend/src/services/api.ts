@@ -3,6 +3,7 @@ import type {
   Node,
   NodeGroup,
   Report,
+  ResourceEvent,
   CreateGroupRequest,
   UpdateGroupRequest,
   CreateRuleRequest,
@@ -246,6 +247,11 @@ export const api = {
 
   getReport: async (hash: string): Promise<Report | null> => {
     const response = await client.get(`/reports/${hash}`);
+    return response.data;
+  },
+
+  getReportEvents: async (hash: string, params?: { status?: string; type?: string }): Promise<ResourceEvent[]> => {
+    const response = await client.get(`/reports/${hash}/events`, { params });
     return response.data;
   },
 

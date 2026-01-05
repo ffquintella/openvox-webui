@@ -110,6 +110,32 @@ export interface Report {
   metrics?: ReportMetrics | null;
 }
 
+// Resource Event types
+export type EventStatus = 'success' | 'failure' | 'noop' | 'skipped';
+
+export interface ResourceEvent {
+  certname?: string | null;
+  report?: string | null;
+  resource_type: string;
+  resource_title: string;
+  property?: string | null;
+  old_value?: unknown;
+  new_value?: unknown;
+  message?: string | null;
+  status: EventStatus;
+  timestamp?: string | null;
+  containment_path?: string[] | null;
+  corrective_change?: boolean | null;
+  name?: string | null;
+  file?: string | null;
+  line?: number | null;
+  containing_class?: string | null;
+  run_start_time?: string | null;
+  run_end_time?: string | null;
+  configuration_version?: string | null;
+  environment?: string | null;
+}
+
 // Fact types
 export interface Fact {
   certname: string;

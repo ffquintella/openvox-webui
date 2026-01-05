@@ -150,21 +150,85 @@ pub struct EventMetrics {
     pub noop: u32,
 }
 
-/// Resource event from a report
+/// Resource event from a report (PuppetDB format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceEvent {
-    pub certname: String,
-    pub report: String,
+    /// Certificate name of the node
+    #[serde(default)]
+    pub certname: Option<String>,
+
+    /// Report hash
+    #[serde(default)]
+    pub report: Option<String>,
+
+    /// Resource type (e.g., "File", "Service", "Notify")
     pub resource_type: String,
+
+    /// Resource title
     pub resource_title: String,
+
+    /// Property that changed
+    #[serde(default)]
     pub property: Option<String>,
+
+    /// Old value before change
+    #[serde(default)]
     pub old_value: Option<serde_json::Value>,
+
+    /// New value after change
+    #[serde(default)]
     pub new_value: Option<serde_json::Value>,
+
+    /// Event message
+    #[serde(default)]
     pub message: Option<String>,
+
+    /// Event status (success, failure, noop, skipped)
     pub status: EventStatus,
-    pub timestamp: DateTime<Utc>,
-    pub containment_path: Vec<String>,
-    pub corrective_change: bool,
+
+    /// Event timestamp
+    #[serde(default)]
+    pub timestamp: Option<DateTime<Utc>>,
+
+    /// Containment path (class hierarchy)
+    #[serde(default)]
+    pub containment_path: Option<Vec<String>>,
+
+    /// Whether this was a corrective change
+    #[serde(default)]
+    pub corrective_change: Option<bool>,
+
+    /// Event name (e.g., "message_changed")
+    #[serde(default)]
+    pub name: Option<String>,
+
+    /// Source file path
+    #[serde(default)]
+    pub file: Option<String>,
+
+    /// Line number in source file
+    #[serde(default)]
+    pub line: Option<u32>,
+
+    /// Containing class
+    #[serde(default)]
+    pub containing_class: Option<String>,
+
+    /// Run start time
+    #[serde(default)]
+    pub run_start_time: Option<DateTime<Utc>>,
+
+    /// Run end time
+    #[serde(default)]
+    pub run_end_time: Option<DateTime<Utc>>,
+
+    /// Configuration version
+    #[serde(default)]
+    pub configuration_version: Option<String>,
+
+    /// Environment
+    #[serde(default)]
+    pub environment: Option<String>,
 }
 
 /// Event status
