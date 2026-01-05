@@ -88,6 +88,9 @@ Desktop.ini
 # Project Specific
 # =============================================================================
 
+# Local configuration files (use .env for development)
+config/config.yaml
+
 # Local data directory
 data/
 

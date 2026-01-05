@@ -1095,6 +1095,61 @@ impl AppConfig {
                 self.logging.max_log_files = n;
             }
         }
+
+        // Code Deploy overrides
+        if let Ok(enabled) = std::env::var("CODE_DEPLOY_ENABLED") {
+            if enabled.to_lowercase() == "true" || enabled == "1" {
+                let code_deploy = self.code_deploy.get_or_insert_with(CodeDeployYamlConfig::default);
+                code_deploy.enabled = true;
+            }
+        }
+        if let Ok(key) = std::env::var("CODE_DEPLOY_ENCRYPTION_KEY") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.encryption_key = key;
+            }
+        }
+        if let Ok(url) = std::env::var("CODE_DEPLOY_WEBHOOK_BASE_URL") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.webhook_base_url = Some(url);
+            }
+        }
+        if let Ok(dir) = std::env::var("CODE_DEPLOY_REPOS_BASE_DIR") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.repos_base_dir = PathBuf::from(dir);
+            }
+        }
+        if let Ok(dir) = std::env::var("CODE_DEPLOY_SSH_KEYS_DIR") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.ssh_keys_dir = PathBuf::from(dir);
+            }
+        }
+        if let Ok(path) = std::env::var("CODE_DEPLOY_R10K_BINARY_PATH") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.r10k_binary_path = PathBuf::from(path);
+            }
+        }
+        if let Ok(path) = std::env::var("CODE_DEPLOY_R10K_CONFIG_PATH") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.r10k_config_path = PathBuf::from(path);
+            }
+        }
+        if let Ok(dir) = std::env::var("CODE_DEPLOY_ENVIRONMENTS_BASEDIR") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.environments_basedir = PathBuf::from(dir);
+            }
+        }
+        if let Ok(dir) = std::env::var("CODE_DEPLOY_R10K_CACHEDIR") {
+            if let Some(ref mut code_deploy) = self.code_deploy {
+                code_deploy.r10k_cachedir = PathBuf::from(dir);
+            }
+        }
+        if let Ok(days) = std::env::var("CODE_DEPLOY_RETAIN_HISTORY_DAYS") {
+            if let Ok(n) = days.parse() {
+                if let Some(ref mut code_deploy) = self.code_deploy {
+                    code_deploy.retain_history_days = n;
+                }
+            }
+        }
     }
 
     /// Validate configuration

@@ -153,3 +153,27 @@ rbac:
 # Path to separate groups configuration file (optional)
 # If not specified, groups are managed only via database/API
 # groups_config_path: "/etc/openvox-webui/groups.yaml"
+
+# Code Deploy feature configuration (Git-based Puppet environment management)
+# Similar to Puppet Code Manager - manages Puppet environments from Git repositories
+# code_deploy:
+#   enabled: true
+#
+#   # Encryption key for storing SSH private keys (must be exactly 32 bytes)
+#   encryption_key: "change-this-to-32-byte-key-here!"
+#
+#   # Base URL for webhook callbacks (used to generate webhook URLs)
+#   webhook_base_url: "http://localhost:5051"
+#
+#   # Days to retain deployment history (0 = forever)
+#   retain_history_days: 90
+#
+#   # Git repository settings
+#   repos_base_dir: "/var/lib/openvox-webui/repos"    # Where to clone repos
+#   ssh_keys_dir: "/etc/openvox-webui/ssh-keys"       # Where to store SSH keys
+#
+#   # r10k integration settings
+#   r10k_binary_path: "/opt/puppetlabs/puppet/bin/r10k"
+#   r10k_config_path: "/etc/puppetlabs/r10k/r10k.yaml"
+#   r10k_cachedir: "/opt/puppetlabs/puppet/cache/r10k"
+#   environments_basedir: "/etc/puppetlabs/code/environments"
