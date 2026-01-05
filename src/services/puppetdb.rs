@@ -440,13 +440,9 @@ impl PuppetDbClient {
                 certs.len()
             );
 
-            // Disable built-in root certs when using custom CA
-            // This ensures we only trust our Puppet CA, not system CAs
-            builder = builder.tls_built_in_root_certs(false);
-
-            for cert in certs {
-                builder = builder.add_root_certificate(cert);
-            }
+            // Use tls_certs_only() to disable the platform verifier and use only our CA
+            // This avoids issues with platform-specific certificate compliance checks
+            builder = builder.tls_certs_only(certs);
         }
 
         // Check and load client certificate and key if provided

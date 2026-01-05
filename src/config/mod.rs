@@ -729,7 +729,7 @@ impl GroupsConfig {
     pub fn load(path: &PathBuf) -> Result<Self> {
         let contents = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read groups config file: {:?}", path))?;
-        serde_yaml::from_str(&contents)
+        serde_norway::from_str(&contents)
             .with_context(|| format!("Failed to parse groups config file: {:?}", path))
     }
 
@@ -830,7 +830,7 @@ impl AppConfig {
             if path.exists() {
                 let contents = std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read config file: {:?}", path))?;
-                serde_yaml::from_str(&contents)
+                serde_norway::from_str(&contents)
                     .with_context(|| format!("Failed to parse config file: {:?}", path))?
             } else {
                 AppConfig::default()
@@ -1073,7 +1073,7 @@ impl AppConfig {
             std::fs::create_dir_all(parent)?;
         }
 
-        let yaml = serde_yaml::to_string(&config)?;
+        let yaml = serde_norway::to_string(&config)?;
         std::fs::write(path, yaml)?;
 
         Ok(())
@@ -1095,8 +1095,8 @@ mod tests {
     #[test]
     fn test_config_serialization() {
         let config = AppConfig::default();
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_norway::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_norway::from_str(&yaml).unwrap();
         assert_eq!(parsed.server.port, config.server.port);
         assert_eq!(
             parsed.database.max_connections,
@@ -1118,7 +1118,7 @@ logging:
   level: "debug"
   format: "json"
 "#;
-        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
         assert_eq!(config.logging.format, LogFormat::Json);
         assert_eq!(config.logging.level, "debug");
     }
@@ -1147,7 +1147,7 @@ auth:
 database:
   url: "sqlite://test.db"
 "#;
-        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
         assert!(config.puppetdb.is_none());
     }
 
@@ -1185,7 +1185,7 @@ dashboard:
       title: "Node Status"
       enabled: true
 "#;
-        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
         assert_eq!(config.dashboard.default_time_range, "7d");
         assert_eq!(config.dashboard.refresh_interval_secs, 120);
         assert_eq!(config.dashboard.nodes_per_page, 100);
@@ -1235,7 +1235,7 @@ rbac:
           action: "admin"
           scope: "all"
 "#;
-        let config: AppConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
         assert_eq!(config.rbac.default_role, "operator");
         assert_eq!(config.rbac.session_timeout_minutes, 240);
         assert_eq!(config.rbac.max_failed_logins, 3);
@@ -1271,7 +1271,7 @@ groups:
         operator: "="
         value: "production"
 "#;
-        let groups_config: GroupsConfig = serde_yaml::from_str(yaml).unwrap();
+        let groups_config: GroupsConfig = serde_norway::from_str(yaml).unwrap();
         assert_eq!(groups_config.groups.len(), 2);
         assert_eq!(groups_config.groups[0].name, "All Nodes");
         assert!(groups_config.groups[0].parent_id.is_none());
@@ -1313,7 +1313,7 @@ widgets:
         struct TestWidgets {
             widgets: Vec<WidgetConfig>,
         }
-        let parsed: TestWidgets = serde_yaml::from_str(yaml).unwrap();
+        let parsed: TestWidgets = serde_norway::from_str(yaml).unwrap();
         assert_eq!(parsed.widgets.len(), 8);
         assert_eq!(parsed.widgets[0].widget_type, WidgetType::NodeStatus);
         assert_eq!(parsed.widgets[1].widget_type, WidgetType::ReportTimeline);
@@ -1331,8 +1331,8 @@ widgets:
     #[test]
     fn test_full_config_serialization() {
         let config = AppConfig::default();
-        let yaml = serde_yaml::to_string(&config).unwrap();
-        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = serde_norway::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_norway::from_str(&yaml).unwrap();
 
         // Verify all sections are preserved
         assert_eq!(parsed.server.port, config.server.port);

@@ -354,7 +354,7 @@ async fn export_config(
         },
     });
 
-    let yaml_content = serde_yaml::to_string(&sanitized).map_err(|e| {
+    let yaml_content = serde_norway::to_string(&sanitized).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -565,7 +565,7 @@ fn validate_yaml_config(content: &str) -> Vec<String> {
     let mut errors = Vec::new();
 
     // Try to parse as YAML
-    let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(content);
+    let parsed: Result<serde_norway::Value, _> = serde_norway::from_str(content);
     if let Err(e) = parsed {
         errors.push(format!("YAML syntax error: {}", e));
         return errors;
@@ -634,7 +634,7 @@ fn validate_yaml_config(content: &str) -> Vec<String> {
 fn check_config_warnings(content: &str) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(content) {
+    if let Ok(value) = serde_norway::from_str::<serde_norway::Value>(content) {
         // Warn about default JWT secret
         if let Some(auth) = value.get("auth") {
             if let Some(jwt_secret) = auth.get("jwt_secret") {

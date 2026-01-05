@@ -4,10 +4,9 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use printpdf::*;
+use printpdf::{BuiltinFont, Mm, Op, PdfDocument, PdfPage, PdfSaveOptions, Pt, TextItem};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::io::BufWriter;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -666,21 +665,27 @@ impl ReportingService {
             ),
         };
 
-        // Create PDF document (A4 size: 210mm x 297mm)
-        let (doc, page1, layer1) = PdfDocument::new(title, Mm(210.0), Mm(297.0), "Layer 1");
+        // Create PDF document
+        let mut doc = PdfDocument::new(title);
 
-        let current_layer = doc.get_page(page1).get_layer(layer1);
+        // Get font references for builtin fonts
+        let font = BuiltinFont::Helvetica;
+        let font_bold = BuiltinFont::HelveticaBold;
 
-        // Use built-in Helvetica font
-        let font = doc
-            .add_builtin_font(BuiltinFont::Helvetica)
-            .context("Failed to add builtin font")?;
-        let font_bold = doc
-            .add_builtin_font(BuiltinFont::HelveticaBold)
-            .context("Failed to add bold font")?;
+        // Build page operations
+        let mut ops = Vec::new();
 
-        // Title
-        current_layer.use_text(title, 18.0, Mm(20.0), Mm(280.0), &font_bold);
+        // Title - position at top of page (A4: 210mm x 297mm)
+        ops.push(Op::SetTextCursor {
+            pos: printpdf::Point {
+                x: Pt::from(Mm(20.0)),
+                y: Pt::from(Mm(280.0)),
+            },
+        });
+        ops.push(Op::WriteTextBuiltinFont {
+            items: vec![TextItem::Text(title.to_string())],
+            font: font_bold,
+        });
 
         // Content - split by lines and render
         let lines: Vec<&str> = content.lines().collect();
@@ -694,11 +699,8 @@ impl ReportingService {
                 break;
             }
 
-            let font_to_use = if line.starts_with("===") || line.starts_with("---") {
-                &font_bold
-            } else {
-                &font
-            };
+            let is_heading = line.starts_with("===") || line.starts_with("---");
+            let font_to_use = if is_heading { font_bold } else { font };
 
             // Clean up section markers
             let display_line = line
@@ -709,19 +711,28 @@ impl ReportingService {
                 .trim();
 
             if !display_line.is_empty() {
-                let font_size = if line.starts_with("===") { 14.0 } else { 10.0 };
-                current_layer.use_text(display_line, font_size, Mm(20.0), Mm(y_pos), font_to_use);
+                ops.push(Op::SetTextCursor {
+                    pos: printpdf::Point {
+                        x: Pt::from(Mm(20.0)),
+                        y: Pt::from(Mm(y_pos)),
+                    },
+                });
+                ops.push(Op::WriteTextBuiltinFont {
+                    items: vec![TextItem::Text(display_line.to_string())],
+                    font: font_to_use,
+                });
             }
 
             y_pos -= line_height;
         }
 
+        // Create A4 page with operations
+        let page = PdfPage::new(Mm(210.0), Mm(297.0), ops);
+        doc.with_pages(vec![page]);
+
         // Save to bytes
-        let mut buffer = Vec::new();
-        {
-            let mut writer = BufWriter::new(&mut buffer);
-            doc.save(&mut writer).context("Failed to save PDF")?;
-        }
+        let mut warnings = Vec::new();
+        let buffer = doc.save(&PdfSaveOptions::default(), &mut warnings);
 
         Ok(buffer)
     }

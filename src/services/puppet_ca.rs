@@ -80,12 +80,9 @@ impl PuppetCAService {
                 certs.len()
             );
 
-            // Disable built-in root certs when using custom CA
-            client_builder = client_builder.tls_built_in_root_certs(false);
-
-            for cert in certs {
-                client_builder = client_builder.add_root_certificate(cert);
-            }
+            // Use tls_certs_only() to disable the platform verifier and use only our CA
+            // This avoids issues with platform-specific certificate compliance checks
+            client_builder = client_builder.tls_certs_only(certs);
         }
 
         // Configure SSL certificates if provided

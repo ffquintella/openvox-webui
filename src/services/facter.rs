@@ -142,7 +142,7 @@ impl FacterService {
                 serde_json::to_string_pretty(&facts.facts).context("Failed to serialize to JSON")
             }
             ExportFormat::Yaml => {
-                serde_yaml::to_string(&facts.facts).context("Failed to serialize to YAML")
+                serde_norway::to_string(&facts.facts).context("Failed to serialize to YAML")
             }
             ExportFormat::Shell => {
                 let mut output = String::new();

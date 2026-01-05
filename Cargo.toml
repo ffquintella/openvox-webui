@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.10.1"
+version = "0.12.0"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -19,8 +19,8 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs", "set-header"] }
 
 # Rate limiting
-governor = "0.8"
-hyper = { version = "1.5", features = ["full"] }
+governor = "0.10"
+hyper = { version = "1.8", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
 # TLS support
@@ -30,15 +30,15 @@ rustls-pemfile = "2.2"
 tokio-rustls = "0.26"
 
 # Async runtime
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+serde_norway = "0.9"
 
 # HTTP client for PuppetDB
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", features = ["json", "rustls"] }
 
 # Database (for local caching and configuration)
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
@@ -50,7 +50,7 @@ rand = "0.8"
 base64 = "0.22"
 
 # Configuration
-config = "0.14"
+config = "0.15"
 
 # Logging and tracing
 tracing = "0.1"
@@ -63,11 +63,11 @@ anyhow = "1.0"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.11", features = ["v4", "serde"] }
-regex = "1.11"
-once_cell = "1.20"
+uuid = { version = "1.19", features = ["v4", "serde"] }
+regex = "1.12"
+once_cell = "1.21"
 dotenvy = "0.15"
-num_cpus = "1.16"
+num_cpus = "1.17"
 dirs = "6.0"
 urlencoding = "2.1"
 async-trait = "0.1"
@@ -76,7 +76,7 @@ async-trait = "0.1"
 validator = { version = "0.20", features = ["derive"] }
 
 # PDF generation
-printpdf = "0.7"
+printpdf = "0.8"
 
 # Cron scheduling
 cron = "0.15"
@@ -88,7 +88,7 @@ tokio-test = "0.4"
 wiremock = "0.6"
 fake = { version = "4.4", features = ["derive"] }
 rstest = "0.26"
-bytes = "1.9"
+bytes = "1.11"
 
 [[bin]]
 name = "openvox-webui"

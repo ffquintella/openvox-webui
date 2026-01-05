@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
 /// Create RusTLS configuration from TLS config
 async fn create_rustls_config(tls_config: &config::TlsConfig) -> Result<axum_server::tls_rustls::RustlsConfig> {
     use axum_server::tls_rustls::RustlsConfig;
-    use rustls::crypto::ring::default_provider;
+    use rustls::crypto::aws_lc_rs::default_provider;
     use rustls::ServerConfig;
 
     // Load certificate chain
@@ -162,7 +162,7 @@ async fn create_rustls_config(tls_config: &config::TlsConfig) -> Result<axum_ser
         .with_context(|| format!("Failed to read private key: {:?}", tls_config.key_file))?
         .ok_or_else(|| anyhow::anyhow!("No private key found in {:?}", tls_config.key_file))?;
 
-    // Get the crypto provider
+    // Get the crypto provider (using aws-lc-rs as the default provider)
     let provider = default_provider();
 
     // Determine minimum TLS version from config
