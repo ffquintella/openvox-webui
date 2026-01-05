@@ -10,6 +10,7 @@
 pub mod alerting_repository;
 pub mod api_key_repository;
 pub mod audit_repository;
+pub mod code_deploy_repository;
 pub mod migrations;
 pub mod organization_repository;
 pub mod repository;
@@ -20,6 +21,10 @@ pub use alerting_repository::{
 };
 pub use api_key_repository::ApiKeyRepository;
 pub use audit_repository::AuditRepository;
+pub use code_deploy_repository::{
+    CodeDeploymentRepository, CodeEnvironmentRepository, CodeRepositoryRepository,
+    CodeSshKeyRepository,
+};
 pub use organization_repository::OrganizationRepository;
 
 use std::time::Duration;

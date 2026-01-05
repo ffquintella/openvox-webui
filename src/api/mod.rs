@@ -12,6 +12,7 @@ mod api_keys;
 mod audit_logs;
 mod auth;
 mod ca;
+mod code_deploy;
 mod facter;
 mod facts;
 mod groups;
@@ -39,6 +40,8 @@ pub fn public_routes() -> Router<AppState> {
         .nest("/auth", auth::public_routes())
         // Node classification endpoint for Puppet agents (uses client cert auth)
         .nest("/nodes", nodes::public_routes())
+        // Webhook endpoints (use signature verification instead of auth)
+        .nest("/webhooks", code_deploy::webhook_routes())
 }
 
 /// Protected API routes (authentication required)
@@ -67,6 +70,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/query", query::routes())
         // CA management endpoints
         .merge(ca::routes())
+        // Code deploy endpoints
+        .nest("/code", code_deploy::routes())
 }
 
 /// Create the full API router (public + protected; useful for tests)

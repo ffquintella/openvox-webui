@@ -19,9 +19,11 @@ pub use middleware::{
     auth_middleware, check_permission, optional_auth_middleware, require_permission_middleware,
     AuthUser, Claims, RbacError, RequirePermission,
 };
+use services::code_deploy::{CodeDeployConfig, CodeDeployService};
 use services::puppet_ca::PuppetCAService;
 use services::puppetdb::PuppetDbClient;
 pub use services::{DbRbacService, RbacService};
+use utils::AppError;
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -38,4 +40,26 @@ pub struct AppState {
     pub rbac: Arc<RbacService>,
     /// Database-backed RBAC service (for API operations)
     pub rbac_db: Arc<DbRbacService>,
+    /// Code Deploy service configuration (optional)
+    pub code_deploy_config: Option<CodeDeployConfig>,
+}
+
+impl AppState {
+    /// Get a Code Deploy service instance
+    ///
+    /// Returns an error if code deploy is not enabled in configuration.
+    pub fn code_deploy_service(&self) -> Result<CodeDeployService, AppError> {
+        let config = self
+            .code_deploy_config
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("Code deploy feature is not enabled"))?;
+
+        if !config.enabled {
+            return Err(AppError::service_unavailable(
+                "Code deploy feature is not enabled",
+            ));
+        }
+
+        Ok(CodeDeployService::new(self.db.clone(), config))
+    }
 }

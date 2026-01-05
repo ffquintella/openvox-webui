@@ -4,3 +4,4 @@
 //! (in-memory) database and all middleware.
 
 mod api_tests;
+mod code_deploy_tests;

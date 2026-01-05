@@ -33,6 +33,9 @@ pub struct AppConfig {
     /// Path to groups configuration file (optional, groups can also be in database)
     #[serde(default)]
     pub groups_config_path: Option<PathBuf>,
+    /// Code Deploy configuration (Git-based environment management)
+    #[serde(default)]
+    pub code_deploy: Option<CodeDeployYamlConfig>,
 }
 
 /// Server configuration
@@ -668,6 +671,86 @@ fn default_permission_scope() -> String {
     "all".to_string()
 }
 
+/// Code Deploy configuration (YAML format)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CodeDeployYamlConfig {
+    /// Whether the code deploy feature is enabled
+    #[serde(default)]
+    pub enabled: bool,
+    /// Base directory for cloned repositories
+    #[serde(default = "default_repos_base_dir")]
+    pub repos_base_dir: PathBuf,
+    /// Directory for SSH keys
+    #[serde(default = "default_ssh_keys_dir")]
+    pub ssh_keys_dir: PathBuf,
+    /// Path to r10k binary
+    #[serde(default = "default_r10k_binary_path")]
+    pub r10k_binary_path: PathBuf,
+    /// Path to r10k configuration file
+    #[serde(default = "default_r10k_config_path")]
+    pub r10k_config_path: PathBuf,
+    /// Base directory for Puppet environments
+    #[serde(default = "default_environments_basedir")]
+    pub environments_basedir: PathBuf,
+    /// r10k cache directory
+    #[serde(default = "default_r10k_cachedir")]
+    pub r10k_cachedir: PathBuf,
+    /// Encryption key for SSH private keys (should come from secure storage)
+    #[serde(default)]
+    pub encryption_key: String,
+    /// Base URL for webhook URLs (e.g., https://openvox.example.com)
+    #[serde(default)]
+    pub webhook_base_url: Option<String>,
+    /// Retain deployment history for this many days
+    #[serde(default = "default_retain_history_days")]
+    pub retain_history_days: u32,
+}
+
+fn default_repos_base_dir() -> PathBuf {
+    PathBuf::from("/var/lib/openvox-webui/repos")
+}
+
+fn default_ssh_keys_dir() -> PathBuf {
+    PathBuf::from("/etc/openvox-webui/ssh-keys")
+}
+
+fn default_r10k_binary_path() -> PathBuf {
+    PathBuf::from("/opt/puppetlabs/puppet/bin/r10k")
+}
+
+fn default_r10k_config_path() -> PathBuf {
+    PathBuf::from("/etc/puppetlabs/r10k/r10k.yaml")
+}
+
+fn default_environments_basedir() -> PathBuf {
+    PathBuf::from("/etc/puppetlabs/code/environments")
+}
+
+fn default_r10k_cachedir() -> PathBuf {
+    PathBuf::from("/opt/puppetlabs/puppet/cache/r10k")
+}
+
+fn default_retain_history_days() -> u32 {
+    90
+}
+
+impl Default for CodeDeployYamlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            repos_base_dir: default_repos_base_dir(),
+            ssh_keys_dir: default_ssh_keys_dir(),
+            r10k_binary_path: default_r10k_binary_path(),
+            r10k_config_path: default_r10k_config_path(),
+            environments_basedir: default_environments_basedir(),
+            r10k_cachedir: default_r10k_cachedir(),
+            encryption_key: String::new(),
+            webhook_base_url: None,
+            retain_history_days: default_retain_history_days(),
+        }
+    }
+}
+
 /// Node groups configuration (loaded from separate file)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GroupsConfig {
@@ -805,6 +888,7 @@ impl Default for AppConfig {
             dashboard: DashboardConfig::default(),
             rbac: RbacConfig::default(),
             groups_config_path: None,
+            code_deploy: None,
         }
     }
 }

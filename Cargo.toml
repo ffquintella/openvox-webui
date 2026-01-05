@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -80,6 +80,14 @@ printpdf = "0.8"
 
 # Cron scheduling
 cron = "0.15"
+
+# Git operations for code deploy
+git2 = "0.20"
+
+# HMAC for webhook signature verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 # Testing

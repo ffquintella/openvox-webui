@@ -1103,3 +1103,143 @@ export interface NotificationHistory {
   sent_at?: string;
   created_at: string;
 }
+
+// ============================================================================
+// Code Deploy Types
+// ============================================================================
+
+export type DeploymentStatus = 'pending' | 'approved' | 'rejected' | 'deploying' | 'success' | 'failed' | 'cancelled';
+
+export interface CodeSshKey {
+  id: string;
+  name: string;
+  public_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSshKeyRequest {
+  name: string;
+  private_key: string;
+}
+
+export interface CodeRepository {
+  id: string;
+  name: string;
+  url: string;
+  branch_pattern: string;
+  ssh_key_id?: string;
+  ssh_key_name?: string;
+  webhook_url?: string;
+  poll_interval_seconds: number;
+  is_control_repo: boolean;
+  last_error?: string;
+  last_error_at?: string;
+  environment_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRepositoryRequest {
+  name: string;
+  url: string;
+  branch_pattern?: string;
+  ssh_key_id?: string;
+  poll_interval_seconds?: number;
+  is_control_repo?: boolean;
+}
+
+export interface UpdateRepositoryRequest {
+  name?: string;
+  url?: string;
+  branch_pattern?: string;
+  ssh_key_id?: string;
+  clear_ssh_key?: boolean;
+  poll_interval_seconds?: number;
+  is_control_repo?: boolean;
+  regenerate_webhook_secret?: boolean;
+}
+
+export interface CodeDeploymentSummary {
+  id: string;
+  commit_sha: string;
+  commit_message?: string;
+  status: DeploymentStatus;
+  created_at: string;
+}
+
+export interface CodeEnvironment {
+  id: string;
+  repository_id: string;
+  repository_name: string;
+  name: string;
+  branch: string;
+  current_commit?: string;
+  current_commit_message?: string;
+  current_commit_author?: string;
+  current_commit_date?: string;
+  last_synced_at?: string;
+  auto_deploy: boolean;
+  requires_approval: boolean;
+  pending_deployment?: CodeDeploymentSummary;
+  latest_deployment_status?: DeploymentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateEnvironmentRequest {
+  auto_deploy?: boolean;
+  requires_approval?: boolean;
+}
+
+export interface CodeDeployment {
+  id: string;
+  environment_id: string;
+  environment_name: string;
+  repository_name: string;
+  commit_sha: string;
+  commit_message?: string;
+  commit_author?: string;
+  status: DeploymentStatus;
+  requested_by?: string;
+  requested_by_username?: string;
+  approved_by?: string;
+  approved_by_username?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_seconds?: number;
+  error_message?: string;
+  r10k_output?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TriggerDeploymentRequest {
+  environment_id: string;
+  commit_sha?: string;
+}
+
+export interface ApproveDeploymentRequest {
+  comment?: string;
+}
+
+export interface RejectDeploymentRequest {
+  reason: string;
+}
+
+export interface ListDeploymentsQuery {
+  environment_id?: string;
+  repository_id?: string;
+  status?: DeploymentStatus;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListEnvironmentsQuery {
+  repository_id?: string;
+  auto_deploy?: boolean;
+  has_pending?: boolean;
+}

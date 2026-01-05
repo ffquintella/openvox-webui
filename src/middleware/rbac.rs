@@ -172,6 +172,7 @@ pub fn check_permission(
 ///     dashboard: DashboardConfig::default(),
 ///     rbac: RbacConfig::default(),
 ///     groups_config_path: None,
+///     code_deploy: None,
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
@@ -187,6 +188,7 @@ pub fn check_permission(
 ///             max_connections: 1, min_connections: 1,
 ///             connect_timeout_secs: 30, idle_timeout_secs: 600,
 ///         }).await.unwrap())),
+///     code_deploy_config: None,
 /// };
 ///
 /// let app = Router::<AppState>::new()

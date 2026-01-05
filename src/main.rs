@@ -80,6 +80,33 @@ async fn main() -> Result<()> {
     info!("Initializing database-backed RBAC service");
     let rbac_db = Arc::new(DbRbacService::new(db.clone()));
 
+    // Initialize Code Deploy config if enabled
+    let code_deploy_config = config.code_deploy.as_ref().and_then(|cd| {
+        if cd.enabled {
+            info!("Initializing Code Deploy service");
+            Some(services::code_deploy::CodeDeployConfig {
+                git: services::git::GitServiceConfig {
+                    repos_base_dir: cd.repos_base_dir.clone(),
+                    ssh_keys_dir: cd.ssh_keys_dir.clone(),
+                },
+                r10k: services::r10k::R10kConfig {
+                    binary_path: cd.r10k_binary_path.clone(),
+                    config_path: cd.r10k_config_path.clone(),
+                    basedir: cd.environments_basedir.clone(),
+                    cachedir: cd.r10k_cachedir.clone(),
+                    ..Default::default()
+                },
+                enabled: true,
+                encryption_key: cd.encryption_key.clone(),
+                webhook_base_url: cd.webhook_base_url.clone(),
+                retain_history_days: cd.retain_history_days,
+            })
+        } else {
+            info!("Code Deploy feature is disabled");
+            None
+        }
+    });
+
     // Create application state
     let state = AppState {
         config: config.clone(),
@@ -88,6 +115,7 @@ async fn main() -> Result<()> {
         puppet_ca,
         rbac,
         rbac_db,
+        code_deploy_config,
     };
 
     // Build the router

@@ -14,8 +14,8 @@ use uuid::Uuid;
 use openvox_webui::{
     api,
     config::{
-        AppConfig, AuthConfig, CacheConfig, DashboardConfig, DatabaseConfig, LoggingConfig,
-        RbacConfig, ServerConfig,
+        AppConfig, AuthConfig, CacheConfig, CodeDeployYamlConfig, DashboardConfig, DatabaseConfig,
+        LoggingConfig, RbacConfig, ServerConfig,
     },
     db,
     middleware::auth::{Claims, TokenType},
@@ -35,6 +35,11 @@ impl TestApp {
         Self::with_config(test_config()).await
     }
 
+    /// Create a new test application with code deploy feature enabled
+    pub async fn with_code_deploy() -> Self {
+        Self::with_config(test_config_with_code_deploy()).await
+    }
+
     /// Create a new test application with custom configuration
     pub async fn with_config(config: AppConfig) -> Self {
         // Initialize in-memory database
@@ -46,6 +51,31 @@ impl TestApp {
         let rbac = Arc::new(RbacService::new());
         let rbac_db = Arc::new(DbRbacService::new(db.clone()));
 
+        // Convert code_deploy yaml config to runtime config if enabled
+        let code_deploy_config = config.code_deploy.as_ref().and_then(|c| {
+            if c.enabled {
+                Some(openvox_webui::services::code_deploy::CodeDeployConfig {
+                    enabled: c.enabled,
+                    encryption_key: c.encryption_key.clone(),
+                    webhook_base_url: c.webhook_base_url.clone(),
+                    retain_history_days: c.retain_history_days,
+                    git: openvox_webui::services::git::GitServiceConfig {
+                        repos_base_dir: c.repos_base_dir.clone(),
+                        ssh_keys_dir: c.ssh_keys_dir.clone(),
+                    },
+                    r10k: openvox_webui::services::r10k::R10kConfig {
+                        binary_path: c.r10k_binary_path.clone(),
+                        config_path: c.r10k_config_path.clone(),
+                        cachedir: c.r10k_cachedir.clone(),
+                        basedir: c.environments_basedir.clone(),
+                        ..Default::default()
+                    },
+                })
+            } else {
+                None
+            }
+        });
+
         // Create application state
         let state = AppState {
             config,
@@ -54,6 +84,7 @@ impl TestApp {
             puppet_ca: None,
             rbac,
             rbac_db,
+            code_deploy_config,
         };
 
         // Build the router
@@ -264,7 +295,20 @@ pub fn test_config() -> AppConfig {
         dashboard: DashboardConfig::default(),
         rbac: RbacConfig::default(),
         groups_config_path: None,
+        code_deploy: None,
     }
+}
+
+/// Create a test configuration with code deploy enabled
+pub fn test_config_with_code_deploy() -> AppConfig {
+    let mut config = test_config();
+    config.code_deploy = Some(CodeDeployYamlConfig {
+        enabled: true,
+        encryption_key: "test_encryption_key_32_bytes___!".to_string(),
+        webhook_base_url: Some("http://localhost:3000".to_string()),
+        ..CodeDeployYamlConfig::default()
+    });
+    config
 }
 
 /// Generate a test JWT token for authentication

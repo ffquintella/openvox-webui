@@ -18,6 +18,7 @@ import {
   LogOut,
   ChevronDown,
   Info,
+  Rocket,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../stores/authStore';
@@ -38,6 +39,7 @@ const navigation = [
 ];
 
 const adminNavigation = [
+  { name: 'Code Deploy', href: '/code-deploy', icon: Rocket },
   { name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
   { name: 'Users', href: '/users', icon: Users },
   { name: 'Roles', href: '/roles', icon: Shield },

@@ -77,6 +77,20 @@ import type {
   AlertRuleType,
   AlertSeverity,
   AlertStatus,
+  // Code Deploy types
+  CodeSshKey,
+  CreateSshKeyRequest,
+  CodeRepository,
+  CreateRepositoryRequest,
+  UpdateRepositoryRequest,
+  CodeEnvironment,
+  UpdateEnvironmentRequest,
+  CodeDeployment,
+  TriggerDeploymentRequest,
+  ApproveDeploymentRequest,
+  RejectDeploymentRequest,
+  ListDeploymentsQuery,
+  ListEnvironmentsQuery,
 } from '../types';
 
 const client = axios.create({
@@ -753,5 +767,117 @@ export const api = {
   evaluateRules: async (): Promise<{ alerts_triggered: number; alerts: Alert[] }> => {
     const response = await client.post('/alerting/evaluate');
     return response.data.data;
+  },
+
+  // ============================================================================
+  // Code Deploy
+  // ============================================================================
+
+  // SSH Keys
+  getSshKeys: async (): Promise<CodeSshKey[]> => {
+    const response = await client.get('/code/ssh-keys');
+    return response.data;
+  },
+
+  getSshKey: async (id: string): Promise<CodeSshKey> => {
+    const response = await client.get(`/code/ssh-keys/${id}`);
+    return response.data;
+  },
+
+  createSshKey: async (request: CreateSshKeyRequest): Promise<CodeSshKey> => {
+    const response = await client.post('/code/ssh-keys', request);
+    return response.data;
+  },
+
+  deleteSshKey: async (id: string): Promise<void> => {
+    await client.delete(`/code/ssh-keys/${id}`);
+  },
+
+  // Repositories
+  getCodeRepositories: async (): Promise<CodeRepository[]> => {
+    const response = await client.get('/code/repositories');
+    return response.data;
+  },
+
+  getCodeRepository: async (id: string): Promise<CodeRepository> => {
+    const response = await client.get(`/code/repositories/${id}`);
+    return response.data;
+  },
+
+  createCodeRepository: async (request: CreateRepositoryRequest): Promise<CodeRepository> => {
+    const response = await client.post('/code/repositories', request);
+    return response.data;
+  },
+
+  updateCodeRepository: async (id: string, request: UpdateRepositoryRequest): Promise<CodeRepository> => {
+    const response = await client.put(`/code/repositories/${id}`, request);
+    return response.data;
+  },
+
+  deleteCodeRepository: async (id: string): Promise<void> => {
+    await client.delete(`/code/repositories/${id}`);
+  },
+
+  syncCodeRepository: async (id: string): Promise<CodeEnvironment[]> => {
+    const response = await client.post(`/code/repositories/${id}/sync`);
+    return response.data;
+  },
+
+  // Environments
+  getCodeEnvironments: async (query?: ListEnvironmentsQuery): Promise<CodeEnvironment[]> => {
+    const response = await client.get('/code/environments', { params: query });
+    return response.data;
+  },
+
+  getCodeEnvironment: async (id: string): Promise<CodeEnvironment> => {
+    const response = await client.get(`/code/environments/${id}`);
+    return response.data;
+  },
+
+  updateCodeEnvironment: async (id: string, request: UpdateEnvironmentRequest): Promise<CodeEnvironment> => {
+    const response = await client.put(`/code/environments/${id}`, request);
+    return response.data;
+  },
+
+  // Deployments
+  getCodeDeployments: async (query?: ListDeploymentsQuery): Promise<CodeDeployment[]> => {
+    const response = await client.get('/code/deployments', { params: query });
+    return response.data;
+  },
+
+  getCodeDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.get(`/code/deployments/${id}`);
+    return response.data;
+  },
+
+  triggerDeployment: async (request: TriggerDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post('/code/deployments', request);
+    return response.data;
+  },
+
+  approveDeployment: async (id: string, request?: ApproveDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/approve`, request || {});
+    return response.data;
+  },
+
+  rejectDeployment: async (id: string, request: RejectDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/reject`, request);
+    return response.data;
+  },
+
+  retryDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/retry`);
+    return response.data;
+  },
+
+  // Deployment Queue Stats
+  getDeploymentQueueStats: async (): Promise<{
+    pending: number;
+    approved: number;
+    deploying: number;
+    recent_failures: number;
+  }> => {
+    const response = await client.get('/code/deployments/stats');
+    return response.data;
   },
 };
