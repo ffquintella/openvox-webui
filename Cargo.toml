@@ -84,6 +84,9 @@ cron = "0.15"
 # Git operations for code deploy
 git2 = "0.20"
 
+# SSH key parsing for public key extraction
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "std"] }
+
 # HMAC for webhook signature verification
 hmac = "0.12"
 sha2 = "0.10"
