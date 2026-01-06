@@ -11,10 +11,10 @@ use uuid::Uuid;
 
 use crate::{
     db::repository::GroupRepository,
-    middleware::AuthUser,
+    middleware::{rbac::check_permission, AuthUser},
     models::{
-        AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest, CreateRuleRequest, NodeGroup,
-        UpdateGroupRequest,
+        Action, AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest, CreateRuleRequest,
+        NodeGroup, Resource, UpdateGroupRequest,
     },
     utils::AppError,
     AppState,
@@ -50,6 +50,26 @@ fn resolve_org(auth_user: &AuthUser, requested: Option<Uuid>) -> Result<Uuid, Ap
     }
 }
 
+/// Check if user has permission to perform an action on a specific group
+/// This supports group-scoped permissions where users can have edit access
+/// to specific groups without having global group permissions.
+fn check_group_permission(
+    state: &AppState,
+    auth_user: &AuthUser,
+    action: Action,
+    group_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    check_permission(
+        &state.rbac,
+        auth_user,
+        Resource::Groups,
+        action,
+        group_id,
+        None,
+    )
+    .map_err(|e| AppError::forbidden(&e.to_string()))
+}
+
 /// List all node groups
 async fn list_groups(
     State(state): State<AppState>,
@@ -72,6 +92,9 @@ async fn create_group(
     Query(query): Query<OrgQuery>,
     Json(payload): Json<CreateGroupRequest>,
 ) -> Result<(StatusCode, Json<NodeGroup>), AppError> {
+    // Check create permission (no specific group ID for new groups)
+    check_group_permission(&state, &auth_user, Action::Create, None)?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
     let repo = GroupRepository::new(&state.db);
     let group = repo.create(org_id, &payload).await.map_err(|e| {
@@ -116,6 +139,10 @@ async fn update_group(
     Json(payload): Json<UpdateGroupRequest>,
 ) -> Result<Json<NodeGroup>, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+
+    // Check update permission for this specific group
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);
@@ -142,6 +169,10 @@ async fn delete_group(
     Path(id): Path<String>,
 ) -> Result<Json<bool>, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+
+    // Check delete permission for this specific group
+    check_group_permission(&state, &auth_user, Action::Delete, Some(uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);
@@ -283,6 +314,10 @@ async fn add_rule(
     Json(payload): Json<CreateRuleRequest>,
 ) -> Result<(StatusCode, Json<ClassificationRule>), AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+
+    // Check update permission for this specific group (adding rules is an update operation)
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);
@@ -316,6 +351,10 @@ async fn delete_rule(
         Uuid::parse_str(&group_id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
     let rule_uuid =
         Uuid::parse_str(&rule_id).map_err(|_| AppError::bad_request("Invalid rule ID"))?;
+
+    // Check update permission for this specific group (deleting rules is an update operation)
+    check_group_permission(&state, &auth_user, Action::Update, Some(group_uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);
@@ -348,6 +387,10 @@ async fn add_pinned_node(
     Json(payload): Json<AddPinnedNodeRequest>,
 ) -> Result<StatusCode, AppError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+
+    // Check update permission for this specific group (adding pinned nodes is an update operation)
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);
@@ -380,6 +423,10 @@ async fn remove_pinned_node(
     Path((group_id, certname)): Path<(String, String)>,
 ) -> Result<StatusCode, AppError> {
     let uuid = Uuid::parse_str(&group_id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+
+    // Check update permission for this specific group (removing pinned nodes is an update operation)
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     let repo = GroupRepository::new(&state.db);

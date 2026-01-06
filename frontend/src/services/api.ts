@@ -91,6 +91,9 @@ import type {
   RejectDeploymentRequest,
   ListDeploymentsQuery,
   ListEnvironmentsQuery,
+  // Group-scoped permissions types
+  GroupPermissionInfo,
+  AddGroupPermissionRequest,
 } from '../types';
 
 const client = axios.create({
@@ -879,5 +882,23 @@ export const api = {
   }> => {
     const response = await client.get('/code/deployments/stats');
     return response.data;
+  },
+
+  // ============================================================================
+  // Group-Scoped Permissions
+  // ============================================================================
+
+  getGroupPermissions: async (roleId: string): Promise<GroupPermissionInfo[]> => {
+    const response = await client.get(`/roles/${roleId}/group-permissions`);
+    return response.data;
+  },
+
+  addGroupPermission: async (roleId: string, request: AddGroupPermissionRequest): Promise<GroupPermissionInfo> => {
+    const response = await client.post(`/roles/${roleId}/group-permissions`, request);
+    return response.data;
+  },
+
+  removeGroupPermission: async (roleId: string, groupId: string): Promise<void> => {
+    await client.delete(`/roles/${roleId}/group-permissions/${groupId}`);
   },
 };

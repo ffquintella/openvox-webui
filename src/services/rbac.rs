@@ -504,4 +504,137 @@ mod tests {
             Some("SuperAdmin has all permissions".to_string())
         );
     }
+
+    #[test]
+    fn test_group_scoped_permission() {
+        let mut service = RbacService::new();
+
+        // Create a role with permission to update only a specific group
+        let target_group_id = Uuid::new_v4();
+        let other_group_id = Uuid::new_v4();
+
+        let group_editor_role = Role {
+            id: Uuid::new_v4(),
+            name: "group_editor".to_string(),
+            display_name: "Group Editor".to_string(),
+            description: Some("Can edit a specific group".to_string()),
+            is_system: false,
+            parent_id: None,
+            permissions: vec![Permission {
+                id: Uuid::new_v4(),
+                resource: Resource::Groups,
+                action: Action::Update,
+                scope: Scope::Group(target_group_id),
+                constraint: None,
+            }],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let role_id = group_editor_role.id;
+        service.create_role(group_editor_role).unwrap();
+
+        // Should be able to update the target group
+        let check_target = service.check_permission(
+            &[role_id],
+            Resource::Groups,
+            Action::Update,
+            Some(target_group_id),
+            None,
+        );
+        assert!(
+            check_target.allowed,
+            "Should be able to update the target group"
+        );
+
+        // Should NOT be able to update other groups
+        let check_other = service.check_permission(
+            &[role_id],
+            Resource::Groups,
+            Action::Update,
+            Some(other_group_id),
+            None,
+        );
+        assert!(
+            !check_other.allowed,
+            "Should NOT be able to update other groups"
+        );
+
+        // Should NOT be able to update groups globally (no specific group_id)
+        let check_global = service.check_permission(
+            &[role_id],
+            Resource::Groups,
+            Action::Update,
+            None,
+            None,
+        );
+        assert!(
+            !check_global.allowed,
+            "Should NOT be able to update groups globally"
+        );
+    }
+
+    #[test]
+    fn test_specific_scope_with_group_ids_constraint() {
+        let mut service = RbacService::new();
+
+        // Create a role with permission to update multiple specific groups
+        let group_1 = Uuid::new_v4();
+        let group_2 = Uuid::new_v4();
+        let group_3 = Uuid::new_v4(); // Not in the allowed list
+
+        let multi_group_role = Role {
+            id: Uuid::new_v4(),
+            name: "multi_group_editor".to_string(),
+            display_name: "Multi-Group Editor".to_string(),
+            description: Some("Can edit multiple specific groups".to_string()),
+            is_system: false,
+            parent_id: None,
+            permissions: vec![Permission {
+                id: Uuid::new_v4(),
+                resource: Resource::Groups,
+                action: Action::Update,
+                scope: Scope::Specific,
+                constraint: Some(PermissionConstraint::GroupIds(vec![group_1, group_2])),
+            }],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let role_id = multi_group_role.id;
+        service.create_role(multi_group_role).unwrap();
+
+        // Should be able to update group_1
+        assert!(service
+            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_1), None)
+            .allowed);
+
+        // Should be able to update group_2
+        assert!(service
+            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_2), None)
+            .allowed);
+
+        // Should NOT be able to update group_3 (not in the list)
+        assert!(!service
+            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_3), None)
+            .allowed);
+    }
+
+    #[test]
+    fn test_all_scope_allows_any_group() {
+        let service = RbacService::new();
+        let admin_id = SystemRole::Admin.uuid();
+
+        // Admin has All scope, should be able to update any group
+        let random_group = Uuid::new_v4();
+
+        let check = service.check_permission(
+            &[admin_id],
+            Resource::Groups,
+            Action::Update,
+            Some(random_group),
+            None,
+        );
+        assert!(check.allowed, "Admin should be able to update any group");
+    }
 }

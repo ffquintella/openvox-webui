@@ -144,4 +144,16 @@ PUT    /api/v1/facter/templates/:id
 DELETE /api/v1/facter/templates/:id
 POST   /api/v1/facter/generate
 GET    /api/v1/facter/export/:certname
+
+# Roles
+GET    /api/v1/roles
+POST   /api/v1/roles
+GET    /api/v1/roles/:id
+PUT    /api/v1/roles/:id
+DELETE /api/v1/roles/:id
+GET    /api/v1/roles/:id/permissions
+PUT    /api/v1/roles/:id/permissions
+GET    /api/v1/roles/:id/group-permissions      # Get group-scoped permissions
+POST   /api/v1/roles/:id/group-permissions      # Add group-scoped permission
+DELETE /api/v1/roles/:id/group-permissions/:groupId  # Remove group permission
 ```

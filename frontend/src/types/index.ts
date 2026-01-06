@@ -1243,3 +1243,19 @@ export interface ListEnvironmentsQuery {
   auto_deploy?: boolean;
   has_pending?: boolean;
 }
+
+// ============================================================================
+// Group-Scoped Permissions Types
+// ============================================================================
+
+export interface GroupPermissionInfo {
+  permission_id: string;
+  group_id: string;
+  group_name?: string;
+  action: Action;
+}
+
+export interface AddGroupPermissionRequest {
+  group_id: string;
+  action: Action;
+}

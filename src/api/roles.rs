@@ -8,10 +8,14 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    models::{CreatePermissionRequest, CreateRoleRequest, Permission, Role},
+    models::{
+        Action, CreatePermissionRequest, CreateRoleRequest, Permission, PermissionConstraint,
+        Resource, Role, Scope,
+    },
     utils::error::ErrorResponse,
     AppState,
 };
@@ -24,6 +28,14 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/{id}/permissions",
             get(get_role_permissions).put(update_role_permissions),
+        )
+        .route(
+            "/{id}/group-permissions",
+            get(get_group_permissions).post(add_group_permission),
+        )
+        .route(
+            "/{id}/group-permissions/{group_id}",
+            axum::routing::delete(remove_group_permission),
         )
 }
 
@@ -331,4 +343,289 @@ async fn update_role_permissions(
         })?;
 
     Ok(Json(permissions))
+}
+
+// =============================================================================
+// Group-Scoped Permissions
+// =============================================================================
+
+/// Request to add group permission to a role
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddGroupPermissionRequest {
+    /// The group ID to grant permission for
+    pub group_id: Uuid,
+    /// The action to grant (update, delete, admin, etc.)
+    pub action: Action,
+}
+
+/// Group permission info
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupPermissionInfo {
+    /// The permission ID
+    pub permission_id: Uuid,
+    /// The group ID this permission applies to
+    pub group_id: Uuid,
+    /// The action granted
+    pub action: Action,
+}
+
+/// Get group-scoped permissions for a role
+///
+/// GET /api/v1/roles/:id/group-permissions
+async fn get_group_permissions(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<GroupPermissionInfo>>, (StatusCode, Json<ErrorResponse>)> {
+    let role = state
+        .rbac_db
+        .get_role(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Filter permissions to only those with Group scope on the Groups resource
+    let group_permissions: Vec<GroupPermissionInfo> = role
+        .permissions
+        .iter()
+        .filter_map(|perm| {
+            if perm.resource == Resource::Groups {
+                match &perm.scope {
+                    Scope::Group(group_id) => Some(GroupPermissionInfo {
+                        permission_id: perm.id,
+                        group_id: *group_id,
+                        action: perm.action,
+                    }),
+                    Scope::Specific => {
+                        // Check if there's a GroupIds constraint - handled separately below
+                        None
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Also include permissions with Specific scope and GroupIds constraint
+    let mut all_group_permissions = group_permissions;
+    for perm in &role.permissions {
+        if perm.resource == Resource::Groups && perm.scope == Scope::Specific {
+            if let Some(PermissionConstraint::GroupIds(ids)) = &perm.constraint {
+                for group_id in ids {
+                    all_group_permissions.push(GroupPermissionInfo {
+                        permission_id: perm.id,
+                        group_id: *group_id,
+                        action: perm.action,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(Json(all_group_permissions))
+}
+
+/// Add a group-scoped permission to a role
+///
+/// POST /api/v1/roles/:id/group-permissions
+async fn add_group_permission(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<AddGroupPermissionRequest>,
+) -> Result<(StatusCode, Json<Permission>), (StatusCode, Json<ErrorResponse>)> {
+    // Verify the role exists
+    let role = state
+        .rbac_db
+        .get_role(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Don't allow modifying system roles (except through direct permission API)
+    if role.is_system {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "forbidden".to_string(),
+                message: "Cannot modify permissions of system roles".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Create the permission request with Group scope
+    let permission_request = CreatePermissionRequest {
+        resource: Resource::Groups,
+        action: payload.action,
+        scope: Some(Scope::Group(payload.group_id)),
+        constraint: None,
+    };
+
+    // Add the permission
+    let permission = state
+        .rbac_db
+        .add_permission_to_role(&id, permission_request)
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("already exists") {
+                (
+                    StatusCode::CONFLICT,
+                    Json(ErrorResponse {
+                        error: "conflict".to_string(),
+                        message: "This group permission already exists for this role".to_string(),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal_error".to_string(),
+                        message: format!("Failed to add permission: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            }
+        })?;
+
+    Ok((StatusCode::CREATED, Json(permission)))
+}
+
+/// Remove a group-scoped permission from a role
+///
+/// DELETE /api/v1/roles/:id/group-permissions/:group_id
+async fn remove_group_permission(
+    State(state): State<AppState>,
+    Path((role_id, group_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Verify the role exists
+    let role = state
+        .rbac_db
+        .get_role(&role_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Don't allow modifying system roles
+    if role.is_system {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "forbidden".to_string(),
+                message: "Cannot modify permissions of system roles".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Find permissions with Group scope matching the group_id
+    let permissions_to_remove: Vec<Uuid> = role
+        .permissions
+        .iter()
+        .filter_map(|perm| {
+            if perm.resource == Resource::Groups {
+                match &perm.scope {
+                    Scope::Group(gid) if *gid == group_id => Some(perm.id),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if permissions_to_remove.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "No group permission found for this group".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Remove all matching permissions
+    for perm_id in permissions_to_remove {
+        state.rbac_db.remove_permission(&perm_id).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to remove permission: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }

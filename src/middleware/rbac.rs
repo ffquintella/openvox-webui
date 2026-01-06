@@ -68,6 +68,26 @@ pub enum RbacError {
     RoleNotFound(String),
 }
 
+impl std::fmt::Display for RbacError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RbacError::NotAuthenticated => write!(f, "Authentication required"),
+            RbacError::PermissionDenied {
+                resource,
+                action,
+                reason,
+            } => write!(
+                f,
+                "Permission denied: {} {} - {}",
+                action.as_str(),
+                resource.as_str(),
+                reason
+            ),
+            RbacError::RoleNotFound(name) => write!(f, "Role not found: {}", name),
+        }
+    }
+}
+
 impl IntoResponse for RbacError {
     fn into_response(self) -> Response {
         let (status, error_type, message) = match &self {

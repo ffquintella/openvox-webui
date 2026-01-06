@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Shield, Trash2, Users, Lock, X, Star } from 'lucide-react';
+import { Plus, Shield, Trash2, Users, Lock, X, Star, Folder } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
-import type { Role, ResourceInfo, Resource, Action, CreatePermissionRequest } from '../types';
+import type { Role, ResourceInfo, Resource, Action, CreatePermissionRequest, GroupPermissionInfo, NodeGroup } from '../types';
 
 // SuperAdmin role name constant
 const SUPER_ADMIN_ROLE_NAME = 'super_admin';
@@ -17,6 +17,10 @@ export default function Roles() {
   const [isAddPermissionOpen, setIsAddPermissionOpen] = useState(false);
   const [newPermResource, setNewPermResource] = useState<Resource | ''>('');
   const [newPermAction, setNewPermAction] = useState<Action | ''>('');
+  // Group-scoped permissions state
+  const [isAddGroupPermOpen, setIsAddGroupPermOpen] = useState(false);
+  const [newGroupPermGroupId, setNewGroupPermGroupId] = useState('');
+  const [newGroupPermAction, setNewGroupPermAction] = useState<Action | ''>('');
   const queryClient = useQueryClient();
 
   const { data: roles = [], isLoading } = useQuery({
@@ -39,6 +43,20 @@ export default function Roles() {
       return users.filter((u) => u.roles?.some((r) => r.id === selectedRole.id));
     },
     enabled: !!selectedRole,
+  });
+
+  // Fetch all groups for group-scoped permission assignment
+  const { data: groups = [] } = useQuery<NodeGroup[]>({
+    queryKey: ['groups'],
+    queryFn: api.getGroups,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Fetch group permissions for the selected role
+  const { data: groupPermissions = [] } = useQuery<GroupPermissionInfo[]>({
+    queryKey: ['groupPermissions', selectedRole?.id],
+    queryFn: () => api.getGroupPermissions(selectedRole!.id),
+    enabled: !!selectedRole && selectedRole.name !== SUPER_ADMIN_ROLE_NAME,
   });
 
   const createMutation = useMutation({
@@ -82,6 +100,26 @@ export default function Roles() {
     },
   });
 
+  // Group permission mutations
+  const addGroupPermissionMutation = useMutation({
+    mutationFn: ({ roleId, groupId, action }: { roleId: string; groupId: string; action: Action }) =>
+      api.addGroupPermission(roleId, { group_id: groupId, action }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groupPermissions', selectedRole?.id] });
+      setIsAddGroupPermOpen(false);
+      setNewGroupPermGroupId('');
+      setNewGroupPermAction('');
+    },
+  });
+
+  const removeGroupPermissionMutation = useMutation({
+    mutationFn: ({ roleId, groupId }: { roleId: string; groupId: string }) =>
+      api.removeGroupPermission(roleId, groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groupPermissions', selectedRole?.id] });
+    },
+  });
+
   const resetForm = () => {
     setNewRoleName('');
     setNewRoleDisplayName('');
@@ -108,6 +146,23 @@ export default function Roles() {
         action: newPermAction,
       },
     });
+  };
+
+  const handleAddGroupPermission = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole || !newGroupPermGroupId || !newGroupPermAction) return;
+
+    addGroupPermissionMutation.mutate({
+      roleId: selectedRole.id,
+      groupId: newGroupPermGroupId,
+      action: newGroupPermAction,
+    });
+  };
+
+  // Get group name by ID
+  const getGroupName = (groupId: string): string => {
+    const group = groups.find((g) => g.id === groupId);
+    return group?.name || groupId;
   };
 
   const getAvailableActions = (resourceName: string): string[] => {
@@ -458,6 +513,132 @@ export default function Roles() {
                   )}
                 </div>
               </div>
+
+              {/* Group-Scoped Permissions */}
+              {selectedRole.name !== SUPER_ADMIN_ROLE_NAME && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-900 flex items-center">
+                      <Folder className="w-4 h-4 mr-2" />
+                      Group-Scoped Permissions
+                    </h3>
+                    {!selectedRole.is_system && (
+                      <button
+                        onClick={() => setIsAddGroupPermOpen(true)}
+                        className="btn btn-secondary text-sm flex items-center"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Group Permission
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Add Group Permission Form */}
+                  {isAddGroupPermOpen && (
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                      <form onSubmit={handleAddGroupPermission} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="label">Node Group</label>
+                            <select
+                              value={newGroupPermGroupId}
+                              onChange={(e) => setNewGroupPermGroupId(e.target.value)}
+                              className="input"
+                              required
+                            >
+                              <option value="">Select group...</option>
+                              {groups.map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="label">Action</label>
+                            <select
+                              value={newGroupPermAction}
+                              onChange={(e) => setNewGroupPermAction(e.target.value as Action)}
+                              className="input"
+                              required
+                            >
+                              <option value="">Select action...</option>
+                              <option value="read">read</option>
+                              <option value="update">update</option>
+                              <option value="delete">delete</option>
+                              <option value="admin">admin</option>
+                            </select>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Grant this role permission to perform the selected action on the specific node group.
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddGroupPermOpen(false);
+                              setNewGroupPermGroupId('');
+                              setNewGroupPermAction('');
+                            }}
+                            className="btn btn-secondary text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={addGroupPermissionMutation.isPending}
+                            className="btn btn-primary text-sm"
+                          >
+                            {addGroupPermissionMutation.isPending ? 'Adding...' : 'Add'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    {groupPermissions.length > 0 ? (
+                      <div className="space-y-2">
+                        {groupPermissions.map((gp) => (
+                          <div
+                            key={`${gp.group_id}-${gp.action}`}
+                            className="flex items-center justify-between bg-white px-3 py-2 rounded border border-gray-200"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Folder className="w-4 h-4 text-gray-400" />
+                              <span className="font-medium text-gray-900">
+                                {gp.group_name || getGroupName(gp.group_id)}
+                              </span>
+                              <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded">
+                                {gp.action}
+                              </span>
+                            </div>
+                            {!selectedRole.is_system && (
+                              <button
+                                onClick={() =>
+                                  removeGroupPermissionMutation.mutate({
+                                    roleId: selectedRole.id,
+                                    groupId: gp.group_id,
+                                  })
+                                }
+                                className="text-gray-400 hover:text-red-600"
+                                title="Remove group permission"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-center py-4">
+                        No group-specific permissions. This role uses global permissions only.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Users with this role */}
               <div>
