@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
-import { Eye, EyeOff, Lock, User, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Eye, EyeOff, Lock, User, AlertCircle, Shield } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
@@ -9,6 +9,7 @@ import { usePermissionsStore } from '../stores/permissionsStore';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const login = useAuthStore((state) => state.login);
   const fetchPermissions = usePermissionsStore((state) => state.fetchPermissions);
 
@@ -18,6 +19,60 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+
+  // Query server info to check SAML status
+  const { data: serverInfo } = useQuery({
+    queryKey: ['serverInfo'],
+    queryFn: api.getServerInfo,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Check if SAML is enabled and configured
+  const samlEnabled = serverInfo?.saml?.enabled && serverInfo?.saml?.configured;
+  const samlLoginUrl = serverInfo?.saml?.login_url;
+
+  // Handle SSO callback - check for tokens in URL from SAML redirect
+  useEffect(() => {
+    const accessToken = searchParams.get('access_token');
+    const error = searchParams.get('error');
+
+    if (error) {
+      setError(decodeURIComponent(error));
+      // Clean up URL
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (accessToken) {
+      // SAML login successful - store token and redirect
+      const refreshToken = searchParams.get('refresh_token');
+      const redirect = searchParams.get('redirect') || '/';
+
+      // Store tokens
+      if (refreshToken) {
+        localStorage.setItem('refresh_token', refreshToken);
+      }
+
+      // Decode the JWT to get user info
+      try {
+        const payload = JSON.parse(atob(accessToken.split('.')[1]));
+        login(
+          {
+            id: payload.sub,
+            username: payload.username,
+            email: payload.email,
+            role: payload.roles?.[0] || 'viewer',
+          },
+          accessToken
+        );
+        fetchPermissions(payload.sub);
+        navigate(redirect, { replace: true });
+      } catch {
+        setError('Failed to process SSO login');
+        navigate('/login', { replace: true });
+      }
+    }
+  }, [searchParams, login, fetchPermissions, navigate]);
 
   const loginMutation = useMutation({
     mutationFn: () => api.login(username, password),
@@ -57,6 +112,14 @@ export default function Login() {
     loginMutation.mutate();
   };
 
+  const handleSsoLogin = () => {
+    if (samlLoginUrl) {
+      // Build the SAML login URL with redirect parameter
+      const redirectUrl = encodeURIComponent(from);
+      window.location.href = `${samlLoginUrl}?redirect=${redirectUrl}`;
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="max-w-md w-full mx-4">
@@ -76,6 +139,30 @@ export default function Login() {
               <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-danger-700">{error}</p>
             </div>
+          )}
+
+          {/* SSO Button (shown when SAML is enabled) */}
+          {samlEnabled && samlLoginUrl && (
+            <>
+              <button
+                type="button"
+                onClick={handleSsoLogin}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+              >
+                <Shield className="w-5 h-5" />
+                Sign in with SSO
+              </button>
+
+              {/* Divider */}
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">Or continue with password</span>
+                </div>
+              </div>
+            </>
           )}
 
           {/* Login Form */}

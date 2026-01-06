@@ -36,6 +36,9 @@ pub struct AppConfig {
     /// Code Deploy configuration (Git-based environment management)
     #[serde(default)]
     pub code_deploy: Option<CodeDeployYamlConfig>,
+    /// SAML 2.0 SSO configuration
+    #[serde(default)]
+    pub saml: Option<SamlConfig>,
 }
 
 /// Server configuration
@@ -751,6 +754,146 @@ impl Default for CodeDeployYamlConfig {
     }
 }
 
+/// SAML 2.0 SSO Configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SamlConfig {
+    /// Enable SAML authentication
+    #[serde(default)]
+    pub enabled: bool,
+    /// Service Provider configuration
+    pub sp: SamlSpConfig,
+    /// Identity Provider configuration
+    pub idp: SamlIdpConfig,
+    /// User mapping configuration
+    #[serde(default)]
+    pub user_mapping: SamlUserMappingConfig,
+    /// Session configuration
+    #[serde(default)]
+    pub session: SamlSessionConfig,
+}
+
+/// SAML Service Provider (SP) configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SamlSpConfig {
+    /// Entity ID for this SP (typically the application URL)
+    pub entity_id: String,
+    /// Assertion Consumer Service (ACS) URL - where IdP sends SAML responses
+    pub acs_url: String,
+    /// Single Logout Service URL (optional)
+    #[serde(default)]
+    pub slo_url: Option<String>,
+    /// SP Certificate file path for signing/encryption
+    #[serde(default)]
+    pub certificate_file: Option<PathBuf>,
+    /// SP Private key file path for signing/encryption
+    #[serde(default)]
+    pub private_key_file: Option<PathBuf>,
+    /// Sign authentication requests to IdP
+    #[serde(default = "default_sign_requests")]
+    pub sign_requests: bool,
+    /// Require signed assertions from IdP
+    #[serde(default = "default_require_signed_assertions")]
+    pub require_signed_assertions: bool,
+    /// Require encrypted assertions from IdP
+    #[serde(default)]
+    pub require_encrypted_assertions: bool,
+}
+
+fn default_sign_requests() -> bool {
+    false
+}
+
+fn default_require_signed_assertions() -> bool {
+    true
+}
+
+/// SAML Identity Provider (IdP) configuration
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct SamlIdpConfig {
+    /// IdP Metadata URL (recommended - auto-discovers IdP config)
+    #[serde(default)]
+    pub metadata_url: Option<String>,
+    /// IdP Metadata file path (alternative to URL)
+    #[serde(default)]
+    pub metadata_file: Option<PathBuf>,
+    /// Manual IdP Entity ID (if metadata not available)
+    #[serde(default)]
+    pub entity_id: Option<String>,
+    /// Manual IdP SSO URL (if metadata not available)
+    #[serde(default)]
+    pub sso_url: Option<String>,
+    /// Manual IdP SLO URL (if metadata not available)
+    #[serde(default)]
+    pub slo_url: Option<String>,
+    /// Manual IdP certificate file (if metadata not available)
+    #[serde(default)]
+    pub certificate_file: Option<PathBuf>,
+}
+
+/// SAML user mapping configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SamlUserMappingConfig {
+    /// SAML attribute containing the username (NameID or attribute name)
+    #[serde(default = "default_username_attribute")]
+    pub username_attribute: String,
+    /// SAML attribute containing email (optional)
+    #[serde(default)]
+    pub email_attribute: Option<String>,
+    /// Allow IdP-initiated SSO (security consideration)
+    #[serde(default)]
+    pub allow_idp_initiated: bool,
+    /// Require pre-provisioned users (user must exist before SAML login)
+    #[serde(default = "default_require_existing_user")]
+    pub require_existing_user: bool,
+}
+
+fn default_username_attribute() -> String {
+    "NameID".to_string()
+}
+
+fn default_require_existing_user() -> bool {
+    true
+}
+
+impl Default for SamlUserMappingConfig {
+    fn default() -> Self {
+        Self {
+            username_attribute: default_username_attribute(),
+            email_attribute: None,
+            allow_idp_initiated: false,
+            require_existing_user: default_require_existing_user(),
+        }
+    }
+}
+
+/// SAML session configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SamlSessionConfig {
+    /// Cookie name for SAML relay state
+    #[serde(default = "default_relay_state_cookie")]
+    pub relay_state_cookie: String,
+    /// Maximum age of authentication request (seconds)
+    #[serde(default = "default_request_max_age_secs")]
+    pub request_max_age_secs: u64,
+}
+
+fn default_relay_state_cookie() -> String {
+    "saml_relay_state".to_string()
+}
+
+fn default_request_max_age_secs() -> u64 {
+    300 // 5 minutes
+}
+
+impl Default for SamlSessionConfig {
+    fn default() -> Self {
+        Self {
+            relay_state_cookie: default_relay_state_cookie(),
+            request_max_age_secs: default_request_max_age_secs(),
+        }
+    }
+}
+
 /// Node groups configuration (loaded from separate file)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GroupsConfig {
@@ -889,6 +1032,7 @@ impl Default for AppConfig {
             rbac: RbacConfig::default(),
             groups_config_path: None,
             code_deploy: None,
+            saml: None,
         }
     }
 }
@@ -1148,6 +1292,55 @@ impl AppConfig {
                 if let Some(ref mut code_deploy) = self.code_deploy {
                     code_deploy.retain_history_days = n;
                 }
+            }
+        }
+
+        // SAML overrides
+        if let Ok(enabled) = std::env::var("SAML_ENABLED") {
+            if enabled.to_lowercase() == "true" || enabled == "1" {
+                if let Some(ref mut saml) = self.saml {
+                    saml.enabled = true;
+                }
+            }
+        }
+        if let Ok(entity_id) = std::env::var("SAML_SP_ENTITY_ID") {
+            if let Some(ref mut saml) = self.saml {
+                saml.sp.entity_id = entity_id;
+            }
+        }
+        if let Ok(acs_url) = std::env::var("SAML_SP_ACS_URL") {
+            if let Some(ref mut saml) = self.saml {
+                saml.sp.acs_url = acs_url;
+            }
+        }
+        if let Ok(cert) = std::env::var("SAML_SP_CERTIFICATE_FILE") {
+            if let Some(ref mut saml) = self.saml {
+                saml.sp.certificate_file = Some(PathBuf::from(cert));
+            }
+        }
+        if let Ok(key) = std::env::var("SAML_SP_PRIVATE_KEY_FILE") {
+            if let Some(ref mut saml) = self.saml {
+                saml.sp.private_key_file = Some(PathBuf::from(key));
+            }
+        }
+        if let Ok(url) = std::env::var("SAML_IDP_METADATA_URL") {
+            if let Some(ref mut saml) = self.saml {
+                saml.idp.metadata_url = Some(url);
+            }
+        }
+        if let Ok(path) = std::env::var("SAML_IDP_METADATA_FILE") {
+            if let Some(ref mut saml) = self.saml {
+                saml.idp.metadata_file = Some(PathBuf::from(path));
+            }
+        }
+        if let Ok(entity_id) = std::env::var("SAML_IDP_ENTITY_ID") {
+            if let Some(ref mut saml) = self.saml {
+                saml.idp.entity_id = Some(entity_id);
+            }
+        }
+        if let Ok(sso_url) = std::env::var("SAML_IDP_SSO_URL") {
+            if let Some(ref mut saml) = self.saml {
+                saml.idp.sso_url = Some(sso_url);
             }
         }
     }

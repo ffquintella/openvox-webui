@@ -35,6 +35,24 @@
   Integer $dashboard_page_size,
   Integer $dashboard_refresh,
   Integer $max_rules_per_group,
+  # SAML parameters
+  Boolean $saml_enabled,
+  Optional[String] $saml_sp_entity_id,
+  Optional[Stdlib::HTTPUrl] $saml_sp_acs_url,
+  Optional[Stdlib::Absolutepath] $saml_sp_certificate_file,
+  Optional[Stdlib::Absolutepath] $saml_sp_private_key_file,
+  Boolean $saml_sign_requests,
+  Boolean $saml_require_signed_assertions,
+  Optional[Stdlib::HTTPUrl] $saml_idp_metadata_url,
+  Optional[Stdlib::Absolutepath] $saml_idp_metadata_file,
+  Optional[String] $saml_idp_entity_id,
+  Optional[Stdlib::HTTPUrl] $saml_idp_sso_url,
+  Optional[Stdlib::Absolutepath] $saml_idp_certificate_file,
+  String $saml_username_attribute,
+  Optional[String] $saml_email_attribute,
+  Boolean $saml_require_existing_user,
+  Boolean $saml_allow_idp_initiated,
+  Integer $saml_request_max_age,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -153,3 +171,66 @@ classification:
 facter:
   templates_dir: "/etc/openvox-webui/templates"
   output_format: "yaml"
+
+<% if $saml_enabled and $saml_sp_entity_id and $saml_sp_acs_url { -%>
+# SAML 2.0 Single Sign-On configuration
+saml:
+  enabled: true
+
+  # Service Provider (SP) configuration
+  sp:
+    entity_id: "<%= $saml_sp_entity_id %>"
+    acs_url: "<%= $saml_sp_acs_url %>"
+<% if $saml_sp_certificate_file { -%>
+    certificate_file: "<%= $saml_sp_certificate_file %>"
+<% } -%>
+<% if $saml_sp_private_key_file { -%>
+    private_key_file: "<%= $saml_sp_private_key_file %>"
+<% } -%>
+    sign_requests: <%= $saml_sign_requests %>
+    require_signed_assertions: <%= $saml_require_signed_assertions %>
+
+  # Identity Provider (IdP) configuration
+  idp:
+<% if $saml_idp_metadata_url { -%>
+    metadata_url: "<%= $saml_idp_metadata_url %>"
+<% } -%>
+<% if $saml_idp_metadata_file { -%>
+    metadata_file: "<%= $saml_idp_metadata_file %>"
+<% } -%>
+<% if $saml_idp_entity_id { -%>
+    entity_id: "<%= $saml_idp_entity_id %>"
+<% } -%>
+<% if $saml_idp_sso_url { -%>
+    sso_url: "<%= $saml_idp_sso_url %>"
+<% } -%>
+<% if $saml_idp_certificate_file { -%>
+    certificate_file: "<%= $saml_idp_certificate_file %>"
+<% } -%>
+
+  # User mapping configuration
+  user_mapping:
+    username_attribute: "<%= $saml_username_attribute %>"
+<% if $saml_email_attribute { -%>
+    email_attribute: "<%= $saml_email_attribute %>"
+<% } -%>
+    require_existing_user: <%= $saml_require_existing_user %>
+    allow_idp_initiated: <%= $saml_allow_idp_initiated %>
+
+  # Session settings
+  session:
+    relay_state_cookie: "saml_relay_state"
+    request_max_age_secs: <%= $saml_request_max_age %>
+<% } else { -%>
+# SAML 2.0 Single Sign-On (disabled)
+# saml:
+#   enabled: true
+#   sp:
+#     entity_id: "https://openvox.example.com/saml"
+#     acs_url: "https://openvox.example.com/api/v1/auth/saml/acs"
+#   idp:
+#     metadata_url: "https://idp.example.com/saml/metadata"
+#   user_mapping:
+#     username_attribute: "NameID"
+#     require_existing_user: true
+<% } -%>

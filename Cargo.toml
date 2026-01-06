@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.14.0"
+version = "0.14.1"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -91,6 +91,12 @@ ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "std"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+
+# SAML 2.0 authentication
+# Without xmlsec feature, no signature verification (development mode)
+# For production with signature verification, install libxml2, xmlsec1 and enable xmlsec feature
+samael = { version = "0.0.19", default-features = false }
+flate2 = "1.1"
 
 [dev-dependencies]
 # Testing

@@ -909,6 +909,66 @@ function ServerInfoTab() {
           )}
         </div>
       </div>
+
+      {/* SAML SSO Status */}
+      <div className="card">
+        <div className="flex items-center mb-4">
+          <Shield className="w-5 h-5 text-primary-600 mr-2" />
+          <h2 className="text-lg font-semibold">SAML Single Sign-On</h2>
+        </div>
+
+        {serverInfo.saml.enabled ? (
+          <div className="space-y-4">
+            <div className="flex items-center">
+              {serverInfo.saml.configured ? (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-2" />
+                  <span className="text-green-700 font-medium">SAML SSO is enabled and configured</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-amber-500 mr-2" />
+                  <span className="text-amber-700 font-medium">SAML SSO is enabled but not fully configured</span>
+                </>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {serverInfo.saml.sp_entity_id && (
+                <SettingRow label="SP Entity ID" value={serverInfo.saml.sp_entity_id} mono />
+              )}
+              {serverInfo.saml.idp_entity_id && (
+                <SettingRow label="IdP Entity ID" value={serverInfo.saml.idp_entity_id} mono />
+              )}
+              {serverInfo.saml.login_url && (
+                <SettingRow label="Login URL" value={serverInfo.saml.login_url} mono />
+              )}
+            </div>
+
+            {serverInfo.saml.configured && (
+              <div className="pt-4 border-t border-gray-100">
+                <a
+                  href="/api/v1/auth/saml/metadata"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary btn-sm flex items-center inline-flex"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download SP Metadata
+                </a>
+                <p className="text-xs text-gray-500 mt-2">
+                  Use this metadata XML to configure your Identity Provider.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center text-gray-500">
+            <XCircle className="w-5 h-5 mr-2" />
+            <span>SAML SSO is not enabled</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

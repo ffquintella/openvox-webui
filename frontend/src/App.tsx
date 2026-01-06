@@ -9,6 +9,7 @@ import { usePermissionsStore } from './stores/permissionsStore';
 
 // Lazy load all page components for code splitting
 const Login = lazy(() => import('./pages/Login'));
+const SamlCallback = lazy(() => import('./pages/SamlCallback'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Nodes = lazy(() => import('./pages/Nodes'));
 const NodeDetail = lazy(() => import('./pages/NodeDetail'));
@@ -75,6 +76,7 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/saml-callback" element={<SamlCallback />} />
           <Route path="/access-denied" element={<AccessDenied />} />
 
           {/* Protected routes */}

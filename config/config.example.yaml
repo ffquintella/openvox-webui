@@ -177,3 +177,43 @@ rbac:
 #   r10k_config_path: "/etc/puppetlabs/r10k/r10k.yaml"
 #   r10k_cachedir: "/opt/puppetlabs/puppet/cache/r10k"
 #   environments_basedir: "/etc/puppetlabs/code/environments"
+
+# SAML 2.0 Single Sign-On configuration
+# Enables authentication via external Identity Providers (Okta, Azure AD, Keycloak, ADFS, etc.)
+# saml:
+#   enabled: true
+#
+#   # Service Provider (SP) configuration - identifies this application to the IdP
+#   sp:
+#     entity_id: "https://openvox.example.com/saml"  # Unique identifier for this SP
+#     acs_url: "https://openvox.example.com/api/v1/auth/saml/acs"  # Assertion Consumer Service URL
+#     # Optional: SP certificate and key for signing requests (recommended for production)
+#     # certificate_file: "/etc/openvox-webui/saml/sp.crt"
+#     # private_key_file: "/etc/openvox-webui/saml/sp.key"
+#     sign_requests: false           # Sign AuthnRequests (requires certificate)
+#     require_signed_assertions: true # Require IdP to sign assertions
+#
+#   # Identity Provider (IdP) configuration
+#   idp:
+#     # Option 1: Load metadata from URL (recommended - auto-fetches IdP settings)
+#     metadata_url: "https://idp.example.com/saml/metadata"
+#
+#     # Option 2: Load metadata from local file
+#     # metadata_file: "/etc/openvox-webui/saml/idp-metadata.xml"
+#
+#     # Option 3: Manual configuration (if metadata not available)
+#     # entity_id: "https://idp.example.com"
+#     # sso_url: "https://idp.example.com/sso"
+#     # certificate_file: "/etc/openvox-webui/saml/idp.crt"
+#
+#   # User mapping configuration
+#   user_mapping:
+#     username_attribute: "NameID"   # SAML attribute for username (NameID or attribute name)
+#     email_attribute: null          # SAML attribute for email (null = auto-detect)
+#     require_existing_user: true    # Users must be pre-provisioned (no auto-provisioning)
+#     allow_idp_initiated: false     # Allow IdP-initiated login (less secure)
+#
+#   # Session settings for SAML authentication
+#   session:
+#     relay_state_cookie: "saml_relay_state"  # Cookie name for storing relay state
+#     request_max_age_secs: 300               # Maximum age of SAML requests (5 minutes)

@@ -137,6 +137,57 @@
 # @param ca_allow_subject_alt_names
 #   Whether to allow Subject Alternative Names in certificate requests.
 #
+# @param saml_enabled
+#   Whether to enable SAML 2.0 SSO authentication.
+#
+# @param saml_sp_entity_id
+#   SAML Service Provider Entity ID (unique identifier for this application).
+#
+# @param saml_sp_acs_url
+#   SAML Assertion Consumer Service URL (where IdP sends responses).
+#
+# @param saml_sp_certificate_file
+#   Path to SP certificate file for signing requests (optional).
+#
+# @param saml_sp_private_key_file
+#   Path to SP private key file for signing requests (optional).
+#
+# @param saml_sign_requests
+#   Whether to sign SAML AuthnRequests (requires certificate).
+#
+# @param saml_require_signed_assertions
+#   Whether to require IdP to sign assertions.
+#
+# @param saml_idp_metadata_url
+#   URL to fetch IdP metadata from (recommended).
+#
+# @param saml_idp_metadata_file
+#   Path to local IdP metadata XML file (alternative to URL).
+#
+# @param saml_idp_entity_id
+#   Manual IdP Entity ID (used if metadata not available).
+#
+# @param saml_idp_sso_url
+#   Manual IdP SSO URL (used if metadata not available).
+#
+# @param saml_idp_certificate_file
+#   Path to IdP certificate file for signature verification.
+#
+# @param saml_username_attribute
+#   SAML attribute to use for username (default: NameID).
+#
+# @param saml_email_attribute
+#   SAML attribute to use for email (optional, auto-detected if not set).
+#
+# @param saml_require_existing_user
+#   Require users to be pre-provisioned in the database.
+#
+# @param saml_allow_idp_initiated
+#   Allow IdP-initiated SSO (less secure).
+#
+# @param saml_request_max_age
+#   Maximum age of SAML requests in seconds.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -159,6 +210,14 @@
 #     manage_puppetserver_auth => true,
 #     manage_puppetdb_auth     => true,
 #     auth_client_certname     => 'webui.example.com',
+#   }
+#
+# @example Configuring SAML SSO with IdP metadata URL
+#   class { 'openvox_webui':
+#     saml_enabled          => true,
+#     saml_sp_entity_id     => 'https://openvox.example.com/saml',
+#     saml_sp_acs_url       => 'https://openvox.example.com/api/v1/auth/saml/acs',
+#     saml_idp_metadata_url => 'https://idp.example.com/saml/metadata',
 #   }
 #
 class openvox_webui (
@@ -248,6 +307,25 @@ class openvox_webui (
   # Manages ca.conf to enable the certificate_status endpoint (disabled by default)
   Boolean                             $manage_puppetserver_ca_conf = false,
   Boolean                             $ca_allow_subject_alt_names  = true,
+
+  # SAML 2.0 SSO settings
+  Boolean                             $saml_enabled                    = false,
+  Optional[String[1]]                 $saml_sp_entity_id               = undef,
+  Optional[Stdlib::HTTPUrl]           $saml_sp_acs_url                 = undef,
+  Optional[Stdlib::Absolutepath]      $saml_sp_certificate_file        = undef,
+  Optional[Stdlib::Absolutepath]      $saml_sp_private_key_file        = undef,
+  Boolean                             $saml_sign_requests              = false,
+  Boolean                             $saml_require_signed_assertions  = true,
+  Optional[Stdlib::HTTPUrl]           $saml_idp_metadata_url           = undef,
+  Optional[Stdlib::Absolutepath]      $saml_idp_metadata_file          = undef,
+  Optional[String[1]]                 $saml_idp_entity_id              = undef,
+  Optional[Stdlib::HTTPUrl]           $saml_idp_sso_url                = undef,
+  Optional[Stdlib::Absolutepath]      $saml_idp_certificate_file       = undef,
+  String[1]                           $saml_username_attribute         = 'NameID',
+  Optional[String[1]]                 $saml_email_attribute            = undef,
+  Boolean                             $saml_require_existing_user      = true,
+  Boolean                             $saml_allow_idp_initiated        = false,
+  Integer[60, 600]                    $saml_request_max_age            = 300,
 ) {
   contain openvox_webui::install
   contain openvox_webui::config

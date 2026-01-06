@@ -6,6 +6,54 @@ use uuid::Uuid;
 
 use crate::models::default_organization_uuid;
 
+/// Authentication provider type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthProvider {
+    /// Password-based authentication only
+    #[default]
+    Local,
+    /// SAML-only authentication
+    Saml,
+    /// Both local and SAML authentication allowed
+    Both,
+}
+
+impl AuthProvider {
+    /// Check if local password authentication is allowed
+    pub fn allows_local(&self) -> bool {
+        matches!(self, AuthProvider::Local | AuthProvider::Both)
+    }
+
+    /// Check if SAML authentication is allowed
+    pub fn allows_saml(&self) -> bool {
+        matches!(self, AuthProvider::Saml | AuthProvider::Both)
+    }
+}
+
+impl std::fmt::Display for AuthProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthProvider::Local => write!(f, "local"),
+            AuthProvider::Saml => write!(f, "saml"),
+            AuthProvider::Both => write!(f, "both"),
+        }
+    }
+}
+
+impl std::str::FromStr for AuthProvider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "local" => Ok(AuthProvider::Local),
+            "saml" => Ok(AuthProvider::Saml),
+            "both" => Ok(AuthProvider::Both),
+            _ => Err(format!("Invalid auth provider: {}", s)),
+        }
+    }
+}
+
 /// User entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -19,6 +67,18 @@ pub struct User {
     pub role: String,
     #[serde(default)]
     pub force_password_change: bool,
+    /// Authentication provider (local, saml, or both)
+    #[serde(default)]
+    pub auth_provider: AuthProvider,
+    /// External identifier for SAML users (SAML NameID)
+    #[serde(default)]
+    pub external_id: Option<String>,
+    /// IdP entity ID that authenticated this user
+    #[serde(default)]
+    pub idp_entity_id: Option<String>,
+    /// Last SAML authentication timestamp
+    #[serde(default)]
+    pub last_saml_auth_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -51,6 +111,10 @@ impl User {
             password_hash,
             role,
             force_password_change: false,
+            auth_provider: AuthProvider::Local,
+            external_id: None,
+            idp_entity_id: None,
+            last_saml_auth_at: None,
             created_at: now,
             updated_at: now,
         }
@@ -68,6 +132,9 @@ pub struct UserPublic {
     pub role: String,
     #[serde(default)]
     pub force_password_change: bool,
+    /// Authentication provider (local, saml, or both)
+    #[serde(default)]
+    pub auth_provider: AuthProvider,
     /// RBAC roles assigned to the user (optional for backwards compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRoleInfo>>,
@@ -92,6 +159,7 @@ impl From<User> for UserPublic {
             email: user.email,
             role: user.role,
             force_password_change: user.force_password_change,
+            auth_provider: user.auth_provider,
             roles: None,
             created_at: user.created_at,
             updated_at: user.updated_at,

@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{default_organization_uuid, User, UserPublic};
+use crate::models::{default_organization_uuid, AuthProvider, User, UserPublic};
 
 /// Authentication service for user management
 pub struct AuthService {
@@ -63,7 +63,7 @@ impl AuthService {
     /// Get a user by username
     pub async fn get_user_by_username(&self, username: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE username = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE username = ?"
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -77,7 +77,7 @@ impl AuthService {
     pub async fn get_user_by_id(&self, id: &Uuid) -> Result<Option<User>> {
         let id_str = id.to_string();
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE id = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE id = ?"
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
@@ -90,7 +90,7 @@ impl AuthService {
     /// Get a user by email
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE email = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE email = ?"
         )
         .bind(email)
         .fetch_optional(&self.pool)
@@ -230,7 +230,7 @@ impl AuthService {
     /// List all users
     pub async fn list_users(&self) -> Result<Vec<UserPublic>> {
         let rows = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users ORDER BY username"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users ORDER BY username"
         )
         .fetch_all(&self.pool)
         .await
@@ -241,7 +241,7 @@ impl AuthService {
 
     pub async fn list_users_in_org(&self, organization_id: Uuid) -> Result<Vec<UserPublic>> {
         let rows = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE organization_id = ? ORDER BY username",
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE organization_id = ? ORDER BY username",
         )
         .bind(organization_id.to_string())
         .fetch_all(&self.pool)
@@ -257,7 +257,7 @@ impl AuthService {
         id: &Uuid,
     ) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, created_at, updated_at FROM users WHERE organization_id = ? AND id = ?",
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE organization_id = ? AND id = ?",
         )
         .bind(organization_id.to_string())
         .bind(id.to_string())
@@ -496,6 +496,45 @@ impl AuthService {
         Ok(())
     }
 
+    /// Update SAML authentication info for a user after successful SAML login
+    pub async fn update_saml_auth_info(
+        &self,
+        user_id: &Uuid,
+        external_id: Option<&str>,
+        idp_entity_id: Option<&str>,
+    ) -> Result<()> {
+        let user_id_str = user_id.to_string();
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        let last_saml_auth_at = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query(
+            "UPDATE users SET external_id = COALESCE(?, external_id), idp_entity_id = COALESCE(?, idp_entity_id), last_saml_auth_at = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(external_id)
+        .bind(idp_entity_id)
+        .bind(&last_saml_auth_at)
+        .bind(&updated_at)
+        .bind(&user_id_str)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update SAML auth info")?;
+
+        Ok(())
+    }
+
+    /// Get a user by external ID (SAML NameID)
+    pub async fn get_user_by_external_id(&self, external_id: &str) -> Result<Option<User>> {
+        let row = sqlx::query(
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE external_id = ?"
+        )
+        .bind(external_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch user by external ID")?;
+
+        Ok(row.map(|r| row_to_user(&r)))
+    }
+
     /// Hash a reset token using SHA-256 for storage
     fn hash_reset_token(token: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
@@ -535,6 +574,21 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         .or_else(|_| row.try_get::<i32, _>("force_password_change").map(|v| v != 0))
         .unwrap_or(false);
 
+    // Parse auth_provider with default fallback
+    let auth_provider: AuthProvider = row
+        .try_get::<String, _>("auth_provider")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_default();
+
+    // Parse SAML-related optional fields
+    let external_id: Option<String> = row.try_get("external_id").ok();
+    let idp_entity_id: Option<String> = row.try_get("idp_entity_id").ok();
+    let last_saml_auth_at: Option<chrono::DateTime<chrono::Utc>> = row
+        .try_get::<String, _>("last_saml_auth_at")
+        .ok()
+        .map(|s| parse_db_timestamp(&s));
+
     User {
         id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::nil()),
         organization_id: Uuid::parse_str(&org_id_str)
@@ -544,6 +598,10 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         password_hash: row.get("password_hash"),
         role: row.get("role"),
         force_password_change,
+        auth_provider,
+        external_id,
+        idp_entity_id,
+        last_saml_auth_at,
         created_at: parse_db_timestamp(&created_at_str),
         updated_at: parse_db_timestamp(&updated_at_str),
     }

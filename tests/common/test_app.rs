@@ -296,6 +296,7 @@ pub fn test_config() -> AppConfig {
         rbac: RbacConfig::default(),
         groups_config_path: None,
         code_deploy: None,
+        saml: None,
     }
 }
 

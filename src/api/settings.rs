@@ -509,18 +509,66 @@ pub struct ServerInfoResponse {
     pub uptime_secs: u64,
     pub config_file_path: Option<String>,
     pub features: Vec<String>,
+    pub saml: SamlFeatureInfo,
+}
+
+/// SAML feature information
+#[derive(Debug, Serialize)]
+pub struct SamlFeatureInfo {
+    /// Whether SAML is enabled in configuration
+    pub enabled: bool,
+    /// Whether SAML is properly configured (has IdP metadata)
+    pub configured: bool,
+    /// SP entity ID (only included if SAML is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sp_entity_id: Option<String>,
+    /// IdP entity ID (only included if SAML is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idp_entity_id: Option<String>,
+    /// SAML login URL (only included if SAML is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_url: Option<String>,
 }
 
 /// Get server information
 ///
 /// GET /api/v1/settings/server
 async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoResponse> {
+    // Check SAML configuration
+    let saml_info = match &state.config.saml {
+        Some(saml_config) if saml_config.enabled => {
+            let configured = saml_config.idp.metadata_url.is_some()
+                || saml_config.idp.metadata_file.is_some()
+                || saml_config.idp.sso_url.is_some();
+
+            SamlFeatureInfo {
+                enabled: true,
+                configured,
+                sp_entity_id: Some(saml_config.sp.entity_id.clone()),
+                idp_entity_id: saml_config.idp.entity_id.clone(),
+                login_url: if configured {
+                    Some("/api/v1/auth/saml/login".to_string())
+                } else {
+                    None
+                },
+            }
+        }
+        _ => SamlFeatureInfo {
+            enabled: false,
+            configured: false,
+            sp_entity_id: None,
+            idp_entity_id: None,
+            login_url: None,
+        },
+    };
+
     let features = vec![
         ("puppetdb", state.puppetdb.is_some()),
         ("puppet_ca", state.puppet_ca.is_some()),
         ("rbac", true),
         ("caching", state.config.cache.enabled),
         ("facter_templates", true),
+        ("saml", saml_info.enabled && saml_info.configured),
     ];
 
     let enabled_features: Vec<String> = features
@@ -539,6 +587,7 @@ async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoRespon
         uptime_secs: 0, // Would track actual uptime
         config_file_path: None,
         features: enabled_features,
+        saml: saml_info,
     })
 }
 

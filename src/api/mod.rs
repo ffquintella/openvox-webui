@@ -23,6 +23,7 @@ mod permissions;
 mod query;
 mod reports;
 mod roles;
+mod saml;
 mod settings;
 mod users;
 
@@ -38,6 +39,8 @@ pub fn public_routes() -> Router<AppState> {
         .route("/health/ready", get(health::readiness))
         // Authentication endpoints (no auth required)
         .nest("/auth", auth::public_routes())
+        // SAML SSO endpoints (no auth required)
+        .nest("/auth/saml", saml::public_routes())
         // Node classification endpoint for Puppet agents (uses client cert auth)
         .nest("/nodes", nodes::public_routes())
         // Webhook endpoints (use signature verification instead of auth)

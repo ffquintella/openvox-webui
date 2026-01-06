@@ -14,6 +14,7 @@ pub mod r10k;
 pub mod rbac;
 pub mod rbac_db;
 pub mod reporting;
+pub mod saml;
 pub mod scheduler;
 
 pub use alerting::AlertingService;
@@ -35,5 +36,6 @@ pub use r10k::{R10kConfig, R10kService, R10kSource};
 pub use rbac::RbacService;
 pub use rbac_db::DbRbacService;
 pub use reporting::ReportingService;
+pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};
 pub use code_deploy_scheduler::{start_code_deploy_scheduler, CodeDeploySchedulerState};

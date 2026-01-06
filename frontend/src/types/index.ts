@@ -169,6 +169,7 @@ export interface User {
   email: string;
   role: 'admin' | 'user' | 'viewer';
   force_password_change?: boolean;
+  auth_provider?: AuthProvider;
 }
 
 export interface AuthResponse {
@@ -259,6 +260,7 @@ export interface UserResponse {
   email: string;
   role: string;
   force_password_change?: boolean;
+  auth_provider?: AuthProvider;
   roles?: Array<{ id: string; name: string; display_name: string }>;
   created_at: string;
 }
@@ -553,7 +555,19 @@ export interface ServerInfoResponse {
   uptime_secs: number;
   config_file_path?: string | null;
   features: string[];
+  saml: SamlFeatureInfo;
 }
+
+// SAML 2.0 types
+export interface SamlFeatureInfo {
+  enabled: boolean;
+  configured: boolean;
+  sp_entity_id?: string;
+  idp_entity_id?: string;
+  login_url?: string;
+}
+
+export type AuthProvider = 'local' | 'saml' | 'both';
 
 // CA (Certificate Authority) types
 export type CertificateStatus = 'requested' | 'signed' | 'rejected' | 'revoked';
