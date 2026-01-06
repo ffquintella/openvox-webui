@@ -1083,7 +1083,7 @@ function CreateSshKeyModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Private Key (PEM format)</label>
+            <label className="block text-sm font-medium text-gray-700">Private Key (OpenSSH format)</label>
             <textarea
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
@@ -1093,7 +1093,8 @@ function CreateSshKeyModal({
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
             />
             <p className="mt-1 text-xs text-gray-500">
-              The private key will be encrypted and stored securely.
+              Paste your SSH private key (OpenSSH format). It will be encrypted and stored securely.
+              Supported: RSA, Ed25519, ECDSA keys.
             </p>
           </div>
 
