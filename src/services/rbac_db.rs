@@ -1029,6 +1029,7 @@ fn parse_resource(s: &str) -> Result<Resource> {
         "audit_logs" => Ok(Resource::AuditLogs),
         "facter_templates" => Ok(Resource::FacterTemplates),
         "api_keys" => Ok(Resource::ApiKeys),
+        "certificates" => Ok(Resource::Certificates),
         _ => anyhow::bail!("Unknown resource: {}", s),
     }
 }
@@ -1043,6 +1044,9 @@ fn parse_action(s: &str) -> Result<Action> {
         "export" => Ok(Action::Export),
         "classify" => Ok(Action::Classify),
         "generate" => Ok(Action::Generate),
+        "sign" => Ok(Action::Sign),
+        "reject" => Ok(Action::Reject),
+        "revoke" => Ok(Action::Revoke),
         _ => anyhow::bail!("Unknown action: {}", s),
     }
 }
