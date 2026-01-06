@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::models::{
     Action, CreatePermissionRequest, CreateRoleRequest, EffectivePermissions, Permission,
-    PermissionCheck, PermissionConstraint, PermissionWithRole, Resource, Role, Scope,
+    PermissionCheck, PermissionConstraint, PermissionWithRole, Resource, Role, Scope, SystemRole,
 };
 
 /// Cache entry with TTL
@@ -783,6 +783,18 @@ impl DbRbacService {
         resource_id: Option<Uuid>,
         environment: Option<&str>,
     ) -> Result<PermissionCheck> {
+        // Check if user has SuperAdmin role - SuperAdmin always has all permissions
+        let role_ids = self.get_user_role_ids(user_id).await?;
+        if role_ids.contains(&SystemRole::SuperAdmin.uuid()) {
+            return Ok(PermissionCheck {
+                allowed: true,
+                resource,
+                action,
+                matched_permission: None,
+                reason: Some("SuperAdmin has all permissions".to_string()),
+            });
+        }
+
         let effective = self.get_effective_permissions(user_id).await?;
 
         for perm in &effective.permissions {
@@ -850,6 +862,17 @@ impl DbRbacService {
         resource_id: Option<Uuid>,
         environment: Option<&str>,
     ) -> Result<PermissionCheck> {
+        // SuperAdmin always has all permissions
+        if role_ids.contains(&SystemRole::SuperAdmin.uuid()) {
+            return Ok(PermissionCheck {
+                allowed: true,
+                resource,
+                action,
+                matched_permission: None,
+                reason: Some("SuperAdmin has all permissions".to_string()),
+            });
+        }
+
         let mut all_permissions = std::collections::HashSet::new();
 
         for role_id in role_ids {

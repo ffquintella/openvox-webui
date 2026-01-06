@@ -160,6 +160,17 @@ impl RbacService {
         resource_id: Option<Uuid>,
         environment: Option<&str>,
     ) -> PermissionCheck {
+        // SuperAdmin always has all permissions
+        if role_ids.contains(&SystemRole::SuperAdmin.uuid()) {
+            return PermissionCheck {
+                allowed: true,
+                resource,
+                action,
+                matched_permission: None,
+                reason: Some("SuperAdmin has all permissions".to_string()),
+            };
+        }
+
         let effective = self.get_effective_permissions(role_ids);
 
         for perm in &effective.permissions {
@@ -447,5 +458,50 @@ mod tests {
         let guard = PermissionGuard::read(Resource::Nodes);
         assert_eq!(guard.resource, Resource::Nodes);
         assert_eq!(guard.action, Action::Read);
+    }
+
+    #[test]
+    fn test_super_admin_has_all_permissions() {
+        let service = RbacService::new();
+        let super_admin_id = SystemRole::SuperAdmin.uuid();
+
+        // SuperAdmin should have permission for every resource and every action
+        for resource in Resource::all() {
+            for action in Action::all() {
+                let check =
+                    service.check_permission(&[super_admin_id], resource, action, None, None);
+                assert!(
+                    check.allowed,
+                    "SuperAdmin should have {:?} permission for {:?}",
+                    action,
+                    resource
+                );
+                assert_eq!(
+                    check.reason,
+                    Some("SuperAdmin has all permissions".to_string())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_super_admin_bypass_without_explicit_permissions() {
+        // Even with an empty RBAC service (no permissions loaded), SuperAdmin should work
+        let service = RbacService::with_roles(vec![]);
+        let super_admin_id = SystemRole::SuperAdmin.uuid();
+
+        // SuperAdmin should still have permission even with no roles loaded
+        let check = service.check_permission(
+            &[super_admin_id],
+            Resource::Users,
+            Action::Delete,
+            None,
+            None,
+        );
+        assert!(check.allowed);
+        assert_eq!(
+            check.reason,
+            Some("SuperAdmin has all permissions".to_string())
+        );
     }
 }

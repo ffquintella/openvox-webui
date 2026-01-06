@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Shield, Trash2, Users, Lock, X } from 'lucide-react';
+import { Plus, Shield, Trash2, Users, Lock, X, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import type { Role, ResourceInfo, Resource, Action, CreatePermissionRequest } from '../types';
+
+// SuperAdmin role name constant
+const SUPER_ADMIN_ROLE_NAME = 'super_admin';
 
 export default function Roles() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -212,27 +215,41 @@ export default function Roles() {
                   onClick={() => setSelectedRole(role)}
                   className={clsx(
                     'w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50',
-                    selectedRole?.id === role.id && 'bg-primary-50'
+                    selectedRole?.id === role.id && 'bg-primary-50',
+                    role.name === SUPER_ADMIN_ROLE_NAME && 'bg-amber-50'
                   )}
                 >
                   <div className="flex items-center">
-                    <Shield
-                      className={clsx(
-                        'w-5 h-5 mr-3',
-                        role.is_system ? 'text-primary-600' : 'text-gray-400'
-                      )}
-                    />
+                    {role.name === SUPER_ADMIN_ROLE_NAME ? (
+                      <Star className="w-5 h-5 mr-3 text-amber-500" />
+                    ) : (
+                      <Shield
+                        className={clsx(
+                          'w-5 h-5 mr-3',
+                          role.is_system ? 'text-primary-600' : 'text-gray-400'
+                        )}
+                      />
+                    )}
                     <div>
                       <p className="font-medium text-gray-900">{role.display_name}</p>
                       <p className="text-sm text-gray-500">{role.name}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">
-                      {role.permissions?.length || 0} perms
-                    </span>
+                    {role.name === SUPER_ADMIN_ROLE_NAME ? (
+                      <span className="text-xs text-amber-600 font-medium">All permissions</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">
+                        {role.permissions?.length || 0} perms
+                      </span>
+                    )}
                     {role.is_system && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                      <span className={clsx(
+                        'text-xs px-2 py-1 rounded',
+                        role.name === SUPER_ADMIN_ROLE_NAME
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-gray-100 text-gray-600'
+                      )}>
                         System
                       </span>
                     )}
@@ -252,7 +269,11 @@ export default function Roles() {
             <div className="card">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center">
-                  <Shield className="w-8 h-8 text-primary-600 mr-3" />
+                  {selectedRole.name === SUPER_ADMIN_ROLE_NAME ? (
+                    <Star className="w-8 h-8 text-amber-500 mr-3" />
+                  ) : (
+                    <Shield className="w-8 h-8 text-primary-600 mr-3" />
+                  )}
                   <div>
                     <h2 className="text-xl font-semibold text-gray-900">
                       {selectedRole.display_name}
@@ -275,6 +296,22 @@ export default function Roles() {
                 <p className="text-gray-600 mb-6">{selectedRole.description}</p>
               )}
 
+              {/* SuperAdmin special notice */}
+              {selectedRole.name === SUPER_ADMIN_ROLE_NAME && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-start">
+                    <Star className="w-5 h-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-amber-800">Super Administrator</h4>
+                      <p className="text-sm text-amber-700 mt-1">
+                        This role has unrestricted access to all resources and actions across the entire system.
+                        Permissions cannot be modified as SuperAdmin always bypasses permission checks.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Permissions */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
@@ -282,7 +319,8 @@ export default function Roles() {
                     <Lock className="w-4 h-4 mr-2" />
                     Permissions
                   </h3>
-                  {!selectedRole.is_system && (
+                  {/* Don't show Add Permission button for system roles or SuperAdmin */}
+                  {!selectedRole.is_system && selectedRole.name !== SUPER_ADMIN_ROLE_NAME && (
                     <button
                       onClick={() => setIsAddPermissionOpen(true)}
                       className="btn btn-secondary text-sm flex items-center"
@@ -361,7 +399,24 @@ export default function Roles() {
                 )}
 
                 <div className="bg-gray-50 rounded-lg p-4">
-                  {selectedRole.permissions && selectedRole.permissions.length > 0 ? (
+                  {/* SuperAdmin has implicit all permissions */}
+                  {selectedRole.name === SUPER_ADMIN_ROLE_NAME ? (
+                    <div className="text-center py-4">
+                      <div className="flex flex-wrap justify-center gap-2 mb-3">
+                        {['nodes', 'groups', 'reports', 'facts', 'users', 'roles', 'settings', 'audit_logs', 'facter_templates', 'api_keys', 'certificates'].map((resource) => (
+                          <span
+                            key={resource}
+                            className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded font-medium"
+                          >
+                            {resource}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-sm text-amber-600">
+                        All actions (read, create, update, delete, admin, export, classify, generate, sign, reject, revoke)
+                      </p>
+                    </div>
+                  ) : selectedRole.permissions && selectedRole.permissions.length > 0 ? (
                     <div className="space-y-2">
                       {selectedRole.permissions.map((perm) => (
                         <div

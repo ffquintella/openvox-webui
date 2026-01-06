@@ -12,7 +12,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
-    models::{Action, Resource},
+    models::{Action, Resource, SystemRole},
     services::RbacService,
     utils::error::ErrorResponse,
     AppState,
@@ -119,6 +119,11 @@ pub fn check_permission(
 ) -> Result<(), RbacError> {
     // Convert role names to UUIDs
     let role_ids: Vec<Uuid> = auth_user.role_ids.to_vec();
+
+    // SuperAdmin always has all permissions
+    if role_ids.contains(&SystemRole::SuperAdmin.uuid()) {
+        return Ok(());
+    }
 
     // Check permission
     let check =
@@ -363,5 +368,63 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_permission_super_admin_has_all() {
+        let rbac_service = RbacService::new();
+        let auth_user = AuthUser {
+            id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
+            username: "superadmin".to_string(),
+            email: "superadmin@example.com".to_string(),
+            roles: vec!["super_admin".to_string()],
+            role_ids: vec![SystemRole::SuperAdmin.uuid()],
+        };
+
+        // SuperAdmin should have all permissions on all resources
+        for resource in Resource::all() {
+            for action in Action::all() {
+                let result = check_permission(
+                    &rbac_service,
+                    &auth_user,
+                    resource,
+                    action,
+                    None,
+                    None,
+                );
+                assert!(
+                    result.is_ok(),
+                    "SuperAdmin should have {:?} permission for {:?}",
+                    action,
+                    resource
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_check_permission_super_admin_bypasses_rbac() {
+        // Even with an empty RBAC service, SuperAdmin should have access
+        let rbac_service = RbacService::with_roles(vec![]);
+        let auth_user = AuthUser {
+            id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
+            username: "superadmin".to_string(),
+            email: "superadmin@example.com".to_string(),
+            roles: vec!["super_admin".to_string()],
+            role_ids: vec![SystemRole::SuperAdmin.uuid()],
+        };
+
+        // SuperAdmin should bypass the permission check entirely
+        let result = check_permission(
+            &rbac_service,
+            &auth_user,
+            Resource::Users,
+            Action::Delete,
+            None,
+            None,
+        );
+        assert!(result.is_ok());
     }
 }
