@@ -8,6 +8,15 @@ use axum::http::{Request, StatusCode};
 use serde_json::json;
 use uuid::Uuid;
 
+/// Valid Ed25519 SSH private key for testing (generated specifically for tests)
+const TEST_SSH_PRIVATE_KEY: &str = r#"-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBT2RI/LlHUeok0dZbyNEhb/DT4vEdbBr6oXceuAedphQAAAJiH1jSEh9Y0
+hAAAAAtzc2gtZWQyNTUxOQAAACBT2RI/LlHUeok0dZbyNEhb/DT4vEdbBr6oXceuAedphQ
+AAAEB2OZ2cZyKMUpxmhJkaUgCCxg7+hXXrZD67bNMJHXaDVFPZEj8uUdR6iTR1lvI0SFv8
+NPi8R1sGvqhdx64B52mFAAAAEHRlc3RAZXhhbXBsZS5jb20BAgMEBQ==
+-----END OPENSSH PRIVATE KEY-----"#;
+
 // ============================================================================
 // SSH Keys Tests
 // ============================================================================
@@ -53,7 +62,7 @@ async fn test_create_ssh_key() {
         .body(axum::body::Body::from(
             json!({
                 "name": "test-key",
-                "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                "private_key": TEST_SSH_PRIVATE_KEY
             })
             .to_string(),
         ))
@@ -64,6 +73,10 @@ async fn test_create_ssh_key() {
     let json: serde_json::Value = response.json();
     assert_eq!(json["name"], "test-key");
     assert!(json.get("id").is_some());
+    // Public key should be extracted
+    assert!(json.get("public_key").is_some());
+    let public_key = json["public_key"].as_str().unwrap();
+    assert!(public_key.starts_with("ssh-ed25519"), "Public key should be in OpenSSH format");
     // Private key should NOT be in response
     assert!(json.get("private_key").is_none());
     assert!(json.get("private_key_encrypted").is_none());
@@ -88,7 +101,7 @@ async fn test_create_ssh_key_duplicate_name() {
         .body(axum::body::Body::from(
             json!({
                 "name": "duplicate-key",
-                "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\ntest1\n-----END OPENSSH PRIVATE KEY-----"
+                "private_key": TEST_SSH_PRIVATE_KEY
             })
             .to_string(),
         ))
@@ -104,7 +117,7 @@ async fn test_create_ssh_key_duplicate_name() {
         .body(axum::body::Body::from(
             json!({
                 "name": "duplicate-key",
-                "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\ntest2\n-----END OPENSSH PRIVATE KEY-----"
+                "private_key": TEST_SSH_PRIVATE_KEY
             })
             .to_string(),
         ))
@@ -132,7 +145,7 @@ async fn test_delete_ssh_key() {
         .body(axum::body::Body::from(
             json!({
                 "name": "key-to-delete",
-                "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                "private_key": TEST_SSH_PRIVATE_KEY
             })
             .to_string(),
         ))

@@ -111,9 +111,16 @@ impl CodeDeployService {
         // Extract public key from private key
         let public_key = match GitService::extract_public_key(&req.private_key) {
             Ok(key) => key,
-            Err(_) => {
-                // If extraction fails, expect user to provide it
-                "(public key not extracted - please verify)".to_string()
+            Err(e) => {
+                // Log the error for debugging
+                tracing::warn!("Failed to extract public key from private key: {}", e);
+                // Return error to the user instead of storing invalid key
+                return Err(anyhow::anyhow!(
+                    "Failed to extract public key: {}. \
+                     Please ensure the private key is in OpenSSH format \
+                     (starts with '-----BEGIN OPENSSH PRIVATE KEY-----')",
+                    e
+                ));
             }
         };
 
