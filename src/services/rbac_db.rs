@@ -1160,4 +1160,52 @@ mod tests {
         assert_eq!(parse_action("admin").unwrap(), Action::Admin);
         assert!(parse_action("invalid").is_err());
     }
+
+    #[test]
+    fn test_parse_resource_covers_all_resources() {
+        // Ensure parse_resource handles all Resource variants
+        // This test will fail at compile time if a new Resource variant is added
+        // but not handled in parse_resource
+        for resource in Resource::all() {
+            let resource_str = resource.as_str();
+            let parsed = parse_resource(resource_str);
+            assert!(
+                parsed.is_ok(),
+                "parse_resource should handle '{}' but got error: {:?}",
+                resource_str,
+                parsed.err()
+            );
+            assert_eq!(
+                parsed.unwrap(),
+                resource,
+                "parse_resource('{}') should return {:?}",
+                resource_str,
+                resource
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_action_covers_all_actions() {
+        // Ensure parse_action handles all Action variants
+        // This test will fail at compile time if a new Action variant is added
+        // but not handled in parse_action
+        for action in Action::all() {
+            let action_str = action.as_str();
+            let parsed = parse_action(action_str);
+            assert!(
+                parsed.is_ok(),
+                "parse_action should handle '{}' but got error: {:?}",
+                action_str,
+                parsed.err()
+            );
+            assert_eq!(
+                parsed.unwrap(),
+                action,
+                "parse_action('{}') should return {:?}",
+                action_str,
+                action
+            );
+        }
+    }
 }
