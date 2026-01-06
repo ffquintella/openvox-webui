@@ -41,8 +41,8 @@ help:
 	@echo "Versioning:"
 	@echo "  make version        - Show current version"
 	@echo "  make version-patch  - Bump patch version (0.1.0 -> 0.1.1)"
-	@echo "  make version-minor  - Bump minor version (0.1.0 -> 0.2.0)"
-	@echo "  make version-major  - Bump major version (0.1.0 -> 1.0.0)"
+	@echo "  make version-minor  - Bump minor version, commit, and tag (0.1.0 -> 0.2.0)"
+	@echo "  make version-major  - Bump major version, commit, and tag (0.1.0 -> 1.0.0)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean          - Remove build artifacts"
@@ -204,6 +204,20 @@ version-patch:
 
 version-minor:
 	@./scripts/bump-version.sh minor
+	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
+	git add Cargo.toml frontend/package.json; \
+	git commit -m "chore: bump version to v$$NEW_VERSION"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	echo ""; \
+	echo "Created git tag: v$$NEW_VERSION"; \
+	echo "Don't forget to push: git push && git push --tags"
 
 version-major:
 	@./scripts/bump-version.sh major
+	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
+	git add Cargo.toml frontend/package.json; \
+	git commit -m "chore: bump version to v$$NEW_VERSION"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	echo ""; \
+	echo "Created git tag: v$$NEW_VERSION"; \
+	echo "Don't forget to push: git push && git push --tags"
