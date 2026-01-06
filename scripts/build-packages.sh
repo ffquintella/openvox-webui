@@ -446,8 +446,11 @@ DOCKERFILE_EOF
         /bin/bash -c '
             set -e
             cd /tmp
-            cp -r /source openvox-webui-${VERSION}
-            cd openvox-webui-${VERSION}
+            # Copy source excluding target/ and node_modules/ to save space
+            mkdir -p openvox-webui-${VERSION}
+            cd /source
+            find . -maxdepth 1 ! -name target ! -name node_modules ! -name build ! -name . -exec cp -r {} /tmp/openvox-webui-${VERSION}/ \;
+            cd /tmp/openvox-webui-${VERSION}
 
             # Build frontend
             echo "Building frontend..."
@@ -552,8 +555,11 @@ DOCKERFILE_EOF
         /bin/bash -c '
             set -e
             cd /tmp
-            cp -r /source openvox-webui-${VERSION}
-            cd openvox-webui-${VERSION}
+            # Copy source excluding target/ and node_modules/ to save space
+            mkdir -p openvox-webui-${VERSION}
+            cd /source
+            find . -maxdepth 1 ! -name target ! -name node_modules ! -name build ! -name . -exec cp -r {} /tmp/openvox-webui-${VERSION}/ \;
+            cd /tmp/openvox-webui-${VERSION}
 
             # Build frontend
             echo "Building frontend..."

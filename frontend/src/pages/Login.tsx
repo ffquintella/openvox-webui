@@ -21,7 +21,7 @@ export default function Login() {
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
   // Query server info to check SAML status
-  const { data: serverInfo } = useQuery({
+  const { data: serverInfo, isLoading: serverInfoLoading, error: serverInfoError } = useQuery({
     queryKey: ['serverInfo'],
     queryFn: api.getServerInfo,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -30,6 +30,68 @@ export default function Login() {
   // Check if SAML is enabled and configured
   const samlEnabled = serverInfo?.saml?.enabled && serverInfo?.saml?.configured;
   const samlLoginUrl = serverInfo?.saml?.login_url;
+
+  // Debug logging for SAML configuration
+  useEffect(() => {
+    if (serverInfoLoading) {
+      console.log('[SAML Debug] Loading server info...');
+      return;
+    }
+
+    if (serverInfoError) {
+      console.error('[SAML Debug] Failed to fetch server info:', serverInfoError);
+      console.error('[SAML Debug] SSO button will NOT be shown due to server info fetch failure');
+      return;
+    }
+
+    if (!serverInfo) {
+      console.warn('[SAML Debug] Server info is null/undefined');
+      return;
+    }
+
+    console.log('[SAML Debug] Server info received:', {
+      version: serverInfo.version,
+      features: serverInfo.features,
+      saml: serverInfo.saml,
+    });
+
+    // Detailed SAML status logging
+    if (!serverInfo.saml) {
+      console.log('[SAML Debug] No SAML configuration in server response');
+      console.log('[SAML Debug] SSO button will NOT be shown: saml object is missing');
+    } else {
+      const { enabled, configured, sp_entity_id, idp_entity_id, login_url } = serverInfo.saml;
+
+      console.log('[SAML Debug] SAML configuration:', {
+        enabled,
+        configured,
+        sp_entity_id,
+        idp_entity_id,
+        login_url,
+      });
+
+      if (!enabled) {
+        console.log('[SAML Debug] SSO button will NOT be shown: SAML is disabled (enabled=false)');
+      } else if (!configured) {
+        console.log('[SAML Debug] SSO button will NOT be shown: SAML is enabled but NOT configured');
+        console.log('[SAML Debug] Possible causes:');
+        console.log('  - No IdP metadata_url configured');
+        console.log('  - No IdP metadata_file configured');
+        console.log('  - No IdP sso_url configured');
+      } else if (!login_url) {
+        console.log('[SAML Debug] SSO button will NOT be shown: login_url is missing');
+      } else {
+        console.log('[SAML Debug] SSO button WILL be shown');
+        console.log(`[SAML Debug] Login URL: ${login_url}`);
+      }
+    }
+
+    console.log('[SAML Debug] Final button visibility:', {
+      samlEnabled,
+      samlLoginUrl,
+      buttonWillShow: !!(samlEnabled && samlLoginUrl),
+    });
+  }, [serverInfo, serverInfoLoading, serverInfoError, samlEnabled, samlLoginUrl]);
 
   // Handle SSO callback - check for tokens in URL from SAML redirect
   useEffect(() => {

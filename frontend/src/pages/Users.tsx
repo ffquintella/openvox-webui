@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, User, Shield, Trash2, Mail, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Plus, User, Shield, Trash2, Mail, ChevronRight, X, Loader2, Key, Globe } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
-import type { Role } from '../types';
+import type { Role, AuthProvider } from '../types';
 
 interface UserData {
   id: string;
   username: string;
   email: string;
   role: string;
+  auth_provider?: AuthProvider;
   roles?: Array<{ id: string; name: string; display_name: string }>;
   created_at: string;
 }
@@ -20,6 +21,8 @@ export default function Users() {
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newAuthProvider, setNewAuthProvider] = useState<AuthProvider>('local');
+  const [newExternalId, setNewExternalId] = useState('');
   const [pendingRoleChanges, setPendingRoleChanges] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
@@ -69,15 +72,35 @@ export default function Users() {
     setNewUsername('');
     setNewEmail('');
     setNewPassword('');
+    setNewAuthProvider('local');
+    setNewExternalId('');
   };
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    createMutation.mutate({
+    const request: {
+      username: string;
+      email: string;
+      password?: string;
+      auth_provider: AuthProvider;
+      external_id?: string;
+    } = {
       username: newUsername,
       email: newEmail,
-      password: newPassword,
-    });
+      auth_provider: newAuthProvider,
+    };
+
+    // Only include password for local or both auth types
+    if (newAuthProvider === 'local' || newAuthProvider === 'both') {
+      request.password = newPassword;
+    }
+
+    // Include external_id for SAML users (default to email if not provided)
+    if (newAuthProvider === 'saml' || newAuthProvider === 'both') {
+      request.external_id = newExternalId || newEmail;
+    }
+
+    createMutation.mutate(request);
   };
 
   const handleSelectUser = (user: UserData) => {
@@ -159,6 +182,60 @@ export default function Users() {
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-lg font-semibold mb-4">Create User</h2>
             <form onSubmit={handleCreate}>
+              {/* Authentication Type Selection */}
+              <div className="mb-4">
+                <label className="label">Authentication Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewAuthProvider('local')}
+                    className={clsx(
+                      'p-3 rounded-lg border-2 text-center transition-all',
+                      newAuthProvider === 'local'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    )}
+                  >
+                    <Key className="w-5 h-5 mx-auto mb-1" />
+                    <span className="text-sm font-medium">Local</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewAuthProvider('saml')}
+                    className={clsx(
+                      'p-3 rounded-lg border-2 text-center transition-all',
+                      newAuthProvider === 'saml'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    )}
+                  >
+                    <Globe className="w-5 h-5 mx-auto mb-1" />
+                    <span className="text-sm font-medium">SSO</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewAuthProvider('both')}
+                    className={clsx(
+                      'p-3 rounded-lg border-2 text-center transition-all',
+                      newAuthProvider === 'both'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    )}
+                  >
+                    <div className="flex justify-center gap-1 mb-1">
+                      <Key className="w-4 h-4" />
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <span className="text-sm font-medium">Both</span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {newAuthProvider === 'local' && 'User will authenticate with username and password'}
+                  {newAuthProvider === 'saml' && 'User will authenticate via SSO only (no password required)'}
+                  {newAuthProvider === 'both' && 'User can use either password or SSO to authenticate'}
+                </p>
+              </div>
+
               <div className="mb-4">
                 <label className="label">Username</label>
                 <input
@@ -167,6 +244,7 @@ export default function Users() {
                   onChange={(e) => setNewUsername(e.target.value)}
                   className="input"
                   required
+                  minLength={3}
                 />
               </div>
               <div className="mb-4">
@@ -177,20 +255,47 @@ export default function Users() {
                   onChange={(e) => setNewEmail(e.target.value)}
                   className="input"
                   required
+                  placeholder="user@example.com"
                 />
               </div>
-              <div className="mb-4">
-                <label className="label">Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="input"
-                  required
-                  minLength={8}
-                />
-              </div>
-              <div className="flex justify-end gap-3">
+
+              {/* Password field - only for local or both auth types */}
+              {(newAuthProvider === 'local' || newAuthProvider === 'both') && (
+                <div className="mb-4">
+                  <label className="label">Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="input"
+                    required
+                    minLength={8}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
+                </div>
+              )}
+
+              {/* External ID field - for SAML users */}
+              {(newAuthProvider === 'saml' || newAuthProvider === 'both') && (
+                <div className="mb-4">
+                  <label className="label">
+                    External ID (SSO Identifier)
+                    <span className="text-gray-400 font-normal ml-1">- optional</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newExternalId}
+                    onChange={(e) => setNewExternalId(e.target.value)}
+                    className="input"
+                    placeholder={newEmail || 'user@example.com'}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    The identifier sent by the SSO provider (usually email). Defaults to email if not specified.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
                 <button
                   type="button"
                   onClick={() => {
@@ -226,6 +331,9 @@ export default function Users() {
                 Email
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Auth
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Roles
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -257,6 +365,31 @@ export default function Users() {
                     <Mail className="w-4 h-4 mr-2" />
                     {user.email}
                   </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span
+                    className={clsx(
+                      'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                      user.auth_provider === 'local' && 'bg-gray-100 text-gray-700',
+                      user.auth_provider === 'saml' && 'bg-blue-100 text-blue-700',
+                      user.auth_provider === 'both' && 'bg-purple-100 text-purple-700',
+                      !user.auth_provider && 'bg-gray-100 text-gray-700'
+                    )}
+                  >
+                    {user.auth_provider === 'local' && <Key className="w-3 h-3 mr-1" />}
+                    {user.auth_provider === 'saml' && <Globe className="w-3 h-3 mr-1" />}
+                    {user.auth_provider === 'both' && (
+                      <>
+                        <Key className="w-3 h-3" />
+                        <Globe className="w-3 h-3 mr-1" />
+                      </>
+                    )}
+                    {!user.auth_provider && <Key className="w-3 h-3 mr-1" />}
+                    {user.auth_provider === 'local' && 'Local'}
+                    {user.auth_provider === 'saml' && 'SSO'}
+                    {user.auth_provider === 'both' && 'Both'}
+                    {!user.auth_provider && 'Local'}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2 flex-wrap">

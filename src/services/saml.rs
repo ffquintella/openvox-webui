@@ -58,17 +58,60 @@ impl SamlService {
     /// Initialize the SAML service provider
     pub async fn initialize(&self) -> Result<()> {
         if !self.config.enabled {
-            tracing::info!("SAML is disabled, skipping initialization");
+            tracing::info!("SAML initialization skipped: SAML is disabled in configuration");
             return Ok(());
         }
 
-        tracing::info!("Initializing SAML Service Provider...");
+        tracing::info!("=== SAML Service Provider Initialization ===");
+        tracing::info!(
+            "SP Entity ID: {}",
+            self.config.sp.entity_id
+        );
+        tracing::info!(
+            "SP ACS URL: {}",
+            self.config.sp.acs_url
+        );
+        tracing::debug!(
+            "SP options: sign_requests={}, require_signed_assertions={}",
+            self.config.sp.sign_requests,
+            self.config.sp.require_signed_assertions
+        );
+
+        // Log IdP source
+        if let Some(ref url) = self.config.idp.metadata_url {
+            tracing::info!("IdP metadata source: URL ({})", url);
+        } else if let Some(ref path) = self.config.idp.metadata_file {
+            tracing::info!("IdP metadata source: file ({:?})", path);
+        } else if self.config.idp.sso_url.is_some() {
+            tracing::info!("IdP metadata source: manual configuration");
+            tracing::debug!(
+                "Manual IdP config: entity_id={:?}, sso_url={:?}",
+                self.config.idp.entity_id,
+                self.config.idp.sso_url
+            );
+        } else {
+            tracing::error!(
+                "No IdP metadata source configured! SAML will fail. \
+                Please configure saml.idp.metadata_url, saml.idp.metadata_file, or saml.idp.sso_url"
+            );
+        }
 
         // Load IdP metadata
+        tracing::debug!("Fetching IdP metadata...");
         let idp_metadata = self.fetch_idp_metadata().await?;
+
+        tracing::info!(
+            "IdP metadata loaded: entity_id={:?}, sso_url={:?}",
+            idp_metadata.entity_id,
+            idp_metadata.sso_url.as_ref().map(|u| {
+                // Truncate long URLs for log readability
+                if u.len() > 60 { format!("{}...", &u[..60]) } else { u.clone() }
+            })
+        );
+
         *self.idp_metadata.write().await = Some(idp_metadata);
 
-        tracing::info!("SAML Service Provider initialized successfully");
+        tracing::info!("=== SAML Service Provider initialized successfully ===");
         Ok(())
     }
 
@@ -82,59 +125,143 @@ impl SamlService {
                 .build()
                 .context("Failed to create HTTP client")?;
 
+            tracing::debug!("Sending HTTP GET request to IdP metadata URL...");
             let response = client
                 .get(url)
                 .send()
                 .await
                 .context("Failed to fetch IdP metadata")?;
 
-            if !response.status().is_success() {
+            let status = response.status();
+            tracing::debug!("IdP metadata response status: {}", status);
+
+            if !status.is_success() {
+                tracing::error!(
+                    "IdP metadata fetch failed: HTTP {} from {}",
+                    status,
+                    url
+                );
                 anyhow::bail!(
                     "IdP metadata fetch failed with status: {}",
-                    response.status()
+                    status
                 );
             }
 
-            Some(response.text().await?)
+            let body = response.text().await?;
+            tracing::debug!(
+                "IdP metadata received: {} bytes",
+                body.len()
+            );
+            Some(body)
         } else if let Some(ref path) = self.config.idp.metadata_file {
             tracing::info!("Loading IdP metadata from file: {:?}", path);
-            Some(
-                std::fs::read_to_string(path)
-                    .with_context(|| format!("Failed to read IdP metadata file: {:?}", path))?,
-            )
+
+            // Check if file exists
+            if !path.exists() {
+                tracing::error!(
+                    "IdP metadata file not found: {:?}. SSO will not work!",
+                    path
+                );
+                anyhow::bail!("IdP metadata file not found: {:?}", path);
+            }
+
+            let content = std::fs::read_to_string(path)
+                .with_context(|| format!("Failed to read IdP metadata file: {:?}", path))?;
+
+            tracing::debug!(
+                "IdP metadata file loaded: {} bytes from {:?}",
+                content.len(),
+                path
+            );
+            Some(content)
         } else {
+            tracing::debug!("No metadata URL or file configured, using manual IdP configuration");
             None
         };
 
         // Try to parse metadata to extract SSO URL and entity ID
         let (entity_id, sso_url) = if let Some(xml) = xml {
             // Try to parse with samael
-            if let Ok(metadata) = xml.parse::<samael::metadata::EntityDescriptor>() {
-                let entity_id = metadata.entity_id.clone();
-                let sso_url = metadata
-                    .idp_sso_descriptors
-                    .as_ref()
-                    .and_then(|descriptors| descriptors.first())
-                    .and_then(|desc| {
-                        desc.single_sign_on_services
-                            .iter()
-                            .find(|svc| svc.binding.contains("HTTP-Redirect"))
-                            .or_else(|| desc.single_sign_on_services.first())
-                            .map(|svc| svc.location.clone())
-                    });
-                (entity_id, sso_url)
-            } else {
-                // Fallback to manual config
-                (self.config.idp.entity_id.clone(), self.config.idp.sso_url.clone())
+            tracing::debug!("Attempting to parse IdP metadata XML with samael...");
+            match xml.parse::<samael::metadata::EntityDescriptor>() {
+                Ok(metadata) => {
+                    tracing::info!("IdP metadata parsed successfully");
+                    let entity_id = metadata.entity_id.clone();
+                    tracing::debug!("Parsed IdP entity_id: {:?}", entity_id);
+
+                    let sso_url = metadata
+                        .idp_sso_descriptors
+                        .as_ref()
+                        .and_then(|descriptors| {
+                            tracing::debug!(
+                                "Found {} IdP SSO descriptor(s)",
+                                descriptors.len()
+                            );
+                            descriptors.first()
+                        })
+                        .and_then(|desc| {
+                            tracing::debug!(
+                                "IdP SSO descriptor has {} SingleSignOnService endpoint(s)",
+                                desc.single_sign_on_services.len()
+                            );
+                            for svc in &desc.single_sign_on_services {
+                                tracing::debug!(
+                                    "  - SSO endpoint: binding={}, location={}",
+                                    svc.binding,
+                                    svc.location
+                                );
+                            }
+                            desc.single_sign_on_services
+                                .iter()
+                                .find(|svc| svc.binding.contains("HTTP-Redirect"))
+                                .or_else(|| desc.single_sign_on_services.first())
+                                .map(|svc| svc.location.clone())
+                        });
+
+                    if let Some(ref url) = sso_url {
+                        tracing::info!("Selected IdP SSO URL: {}", url);
+                    } else {
+                        tracing::warn!(
+                            "No SSO URL found in IdP metadata! Check that the metadata contains \
+                            an IDPSSODescriptor with SingleSignOnService elements"
+                        );
+                    }
+
+                    (entity_id, sso_url)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse IdP metadata XML: {}. Falling back to manual configuration",
+                        e
+                    );
+                    (self.config.idp.entity_id.clone(), self.config.idp.sso_url.clone())
+                }
             }
         } else {
             // Use manual config
+            tracing::debug!("Using manual IdP configuration (no metadata XML)");
+            tracing::debug!(
+                "Manual config: entity_id={:?}, sso_url={:?}",
+                self.config.idp.entity_id,
+                self.config.idp.sso_url
+            );
             (self.config.idp.entity_id.clone(), self.config.idp.sso_url.clone())
         };
 
         if sso_url.is_none() {
+            tracing::error!(
+                "SAML CONFIGURATION ERROR: No SSO URL found! \
+                Check your IdP metadata or configure saml.idp.sso_url manually. \
+                The SSO button will NOT work without a valid SSO URL."
+            );
             anyhow::bail!("No SSO URL found in IdP metadata or configuration");
         }
+
+        tracing::debug!(
+            "IdP metadata result: entity_id={:?}, sso_url={:?}",
+            entity_id,
+            sso_url
+        );
 
         Ok(IdpMetadata { entity_id, sso_url })
     }
@@ -239,10 +366,22 @@ impl SamlService {
         // Get InResponseTo for verification
         let in_response_to = response.in_response_to.clone();
 
+        tracing::debug!(
+            "SAML Response InResponseTo: {:?}",
+            in_response_to
+        );
+
         // Verify this is a response to our request (if not IdP-initiated)
         let relay_state = if let Some(ref irt) = in_response_to {
+            tracing::debug!("Verifying InResponseTo request_id='{}'", irt);
             let stored_relay = self.verify_request_id(irt).await?;
             if stored_relay.is_none() && !self.config.user_mapping.allow_idp_initiated {
+                tracing::error!(
+                    "SAML request ID validation failed: request_id='{}' not found or expired. \
+                    allow_idp_initiated={}",
+                    irt,
+                    self.config.user_mapping.allow_idp_initiated
+                );
                 anyhow::bail!("Invalid or expired SAML request ID");
             }
             stored_relay
@@ -381,10 +520,13 @@ impl SamlService {
     /// Store a SAML auth request for later verification
     async fn store_auth_request(&self, request_id: &str, relay_state: Option<&str>) -> Result<()> {
         let id = Uuid::new_v4().to_string();
-        let created_at = chrono::Utc::now().to_rfc3339();
-        let expires_at = (chrono::Utc::now()
+        // Use a consistent timestamp format without fractional seconds for reliable SQLite string comparison
+        let now = chrono::Utc::now();
+        let created_at = now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+        let expires_at = (now
             + chrono::Duration::seconds(self.config.session.request_max_age_secs as i64))
-        .to_rfc3339();
+        .format("%Y-%m-%dT%H:%M:%S+00:00")
+        .to_string();
 
         sqlx::query(
             "INSERT INTO saml_auth_requests (id, request_id, relay_state, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
@@ -403,7 +545,43 @@ impl SamlService {
 
     /// Verify a request ID and get the associated relay state
     pub async fn verify_request_id(&self, request_id: &str) -> Result<Option<String>> {
-        let now = chrono::Utc::now().to_rfc3339();
+        // Use consistent timestamp format for SQLite string comparison
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+
+        tracing::debug!(
+            "Verifying SAML request_id='{}', current_time='{}'",
+            request_id,
+            now
+        );
+
+        // First, let's check if the request exists at all (for debugging)
+        let debug_row = sqlx::query(
+            "SELECT request_id, expires_at FROM saml_auth_requests WHERE request_id = ?",
+        )
+        .bind(request_id)
+        .fetch_optional(&self.pool)
+        .await;
+
+        match &debug_row {
+            Ok(Some(row)) => {
+                let expires: String = row.try_get("expires_at").unwrap_or_default();
+                tracing::debug!(
+                    "Found SAML request in database: request_id='{}', expires_at='{}', now='{}'",
+                    request_id,
+                    expires,
+                    now
+                );
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    "SAML request_id='{}' NOT FOUND in database",
+                    request_id
+                );
+            }
+            Err(e) => {
+                tracing::error!("Database error checking SAML request: {}", e);
+            }
+        }
 
         let row = sqlx::query(
             "SELECT relay_state FROM saml_auth_requests WHERE request_id = ? AND expires_at > ?",
@@ -431,7 +609,8 @@ impl SamlService {
 
     /// Clean up expired auth requests
     pub async fn cleanup_expired_requests(&self) -> Result<u64> {
-        let now = chrono::Utc::now().to_rfc3339();
+        // Use consistent timestamp format for SQLite string comparison
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
 
         let result = sqlx::query("DELETE FROM saml_auth_requests WHERE expires_at <= ?")
             .bind(&now)

@@ -268,14 +268,18 @@ export interface UserResponse {
 export interface CreateUserRequest {
   username: string;
   email: string;
-  password: string;
+  password?: string; // Optional for SAML-only users
   role_ids?: string[];
+  auth_provider?: AuthProvider;
+  external_id?: string; // For SAML users
 }
 
 export interface UpdateUserRequest {
   username?: string;
   email?: string;
   password?: string;
+  auth_provider?: AuthProvider;
+  external_id?: string;
 }
 
 export interface EffectivePermissions {

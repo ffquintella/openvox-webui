@@ -33,10 +33,20 @@ pub fn routes() -> Router<AppState> {
 pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
-    pub password: String,
+    /// Password - required for local auth, optional for SAML-only users
+    pub password: Option<String>,
     pub organization_id: Option<Uuid>,
     pub role: Option<String>,
     pub role_ids: Option<Vec<Uuid>>,
+    /// Authentication provider: "local", "saml", or "both" (default: "local")
+    #[serde(default = "default_auth_provider")]
+    pub auth_provider: String,
+    /// External ID for SAML users (e.g., email from IdP)
+    pub external_id: Option<String>,
+}
+
+fn default_auth_provider() -> String {
+    "local".to_string()
 }
 
 /// Update user request
@@ -46,6 +56,10 @@ pub struct UpdateUserRequest {
     pub email: Option<String>,
     pub password: Option<String>,
     pub role: Option<String>,
+    /// Authentication provider: "local", "saml", or "both"
+    pub auth_provider: Option<String>,
+    /// External ID for SAML users
+    pub external_id: Option<String>,
 }
 
 /// User response with roles
@@ -150,6 +164,24 @@ async fn create_user(
     auth_user: AuthUser,
     Json(payload): Json<CreateUserRequest>,
 ) -> Result<(StatusCode, Json<UserPublic>), (StatusCode, Json<ErrorResponse>)> {
+    use crate::models::AuthProvider;
+
+    // Parse auth_provider
+    let auth_provider: AuthProvider = payload
+        .auth_provider
+        .parse()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "validation_error".to_string(),
+                    message: "Invalid auth_provider. Must be 'local', 'saml', or 'both'".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
     // Validate input
     if payload.username.len() < 3 {
         return Err((
@@ -163,18 +195,7 @@ async fn create_user(
         ));
     }
 
-    if payload.password.len() < 8 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "validation_error".to_string(),
-                message: "Password must be at least 8 characters".to_string(),
-                details: None,
-                code: None,
-            }),
-        ));
-    }
-
+    // Email is always required and must be valid
     if !payload.email.contains('@') {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -186,6 +207,43 @@ async fn create_user(
             }),
         ));
     }
+
+    // Password validation depends on auth_provider
+    let password = match (&auth_provider, &payload.password) {
+        // Local or Both auth requires a password
+        (AuthProvider::Local | AuthProvider::Both, None) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "validation_error".to_string(),
+                    message: "Password is required for local authentication".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            ));
+        }
+        (AuthProvider::Local | AuthProvider::Both, Some(p)) if p.len() < 8 => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "validation_error".to_string(),
+                    message: "Password must be at least 8 characters".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            ));
+        }
+        (AuthProvider::Local | AuthProvider::Both, Some(p)) => Some(p.as_str()),
+        // SAML-only users don't need a password
+        (AuthProvider::Saml, _) => None,
+    };
+
+    // SAML users should have an external_id (use email as default)
+    let external_id = if auth_provider.allows_saml() {
+        payload.external_id.as_deref().or(Some(payload.email.as_str()))
+    } else {
+        None
+    };
 
     let auth_service = AuthService::new(state.db.clone());
     let role = payload.role.as_deref().unwrap_or("viewer");
@@ -201,12 +259,14 @@ async fn create_user(
     };
 
     let user = auth_service
-        .create_user_in_org(
+        .create_user_with_auth_provider(
             &payload.username,
             &payload.email,
-            &payload.password,
+            password,
             role,
             org_id,
+            auth_provider,
+            external_id,
         )
         .await
         .map_err(|e| {
@@ -369,12 +429,14 @@ async fn update_user(
     }
 
     let user = auth_service
-        .update_user(
+        .update_user_full(
             &id,
             payload.username.as_deref(),
             payload.email.as_deref(),
             payload.password.as_deref(),
             payload.role.as_deref(),
+            payload.auth_provider.as_deref(),
+            payload.external_id.as_deref(),
         )
         .await
         .map_err(|e| {
@@ -394,6 +456,16 @@ async fn update_user(
                     StatusCode::CONFLICT,
                     Json(ErrorResponse {
                         error: "conflict".to_string(),
+                        message,
+                        details: None,
+                        code: None,
+                    }),
+                )
+            } else if message.contains("Invalid auth_provider") {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "validation_error".to_string(),
                         message,
                         details: None,
                         code: None,

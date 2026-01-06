@@ -534,32 +534,106 @@ pub struct SamlFeatureInfo {
 ///
 /// GET /api/v1/settings/server
 async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoResponse> {
-    // Check SAML configuration
-    let saml_info = match &state.config.saml {
-        Some(saml_config) if saml_config.enabled => {
-            let configured = saml_config.idp.metadata_url.is_some()
-                || saml_config.idp.metadata_file.is_some()
-                || saml_config.idp.sso_url.is_some();
+    tracing::debug!("Processing server info request");
 
-            SamlFeatureInfo {
-                enabled: true,
-                configured,
-                sp_entity_id: Some(saml_config.sp.entity_id.clone()),
-                idp_entity_id: saml_config.idp.entity_id.clone(),
-                login_url: if configured {
+    // Check SAML configuration with detailed logging
+    let saml_info = match &state.config.saml {
+        Some(saml_config) => {
+            tracing::info!(
+                "SAML configuration found: enabled={}",
+                saml_config.enabled
+            );
+
+            if !saml_config.enabled {
+                tracing::info!("SAML is configured but explicitly disabled (enabled=false)");
+                SamlFeatureInfo {
+                    enabled: false,
+                    configured: false,
+                    sp_entity_id: None,
+                    idp_entity_id: None,
+                    login_url: None,
+                }
+            } else {
+                // Check IdP configuration
+                let has_metadata_url = saml_config.idp.metadata_url.is_some();
+                let has_metadata_file = saml_config.idp.metadata_file.is_some();
+                let has_sso_url = saml_config.idp.sso_url.is_some();
+
+                tracing::info!(
+                    "SAML IdP configuration check: metadata_url={}, metadata_file={}, sso_url={}",
+                    has_metadata_url,
+                    has_metadata_file,
+                    has_sso_url
+                );
+
+                let configured = has_metadata_url || has_metadata_file || has_sso_url;
+
+                if !configured {
+                    tracing::warn!(
+                        "SAML is enabled but NOT configured: no IdP metadata_url, metadata_file, or sso_url provided. \
+                        SSO button will NOT be shown. Please configure at least one of: \
+                        saml.idp.metadata_url, saml.idp.metadata_file, or saml.idp.sso_url"
+                    );
+                } else {
+                    tracing::info!(
+                        "SAML is enabled and configured. SP entity_id='{}', IdP entity_id={:?}",
+                        saml_config.sp.entity_id,
+                        saml_config.idp.entity_id
+                    );
+
+                    // Log additional SP configuration details
+                    tracing::debug!(
+                        "SAML SP config: acs_url='{}', sign_requests={}, require_signed_assertions={}",
+                        saml_config.sp.acs_url,
+                        saml_config.sp.sign_requests,
+                        saml_config.sp.require_signed_assertions
+                    );
+
+                    // Log user mapping configuration
+                    tracing::debug!(
+                        "SAML user mapping: username_attribute='{}', email_attribute={:?}, require_existing_user={}, allow_idp_initiated={}",
+                        saml_config.user_mapping.username_attribute,
+                        saml_config.user_mapping.email_attribute,
+                        saml_config.user_mapping.require_existing_user,
+                        saml_config.user_mapping.allow_idp_initiated
+                    );
+                }
+
+                let login_url = if configured {
                     Some("/api/v1/auth/saml/login".to_string())
                 } else {
                     None
-                },
+                };
+
+                tracing::info!(
+                    "SAML status response: enabled={}, configured={}, login_url={:?}",
+                    true,
+                    configured,
+                    login_url
+                );
+
+                SamlFeatureInfo {
+                    enabled: true,
+                    configured,
+                    sp_entity_id: Some(saml_config.sp.entity_id.clone()),
+                    idp_entity_id: saml_config.idp.entity_id.clone(),
+                    login_url,
+                }
             }
         }
-        _ => SamlFeatureInfo {
-            enabled: false,
-            configured: false,
-            sp_entity_id: None,
-            idp_entity_id: None,
-            login_url: None,
-        },
+        None => {
+            tracing::info!(
+                "No SAML configuration section found in config.yaml. \
+                SSO button will NOT be shown. To enable SAML, add a 'saml:' section to your configuration."
+            );
+            SamlFeatureInfo {
+                enabled: false,
+                configured: false,
+                sp_entity_id: None,
+                idp_entity_id: None,
+                login_url: None,
+            }
+        }
     };
 
     let features = vec![

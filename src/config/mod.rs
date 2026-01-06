@@ -1295,12 +1295,27 @@ impl AppConfig {
             }
         }
 
-        // SAML overrides
+        // SAML overrides - create SAML config from env vars if SAML_ENABLED is true
         if let Ok(enabled) = std::env::var("SAML_ENABLED") {
             if enabled.to_lowercase() == "true" || enabled == "1" {
-                if let Some(ref mut saml) = self.saml {
-                    saml.enabled = true;
-                }
+                // Create default SAML config if it doesn't exist
+                let saml = self.saml.get_or_insert_with(|| SamlConfig {
+                    enabled: true,
+                    sp: SamlSpConfig {
+                        entity_id: String::new(),
+                        acs_url: String::new(),
+                        slo_url: None,
+                        certificate_file: None,
+                        private_key_file: None,
+                        sign_requests: default_sign_requests(),
+                        require_signed_assertions: default_require_signed_assertions(),
+                        require_encrypted_assertions: false,
+                    },
+                    idp: SamlIdpConfig::default(),
+                    user_mapping: SamlUserMappingConfig::default(),
+                    session: SamlSessionConfig::default(),
+                });
+                saml.enabled = true;
             }
         }
         if let Ok(entity_id) = std::env::var("SAML_SP_ENTITY_ID") {

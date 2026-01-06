@@ -120,6 +120,29 @@ impl AuthService {
         role: &str,
         organization_id: Uuid,
     ) -> Result<User> {
+        self.create_user_with_auth_provider(
+            username,
+            email,
+            Some(password),
+            role,
+            organization_id,
+            AuthProvider::Local,
+            None,
+        )
+        .await
+    }
+
+    /// Create a new user with specified authentication provider
+    pub async fn create_user_with_auth_provider(
+        &self,
+        username: &str,
+        email: &str,
+        password: Option<&str>,
+        role: &str,
+        organization_id: Uuid,
+        auth_provider: AuthProvider,
+        external_id: Option<&str>,
+    ) -> Result<User> {
         // Check if username already exists
         if self.get_user_by_username(username).await?.is_some() {
             anyhow::bail!("Username already exists");
@@ -130,22 +153,37 @@ impl AuthService {
             anyhow::bail!("Email already exists");
         }
 
-        let password_hash = Self::hash_password(password)?;
-        let user = User::new_with_org(
+        // Hash password if provided, otherwise use a placeholder for SAML-only users
+        let password_hash = match password {
+            Some(p) => Self::hash_password(p)?,
+            None => "!SAML_ONLY!".to_string(), // Placeholder that can never match a real hash
+        };
+
+        let now = chrono::Utc::now();
+        let user = User {
+            id: Uuid::new_v4(),
             organization_id,
-            username.to_string(),
-            email.to_string(),
+            username: username.to_string(),
+            email: email.to_string(),
             password_hash,
-            role.to_string(),
-        );
+            role: role.to_string(),
+            force_password_change: false,
+            auth_provider,
+            external_id: external_id.map(|s| s.to_string()),
+            idp_entity_id: None,
+            last_saml_auth_at: None,
+            created_at: now,
+            updated_at: now,
+        };
 
         let id_str = user.id.to_string();
         let org_id_str = user.organization_id.to_string();
         let created_at = user.created_at.to_rfc3339();
         let updated_at = user.updated_at.to_rfc3339();
+        let auth_provider_str = user.auth_provider.to_string();
 
         sqlx::query(
-            "INSERT INTO users (id, organization_id, username, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (id, organization_id, username, email, password_hash, role, auth_provider, external_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&id_str)
         .bind(&org_id_str)
@@ -153,6 +191,8 @@ impl AuthService {
         .bind(&user.email)
         .bind(&user.password_hash)
         .bind(&user.role)
+        .bind(&auth_provider_str)
+        .bind(&user.external_id)
         .bind(&created_at)
         .bind(&updated_at)
         .execute(&self.pool)
@@ -171,11 +211,46 @@ impl AuthService {
         password: Option<&str>,
         role: Option<&str>,
     ) -> Result<User> {
+        self.update_user_full(id, username, email, password, role, None, None)
+            .await
+    }
+
+    /// Update a user with full options including auth_provider and external_id
+    pub async fn update_user_full(
+        &self,
+        id: &Uuid,
+        username: Option<&str>,
+        email: Option<&str>,
+        password: Option<&str>,
+        role: Option<&str>,
+        auth_provider: Option<&str>,
+        external_id: Option<&str>,
+    ) -> Result<User> {
         let existing = self.get_user_by_id(id).await?.context("User not found")?;
 
         let new_username = username.unwrap_or(&existing.username);
         let new_email = email.unwrap_or(&existing.email);
         let new_role = role.unwrap_or(&existing.role);
+
+        // Parse and validate auth_provider if provided
+        let new_auth_provider: AuthProvider = match auth_provider {
+            Some(ap) => ap
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid auth_provider: {}", ap))?,
+            None => existing.auth_provider.clone(),
+        };
+
+        // Handle external_id - if provided, use it; if auth_provider is being changed to saml/both
+        // and no external_id provided, use email as default
+        let new_external_id = match (external_id, &new_auth_provider) {
+            (Some(eid), _) => Some(eid.to_string()),
+            (None, AuthProvider::Saml | AuthProvider::Both)
+                if existing.external_id.is_none() =>
+            {
+                Some(new_email.to_string())
+            }
+            (None, _) => existing.external_id.clone(),
+        };
 
         // Check username uniqueness if changed
         if new_username != existing.username
@@ -196,14 +271,17 @@ impl AuthService {
 
         let id_str = id.to_string();
         let updated_at = chrono::Utc::now().to_rfc3339();
+        let auth_provider_str = new_auth_provider.to_string();
 
         sqlx::query(
-            "UPDATE users SET username = ?, email = ?, password_hash = ?, role = ?, updated_at = ? WHERE id = ?"
+            "UPDATE users SET username = ?, email = ?, password_hash = ?, role = ?, auth_provider = ?, external_id = ?, updated_at = ? WHERE id = ?"
         )
         .bind(new_username)
         .bind(new_email)
         .bind(&new_password_hash)
         .bind(new_role)
+        .bind(&auth_provider_str)
+        .bind(&new_external_id)
         .bind(&updated_at)
         .bind(&id_str)
         .execute(&self.pool)
