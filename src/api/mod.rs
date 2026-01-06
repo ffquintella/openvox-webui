@@ -45,6 +45,8 @@ pub fn public_routes() -> Router<AppState> {
         .nest("/nodes", nodes::public_routes())
         // Webhook endpoints (use signature verification instead of auth)
         .nest("/webhooks", code_deploy::webhook_routes())
+        // Server info endpoint (needed for login page to detect SAML)
+        .nest("/settings", settings::public_routes())
 }
 
 /// Protected API routes (authentication required)

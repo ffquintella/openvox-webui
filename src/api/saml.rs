@@ -617,7 +617,13 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
         safe_redirect
     );
 
-    Redirect::temporary(&callback_url).into_response()
+    // Use 303 See Other to force the browser to use GET for the redirect
+    // (307 Temporary Redirect preserves the POST method, which causes 405 errors)
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, callback_url)],
+    )
+        .into_response()
 }
 
 use axum::Json;

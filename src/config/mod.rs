@@ -1054,21 +1054,54 @@ impl AppConfig {
             .ok()
             .or_else(Self::find_config_file);
 
-        let mut config = if let Some(path) = config_path {
+        let mut config = if let Some(ref path) = config_path {
             if path.exists() {
-                let contents = std::fs::read_to_string(&path)
+                eprintln!("[CONFIG] Loading configuration from: {:?}", path);
+                let contents = std::fs::read_to_string(path)
                     .with_context(|| format!("Failed to read config file: {:?}", path))?;
-                serde_norway::from_str(&contents)
-                    .with_context(|| format!("Failed to parse config file: {:?}", path))?
+                let parsed: AppConfig = serde_norway::from_str(&contents)
+                    .with_context(|| format!("Failed to parse config file: {:?}", path))?;
+
+                // Debug: Log SAML config right after parsing
+                if let Some(ref saml) = parsed.saml {
+                    eprintln!("[CONFIG] SAML section found in config file:");
+                    eprintln!("[CONFIG]   enabled: {}", saml.enabled);
+                    eprintln!("[CONFIG]   sp.entity_id: {}", saml.sp.entity_id);
+                    eprintln!("[CONFIG]   sp.acs_url: {}", saml.sp.acs_url);
+                    eprintln!("[CONFIG]   idp.metadata_url: {:?}", saml.idp.metadata_url);
+                    eprintln!("[CONFIG]   idp.metadata_file: {:?}", saml.idp.metadata_file);
+                    eprintln!("[CONFIG]   idp.sso_url: {:?}", saml.idp.sso_url);
+                    eprintln!("[CONFIG]   idp.entity_id: {:?}", saml.idp.entity_id);
+                } else {
+                    eprintln!("[CONFIG] No SAML section found in config file");
+                }
+
+                parsed
             } else {
+                eprintln!("[CONFIG] Config file path exists but file not found: {:?}", path);
                 AppConfig::default()
             }
         } else {
+            eprintln!("[CONFIG] No config file found, using defaults");
             AppConfig::default()
         };
 
         // Apply environment variable overrides
         config.apply_env_overrides();
+
+        // Debug: Log final SAML config after env overrides
+        if let Some(ref saml) = config.saml {
+            eprintln!("[CONFIG] Final SAML config after env overrides:");
+            eprintln!("[CONFIG]   enabled: {}", saml.enabled);
+            eprintln!("[CONFIG]   sp.entity_id: {}", saml.sp.entity_id);
+            eprintln!("[CONFIG]   sp.acs_url: {}", saml.sp.acs_url);
+            eprintln!("[CONFIG]   idp.metadata_url: {:?}", saml.idp.metadata_url);
+            eprintln!("[CONFIG]   idp.metadata_file: {:?}", saml.idp.metadata_file);
+            eprintln!("[CONFIG]   idp.sso_url: {:?}", saml.idp.sso_url);
+            eprintln!("[CONFIG]   idp.entity_id: {:?}", saml.idp.entity_id);
+        } else {
+            eprintln!("[CONFIG] No SAML section in final config");
+        }
 
         // Validate configuration
         config.validate()?;

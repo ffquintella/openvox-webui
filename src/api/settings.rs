@@ -17,7 +17,15 @@ use crate::{
     AppState,
 };
 
-/// Create the settings routes
+/// Public settings routes (no authentication required)
+/// Only exposes server info which is needed by the login page for SAML detection
+pub fn public_routes() -> Router<AppState> {
+    Router::new()
+        // Get server information (needed for login page to show SSO button)
+        .route("/server", get(get_server_info))
+}
+
+/// Create the settings routes (protected - authentication required)
 pub fn routes() -> Router<AppState> {
     Router::new()
         // Get current configuration (read-only view)
@@ -37,8 +45,7 @@ pub fn routes() -> Router<AppState> {
         .route("/validate", post(validate_config))
         // Get configuration history
         .route("/history", get(get_config_history))
-        // Get server information
-        .route("/server", get(get_server_info))
+        // Note: /server is in public_routes() to allow login page to check SAML config
 }
 
 /// Settings response - read-only configuration view
@@ -560,7 +567,13 @@ async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoRespon
                 let has_sso_url = saml_config.idp.sso_url.is_some();
 
                 tracing::info!(
-                    "SAML IdP configuration check: metadata_url={}, metadata_file={}, sso_url={}",
+                    "SAML IdP configuration check: metadata_url={:?}, metadata_file={:?}, sso_url={:?}",
+                    saml_config.idp.metadata_url,
+                    saml_config.idp.metadata_file,
+                    saml_config.idp.sso_url
+                );
+                tracing::info!(
+                    "SAML IdP detection flags: has_metadata_url={}, has_metadata_file={}, has_sso_url={}",
                     has_metadata_url,
                     has_metadata_file,
                     has_sso_url
