@@ -1141,13 +1141,17 @@ export interface CreateSshKeyRequest {
   private_key: string;
 }
 
+export type AuthType = 'ssh' | 'pat' | 'none';
+
 export interface CodeRepository {
   id: string;
   name: string;
   url: string;
   branch_pattern: string;
+  auth_type: AuthType;
   ssh_key_id?: string;
   ssh_key_name?: string;
+  has_pat: boolean;
   webhook_url?: string;
   poll_interval_seconds: number;
   is_control_repo: boolean;
@@ -1162,7 +1166,9 @@ export interface CreateRepositoryRequest {
   name: string;
   url: string;
   branch_pattern?: string;
+  auth_type?: AuthType;
   ssh_key_id?: string;
+  github_pat?: string;
   poll_interval_seconds?: number;
   is_control_repo?: boolean;
 }
@@ -1171,8 +1177,11 @@ export interface UpdateRepositoryRequest {
   name?: string;
   url?: string;
   branch_pattern?: string;
+  auth_type?: AuthType;
   ssh_key_id?: string;
   clear_ssh_key?: boolean;
+  github_pat?: string;
+  clear_github_pat?: boolean;
   poll_interval_seconds?: number;
   is_control_repo?: boolean;
   regenerate_webhook_secret?: boolean;

@@ -399,10 +399,30 @@ function RepositoriesTab({
                     <Server className="w-4 h-4" />
                     <span>{repo.environment_count} environments</span>
                   </div>
+                  <div>
+                    <span
+                      className={clsx(
+                        'px-2 py-0.5 text-xs font-medium rounded',
+                        repo.auth_type === 'ssh' && 'bg-blue-100 text-blue-800',
+                        repo.auth_type === 'pat' && 'bg-green-100 text-green-800',
+                        repo.auth_type === 'none' && 'bg-gray-100 text-gray-800'
+                      )}
+                    >
+                      {repo.auth_type === 'ssh' && 'SSH'}
+                      {repo.auth_type === 'pat' && 'PAT'}
+                      {repo.auth_type === 'none' && 'Public'}
+                    </span>
+                  </div>
                   {repo.ssh_key_name && (
                     <div className="flex items-center gap-1 text-gray-600">
                       <Key className="w-4 h-4" />
                       <span>{repo.ssh_key_name}</span>
+                    </div>
+                  )}
+                  {repo.has_pat && (
+                    <div className="flex items-center gap-1 text-gray-600">
+                      <Key className="w-4 h-4" />
+                      <span>PAT configured</span>
                     </div>
                   )}
                   <div className="flex items-center gap-1 text-gray-600">
@@ -926,7 +946,9 @@ function CreateRepositoryModal({
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [branchPattern, setBranchPattern] = useState('*');
+  const [authType, setAuthType] = useState<'ssh' | 'pat' | 'none'>('ssh');
   const [sshKeyId, setSshKeyId] = useState<string>('');
+  const [githubPat, setGithubPat] = useState('');
   const [pollInterval, setPollInterval] = useState(300);
   const [isControlRepo, setIsControlRepo] = useState(false);
 
@@ -936,7 +958,9 @@ function CreateRepositoryModal({
       name,
       url,
       branch_pattern: branchPattern,
-      ssh_key_id: sshKeyId || undefined,
+      auth_type: authType,
+      ssh_key_id: authType === 'ssh' ? (sshKeyId || undefined) : undefined,
+      github_pat: authType === 'pat' ? githubPat : undefined,
       poll_interval_seconds: pollInterval,
       is_control_repo: isControlRepo,
     });
@@ -967,8 +991,13 @@ function CreateRepositoryModal({
               onChange={(e) => setUrl(e.target.value)}
               required
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-              placeholder="git@github.com:org/control-repo.git"
+              placeholder={authType === 'ssh' ? 'git@github.com:org/repo.git' : 'https://github.com/org/repo.git'}
             />
+            <p className="mt-1 text-xs text-gray-500">
+              {authType === 'ssh' && 'Use SSH URL format (git@github.com:...)'}
+              {authType === 'pat' && 'Use HTTPS URL format (https://github.com/...)'}
+              {authType === 'none' && 'Public repository URL'}
+            </p>
           </div>
 
           <div>
@@ -984,20 +1013,78 @@ function CreateRepositoryModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">SSH Key</label>
-            <select
-              value={sshKeyId}
-              onChange={(e) => setSshKeyId(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-            >
-              <option value="">None (use default)</option>
-              {sshKeys.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700">Authentication Method</label>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="ssh"
+                  checked={authType === 'ssh'}
+                  onChange={(e) => setAuthType(e.target.value as 'ssh')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">SSH Key</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="pat"
+                  checked={authType === 'pat'}
+                  onChange={(e) => setAuthType(e.target.value as 'pat')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">Personal Access Token (PAT)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="none"
+                  checked={authType === 'none'}
+                  onChange={(e) => setAuthType(e.target.value as 'none')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">None (Public Repository)</span>
+              </label>
+            </div>
           </div>
+
+          {authType === 'ssh' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">SSH Key</label>
+              <select
+                value={sshKeyId}
+                onChange={(e) => setSshKeyId(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">Select an SSH key</option>
+                {sshKeys.map((key) => (
+                  <option key={key.id} value={key.id}>
+                    {key.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {authType === 'pat' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">GitHub Personal Access Token</label>
+              <input
+                type="password"
+                value={githubPat}
+                onChange={(e) => setGithubPat(e.target.value)}
+                required={authType === 'pat'}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Token with repository read access. Never stored in plaintext.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Poll Interval (seconds)</label>
@@ -1034,7 +1121,13 @@ function CreateRepositoryModal({
             </button>
             <button
               type="submit"
-              disabled={isCreating || !name || !url}
+              disabled={
+                isCreating ||
+                !name ||
+                !url ||
+                (authType === 'ssh' && !sshKeyId) ||
+                (authType === 'pat' && !githubPat)
+              }
               className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
             >
               {isCreating && <Loader2 className="w-4 h-4 animate-spin" />}
