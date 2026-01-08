@@ -148,6 +148,7 @@ See [docs/api/](docs/api/) for full API documentation.
 
 - [Complete User Guide](docs/USER_GUIDE.md) - Comprehensive guide to all features
 - [Quick Start Guides](docs/QUICK_START_GUIDES.md) - Step-by-step tutorials for common tasks
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Solutions to common problems
 - [Installation Guide](docs/INSTALLATION.md) - Installation instructions
 - [Configuration Guide](docs/CONFIGURATION.md) - Configuration reference
 - [Upgrade Guide](docs/UPGRADE.md) - Upgrade procedures
