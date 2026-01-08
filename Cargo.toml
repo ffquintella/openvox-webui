@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.15.3"
+version = "0.16.0"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
