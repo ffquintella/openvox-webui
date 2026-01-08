@@ -145,7 +145,9 @@ struct RepositoryRow {
     name: String,
     url: String,
     branch_pattern: String,
+    auth_type: Option<String>,
     ssh_key_id: Option<String>,
+    github_pat_encrypted: Option<String>,
     webhook_secret: Option<String>,
     poll_interval_seconds: i32,
     is_control_repo: bool,
@@ -169,8 +171,8 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_all(&self) -> Result<Vec<CodeRepository>> {
         let rows = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, ssh_key_id, webhook_secret,
-                   poll_interval_seconds, is_control_repo, last_error, last_error_at,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+                   webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
             ORDER BY name
@@ -187,8 +189,8 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<CodeRepository>> {
         let row = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, ssh_key_id, webhook_secret,
-                   poll_interval_seconds, is_control_repo, last_error, last_error_at,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+                   webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
             WHERE id = ?
@@ -206,8 +208,8 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_by_name(&self, name: &str) -> Result<Option<CodeRepository>> {
         let row = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, ssh_key_id, webhook_secret,
-                   poll_interval_seconds, is_control_repo, last_error, last_error_at,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+                   webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
             WHERE name = ?
@@ -225,8 +227,8 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_for_polling(&self) -> Result<Vec<CodeRepository>> {
         let rows = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, ssh_key_id, webhook_secret,
-                   poll_interval_seconds, is_control_repo, last_error, last_error_at,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+                   webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
             WHERE poll_interval_seconds > 0
@@ -241,22 +243,24 @@ impl<'a> CodeRepositoryRepository<'a> {
     }
 
     /// Create a new repository
-    pub async fn create(&self, req: &CreateRepositoryRequest) -> Result<CodeRepository> {
+    pub async fn create(&self, req: &CreateRepositoryRequest, github_pat_encrypted: Option<&str>) -> Result<CodeRepository> {
         let id = Uuid::new_v4();
         let webhook_secret = generate_webhook_secret();
 
         sqlx::query(
             r#"
-            INSERT INTO code_repositories (id, name, url, branch_pattern, ssh_key_id,
-                                          webhook_secret, poll_interval_seconds, is_control_repo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO code_repositories (id, name, url, branch_pattern, auth_type, ssh_key_id,
+                                          github_pat_encrypted, webhook_secret, poll_interval_seconds, is_control_repo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
         .bind(&req.name)
         .bind(&req.url)
         .bind(&req.branch_pattern)
+        .bind(req.auth_type.as_str())
         .bind(req.ssh_key_id.map(|k| k.to_string()))
+        .bind(github_pat_encrypted)
         .bind(&webhook_secret)
         .bind(req.poll_interval_seconds)
         .bind(req.is_control_repo)
@@ -270,7 +274,7 @@ impl<'a> CodeRepositoryRepository<'a> {
     }
 
     /// Update a repository
-    pub async fn update(&self, id: Uuid, req: &UpdateRepositoryRequest) -> Result<Option<CodeRepository>> {
+    pub async fn update(&self, id: Uuid, req: &UpdateRepositoryRequest, github_pat_encrypted: Option<&str>) -> Result<Option<CodeRepository>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
@@ -280,10 +284,18 @@ impl<'a> CodeRepositoryRepository<'a> {
         let name = req.name.as_ref().unwrap_or(&existing.name);
         let url = req.url.as_ref().unwrap_or(&existing.url);
         let branch_pattern = req.branch_pattern.as_ref().unwrap_or(&existing.branch_pattern);
+        let auth_type = req.auth_type.unwrap_or(existing.auth_type);
         let ssh_key_id = if req.clear_ssh_key {
             None
         } else {
             req.ssh_key_id.or(existing.ssh_key_id)
+        };
+        let github_pat = if req.clear_github_pat {
+            None
+        } else if github_pat_encrypted.is_some() {
+            github_pat_encrypted.map(|s| s.to_string())
+        } else {
+            existing.github_pat_encrypted
         };
         let poll_interval = req.poll_interval_seconds.unwrap_or(existing.poll_interval_seconds);
         let is_control_repo = req.is_control_repo.unwrap_or(existing.is_control_repo);
@@ -296,8 +308,8 @@ impl<'a> CodeRepositoryRepository<'a> {
         sqlx::query(
             r#"
             UPDATE code_repositories
-            SET name = ?, url = ?, branch_pattern = ?, ssh_key_id = ?,
-                webhook_secret = ?, poll_interval_seconds = ?, is_control_repo = ?,
+            SET name = ?, url = ?, branch_pattern = ?, auth_type = ?, ssh_key_id = ?,
+                github_pat_encrypted = ?, webhook_secret = ?, poll_interval_seconds = ?, is_control_repo = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             "#,
@@ -305,7 +317,9 @@ impl<'a> CodeRepositoryRepository<'a> {
         .bind(name)
         .bind(url)
         .bind(branch_pattern)
+        .bind(auth_type.as_str())
         .bind(ssh_key_id.map(|k| k.to_string()))
+        .bind(github_pat)
         .bind(&webhook_secret)
         .bind(poll_interval)
         .bind(is_control_repo)
@@ -374,12 +388,21 @@ impl<'a> CodeRepositoryRepository<'a> {
 }
 
 fn row_to_repository(row: RepositoryRow) -> CodeRepository {
+    use crate::models::AuthType;
+
+    let auth_type = row.auth_type
+        .as_deref()
+        .and_then(AuthType::from_str)
+        .unwrap_or_default();
+
     CodeRepository {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),
         name: row.name,
         url: row.url,
         branch_pattern: row.branch_pattern,
+        auth_type,
         ssh_key_id: row.ssh_key_id.and_then(|s| Uuid::parse_str(&s).ok()),
+        github_pat_encrypted: row.github_pat_encrypted,
         webhook_secret: row.webhook_secret,
         poll_interval_seconds: row.poll_interval_seconds,
         is_control_repo: row.is_control_repo,

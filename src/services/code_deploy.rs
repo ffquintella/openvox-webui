@@ -205,6 +205,7 @@ impl CodeDeployService {
 
     /// Create a new repository
     pub async fn create_repository(&self, req: &CreateRepositoryRequest) -> Result<CodeRepositoryResponse> {
+        use crate::models::AuthType;
         let repo = CodeRepositoryRepository::new(&self.pool);
 
         // Check if name already exists
@@ -212,15 +213,34 @@ impl CodeDeployService {
             return Err(anyhow::anyhow!("Repository with name '{}' already exists", req.name));
         }
 
-        // Validate SSH key if provided
-        if let Some(key_id) = req.ssh_key_id {
-            let key_repo = CodeSshKeyRepository::new(&self.pool);
-            if key_repo.get_by_id(key_id).await?.is_none() {
-                return Err(anyhow::anyhow!("SSH key not found"));
+        // Validate authentication credentials
+        match req.auth_type {
+            AuthType::Ssh => {
+                if let Some(key_id) = req.ssh_key_id {
+                    let key_repo = CodeSshKeyRepository::new(&self.pool);
+                    if key_repo.get_by_id(key_id).await?.is_none() {
+                        return Err(anyhow::anyhow!("SSH key not found"));
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("SSH key ID required when auth_type is 'ssh'"));
+                }
+            }
+            AuthType::Pat => {
+                if req.github_pat.is_none() {
+                    return Err(anyhow::anyhow!("GitHub PAT required when auth_type is 'pat'"));
+                }
+            }
+            AuthType::None => {
+                // No validation needed for public repositories
             }
         }
 
-        let repository = repo.create(req).await?;
+        // Encrypt PAT if provided
+        let github_pat_encrypted = req.github_pat.as_ref().map(|pat| {
+            self.encrypt_private_key(pat)
+        }).transpose()?;
+
+        let repository = repo.create(req, github_pat_encrypted.as_deref()).await?;
         Ok(self.repository_to_response(repository, None, 0))
     }
 
@@ -240,7 +260,12 @@ impl CodeDeployService {
             }
         }
 
-        let Some(repository) = repo.update(id, req).await? else {
+        // Encrypt PAT if provided
+        let github_pat_encrypted = req.github_pat.as_ref().map(|pat| {
+            self.encrypt_private_key(pat)
+        }).transpose()?;
+
+        let Some(repository) = repo.update(id, req, github_pat_encrypted.as_deref()).await? else {
             return Ok(None);
         };
 
