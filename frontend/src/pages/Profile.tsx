@@ -95,10 +95,18 @@ export default function Profile() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 dark:text-gray-400">Role:</span>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800 capitalize">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-400 capitalize">
               {user?.role}
             </span>
           </div>
+          {user?.auth_provider && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Authentication:</span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400 uppercase">
+                {user.auth_provider}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -134,27 +142,28 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* Change Password Card */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Change Password</h2>
+      {/* Change Password Card - Only show for local and both auth providers */}
+      {user?.auth_provider !== 'saml' && (
+        <div className="card">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Change Password</h2>
 
-        {/* Success Message */}
-        {success && (
-          <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-lg flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-success-700">{success}</p>
-          </div>
-        )}
+          {/* Success Message */}
+          {success && (
+            <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-lg flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-success-700">{success}</p>
+            </div>
+          )}
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-danger-700">{error}</p>
-          </div>
-        )}
+          {/* Error Message */}
+          {error && (
+            <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-danger-700">{error}</p>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
           {/* Current Password */}
           <div>
             <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
@@ -255,7 +264,8 @@ export default function Profile() {
             </button>
           </div>
         </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

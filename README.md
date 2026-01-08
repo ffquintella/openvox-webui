@@ -10,6 +10,11 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 - **Puppet CA Management**: List CSRs, sign/reject/revoke node certificates, renew CA certificate
 - **Node Classification**: Puppet Enterprise-style node groups with rule-based classification
 - **Facter Generation**: Generate external facts based on node classification
+- **SAML 2.0 SSO**: Enterprise Single Sign-On integration
+- **RBAC**: Role-Based Access Control with custom roles and permissions
+- **Alerting**: Configurable alerts with Webhook, Email, Slack, and Teams notifications
+- **Analytics**: Infrastructure insights with visualizations and reports
+- **Code Deploy**: Manage and deploy Puppet code to environments
 - **Dashboard**: Real-time infrastructure monitoring with charts and statistics
 - **YAML Configuration**: Store local configuration data in YAML files
 
@@ -136,6 +141,24 @@ The API follows RESTful conventions:
 - `POST /api/v1/ca/renew` - Renew CA certificate
 
 See [docs/api/](docs/api/) for full API documentation.
+
+## Documentation
+
+### For Users
+
+- [Complete User Guide](docs/USER_GUIDE.md) - Comprehensive guide to all features
+- [Quick Start Guides](docs/QUICK_START_GUIDES.md) - Step-by-step tutorials for common tasks
+- [Installation Guide](docs/INSTALLATION.md) - Installation instructions
+- [Configuration Guide](docs/CONFIGURATION.md) - Configuration reference
+- [Upgrade Guide](docs/UPGRADE.md) - Upgrade procedures
+- [Backup & Recovery](docs/BACKUP.md) - Backup strategies
+
+### For Developers
+
+- [Development Guide](docs/DEVELOPMENT.md) - Development setup and guidelines
+- [Architecture Overview](docs/architecture/) - System architecture documentation
+- [API Documentation](docs/api/) - REST API reference
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute
 
 ## Contributing
 
