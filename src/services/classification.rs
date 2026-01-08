@@ -149,41 +149,43 @@ impl ClassificationService {
                 inherited
             );
 
-            // Check if node's environment matches the group's environment requirement
-            // If the group has a specific environment set (not None, "*", "All", or "Any"),
-            // only nodes in that environment should match
-            let environment_matches = match &group.environment {
-                None => true, // No environment restriction
-                Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
-                Some(env) => {
-                    // Group has specific environment requirement
-                    match &node_environment {
-                        Some(node_env) => node_env == env,
-                        None => false, // Node has no environment, cannot match specific requirement
-                    }
-                }
-            };
-
-            if !environment_matches {
-                tracing::debug!(
-                    "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping",
-                    certname,
-                    node_environment,
-                    group.name,
-                    group.environment
-                );
-                continue; // Skip this group and its children
-            }
-
             let mut matched = false;
             let mut matched_rules = vec![];
             let match_type = if inherited {
                 matched = true;
                 MatchType::Inherited
             } else if group.pinned_nodes.contains(&certname.to_string()) {
+                // Pinned nodes ALWAYS match, regardless of environment
+                // This allows environment assignment without bootstrap problems
                 matched = true;
                 MatchType::Pinned
             } else {
+                // Check environment for rule-based matching
+                // If the group has a specific environment set (not None, "*", "All", or "Any"),
+                // only nodes in that environment should match via rules
+                let environment_matches = match &group.environment {
+                    None => true, // No environment restriction
+                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
+                    Some(env) => {
+                        // Group has specific environment requirement
+                        match &node_environment {
+                            Some(node_env) => node_env == env,
+                            None => false, // Node has no environment, cannot match specific requirement
+                        }
+                    }
+                };
+
+                if !environment_matches {
+                    tracing::debug!(
+                        "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping rule evaluation",
+                        certname,
+                        node_environment,
+                        group.name,
+                        group.environment
+                    );
+                    continue; // Skip this group and its children
+                }
+
                 // Evaluate rules only when not inherited and not pinned
                 let evaluations = self.evaluate_rules(&group.rules, facts);
                 matched_rules = evaluations
@@ -891,8 +893,9 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_pinned_node_respects_environment() {
-        // Pinned nodes should still respect environment filtering
+    fn test_classify_pinned_node_ignores_environment() {
+        // Pinned nodes ALWAYS match regardless of environment
+        // This allows environment assignment without bootstrap problems
         let group = NodeGroup {
             id: Uuid::new_v4(),
             name: "production_servers".to_string(),
@@ -904,15 +907,18 @@ mod tests {
 
         let service = ClassificationService::new(vec![group]);
 
-        // Pinned node in wrong environment should NOT match
+        // Pinned node with different environment should STILL match
         let facts = serde_json::json!({
             "catalog_environment": "development"
         });
 
         let result = service.classify("web1.example.com", &facts);
-        assert_eq!(result.groups.len(), 0);
+        assert_eq!(result.groups.len(), 1);
+        assert_eq!(result.groups[0].match_type, MatchType::Pinned);
+        // The group's environment should be returned
+        assert_eq!(result.environment, Some("production".to_string()));
 
-        // Pinned node in correct environment should match
+        // Pinned node in matching environment should also match
         let facts = serde_json::json!({
             "catalog_environment": "production"
         });
