@@ -81,7 +81,7 @@ async fn get_feature_status(
     let enabled = state.code_deploy_config.as_ref().map_or(false, |c| c.enabled);
 
     let message = if !enabled {
-        Some("Code Deploy feature is not enabled. To enable it, add the following to your config.yaml:\n\ncode_deploy:\n  enabled: true\n  repos_base_dir: /var/lib/openvox-webui/repos\n  ssh_keys_dir: /etc/openvox-webui/ssh-keys\n  r10k_path: /opt/puppetlabs/puppet/bin/r10k\n  encryption_key: <your-encryption-key>".to_string())
+        Some("Code Deploy feature is not enabled. To enable it, add the following to your config.yaml:\n\ncode_deploy:\n  enabled: true\n  repos_base_dir: /var/lib/openvox-webui/code-deploy/repos\n  ssh_keys_dir: /etc/openvox-webui/code-deploy/ssh-keys\n  r10k_path: /opt/puppetlabs/puppet/bin/r10k\n  encryption_key: <your-encryption-key>".to_string())
     } else {
         None
     };

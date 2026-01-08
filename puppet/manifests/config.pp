@@ -149,18 +149,36 @@ class openvox_webui::config {
 
     # Create Code Deploy directories if enabled
     if $openvox_webui::code_deploy_enabled {
-      file { $openvox_webui::code_deploy_repos_base_dir:
+      # Create parent directory for Code Deploy
+      file { '/var/lib/openvox-webui/code-deploy':
         ensure => directory,
         owner  => $openvox_webui::user,
         group  => $openvox_webui::group,
         mode   => '0750',
       }
 
-      file { $openvox_webui::code_deploy_ssh_keys_dir:
+      file { $openvox_webui::code_deploy_repos_base_dir:
+        ensure  => directory,
+        owner   => $openvox_webui::user,
+        group   => $openvox_webui::group,
+        mode    => '0750',
+        require => File['/var/lib/openvox-webui/code-deploy'],
+      }
+
+      # Create parent directory for SSH keys
+      file { '/etc/openvox-webui/code-deploy':
         ensure => directory,
-        owner  => $openvox_webui::user,
+        owner  => 'root',
         group  => $openvox_webui::group,
-        mode   => '0700',
+        mode   => '0750',
+      }
+
+      file { $openvox_webui::code_deploy_ssh_keys_dir:
+        ensure  => directory,
+        owner   => $openvox_webui::user,
+        group   => $openvox_webui::group,
+        mode    => '0700',
+        require => File['/etc/openvox-webui/code-deploy'],
       }
     }
   }

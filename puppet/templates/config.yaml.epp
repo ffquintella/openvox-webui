@@ -253,8 +253,8 @@ code_deploy:
 # Code Deploy - Git-based environment management (disabled)
 # code_deploy:
 #   enabled: true
-#   repos_base_dir: "/var/lib/openvox-webui/repos"
-#   ssh_keys_dir: "/etc/openvox-webui/ssh-keys"
+#   repos_base_dir: "/var/lib/openvox-webui/code-deploy/repos"
+#   ssh_keys_dir: "/etc/openvox-webui/code-deploy/ssh-keys"
 #   r10k_path: "/opt/puppetlabs/puppet/bin/r10k"
 #   encryption_key: "<randomly-generated-key>"
 <% } -%>

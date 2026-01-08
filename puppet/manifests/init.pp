@@ -353,8 +353,8 @@ class openvox_webui (
 
   # Code Deploy settings
   Boolean                             $code_deploy_enabled             = false,
-  Stdlib::Absolutepath                $code_deploy_repos_base_dir      = '/var/lib/openvox-webui/repos',
-  Stdlib::Absolutepath                $code_deploy_ssh_keys_dir        = '/etc/openvox-webui/ssh-keys',
+  Stdlib::Absolutepath                $code_deploy_repos_base_dir      = '/var/lib/openvox-webui/code-deploy/repos',
+  Stdlib::Absolutepath                $code_deploy_ssh_keys_dir        = '/etc/openvox-webui/code-deploy/ssh-keys',
   Stdlib::Absolutepath                $code_deploy_r10k_path           = '/opt/puppetlabs/puppet/bin/r10k',
   String[32]                          $code_deploy_encryption_key      = fqdn_rand_string(64),
 ) {
