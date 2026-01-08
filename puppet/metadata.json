@@ -1,6 +1,6 @@
 {
   "name": "ffquintella-openvox_webui",
-  "version": "0.11.1",
+  "version": "0.15.1",
   "author": "ffquintella",
   "license": "Apache-2.0",
   "summary": "Puppet module for installing and configuring OpenVox WebUI",

@@ -9,8 +9,33 @@ Facter.add(:puppetdb_connection) do
     # Try to read puppet.conf
     puppet_conf = '/etc/puppetlabs/puppet/puppet.conf'
     if File.exist?(puppet_conf)
-      config = Puppet::Util::IniConfig::File.new.read(puppet_conf)
-      server = config[:main][:server] || config[:agent][:server] || 'puppet'
+      # Parse INI file with pure Ruby (no Puppet utility classes)
+      config = {}
+      current_section = nil
+
+      File.readlines(puppet_conf).each do |line|
+        line = line.strip
+        # Skip comments and empty lines
+        next if line.empty? || line.start_with?('#', ';')
+
+        # Section header
+        if line =~ /^\[([^\]]+)\]$/
+          current_section = Regexp.last_match(1).to_sym
+          config[current_section] ||= {}
+        # Key-value pair
+        elsif line =~ /^([^=]+?)\s*=\s*(.+)$/
+          key = Regexp.last_match(1).strip.to_sym
+          value = Regexp.last_match(2).strip
+          config[current_section][key] = value if current_section
+        end
+      end
+
+      # Try to get server from main or agent section
+      server = nil
+      server = config[:main][:server] if config[:main]
+      server = config[:agent][:server] if !server && config[:agent]
+      server ||= 'puppet'
+
       result[:server] = server
       result[:url] = "https://#{server}:8081"
     end
