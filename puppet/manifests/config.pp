@@ -149,37 +149,36 @@ class openvox_webui::config {
 
     # Create Code Deploy directories if enabled
     if $openvox_webui::code_deploy_enabled {
-      # Create parent directory for Code Deploy
-      file { '/var/lib/openvox-webui/code-deploy':
-        ensure => directory,
-        owner  => $openvox_webui::user,
-        group  => $openvox_webui::group,
-        mode   => '0750',
-      }
+      # Ensure parent directories exist (using ensure_resource to avoid conflicts)
+      ensure_resource('file', '/var/lib/openvox-webui/code-deploy', {
+          'ensure' => 'directory',
+          'owner'  => $openvox_webui::user,
+          'group'  => $openvox_webui::group,
+          'mode'   => '0750',
+      })
 
-      file { $openvox_webui::code_deploy_repos_base_dir:
-        ensure  => directory,
-        owner   => $openvox_webui::user,
-        group   => $openvox_webui::group,
-        mode    => '0750',
-        require => File['/var/lib/openvox-webui/code-deploy'],
-      }
+      ensure_resource('file', $openvox_webui::code_deploy_repos_base_dir, {
+          'ensure'  => 'directory',
+          'owner'   => $openvox_webui::user,
+          'group'   => $openvox_webui::group,
+          'mode'    => '0750',
+          'require' => File['/var/lib/openvox-webui/code-deploy'],
+      })
 
-      # Create parent directory for SSH keys
-      file { '/etc/openvox-webui/code-deploy':
-        ensure => directory,
-        owner  => 'root',
-        group  => $openvox_webui::group,
-        mode   => '0750',
-      }
+      ensure_resource('file', '/etc/openvox-webui/code-deploy', {
+          'ensure' => 'directory',
+          'owner'  => 'root',
+          'group'  => $openvox_webui::group,
+          'mode'   => '0750',
+      })
 
-      file { $openvox_webui::code_deploy_ssh_keys_dir:
-        ensure  => directory,
-        owner   => $openvox_webui::user,
-        group   => $openvox_webui::group,
-        mode    => '0700',
-        require => File['/etc/openvox-webui/code-deploy'],
-      }
+      ensure_resource('file', $openvox_webui::code_deploy_ssh_keys_dir, {
+          'ensure'  => 'directory',
+          'owner'   => $openvox_webui::user,
+          'group'   => $openvox_webui::group,
+          'mode'    => '0700',
+          'require' => File['/etc/openvox-webui/code-deploy'],
+      })
     }
   }
 }
