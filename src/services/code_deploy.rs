@@ -947,6 +947,7 @@ impl CodeDeployService {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     /// Test GitHub signature verification without needing a full service

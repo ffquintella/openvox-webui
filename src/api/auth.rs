@@ -389,7 +389,7 @@ async fn forgot_password(
     let auth_service = AuthService::new(state.db.clone());
 
     // Create reset token (returns None if email doesn't exist, but we don't reveal that)
-    let token = auth_service
+    let _token = auth_service
         .create_password_reset_token(&payload.email)
         .await
         .map_err(|e| {
@@ -407,7 +407,7 @@ async fn forgot_password(
     // In a real application, you would send an email here
     // For now, we return the token in development mode
     #[cfg(debug_assertions)]
-    let reset_token = token;
+    let reset_token = _token;
 
     #[cfg(not(debug_assertions))]
     let reset_token: Option<String> = None;

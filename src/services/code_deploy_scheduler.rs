@@ -221,6 +221,7 @@ async fn cleanup_task(state: CodeDeploySchedulerState) {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     #[test]
