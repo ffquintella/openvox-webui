@@ -221,8 +221,27 @@ impl ClassificationService {
                 merge_classes(&mut all_classes, &group.classes);
                 merge_parameters(&mut all_variables, &group.variables);
 
-                if environment.is_none() {
-                    environment = group.environment.clone();
+                // Environment priority: Pinned/Rules > Inherited
+                // Non-inherited groups (pinned or rule-matched) can override inherited environments
+                // Note: Wildcards ("*", "All", "Any") are treated as "no environment" (None)
+                let group_env = match &group.environment {
+                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
+                    other => other.clone(),
+                };
+
+                match match_type {
+                    MatchType::Pinned | MatchType::Rules => {
+                        // Non-inherited match: always set environment if group has one
+                        if group_env.is_some() {
+                            environment = group_env;
+                        }
+                    }
+                    MatchType::Inherited => {
+                        // Inherited match: only set if no environment is set yet
+                        if environment.is_none() {
+                            environment = group_env;
+                        }
+                    }
                 }
 
                 // Enqueue children as inherited matches
@@ -901,5 +920,60 @@ mod tests {
         let result = service.classify("web1.example.com", &facts);
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
+    }
+
+    #[test]
+    fn test_pinned_group_overrides_rule_matched_environment() {
+        // Test that a pinned group's environment overrides a rule-matched group's environment
+        // This simulates: node matches "Linux Servers" (production) AND is pinned to "Puppet Servers" (pserver)
+        // Expected: pinned group's environment should take precedence
+
+        let linux_servers = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Linux Servers".to_string(),
+            environment: Some("production".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            classes: serde_json::json!({"base": {}}),
+            ..Default::default()
+        };
+
+        let puppet_servers = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Puppet Servers".to_string(),
+            environment: Some("pserver".to_string()),
+            pinned_nodes: vec!["segdc1vpr0018.fgv.br".to_string()],
+            classes: serde_json::json!({"puppetserver": {}}),
+            ..Default::default()
+        };
+
+        // Test scenario 1: Linux Servers processed first, then Puppet Servers
+        let service1 = ClassificationService::new(vec![linux_servers.clone(), puppet_servers.clone()]);
+        let facts = serde_json::json!({
+            "kernel": "Linux",
+            "catalog_environment": "pserver"  // Node is in pserver environment
+        });
+
+        let result1 = service1.classify("segdc1vpr0018.fgv.br", &facts);
+
+        // Node should match Puppet Servers (pinned) but NOT Linux Servers (wrong environment)
+        assert_eq!(result1.groups.len(), 1);
+        assert_eq!(result1.groups[0].name, "Puppet Servers");
+        assert_eq!(result1.groups[0].match_type, MatchType::Pinned);
+        assert_eq!(result1.environment, Some("pserver".to_string()));
+        assert!(result1.classes.as_object().unwrap().contains_key("puppetserver"));
+
+        // Test scenario 2: Puppet Servers processed first, then Linux Servers
+        let service2 = ClassificationService::new(vec![puppet_servers.clone(), linux_servers.clone()]);
+        let result2 = service2.classify("segdc1vpr0018.fgv.br", &facts);
+
+        // Same result regardless of order
+        assert_eq!(result2.groups.len(), 1);
+        assert_eq!(result2.groups[0].name, "Puppet Servers");
+        assert_eq!(result2.environment, Some("pserver".to_string()));
     }
 }
