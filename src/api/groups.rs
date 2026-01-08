@@ -245,6 +245,11 @@ async fn get_group_nodes(
                     for fact in facts {
                         facts_obj.insert(fact.name, fact.value);
                     }
+                    // Add certname as a pseudo-fact so rules can match against it
+                    facts_obj.insert(
+                        "clientcert".to_string(),
+                        serde_json::Value::String(node.certname.clone()),
+                    );
                     serde_json::Value::Object(facts_obj)
                 }
                 Err(e) => {

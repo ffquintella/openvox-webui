@@ -54,6 +54,7 @@ export default function Groups() {
 
   // Rule form state
   const [isAddRuleOpen, setIsAddRuleOpen] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [newRuleFactPath, setNewRuleFactPath] = useState('');
   const [newRuleOperator, setNewRuleOperator] = useState<RuleOperator>('=');
   const [newRuleValue, setNewRuleValue] = useState('');
@@ -144,6 +145,7 @@ export default function Groups() {
       api.addGroupRule(groupId, rule),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group-nodes', selectedGroup?.id] });
       if (selectedGroup) {
         api.getGroup(selectedGroup.id).then((group) => {
           if (group) setSelectedGroup(group);
@@ -159,6 +161,7 @@ export default function Groups() {
       api.deleteGroupRule(groupId, ruleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['group-nodes', selectedGroup?.id] });
       if (selectedGroup) {
         api.getGroup(selectedGroup.id).then((group) => {
           if (group) setSelectedGroup(group);
@@ -800,34 +803,133 @@ export default function Groups() {
                       selectedGroup.rules.map((rule: ClassificationRule) => (
                         <div
                           key={rule.id}
-                          className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
+                          className="flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3"
                         >
-                          <div className="flex items-center gap-3 font-mono text-sm">
-                            <span className="text-primary-600 font-medium">{rule.fact_path}</span>
-                            <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                              {rule.operator}
-                            </span>
-                            <span className="text-gray-900">
-                              {typeof rule.value === 'object'
-                                ? JSON.stringify(rule.value)
-                                : String(rule.value)}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => deleteRuleMutation.mutate({
-                              groupId: selectedGroup.id,
-                              ruleId: rule.id
-                            })}
-                            disabled={deleteRuleMutation.isPending}
-                            className="text-gray-400 hover:text-red-600 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          {editingRuleId === rule.id ? (
+                            /* Editing mode */
+                            <div className="flex-1 flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={newRuleFactPath}
+                                onChange={(e) => setNewRuleFactPath(e.target.value)}
+                                className="input flex-1 text-sm font-mono"
+                                placeholder="Fact path (e.g., os.family)"
+                              />
+                              <select
+                                value={newRuleOperator}
+                                onChange={(e) => setNewRuleOperator(e.target.value as RuleOperator)}
+                                className="input text-sm"
+                              >
+                                {RULE_OPERATORS.map((op) => (
+                                  <option key={op.value} value={op.value}>
+                                    {op.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                value={newRuleValue}
+                                onChange={(e) => setNewRuleValue(e.target.value)}
+                                className="input flex-1 text-sm"
+                                placeholder="Value"
+                              />
+                              <button
+                                onClick={() => {
+                                  // Save edited rule (delete old, add new)
+                                  deleteRuleMutation.mutate(
+                                    { groupId: selectedGroup.id, ruleId: rule.id },
+                                    {
+                                      onSuccess: () => {
+                                        let parsedValue: string | number | boolean | string[] = newRuleValue;
+                                        if (newRuleOperator === 'in' || newRuleOperator === 'not_in') {
+                                          parsedValue = newRuleValue.split(',').map((s) => s.trim());
+                                        } else {
+                                          if (newRuleValue === 'true') parsedValue = true;
+                                          else if (newRuleValue === 'false') parsedValue = false;
+                                          else if (!isNaN(Number(newRuleValue)) && newRuleValue !== '')
+                                            parsedValue = Number(newRuleValue);
+                                        }
+                                        addRuleMutation.mutate({
+                                          groupId: selectedGroup.id,
+                                          rule: {
+                                            fact_path: newRuleFactPath,
+                                            operator: newRuleOperator,
+                                            value: parsedValue,
+                                          },
+                                        });
+                                        setEditingRuleId(null);
+                                      },
+                                    }
+                                  );
+                                }}
+                                className="btn btn-primary text-sm"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingRuleId(null);
+                                  resetRuleForm();
+                                }}
+                                className="btn btn-secondary text-sm"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            /* Display mode */
+                            <>
+                              <div className="flex items-center gap-3 font-mono text-sm">
+                                <span className="text-primary-600 dark:text-primary-400 font-medium">
+                                  {rule.fact_path}
+                                </span>
+                                <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
+                                  {rule.operator}
+                                </span>
+                                <span className="text-gray-900 dark:text-gray-100">
+                                  {typeof rule.value === 'object'
+                                    ? JSON.stringify(rule.value)
+                                    : String(rule.value)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingRuleId(rule.id);
+                                    setNewRuleFactPath(rule.fact_path);
+                                    setNewRuleOperator(rule.operator);
+                                    setNewRuleValue(
+                                      typeof rule.value === 'object'
+                                        ? JSON.stringify(rule.value)
+                                        : String(rule.value)
+                                    );
+                                  }}
+                                  className="text-gray-400 hover:text-blue-600 transition-colors"
+                                  title="Edit rule"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    deleteRuleMutation.mutate({
+                                      groupId: selectedGroup.id,
+                                      ruleId: rule.id,
+                                    })
+                                  }
+                                  disabled={deleteRuleMutation.isPending}
+                                  className="text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete rule"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ))
                     ) : (
-                      <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-                        <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                         <p>No classification rules defined</p>
                         <p className="text-sm mt-1">Add rules to automatically classify nodes</p>
                       </div>

@@ -423,6 +423,11 @@ async fn get_node_classification(
     for fact in facts {
         facts_obj.insert(fact.name, fact.value);
     }
+    // Add certname as a pseudo-fact so rules can match against it
+    facts_obj.insert(
+        "clientcert".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
     let facts_json = serde_json::Value::Object(facts_obj);
 
     // Get organization ID from authenticated user, or allow override for super_admin
@@ -512,6 +517,11 @@ async fn get_node_classification_public(
     for fact in facts {
         facts_obj.insert(fact.name, fact.value);
     }
+    // Add certname as a pseudo-fact so rules can match against it
+    facts_obj.insert(
+        "clientcert".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
     let facts_json = serde_json::Value::Object(facts_obj);
 
     // Get ALL groups from ALL organizations for cross-org classification
