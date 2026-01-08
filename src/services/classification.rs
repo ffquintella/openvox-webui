@@ -120,6 +120,10 @@ impl ClassificationService {
         let mut all_variables = serde_json::json!({});
         let mut environment: Option<String> = None;
 
+        // Extract node's environment from facts (catalog_environment)
+        let node_environment = get_fact_value(facts, "catalog_environment")
+            .and_then(|v| v.as_str().map(|s| s.to_string()));
+
         // Index groups by id and build parent -> children map
         let mut children_map: HashMap<Option<Uuid>, Vec<&NodeGroup>> = HashMap::new();
         let mut group_index: HashMap<Uuid, &NodeGroup> = HashMap::new();
@@ -144,6 +148,33 @@ impl ClassificationService {
                 group.id,
                 inherited
             );
+
+            // Check if node's environment matches the group's environment requirement
+            // If the group has a specific environment set (not None, "*", "All", or "Any"),
+            // only nodes in that environment should match
+            let environment_matches = match &group.environment {
+                None => true, // No environment restriction
+                Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
+                Some(env) => {
+                    // Group has specific environment requirement
+                    match &node_environment {
+                        Some(node_env) => node_env == env,
+                        None => false, // Node has no environment, cannot match specific requirement
+                    }
+                }
+            };
+
+            if !environment_matches {
+                tracing::debug!(
+                    "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping",
+                    certname,
+                    node_environment,
+                    group.name,
+                    group.environment
+                );
+                continue; // Skip this group and its children
+            }
+
             let mut matched = false;
             let mut matched_rules = vec![];
             let match_type = if inherited {
@@ -704,5 +735,171 @@ mod tests {
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[0].matched_rules.len(), 1);
         assert!(result.classes.as_object().unwrap().contains_key("class_any"));
+    }
+
+    #[test]
+    fn test_classify_environment_filter_matches() {
+        // Group with specific environment requirement
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "production_servers".to_string(),
+            environment: Some("production".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "os.family".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("RedHat"),
+            }],
+            classes: serde_json::json!({"profile::prod": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Node in production environment should match
+        let facts = serde_json::json!({
+            "os": {"family": "RedHat"},
+            "catalog_environment": "production"
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+        assert_eq!(result.groups.len(), 1);
+        assert_eq!(result.groups[0].name, "production_servers");
+    }
+
+    #[test]
+    fn test_classify_environment_filter_no_match() {
+        // Group with specific environment requirement
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "production_servers".to_string(),
+            environment: Some("production".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "os.family".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("RedHat"),
+            }],
+            classes: serde_json::json!({"profile::prod": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Node in different environment should NOT match
+        let facts = serde_json::json!({
+            "os": {"family": "RedHat"},
+            "catalog_environment": "development"
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+        assert_eq!(result.groups.len(), 0);
+    }
+
+    #[test]
+    fn test_classify_environment_wildcard_matches_all() {
+        // Test that "*", "All", and "Any" match nodes from any environment
+        let groups = vec![
+            NodeGroup {
+                id: Uuid::new_v4(),
+                name: "wildcard_group".to_string(),
+                environment: Some("*".to_string()),
+                rules: vec![ClassificationRule {
+                    id: Uuid::new_v4(),
+                    fact_path: "os.family".to_string(),
+                    operator: RuleOperator::Equals,
+                    value: serde_json::json!("RedHat"),
+                }],
+                classes: serde_json::json!({"class1": {}}),
+                ..Default::default()
+            },
+            NodeGroup {
+                id: Uuid::new_v4(),
+                name: "all_group".to_string(),
+                environment: Some("All".to_string()),
+                rules: vec![ClassificationRule {
+                    id: Uuid::new_v4(),
+                    fact_path: "os.family".to_string(),
+                    operator: RuleOperator::Equals,
+                    value: serde_json::json!("RedHat"),
+                }],
+                classes: serde_json::json!({"class2": {}}),
+                ..Default::default()
+            },
+            NodeGroup {
+                id: Uuid::new_v4(),
+                name: "any_group".to_string(),
+                environment: Some("any".to_string()),
+                rules: vec![ClassificationRule {
+                    id: Uuid::new_v4(),
+                    fact_path: "os.family".to_string(),
+                    operator: RuleOperator::Equals,
+                    value: serde_json::json!("RedHat"),
+                }],
+                classes: serde_json::json!({"class3": {}}),
+                ..Default::default()
+            },
+            NodeGroup {
+                id: Uuid::new_v4(),
+                name: "none_group".to_string(),
+                environment: None,
+                rules: vec![ClassificationRule {
+                    id: Uuid::new_v4(),
+                    fact_path: "os.family".to_string(),
+                    operator: RuleOperator::Equals,
+                    value: serde_json::json!("RedHat"),
+                }],
+                classes: serde_json::json!({"class4": {}}),
+                ..Default::default()
+            },
+        ];
+
+        let service = ClassificationService::new(groups);
+
+        let facts = serde_json::json!({
+            "os": {"family": "RedHat"},
+            "catalog_environment": "production"
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+
+        // All 4 groups should match
+        assert_eq!(result.groups.len(), 4);
+        assert!(result.classes.as_object().unwrap().contains_key("class1"));
+        assert!(result.classes.as_object().unwrap().contains_key("class2"));
+        assert!(result.classes.as_object().unwrap().contains_key("class3"));
+        assert!(result.classes.as_object().unwrap().contains_key("class4"));
+    }
+
+    #[test]
+    fn test_classify_pinned_node_respects_environment() {
+        // Pinned nodes should still respect environment filtering
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "production_servers".to_string(),
+            environment: Some("production".to_string()),
+            pinned_nodes: vec!["web1.example.com".to_string()],
+            classes: serde_json::json!({"profile::prod": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Pinned node in wrong environment should NOT match
+        let facts = serde_json::json!({
+            "catalog_environment": "development"
+        });
+
+        let result = service.classify("web1.example.com", &facts);
+        assert_eq!(result.groups.len(), 0);
+
+        // Pinned node in correct environment should match
+        let facts = serde_json::json!({
+            "catalog_environment": "production"
+        });
+
+        let result = service.classify("web1.example.com", &facts);
+        assert_eq!(result.groups.len(), 1);
+        assert_eq!(result.groups[0].match_type, MatchType::Pinned);
     }
 }
