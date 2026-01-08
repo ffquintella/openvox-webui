@@ -776,6 +776,12 @@ export const api = {
   // Code Deploy
   // ============================================================================
 
+  // Feature Status
+  getCodeDeployFeatureStatus: async (): Promise<{ enabled: boolean; message?: string }> => {
+    const response = await client.get('/code/status');
+    return response.data;
+  },
+
   // SSH Keys
   getSshKeys: async (): Promise<CodeSshKey[]> => {
     const response = await client.get('/code/ssh-keys');

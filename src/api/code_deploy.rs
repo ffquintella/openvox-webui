@@ -25,6 +25,8 @@ use crate::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        // Feature status (accessible to all authenticated users)
+        .route("/status", get(get_feature_status))
         // SSH Keys
         .route("/ssh-keys", get(list_ssh_keys).post(create_ssh_key))
         .route("/ssh-keys/{id}", get(get_ssh_key).delete(delete_ssh_key))
@@ -55,6 +57,36 @@ pub fn webhook_routes() -> Router<AppState> {
         .route("/github/{repo_id}", post(handle_github_webhook))
         .route("/gitlab/{repo_id}", post(handle_gitlab_webhook))
         .route("/bitbucket/{repo_id}", post(handle_bitbucket_webhook))
+}
+
+// ============================================================================
+// Feature Status
+// ============================================================================
+
+#[derive(serde::Serialize)]
+pub struct CodeDeployFeatureStatus {
+    pub enabled: bool,
+    pub message: Option<String>,
+}
+
+/// Get Code Deploy feature status
+///
+/// Returns whether the feature is enabled and any relevant message.
+/// This endpoint is accessible to all authenticated users and doesn't require
+/// the feature to be enabled (unlike other endpoints).
+async fn get_feature_status(
+    State(state): State<AppState>,
+    _auth_user: AuthUser,
+) -> Json<CodeDeployFeatureStatus> {
+    let enabled = state.code_deploy_config.as_ref().map_or(false, |c| c.enabled);
+
+    let message = if !enabled {
+        Some("Code Deploy feature is not enabled. To enable it, add the following to your config.yaml:\n\ncode_deploy:\n  enabled: true\n  repos_base_dir: /var/lib/openvox-webui/repos\n  ssh_keys_dir: /etc/openvox-webui/ssh-keys\n  r10k_path: /opt/puppetlabs/puppet/bin/r10k\n  encryption_key: <your-encryption-key>".to_string())
+    } else {
+        None
+    };
+
+    Json(CodeDeployFeatureStatus { enabled, message })
 }
 
 // ============================================================================

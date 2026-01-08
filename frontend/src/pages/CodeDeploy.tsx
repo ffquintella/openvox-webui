@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
+  useCodeDeployFeatureStatus,
   useCodeRepositories,
   useCreateCodeRepository,
   useDeleteCodeRepository,
@@ -55,6 +56,7 @@ export default function CodeDeploy() {
     name?: string;
   } | null>(null);
 
+  const { data: featureStatus } = useCodeDeployFeatureStatus();
   const { data: repositories = [], isLoading: reposLoading } = useCodeRepositories();
   const { data: environments = [], isLoading: envsLoading } = useCodeEnvironments();
   const { data: deployments = [], isLoading: deploysLoading } = useCodeDeployments({ limit: 50 });
@@ -149,8 +151,35 @@ export default function CodeDeploy() {
         </div>
       </div>
 
+      {/* Feature Disabled Banner */}
+      {featureStatus && !featureStatus.enabled && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-start gap-4">
+            <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-yellow-900 mb-2">
+                Code Deploy Feature Not Enabled
+              </h3>
+              <div className="text-sm text-yellow-800 space-y-2">
+                <p>
+                  The Code Deploy feature is currently disabled. To enable it, add the following configuration to your <code className="bg-yellow-100 px-1.5 py-0.5 rounded">config.yaml</code> file:
+                </p>
+                {featureStatus.message && (
+                  <pre className="bg-yellow-100 p-4 rounded mt-3 overflow-x-auto text-xs">
+                    {featureStatus.message}
+                  </pre>
+                )}
+                <p className="mt-3">
+                  After updating the configuration, restart the OpenVox WebUI service for the changes to take effect.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className={clsx('border-b border-gray-200', featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none')}>
         <nav className="-mb-px flex space-x-8">
           {tabs.map((tab) => (
             <button
@@ -183,6 +212,7 @@ export default function CodeDeploy() {
       </div>
 
       {/* Tab Content */}
+      <div className={clsx(featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none')}>
       {activeTab === 'repositories' && (
         <RepositoriesTab
           repositories={repositories}
@@ -224,6 +254,7 @@ export default function CodeDeploy() {
           onCreateNew={() => setShowCreateKey(true)}
         />
       )}
+      </div>
 
       {/* Create Repository Modal */}
       {showCreateRepo && (
