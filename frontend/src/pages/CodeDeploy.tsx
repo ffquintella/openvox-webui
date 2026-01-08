@@ -15,12 +15,14 @@ import {
   Copy,
   ChevronRight,
   GitCommit,
+  Pencil,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
   useCodeDeployFeatureStatus,
   useCodeRepositories,
   useCreateCodeRepository,
+  useUpdateCodeRepository,
   useDeleteCodeRepository,
   useSyncCodeRepository,
   useCodeEnvironments,
@@ -39,6 +41,7 @@ import type {
   CodeDeployment,
   DeploymentStatus,
   CreateRepositoryRequest,
+  UpdateRepositoryRequest,
   CreateSshKeyRequest,
 } from '../types';
 
@@ -47,6 +50,7 @@ type TabType = 'repositories' | 'environments' | 'deployments' | 'ssh-keys';
 export default function CodeDeploy() {
   const [activeTab, setActiveTab] = useState<TabType>('repositories');
   const [showCreateRepo, setShowCreateRepo] = useState(false);
+  const [editingRepo, setEditingRepo] = useState<CodeRepository | null>(null);
   const [showCreateKey, setShowCreateKey] = useState(false);
   const [selectedDeployment, setSelectedDeployment] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -63,6 +67,7 @@ export default function CodeDeploy() {
   const { data: sshKeys = [], isLoading: keysLoading } = useSshKeys();
 
   const createRepoMutation = useCreateCodeRepository();
+  const updateRepoMutation = useUpdateCodeRepository();
   const deleteRepoMutation = useDeleteCodeRepository();
   const syncRepoMutation = useSyncCodeRepository();
   const updateEnvMutation = useUpdateCodeEnvironment();
@@ -111,6 +116,15 @@ export default function CodeDeploy() {
     try {
       await createRepoMutation.mutateAsync(data);
       setShowCreateRepo(false);
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const handleUpdateRepo = async (id: string, data: UpdateRepositoryRequest) => {
+    try {
+      await updateRepoMutation.mutateAsync({ id, request: data });
+      setEditingRepo(null);
     } catch {
       // Error handled by mutation
     }
@@ -220,6 +234,7 @@ export default function CodeDeploy() {
           onSync={(id) => syncRepoMutation.mutate(id)}
           isSyncing={syncRepoMutation.isPending}
           syncingRepoId={syncRepoMutation.variables}
+          onEdit={(repo) => setEditingRepo(repo)}
           onDelete={(id, name) => setConfirmAction({ type: 'delete-repo', id, name })}
           onCreateNew={() => setShowCreateRepo(true)}
         />
@@ -263,6 +278,17 @@ export default function CodeDeploy() {
           onClose={() => setShowCreateRepo(false)}
           onCreate={handleCreateRepo}
           isCreating={createRepoMutation.isPending}
+        />
+      )}
+
+      {/* Edit Repository Modal */}
+      {editingRepo && (
+        <EditRepositoryModal
+          repository={editingRepo}
+          sshKeys={sshKeys}
+          onClose={() => setEditingRepo(null)}
+          onUpdate={(data) => handleUpdateRepo(editingRepo.id, data)}
+          isUpdating={updateRepoMutation.isPending}
         />
       )}
 
@@ -356,6 +382,7 @@ function RepositoriesTab({
   onSync,
   isSyncing,
   syncingRepoId,
+  onEdit,
   onDelete,
   onCreateNew,
 }: {
@@ -364,6 +391,7 @@ function RepositoriesTab({
   onSync: (id: string) => void;
   isSyncing: boolean;
   syncingRepoId?: string;
+  onEdit: (repo: CodeRepository) => void;
   onDelete: (id: string, name: string) => void;
   onCreateNew: () => void;
 }) {
@@ -498,8 +526,16 @@ function RepositoriesTab({
                   Sync
                 </button>
                 <button
+                  onClick={() => onEdit(repo)}
+                  className="p-2 text-gray-400 hover:text-primary-600"
+                  title="Edit repository"
+                >
+                  <Pencil className="w-5 h-5" />
+                </button>
+                <button
                   onClick={() => onDelete(repo.id, repo.name)}
                   className="p-2 text-gray-400 hover:text-red-600"
+                  title="Delete repository"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -1163,6 +1199,289 @@ function CreateRepositoryModal({
             >
               {isCreating && <Loader2 className="w-4 h-4 animate-spin" />}
               Add Repository
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Edit Repository Modal
+function EditRepositoryModal({
+  repository,
+  sshKeys,
+  onClose,
+  onUpdate,
+  isUpdating,
+}: {
+  repository: CodeRepository;
+  sshKeys: { id: string; name: string }[];
+  onClose: () => void;
+  onUpdate: (data: UpdateRepositoryRequest) => void;
+  isUpdating: boolean;
+}) {
+  const [name, setName] = useState(repository.name);
+  const [url, setUrl] = useState(repository.url);
+  const [branchPattern, setBranchPattern] = useState(repository.branch_pattern);
+  const [authType, setAuthType] = useState<'ssh' | 'pat' | 'none'>(repository.auth_type);
+  const [sshKeyId, setSshKeyId] = useState<string>(repository.ssh_key_id || '');
+  const [githubPat, setGithubPat] = useState('');
+  const [clearSshKey, setClearSshKey] = useState(false);
+  const [clearGithubPat, setClearGithubPat] = useState(false);
+  const [pollInterval, setPollInterval] = useState(repository.poll_interval_seconds);
+  const [isControlRepo, setIsControlRepo] = useState(repository.is_control_repo);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updateData: UpdateRepositoryRequest = {
+      name: name !== repository.name ? name : undefined,
+      url: url !== repository.url ? url : undefined,
+      branch_pattern: branchPattern !== repository.branch_pattern ? branchPattern : undefined,
+      auth_type: authType !== repository.auth_type ? authType : undefined,
+      poll_interval_seconds: pollInterval !== repository.poll_interval_seconds ? pollInterval : undefined,
+      is_control_repo: isControlRepo !== repository.is_control_repo ? isControlRepo : undefined,
+    };
+
+    // Handle SSH key changes
+    if (authType === 'ssh') {
+      if (clearSshKey) {
+        updateData.clear_ssh_key = true;
+      } else if (sshKeyId && sshKeyId !== repository.ssh_key_id) {
+        updateData.ssh_key_id = sshKeyId;
+      }
+    }
+
+    // Handle PAT changes
+    if (authType === 'pat') {
+      if (clearGithubPat) {
+        updateData.clear_github_pat = true;
+      } else if (githubPat) {
+        updateData.github_pat = githubPat;
+      }
+    }
+
+    onUpdate(updateData);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-semibold text-gray-900">Edit Repository</h3>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="control-repo"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Git URL</label>
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              required
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder={authType === 'ssh' ? 'git@github.com:org/repo.git' : 'https://github.com/org/repo.git'}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              {authType === 'ssh' && 'Use SSH URL format (git@github.com:...)'}
+              {authType === 'pat' && 'Use HTTPS URL format (https://github.com/...)'}
+              {authType === 'none' && 'Public repository URL'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Branch Pattern</label>
+            <input
+              type="text"
+              value={branchPattern}
+              onChange={(e) => setBranchPattern(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="* (all branches)"
+            />
+            <p className="mt-1 text-xs text-gray-500">Glob pattern for branch filtering (e.g., *, feature/*, production)</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Authentication Method</label>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="ssh"
+                  checked={authType === 'ssh'}
+                  onChange={(e) => setAuthType(e.target.value as 'ssh')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">SSH Key</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="pat"
+                  checked={authType === 'pat'}
+                  onChange={(e) => setAuthType(e.target.value as 'pat')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">Personal Access Token (PAT)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="auth-type"
+                  value="none"
+                  checked={authType === 'none'}
+                  onChange={(e) => setAuthType(e.target.value as 'none')}
+                  className="text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-700">None (Public Repository)</span>
+              </label>
+            </div>
+          </div>
+
+          {authType === 'ssh' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">SSH Key</label>
+                <select
+                  value={sshKeyId}
+                  onChange={(e) => {
+                    setSshKeyId(e.target.value);
+                    setClearSshKey(false);
+                  }}
+                  disabled={clearSshKey}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
+                >
+                  <option value="">Select an SSH key</option>
+                  {sshKeys.map((key) => (
+                    <option key={key.id} value={key.id}>
+                      {key.name}
+                    </option>
+                  ))}
+                </select>
+                {repository.ssh_key_name && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Current: {repository.ssh_key_name}
+                  </p>
+                )}
+              </div>
+              {repository.ssh_key_id && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="clear-ssh-key"
+                    checked={clearSshKey}
+                    onChange={(e) => {
+                      setClearSshKey(e.target.checked);
+                      if (e.target.checked) setSshKeyId('');
+                    }}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <label htmlFor="clear-ssh-key" className="text-sm text-red-600">
+                    Remove SSH key
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {authType === 'pat' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {repository.has_pat ? 'New GitHub Personal Access Token (leave blank to keep current)' : 'GitHub Personal Access Token'}
+                </label>
+                <input
+                  type="password"
+                  value={githubPat}
+                  onChange={(e) => {
+                    setGithubPat(e.target.value);
+                    setClearGithubPat(false);
+                  }}
+                  disabled={clearGithubPat}
+                  required={authType === 'pat' && !repository.has_pat}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Token with repository read access. Never stored in plaintext.
+                </p>
+                {repository.has_pat && (
+                  <p className="mt-1 text-xs text-green-600">
+                    Current PAT is configured
+                  </p>
+                )}
+              </div>
+              {repository.has_pat && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="clear-github-pat"
+                    checked={clearGithubPat}
+                    onChange={(e) => {
+                      setClearGithubPat(e.target.checked);
+                      if (e.target.checked) setGithubPat('');
+                    }}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <label htmlFor="clear-github-pat" className="text-sm text-red-600">
+                    Remove GitHub PAT
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Poll Interval (seconds)</label>
+            <input
+              type="number"
+              value={pollInterval}
+              onChange={(e) => setPollInterval(parseInt(e.target.value))}
+              min={0}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">Set to 0 to disable polling (webhook only)</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is-control-repo-edit"
+              checked={isControlRepo}
+              onChange={(e) => setIsControlRepo(e.target.checked)}
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="is-control-repo-edit" className="text-sm text-gray-700">
+              This is a control repository (contains Puppetfile)
+            </label>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUpdating}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isUpdating && <Loader2 className="w-4 h-4 animate-spin" />}
+              Update Repository
             </button>
           </div>
         </form>
