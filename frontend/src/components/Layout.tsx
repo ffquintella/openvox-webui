@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../stores/authStore';
+import NotificationBell from './NotificationBell';
+import NotificationManager from './NotificationManager';
 
 interface LayoutProps {
   children: ReactNode;
@@ -74,6 +76,9 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100">
+      {/* Notification Manager - handles SSE and toasts */}
+      <NotificationManager />
+
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
         <div className="flex flex-col h-full">
@@ -194,6 +199,12 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Main content */}
       <main className="pl-64">
+        {/* Header */}
+        <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-end px-8">
+          <NotificationBell />
+        </header>
+
+        {/* Content */}
         <div className="p-8">{children}</div>
       </main>
     </div>

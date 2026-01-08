@@ -908,3 +908,65 @@ export const api = {
     await client.delete(`/roles/${roleId}/group-permissions/${groupId}`);
   },
 };
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+export const notificationApi = {
+  getNotifications: async (query?: {
+    unread_only?: boolean;
+    type?: string;
+    category?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ notifications: any[] }> => {
+    const response = await client.get('/notifications', { params: query });
+    return response.data;
+  },
+
+  getNotificationStats: async (): Promise<{ stats: any }> => {
+    const response = await client.get('/notifications/stats');
+    return response.data;
+  },
+
+  markAsRead: async (id: string, read: boolean): Promise<{ notification: any }> => {
+    const response = await client.put(`/notifications/${id}/read`, { read });
+    return response.data;
+  },
+
+  markAllAsRead: async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const response = await client.post('/notifications/mark-all-read');
+    return response.data;
+  },
+
+  bulkMarkRead: async (notificationIds: string[], read: boolean): Promise<{ success: boolean; count: number }> => {
+    const response = await client.post('/notifications/bulk-mark-read', {
+      notification_ids: notificationIds,
+      read,
+    });
+    return response.data;
+  },
+
+  dismissNotification: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.post(`/notifications/${id}/dismiss`);
+    return response.data;
+  },
+
+  deleteNotification: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.delete(`/notifications/${id}`);
+    return response.data;
+  },
+
+  createNotification: async (data: {
+    user_id: string;
+    title: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+    category?: string;
+    link?: string;
+  }): Promise<{ notification: any }> => {
+    const response = await client.post('/notifications', data);
+    return response.data;
+  },
+};

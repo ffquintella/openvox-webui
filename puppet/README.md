@@ -56,9 +56,26 @@ Install with default settings (listens on localhost:3000):
 include openvox_webui
 ```
 
+### External Node Classifier (Server-Side)
+
+Configure Puppet Server to use OpenVox WebUI as an External Node Classifier (ENC):
+
+```puppet
+# On Puppet Server node
+class { 'openvox_webui::enc':
+  webui_url                => 'https://openvox.example.com',
+  manage_puppet_conf       => true,
+  restart_puppetserver     => true,
+  ssl_verify               => false,  # For self-signed certificates
+  remove_agent_environment => true,   # Remove conflicting environment settings
+}
+```
+
+This configures Puppet Server to query OpenVox WebUI for node classification, including environment assignment. See [ENC Setup Guide](../docs/ENC_SETUP.md) for detailed documentation.
+
 ### Node Classification (Client-Side)
 
-Configure Puppet agents to fetch and apply classification from OpenVox WebUI:
+Alternatively, configure Puppet agents to fetch and apply classification from OpenVox WebUI:
 
 ```puppet
 # Step 1: Configure the client to fetch classification data

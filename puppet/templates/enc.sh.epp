@@ -1,0 +1,82 @@
+<%- |
+  String $webui_url,
+  Boolean $ssl_verify = false,
+| -%>
+#!/bin/bash
+# External Node Classifier for OpenVox WebUI
+# Managed by Puppet - DO NOT EDIT MANUALLY
+#
+# This script is called by Puppet Server to get node classification from OpenVox WebUI.
+# It queries the PUBLIC classification API (/classify) which does not require authentication.
+
+set -e
+
+# Configuration
+WEBUI_URL="<%= $webui_url %>"
+CERTNAME="$1"
+
+# Validate input
+if [ -z "$CERTNAME" ]; then
+    echo "Error: No certname provided" >&2
+    echo "Usage: $0 <certname>" >&2
+    exit 1
+fi
+
+# Build curl options
+CURL_OPTS="-s"
+<% unless $ssl_verify { -%>
+# Allow self-signed certificates
+CURL_OPTS="${CURL_OPTS} -k"
+<% } -%>
+
+# Query OpenVox WebUI PUBLIC classification API (no auth required)
+# Use /classify endpoint (public) instead of /classification (requires JWT)
+CLASSIFICATION=$(curl ${CURL_OPTS} "${WEBUI_URL}/api/v1/nodes/${CERTNAME}/classify" 2>&1)
+
+# Check if we got valid JSON
+if echo "$CLASSIFICATION" | grep -q "^{"; then
+    # Convert JSON to YAML format expected by Puppet
+    echo "$CLASSIFICATION" | python3 -c '
+import sys
+import json
+import yaml
+
+try:
+    data = json.load(sys.stdin)
+
+    # Puppet expects specific format
+    output = {
+        "environment": data.get("environment", "production"),
+        "classes": data.get("classes", {}),
+    }
+
+    # Add parameters/variables if present
+    if "parameters" in data:
+        output["parameters"] = data["parameters"]
+    elif "variables" in data:
+        output["parameters"] = data["variables"]
+
+    # Output as YAML
+    print(yaml.dump(output, default_flow_style=False, explicit_start=True))
+except json.JSONDecodeError as e:
+    print(f"Error: Invalid JSON from OpenVox WebUI: {e}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error processing classification: {e}", file=sys.stderr)
+    sys.exit(1)
+'
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        # Python script failed - return minimal classification
+        echo "---"
+        echo "environment: production"
+        echo "classes: {}"
+        exit 0
+    fi
+else
+    # Node not found or API error - return minimal classification
+    # This prevents Puppet from failing when node isn't classified yet
+    echo "---"
+    echo "environment: production"
+    echo "classes: {}"
+fi

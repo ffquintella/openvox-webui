@@ -21,7 +21,6 @@ use futures::stream::Stream;
 use serde_json::json;
 use std::convert::Infallible;
 use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt as _;
 
 /// Create notification routes
 pub fn routes() -> Router<AppState> {
