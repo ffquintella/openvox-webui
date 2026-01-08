@@ -3186,6 +3186,7 @@ dependencies = [
  "dotenvy",
  "fake",
  "flate2",
+ "futures",
  "git2",
  "governor",
  "hex",
@@ -3212,6 +3213,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tokio-rustls",
+ "tokio-stream",
  "tokio-test",
  "tower",
  "tower-http",
@@ -5539,6 +5541,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

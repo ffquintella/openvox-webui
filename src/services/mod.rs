@@ -8,6 +8,7 @@ pub mod code_deploy;
 pub mod code_deploy_scheduler;
 pub mod facter;
 pub mod git;
+pub mod notification;
 pub mod puppet_ca;
 pub mod puppetdb;
 pub mod r10k;
@@ -26,6 +27,7 @@ pub use cache::{
 pub use code_deploy::{CodeDeployConfig, CodeDeployService};
 pub use facter::{ExportFormat, FacterService, GeneratedFacts};
 pub use git::{BranchInfo, CommitInfo, GitService, GitServiceConfig};
+pub use notification::{NotificationEvent, NotificationService};
 pub use puppet_ca::PuppetCAService;
 pub use puppetdb::{
     Catalog, CatalogEdge, CatalogResource, Environment, Event, FactContent, FactPath,

@@ -22,6 +22,7 @@ use config::LogFormat;
 use openvox_webui::{
     api, config, db, middleware, services, AppConfig, AppState, DbRbacService, RbacService,
 };
+use services::notification::NotificationService;
 use services::puppetdb::PuppetDbClient;
 
 #[tokio::main]
@@ -107,6 +108,10 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Initialize notification service
+    info!("Initializing notification service");
+    let notification_service = Arc::new(NotificationService::new(db.clone()));
+
     // Create application state
     let state = AppState {
         config: config.clone(),
@@ -116,6 +121,7 @@ async fn main() -> Result<()> {
         rbac,
         rbac_db,
         code_deploy_config,
+        notification_service,
     };
 
     // Build the router

@@ -18,6 +18,7 @@ mod facts;
 mod groups;
 mod health;
 mod nodes;
+mod notifications;
 mod organizations;
 mod permissions;
 mod query;
@@ -77,6 +78,8 @@ pub fn protected_routes() -> Router<AppState> {
         .merge(ca::routes())
         // Code deploy endpoints
         .nest("/code", code_deploy::routes())
+        // Notification endpoints
+        .nest("/notifications", notifications::routes())
 }
 
 /// Create the full API router (public + protected; useful for tests)

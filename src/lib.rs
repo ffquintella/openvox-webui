@@ -20,6 +20,7 @@ pub use middleware::{
     AuthUser, Claims, RbacError, RequirePermission,
 };
 use services::code_deploy::{CodeDeployConfig, CodeDeployService};
+use services::notification::NotificationService;
 use services::puppet_ca::PuppetCAService;
 use services::puppetdb::PuppetDbClient;
 pub use services::{DbRbacService, RbacService};
@@ -42,6 +43,8 @@ pub struct AppState {
     pub rbac_db: Arc<DbRbacService>,
     /// Code Deploy service configuration (optional)
     pub code_deploy_config: Option<CodeDeployConfig>,
+    /// Notification service
+    pub notification_service: Arc<NotificationService>,
 }
 
 impl AppState {

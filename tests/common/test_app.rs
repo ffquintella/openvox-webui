@@ -20,6 +20,7 @@ use openvox_webui::{
     db,
     middleware::auth::{Claims, TokenType},
     models::default_organization_uuid,
+    services::notification::NotificationService,
     AppState, DbRbacService, RbacService,
 };
 
@@ -76,6 +77,9 @@ impl TestApp {
             }
         });
 
+        // Initialize notification service
+        let notification_service = Arc::new(NotificationService::new(db.clone()));
+
         // Create application state
         let state = AppState {
             config,
@@ -85,6 +89,7 @@ impl TestApp {
             rbac,
             rbac_db,
             code_deploy_config,
+            notification_service,
         };
 
         // Build the router
