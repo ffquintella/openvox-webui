@@ -148,37 +148,28 @@ class openvox_webui::config {
     }
 
     # Create Code Deploy directories if enabled
+    # Using exec to avoid file resource conflicts with other modules
     if $openvox_webui::code_deploy_enabled {
-      # Ensure parent directories exist (using ensure_resource to avoid conflicts)
-      ensure_resource('file', '/var/lib/openvox-webui/code-deploy', {
-          'ensure' => 'directory',
-          'owner'  => $openvox_webui::user,
-          'group'  => $openvox_webui::group,
-          'mode'   => '0750',
-      })
+      $repos_dir = $openvox_webui::code_deploy_repos_base_dir
+      $ssh_keys_dir = $openvox_webui::code_deploy_ssh_keys_dir
+      $owner = $openvox_webui::user
+      $group = $openvox_webui::group
 
-      ensure_resource('file', $openvox_webui::code_deploy_repos_base_dir, {
-          'ensure'  => 'directory',
-          'owner'   => $openvox_webui::user,
-          'group'   => $openvox_webui::group,
-          'mode'    => '0750',
-          'require' => File['/var/lib/openvox-webui/code-deploy'],
-      })
+      exec { 'create-code-deploy-repos-dir':
+        command => "/bin/mkdir -p '${repos_dir}' && \
+/bin/chown ${owner}:${group} '${repos_dir}' && \
+/bin/chmod 0750 '${repos_dir}'",
+        creates => $repos_dir,
+        path    => ['/bin', '/usr/bin'],
+      }
 
-      ensure_resource('file', '/etc/openvox-webui/code-deploy', {
-          'ensure' => 'directory',
-          'owner'  => 'root',
-          'group'  => $openvox_webui::group,
-          'mode'   => '0750',
-      })
-
-      ensure_resource('file', $openvox_webui::code_deploy_ssh_keys_dir, {
-          'ensure'  => 'directory',
-          'owner'   => $openvox_webui::user,
-          'group'   => $openvox_webui::group,
-          'mode'    => '0700',
-          'require' => File['/etc/openvox-webui/code-deploy'],
-      })
+      exec { 'create-code-deploy-ssh-keys-dir':
+        command => "/bin/mkdir -p '${ssh_keys_dir}' && \
+/bin/chown ${owner}:${group} '${ssh_keys_dir}' && \
+/bin/chmod 0700 '${ssh_keys_dir}'",
+        creates => $ssh_keys_dir,
+        path    => ['/bin', '/usr/bin'],
+      }
     }
   }
 }
