@@ -278,14 +278,32 @@ impl CodeDeployService {
 
         info!("Syncing repository: {}", repository.name);
 
-        // Get SSH key if configured
-        let ssh_key = if let Some(key_id) = repository.ssh_key_id {
-            let key_repo = CodeSshKeyRepository::new(&self.pool);
-            key_repo.get_by_id(key_id).await?.map(|k| {
-                self.decrypt_private_key(&k.private_key_encrypted)
-            })
-        } else {
-            None
+        // Determine authentication method and credentials
+        use crate::models::AuthType;
+        let (ssh_key, github_pat) = match repository.auth_type {
+            AuthType::Ssh => {
+                // Get SSH key if configured
+                let ssh_key = if let Some(key_id) = repository.ssh_key_id {
+                    let key_repo = CodeSshKeyRepository::new(&self.pool);
+                    key_repo.get_by_id(key_id).await?.map(|k| {
+                        self.decrypt_private_key(&k.private_key_encrypted)
+                    })
+                } else {
+                    None
+                };
+                (ssh_key, None)
+            }
+            AuthType::Pat => {
+                // Get PAT if configured
+                let github_pat = repository.github_pat_encrypted.as_ref().map(|encrypted| {
+                    self.decrypt_private_key(encrypted)
+                });
+                (None, github_pat)
+            }
+            AuthType::None => {
+                // No authentication (public repository)
+                (None, None)
+            }
         };
 
         let ssh_key_ref = match &ssh_key {
@@ -293,14 +311,30 @@ impl CodeDeployService {
             _ => None,
         };
 
-        // Clone or open the repository
-        let git_repo = self
-            .git
-            .clone_or_open(&repository.id.to_string(), &repository.url, ssh_key_ref)
-            .context("Failed to open repository")?;
+        let github_pat_ref = match &github_pat {
+            Some(Ok(pat)) => Some(pat.as_str()),
+            _ => None,
+        };
 
-        // Fetch updates
-        if let Err(e) = self.git.fetch(&git_repo, ssh_key_ref) {
+        // Clone or open the repository based on auth type
+        let git_repo = match repository.auth_type {
+            AuthType::Pat | AuthType::None => {
+                self.git
+                    .clone_or_open_with_pat(&repository.id.to_string(), &repository.url, github_pat_ref)
+                    .context("Failed to open repository")?
+            }
+            AuthType::Ssh => {
+                self.git
+                    .clone_or_open(&repository.id.to_string(), &repository.url, ssh_key_ref)
+                    .context("Failed to open repository")?
+            }
+        };
+
+        // Fetch updates based on auth type
+        if let Err(e) = match repository.auth_type {
+            AuthType::Pat | AuthType::None => self.git.fetch_with_pat(&git_repo, github_pat_ref),
+            AuthType::Ssh => self.git.fetch(&git_repo, ssh_key_ref),
+        } {
             repo.set_error(id, Some(&e.to_string())).await?;
             return Err(e);
         }
@@ -753,8 +787,10 @@ impl CodeDeployService {
             name: repo.name,
             url: repo.url,
             branch_pattern: repo.branch_pattern,
+            auth_type: repo.auth_type,
             ssh_key_id: repo.ssh_key_id,
             ssh_key_name,
+            has_pat: repo.github_pat_encrypted.is_some(),
             webhook_url: self.webhook_url(repo.id, "github"),
             poll_interval_seconds: repo.poll_interval_seconds,
             is_control_repo: repo.is_control_repo,

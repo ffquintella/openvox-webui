@@ -115,6 +115,43 @@ pub struct CreateSshKeyRequest {
     pub private_key: String,
 }
 
+/// Authentication type for Git repositories
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthType {
+    /// SSH key authentication
+    Ssh,
+    /// Personal Access Token (for GitHub, GitLab, etc.)
+    Pat,
+    /// No authentication (public repositories)
+    None,
+}
+
+impl AuthType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AuthType::Ssh => "ssh",
+            AuthType::Pat => "pat",
+            AuthType::None => "none",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "ssh" => Some(AuthType::Ssh),
+            "pat" => Some(AuthType::Pat),
+            "none" => Some(AuthType::None),
+            _ => None,
+        }
+    }
+}
+
+impl Default for AuthType {
+    fn default() -> Self {
+        AuthType::Ssh
+    }
+}
+
 /// Git repository configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeRepository {
@@ -123,7 +160,14 @@ pub struct CodeRepository {
     pub url: String,
     /// Glob pattern for branch filtering (e.g., "*", "feature/*", "production")
     pub branch_pattern: String,
+    /// Authentication type
+    #[serde(default)]
+    pub auth_type: AuthType,
+    /// SSH key ID (used when auth_type = ssh)
     pub ssh_key_id: Option<Uuid>,
+    /// Encrypted GitHub PAT (used when auth_type = pat)
+    #[serde(skip_serializing)]
+    pub github_pat_encrypted: Option<String>,
     /// Webhook secret for verifying incoming webhooks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webhook_secret: Option<String>,
@@ -146,8 +190,11 @@ pub struct CodeRepositoryResponse {
     pub name: String,
     pub url: String,
     pub branch_pattern: String,
+    pub auth_type: AuthType,
     pub ssh_key_id: Option<Uuid>,
     pub ssh_key_name: Option<String>,
+    /// Indicates if PAT is configured (true/false, never exposes actual token)
+    pub has_pat: bool,
     /// Webhook URL for this repository
     pub webhook_url: Option<String>,
     pub poll_interval_seconds: i32,
@@ -166,7 +213,12 @@ pub struct CreateRepositoryRequest {
     pub url: String,
     #[serde(default = "default_branch_pattern")]
     pub branch_pattern: String,
+    #[serde(default)]
+    pub auth_type: AuthType,
+    /// SSH key ID (required if auth_type = ssh)
     pub ssh_key_id: Option<Uuid>,
+    /// GitHub Personal Access Token (required if auth_type = pat)
+    pub github_pat: Option<String>,
     #[serde(default = "default_poll_interval")]
     pub poll_interval_seconds: i32,
     #[serde(default)]
@@ -187,10 +239,16 @@ pub struct UpdateRepositoryRequest {
     pub name: Option<String>,
     pub url: Option<String>,
     pub branch_pattern: Option<String>,
+    pub auth_type: Option<AuthType>,
     pub ssh_key_id: Option<Uuid>,
     /// Set to true to clear the SSH key
     #[serde(default)]
     pub clear_ssh_key: bool,
+    /// New GitHub PAT to set (if auth_type = pat)
+    pub github_pat: Option<String>,
+    /// Set to true to clear the PAT
+    #[serde(default)]
+    pub clear_github_pat: bool,
     pub poll_interval_seconds: Option<i32>,
     pub is_control_repo: Option<bool>,
     /// Regenerate the webhook secret

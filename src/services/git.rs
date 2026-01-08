@@ -81,16 +81,39 @@ impl GitService {
             Repository::open(&repo_path).context("Failed to open existing repository")
         } else {
             info!("Cloning repository {} to {:?}", url, repo_path);
-            self.clone_repository(url, &repo_path, ssh_private_key)
+            self.clone_repository(url, &repo_path, ssh_private_key, None)
+        }
+    }
+
+    /// Clone or open a repository with PAT authentication
+    ///
+    /// Same as `clone_or_open` but with PAT support for HTTPS URLs
+    pub fn clone_or_open_with_pat(
+        &self,
+        repo_id: &str,
+        url: &str,
+        github_pat: Option<&str>,
+    ) -> Result<Repository> {
+        let repo_path = self.repo_path(repo_id);
+
+        if repo_path.exists() {
+            debug!("Opening existing repository at {:?}", repo_path);
+            Repository::open(&repo_path).context("Failed to open existing repository")
+        } else {
+            info!("Cloning repository {} with PAT to {:?}", url, repo_path);
+            self.clone_repository(url, &repo_path, None, github_pat)
         }
     }
 
     /// Clone a repository from a URL
+    ///
+    /// Supports both SSH key and PAT authentication
     fn clone_repository(
         &self,
         url: &str,
         path: &Path,
         ssh_private_key: Option<&str>,
+        github_pat: Option<&str>,
     ) -> Result<Repository> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -105,6 +128,14 @@ impl GitService {
             callbacks.credentials(move |_url, username_from_url, _allowed_types| {
                 let username = username_from_url.unwrap_or("git");
                 Cred::ssh_key_from_memory(username, None, &key_string, None)
+            });
+        } else if let Some(pat) = github_pat {
+            // Set up HTTPS PAT authentication
+            let pat_string = pat.to_string();
+            callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
+                // For GitHub PAT: username is token, password is x-oauth-basic or empty
+                // Modern approach: username = PAT, password = empty string
+                Cred::userpass_plaintext(&pat_string, "")
             });
         }
 
@@ -144,6 +175,33 @@ impl GitService {
             .context("Failed to fetch from remote")?;
 
         debug!("Fetched updates from remote");
+        Ok(())
+    }
+
+    /// Fetch updates from the remote with PAT authentication
+    pub fn fetch_with_pat(&self, repo: &Repository, github_pat: Option<&str>) -> Result<()> {
+        let mut remote = repo
+            .find_remote("origin")
+            .context("Failed to find origin remote")?;
+
+        let mut callbacks = RemoteCallbacks::new();
+
+        if let Some(pat) = github_pat {
+            let pat_string = pat.to_string();
+            callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
+                Cred::userpass_plaintext(&pat_string, "")
+            });
+        }
+
+        let mut fetch_options = FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        // Fetch all refs
+        remote
+            .fetch(&[] as &[&str], Some(&mut fetch_options), None)
+            .context("Failed to fetch from remote")?;
+
+        debug!("Fetched updates from remote using PAT");
         Ok(())
     }
 
