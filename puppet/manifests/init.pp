@@ -188,6 +188,22 @@
 # @param saml_request_max_age
 #   Maximum age of SAML requests in seconds.
 #
+# @param code_deploy_enabled
+#   Whether to enable Code Deploy feature for Git-based environment management.
+#
+# @param code_deploy_repos_base_dir
+#   Base directory for cloned Git repositories.
+#
+# @param code_deploy_ssh_keys_dir
+#   Directory where SSH keys are stored.
+#
+# @param code_deploy_r10k_path
+#   Path to the r10k executable.
+#
+# @param code_deploy_encryption_key
+#   Encryption key for storing sensitive data (SSH keys, PATs).
+#   Should be at least 32 characters. Auto-generated if not specified.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -218,6 +234,14 @@
 #     saml_sp_entity_id     => 'https://openvox.example.com/saml',
 #     saml_sp_acs_url       => 'https://openvox.example.com/api/v1/auth/saml/acs',
 #     saml_idp_metadata_url => 'https://idp.example.com/saml/metadata',
+#   }
+#
+# @example Enabling Code Deploy for Git-based environment management
+#   class { 'openvox_webui':
+#     code_deploy_enabled        => true,
+#     code_deploy_repos_base_dir => '/var/lib/openvox-webui/repos',
+#     code_deploy_ssh_keys_dir   => '/etc/openvox-webui/ssh-keys',
+#     code_deploy_r10k_path      => '/opt/puppetlabs/puppet/bin/r10k',
 #   }
 #
 class openvox_webui (
@@ -326,6 +350,13 @@ class openvox_webui (
   Boolean                             $saml_require_existing_user      = true,
   Boolean                             $saml_allow_idp_initiated        = false,
   Integer[60, 600]                    $saml_request_max_age            = 300,
+
+  # Code Deploy settings
+  Boolean                             $code_deploy_enabled             = false,
+  Stdlib::Absolutepath                $code_deploy_repos_base_dir      = '/var/lib/openvox-webui/repos',
+  Stdlib::Absolutepath                $code_deploy_ssh_keys_dir        = '/etc/openvox-webui/ssh-keys',
+  Stdlib::Absolutepath                $code_deploy_r10k_path           = '/opt/puppetlabs/puppet/bin/r10k',
+  String[32]                          $code_deploy_encryption_key      = fqdn_rand_string(64),
 ) {
   contain openvox_webui::install
   contain openvox_webui::config

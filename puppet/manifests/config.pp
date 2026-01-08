@@ -138,7 +138,30 @@ class openvox_webui::config {
         saml_require_existing_user     => $openvox_webui::saml_require_existing_user,
         saml_allow_idp_initiated       => $openvox_webui::saml_allow_idp_initiated,
         saml_request_max_age           => $openvox_webui::saml_request_max_age,
+        # Code Deploy settings
+        code_deploy_enabled            => $openvox_webui::code_deploy_enabled,
+        code_deploy_repos_base_dir     => $openvox_webui::code_deploy_repos_base_dir,
+        code_deploy_ssh_keys_dir       => $openvox_webui::code_deploy_ssh_keys_dir,
+        code_deploy_r10k_path          => $openvox_webui::code_deploy_r10k_path,
+        code_deploy_encryption_key     => $openvox_webui::code_deploy_encryption_key,
       }),
+    }
+
+    # Create Code Deploy directories if enabled
+    if $openvox_webui::code_deploy_enabled {
+      file { $openvox_webui::code_deploy_repos_base_dir:
+        ensure => directory,
+        owner  => $openvox_webui::user,
+        group  => $openvox_webui::group,
+        mode   => '0750',
+      }
+
+      file { $openvox_webui::code_deploy_ssh_keys_dir:
+        ensure => directory,
+        owner  => $openvox_webui::user,
+        group  => $openvox_webui::group,
+        mode   => '0700',
+      }
     }
   }
 }

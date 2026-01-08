@@ -53,6 +53,12 @@
   Boolean $saml_require_existing_user,
   Boolean $saml_allow_idp_initiated,
   Integer $saml_request_max_age,
+  # Code Deploy parameters
+  Boolean $code_deploy_enabled,
+  Stdlib::Absolutepath $code_deploy_repos_base_dir,
+  Stdlib::Absolutepath $code_deploy_ssh_keys_dir,
+  Stdlib::Absolutepath $code_deploy_r10k_path,
+  String $code_deploy_encryption_key,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -233,4 +239,22 @@ saml:
 #   user_mapping:
 #     username_attribute: "NameID"
 #     require_existing_user: true
+<% } -%>
+
+<% if $code_deploy_enabled { -%>
+# Code Deploy - Git-based environment management
+code_deploy:
+  enabled: true
+  repos_base_dir: "<%= $code_deploy_repos_base_dir %>"
+  ssh_keys_dir: "<%= $code_deploy_ssh_keys_dir %>"
+  r10k_path: "<%= $code_deploy_r10k_path %>"
+  encryption_key: "<%= $code_deploy_encryption_key %>"
+<% } else { -%>
+# Code Deploy - Git-based environment management (disabled)
+# code_deploy:
+#   enabled: true
+#   repos_base_dir: "/var/lib/openvox-webui/repos"
+#   ssh_keys_dir: "/etc/openvox-webui/ssh-keys"
+#   r10k_path: "/opt/puppetlabs/puppet/bin/r10k"
+#   encryption_key: "<randomly-generated-key>"
 <% } -%>
