@@ -22,8 +22,8 @@ pub use alerting_repository::{
 pub use api_key_repository::ApiKeyRepository;
 pub use audit_repository::AuditRepository;
 pub use code_deploy_repository::{
-    CodeDeploymentRepository, CodeEnvironmentRepository, CodeRepositoryRepository,
-    CodeSshKeyRepository,
+    CodeDeploymentRepository, CodeEnvironmentRepository, CodePatTokenRepository,
+    CodeRepositoryRepository, CodeSshKeyRepository,
 };
 pub use organization_repository::OrganizationRepository;
 

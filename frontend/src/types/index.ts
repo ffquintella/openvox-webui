@@ -1141,6 +1141,34 @@ export interface CreateSshKeyRequest {
   private_key: string;
 }
 
+// PAT Token types
+export interface CodePatToken {
+  id: string;
+  name: string;
+  description?: string;
+  expires_at?: string;
+  last_validated_at?: string;
+  days_until_expiration?: number;
+  is_expired: boolean;
+  is_expiring_soon: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePatTokenRequest {
+  name: string;
+  description?: string;
+  token: string;
+  expires_at?: string;
+}
+
+export interface UpdatePatTokenRequest {
+  name?: string;
+  description?: string;
+  token?: string;
+  expires_at?: string;
+}
+
 export type AuthType = 'ssh' | 'pat' | 'none';
 
 export interface CodeRepository {
@@ -1151,6 +1179,8 @@ export interface CodeRepository {
   auth_type: AuthType;
   ssh_key_id?: string;
   ssh_key_name?: string;
+  pat_token_id?: string;
+  pat_token_name?: string;
   has_pat: boolean;
   webhook_url?: string;
   poll_interval_seconds: number;
@@ -1168,7 +1198,8 @@ export interface CreateRepositoryRequest {
   branch_pattern?: string;
   auth_type?: AuthType;
   ssh_key_id?: string;
-  github_pat?: string;
+  pat_token_id?: string;
+  github_pat?: string; // Deprecated, use pat_token_id
   poll_interval_seconds?: number;
   is_control_repo?: boolean;
 }
@@ -1180,7 +1211,9 @@ export interface UpdateRepositoryRequest {
   auth_type?: AuthType;
   ssh_key_id?: string;
   clear_ssh_key?: boolean;
-  github_pat?: string;
+  pat_token_id?: string;
+  clear_pat_token?: boolean;
+  github_pat?: string; // Deprecated, use pat_token_id
   clear_github_pat?: boolean;
   poll_interval_seconds?: number;
   is_control_repo?: boolean;

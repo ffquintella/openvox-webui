@@ -78,30 +78,43 @@ export default function Nodes() {
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search nodes..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input pl-10"
-          />
+        <div className="flex-1">
+          <div className="flex items-stretch border border-gray-300 rounded-lg bg-white hover:border-gray-400 focus-within:border-primary-600 focus-within:ring-1 focus-within:ring-primary-600 transition-colors">
+            <div className="flex items-center justify-center px-3 py-2 border-r border-gray-200">
+              <Search className="w-5 h-5 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search nodes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="flex-1 px-3 py-2 outline-none bg-transparent rounded-r-lg"
+            />
+          </div>
         </div>
-        <div className="relative">
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as NodeStatus | 'all')}
-            className="input pl-10 pr-8"
-          >
-            <option value="all">All Statuses</option>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+        <div className="sm:w-64">
+          <div className="flex items-stretch border border-gray-300 rounded-lg bg-white hover:border-gray-400 focus-within:border-primary-600 focus-within:ring-1 focus-within:ring-primary-600 transition-colors relative">
+            <div className="flex items-center justify-center px-3 py-2 border-r border-gray-200">
+              <Filter className="w-5 h-5 text-gray-400" />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as NodeStatus | 'all')}
+              className="flex-1 px-3 py-2 pr-10 outline-none bg-transparent appearance-none rounded-r-lg"
+            >
+              <option value="all">All Statuses</option>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 

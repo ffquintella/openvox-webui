@@ -136,6 +136,240 @@ fn row_to_ssh_key(row: SshKeyRow) -> CodeSshKey {
 }
 
 // ============================================================================
+// PAT Token Repository
+// ============================================================================
+
+#[derive(Debug, sqlx::FromRow)]
+struct PatTokenRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    token_encrypted: String,
+    expires_at: Option<String>,
+    last_validated_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+/// Repository for PAT token operations
+pub struct CodePatTokenRepository<'a> {
+    pool: &'a SqlitePool,
+}
+
+impl<'a> CodePatTokenRepository<'a> {
+    pub fn new(pool: &'a SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// Get all PAT tokens
+    pub async fn get_all(&self) -> Result<Vec<crate::models::CodePatToken>> {
+        let rows = sqlx::query_as::<_, PatTokenRow>(
+            r#"
+            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            FROM code_pat_tokens
+            ORDER BY name
+            "#,
+        )
+        .fetch_all(self.pool)
+        .await
+        .context("Failed to fetch PAT tokens")?;
+
+        Ok(rows.into_iter().map(row_to_pat_token).collect())
+    }
+
+    /// Get a PAT token by ID
+    pub async fn get_by_id(&self, id: Uuid) -> Result<Option<crate::models::CodePatToken>> {
+        let row = sqlx::query_as::<_, PatTokenRow>(
+            r#"
+            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            FROM code_pat_tokens
+            WHERE id = ?
+            "#,
+        )
+        .bind(id.to_string())
+        .fetch_optional(self.pool)
+        .await
+        .context("Failed to fetch PAT token")?;
+
+        Ok(row.map(row_to_pat_token))
+    }
+
+    /// Get a PAT token by name
+    pub async fn get_by_name(&self, name: &str) -> Result<Option<crate::models::CodePatToken>> {
+        let row = sqlx::query_as::<_, PatTokenRow>(
+            r#"
+            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            FROM code_pat_tokens
+            WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(self.pool)
+        .await
+        .context("Failed to fetch PAT token")?;
+
+        Ok(row.map(row_to_pat_token))
+    }
+
+    /// Create a new PAT token
+    pub async fn create(
+        &self,
+        req: &crate::models::CreatePatTokenRequest,
+        encrypted_token: &str,
+    ) -> Result<crate::models::CodePatToken> {
+        let id = Uuid::new_v4();
+        let expires_at = req.expires_at.map(|dt| dt.to_rfc3339());
+
+        sqlx::query(
+            r#"
+            INSERT INTO code_pat_tokens (id, name, description, token_encrypted, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(id.to_string())
+        .bind(&req.name)
+        .bind(&req.description)
+        .bind(encrypted_token)
+        .bind(expires_at)
+        .execute(self.pool)
+        .await
+        .context("Failed to create PAT token")?;
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Failed to retrieve created PAT token"))
+    }
+
+    /// Update a PAT token
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &crate::models::UpdatePatTokenRequest,
+        encrypted_token: Option<&str>,
+    ) -> Result<crate::models::CodePatToken> {
+        // Build dynamic update query
+        let mut updates = Vec::new();
+        let mut params: Vec<String> = Vec::new();
+
+        if let Some(name) = &req.name {
+            updates.push("name = ?");
+            params.push(name.clone());
+        }
+
+        if req.description.is_some() {
+            updates.push("description = ?");
+            params.push(req.description.clone().unwrap_or_default());
+        }
+
+        if let Some(token) = encrypted_token {
+            updates.push("token_encrypted = ?");
+            params.push(token.to_string());
+        }
+
+        if req.expires_at.is_some() {
+            updates.push("expires_at = ?");
+            params.push(req.expires_at.map(|dt| dt.to_rfc3339()).unwrap_or_default());
+        }
+
+        updates.push("updated_at = datetime('now')");
+
+        if updates.is_empty() {
+            return self
+                .get_by_id(id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("PAT token not found"));
+        }
+
+        let query_str = format!(
+            "UPDATE code_pat_tokens SET {} WHERE id = ?",
+            updates.join(", ")
+        );
+
+        let mut query = sqlx::query(&query_str);
+        for param in params {
+            query = query.bind(param);
+        }
+        query = query.bind(id.to_string());
+
+        query
+            .execute(self.pool)
+            .await
+            .context("Failed to update PAT token")?;
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Failed to retrieve updated PAT token"))
+    }
+
+    /// Update last_validated_at timestamp for a token
+    pub async fn update_last_validated(&self, id: Uuid) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE code_pat_tokens
+            SET last_validated_at = datetime('now')
+            WHERE id = ?
+            "#,
+        )
+        .bind(id.to_string())
+        .execute(self.pool)
+        .await
+        .context("Failed to update last validated timestamp")?;
+
+        Ok(())
+    }
+
+    /// Delete a PAT token
+    pub async fn delete(&self, id: Uuid) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM code_pat_tokens WHERE id = ?")
+            .bind(id.to_string())
+            .execute(self.pool)
+            .await
+            .context("Failed to delete PAT token")?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Get tokens that are expired or expiring soon (within 30 days)
+    pub async fn get_expiring_tokens(&self, days_threshold: i64) -> Result<Vec<crate::models::CodePatToken>> {
+        let now = Utc::now();
+        let threshold_date = now + chrono::Duration::days(days_threshold);
+        let threshold_str = threshold_date.to_rfc3339();
+
+        let rows = sqlx::query_as::<_, PatTokenRow>(
+            r#"
+            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            FROM code_pat_tokens
+            WHERE expires_at IS NOT NULL AND expires_at <= ?
+            ORDER BY expires_at ASC
+            "#,
+        )
+        .bind(threshold_str)
+        .fetch_all(self.pool)
+        .await
+        .context("Failed to fetch expiring PAT tokens")?;
+
+        Ok(rows.into_iter().map(row_to_pat_token).collect())
+    }
+}
+
+fn row_to_pat_token(row: PatTokenRow) -> crate::models::CodePatToken {
+    crate::models::CodePatToken {
+        id: Uuid::parse_str(&row.id).unwrap_or_default(),
+        name: row.name,
+        description: row.description,
+        token_encrypted: row.token_encrypted,
+        expires_at: row.expires_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        last_validated_at: row.last_validated_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+        created_at: DateTime::parse_from_rfc3339(&row.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now()),
+        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now()),
+    }
+}
+
+// ============================================================================
 // Code Repository Repository
 // ============================================================================
 
@@ -147,6 +381,7 @@ struct RepositoryRow {
     branch_pattern: String,
     auth_type: Option<String>,
     ssh_key_id: Option<String>,
+    pat_token_id: Option<String>,
     github_pat_encrypted: Option<String>,
     webhook_secret: Option<String>,
     poll_interval_seconds: i32,
@@ -171,7 +406,7 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_all(&self) -> Result<Vec<CodeRepository>> {
         let rows = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, pat_token_id, github_pat_encrypted,
                    webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
@@ -189,7 +424,7 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<CodeRepository>> {
         let row = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, pat_token_id, github_pat_encrypted,
                    webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
@@ -208,7 +443,7 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_by_name(&self, name: &str) -> Result<Option<CodeRepository>> {
         let row = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, pat_token_id, github_pat_encrypted,
                    webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
@@ -227,7 +462,7 @@ impl<'a> CodeRepositoryRepository<'a> {
     pub async fn get_for_polling(&self) -> Result<Vec<CodeRepository>> {
         let rows = sqlx::query_as::<_, RepositoryRow>(
             r#"
-            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, github_pat_encrypted,
+            SELECT id, name, url, branch_pattern, auth_type, ssh_key_id, pat_token_id, github_pat_encrypted,
                    webhook_secret, poll_interval_seconds, is_control_repo, last_error, last_error_at,
                    created_at, updated_at
             FROM code_repositories
@@ -249,9 +484,9 @@ impl<'a> CodeRepositoryRepository<'a> {
 
         sqlx::query(
             r#"
-            INSERT INTO code_repositories (id, name, url, branch_pattern, auth_type, ssh_key_id,
+            INSERT INTO code_repositories (id, name, url, branch_pattern, auth_type, ssh_key_id, pat_token_id,
                                           github_pat_encrypted, webhook_secret, poll_interval_seconds, is_control_repo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -260,6 +495,7 @@ impl<'a> CodeRepositoryRepository<'a> {
         .bind(&req.branch_pattern)
         .bind(req.auth_type.as_str())
         .bind(req.ssh_key_id.map(|k| k.to_string()))
+        .bind(req.pat_token_id.map(|k| k.to_string()))
         .bind(github_pat_encrypted)
         .bind(&webhook_secret)
         .bind(req.poll_interval_seconds)
@@ -290,6 +526,11 @@ impl<'a> CodeRepositoryRepository<'a> {
         } else {
             req.ssh_key_id.or(existing.ssh_key_id)
         };
+        let pat_token_id = if req.clear_pat_token {
+            None
+        } else {
+            req.pat_token_id.or(existing.pat_token_id)
+        };
         let github_pat = if req.clear_github_pat {
             None
         } else if github_pat_encrypted.is_some() {
@@ -308,7 +549,7 @@ impl<'a> CodeRepositoryRepository<'a> {
         sqlx::query(
             r#"
             UPDATE code_repositories
-            SET name = ?, url = ?, branch_pattern = ?, auth_type = ?, ssh_key_id = ?,
+            SET name = ?, url = ?, branch_pattern = ?, auth_type = ?, ssh_key_id = ?, pat_token_id = ?,
                 github_pat_encrypted = ?, webhook_secret = ?, poll_interval_seconds = ?, is_control_repo = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -319,6 +560,7 @@ impl<'a> CodeRepositoryRepository<'a> {
         .bind(branch_pattern)
         .bind(auth_type.as_str())
         .bind(ssh_key_id.map(|k| k.to_string()))
+        .bind(pat_token_id.map(|k| k.to_string()))
         .bind(github_pat)
         .bind(&webhook_secret)
         .bind(poll_interval)
@@ -402,6 +644,7 @@ fn row_to_repository(row: RepositoryRow) -> CodeRepository {
         branch_pattern: row.branch_pattern,
         auth_type,
         ssh_key_id: row.ssh_key_id.and_then(|s| Uuid::parse_str(&s).ok()),
+        pat_token_id: row.pat_token_id.and_then(|s| Uuid::parse_str(&s).ok()),
         github_pat_encrypted: row.github_pat_encrypted,
         webhook_secret: row.webhook_secret,
         poll_interval_seconds: row.poll_interval_seconds,

@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type {
   CreateSshKeyRequest,
+  CreatePatTokenRequest,
+  UpdatePatTokenRequest,
   CreateRepositoryRequest,
   UpdateRepositoryRequest,
   UpdateEnvironmentRequest,
@@ -50,6 +52,58 @@ export function useDeleteSshKey() {
     mutationFn: (id: string) => api.deleteSshKey(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['code-ssh-keys'] });
+    },
+  });
+}
+
+// ============================================================================
+// PAT Tokens
+// ============================================================================
+
+export function usePatTokens() {
+  return useQuery({
+    queryKey: ['code-pat-tokens'],
+    queryFn: () => api.getPatTokens(),
+  });
+}
+
+export function useExpiringPatTokens(days: number = 30) {
+  return useQuery({
+    queryKey: ['code-pat-tokens-expiring', days],
+    queryFn: () => api.getExpiringPatTokens(days),
+  });
+}
+
+export function useCreatePatToken() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreatePatTokenRequest) => api.createPatToken(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens'] });
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens-expiring'] });
+    },
+  });
+}
+
+export function useUpdatePatToken() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdatePatTokenRequest }) =>
+      api.updatePatToken(id, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens'] });
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens-expiring'] });
+    },
+  });
+}
+
+export function useDeletePatToken() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deletePatToken(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens'] });
+      queryClient.invalidateQueries({ queryKey: ['code-pat-tokens-expiring'] });
     },
   });
 }

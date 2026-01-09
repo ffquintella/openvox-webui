@@ -34,28 +34,37 @@ import {
   useSshKeys,
   useCreateSshKey,
   useDeleteSshKey,
+  usePatTokens,
+  useCreatePatToken,
+  useUpdatePatToken,
+  useDeletePatToken,
 } from '../hooks/useCodeDeploy';
 import type {
   CodeRepository,
   CodeEnvironment,
   CodeDeployment,
+  CodePatToken,
   DeploymentStatus,
   CreateRepositoryRequest,
   UpdateRepositoryRequest,
   CreateSshKeyRequest,
+  CreatePatTokenRequest,
+  UpdatePatTokenRequest,
 } from '../types';
 
-type TabType = 'repositories' | 'environments' | 'deployments' | 'ssh-keys';
+type TabType = 'repositories' | 'environments' | 'deployments' | 'ssh-keys' | 'pat-tokens';
 
 export default function CodeDeploy() {
   const [activeTab, setActiveTab] = useState<TabType>('repositories');
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [editingRepo, setEditingRepo] = useState<CodeRepository | null>(null);
   const [showCreateKey, setShowCreateKey] = useState(false);
+  const [showCreatePatToken, setShowCreatePatToken] = useState(false);
+  const [editingPatToken, setEditingPatToken] = useState<CodePatToken | null>(null);
   const [selectedDeployment, setSelectedDeployment] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'delete-repo' | 'delete-key' | 'approve' | 'reject';
+    type: 'delete-repo' | 'delete-key' | 'delete-pat-token' | 'approve' | 'reject';
     id: string;
     name?: string;
   } | null>(null);
@@ -65,6 +74,7 @@ export default function CodeDeploy() {
   const { data: environments = [], isLoading: envsLoading } = useCodeEnvironments();
   const { data: deployments = [], isLoading: deploysLoading } = useCodeDeployments({ limit: 50 });
   const { data: sshKeys = [], isLoading: keysLoading } = useSshKeys();
+  const { data: patTokens = [], isLoading: tokensLoading } = usePatTokens();
 
   const createRepoMutation = useCreateCodeRepository();
   const updateRepoMutation = useUpdateCodeRepository();
@@ -76,9 +86,13 @@ export default function CodeDeploy() {
   const retryMutation = useRetryDeployment();
   const createKeyMutation = useCreateSshKey();
   const deleteKeyMutation = useDeleteSshKey();
+  const createPatTokenMutation = useCreatePatToken();
+  const updatePatTokenMutation = useUpdatePatToken();
+  const deletePatTokenMutation = useDeletePatToken();
 
   const pendingApprovals = deployments.filter((d) => d.status === 'pending').length;
   const activeDeployments = deployments.filter((d) => d.status === 'deploying').length;
+  const expiringTokens = patTokens.filter((t) => t.is_expiring_soon || t.is_expired).length;
 
   const tabs = [
     { id: 'repositories' as const, name: 'Repositories', icon: GitBranch, badge: repositories.length },
@@ -90,6 +104,13 @@ export default function CodeDeploy() {
       badge: pendingApprovals > 0 ? pendingApprovals : undefined,
     },
     { id: 'ssh-keys' as const, name: 'SSH Keys', icon: Key },
+    {
+      id: 'pat-tokens' as const,
+      name: 'PAT Tokens',
+      icon: Key,
+      badge: expiringTokens > 0 ? expiringTokens : undefined,
+      badgeColor: expiringTokens > 0 ? 'bg-yellow-500' : undefined,
+    },
   ];
 
   const handleConfirmAction = async () => {
@@ -100,6 +121,8 @@ export default function CodeDeploy() {
         await deleteRepoMutation.mutateAsync(confirmAction.id);
       } else if (confirmAction.type === 'delete-key') {
         await deleteKeyMutation.mutateAsync(confirmAction.id);
+      } else if (confirmAction.type === 'delete-pat-token') {
+        await deletePatTokenMutation.mutateAsync(confirmAction.id);
       } else if (confirmAction.type === 'approve') {
         await approveMutation.mutateAsync({ id: confirmAction.id });
       } else if (confirmAction.type === 'reject') {
@@ -134,6 +157,24 @@ export default function CodeDeploy() {
     try {
       await createKeyMutation.mutateAsync(data);
       setShowCreateKey(false);
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const handleCreatePatToken = async (data: CreatePatTokenRequest) => {
+    try {
+      await createPatTokenMutation.mutateAsync(data);
+      setShowCreatePatToken(false);
+    } catch {
+      // Error handled by mutation
+    }
+  };
+
+  const handleUpdatePatToken = async (id: string, data: UpdatePatTokenRequest) => {
+    try {
+      await updatePatTokenMutation.mutateAsync({ id, request: data });
+      setEditingPatToken(null);
     } catch {
       // Error handled by mutation
     }
@@ -269,12 +310,23 @@ export default function CodeDeploy() {
           onCreateNew={() => setShowCreateKey(true)}
         />
       )}
+
+      {activeTab === 'pat-tokens' && (
+        <PatTokensTab
+          tokens={patTokens}
+          isLoading={tokensLoading}
+          onDelete={(id, name) => setConfirmAction({ type: 'delete-pat-token', id, name })}
+          onEdit={(token) => setEditingPatToken(token)}
+          onCreateNew={() => setShowCreatePatToken(true)}
+        />
+      )}
       </div>
 
       {/* Create Repository Modal */}
       {showCreateRepo && (
         <CreateRepositoryModal
           sshKeys={sshKeys}
+          patTokens={patTokens}
           onClose={() => setShowCreateRepo(false)}
           onCreate={handleCreateRepo}
           isCreating={createRepoMutation.isPending}
@@ -286,6 +338,7 @@ export default function CodeDeploy() {
         <EditRepositoryModal
           repository={editingRepo}
           sshKeys={sshKeys}
+          patTokens={patTokens}
           onClose={() => setEditingRepo(null)}
           onUpdate={(data) => handleUpdateRepo(editingRepo.id, data)}
           isUpdating={updateRepoMutation.isPending}
@@ -301,6 +354,25 @@ export default function CodeDeploy() {
         />
       )}
 
+      {/* Create PAT Token Modal */}
+      {showCreatePatToken && (
+        <CreatePatTokenModal
+          onClose={() => setShowCreatePatToken(false)}
+          onCreate={handleCreatePatToken}
+          isCreating={createPatTokenMutation.isPending}
+        />
+      )}
+
+      {/* Edit PAT Token Modal */}
+      {editingPatToken && (
+        <EditPatTokenModal
+          token={editingPatToken}
+          onClose={() => setEditingPatToken(null)}
+          onUpdate={(data) => handleUpdatePatToken(editingPatToken.id, data)}
+          isUpdating={updatePatTokenMutation.isPending}
+        />
+      )}
+
       {/* Confirmation Modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -308,6 +380,7 @@ export default function CodeDeploy() {
             <h3 className="text-lg font-semibold text-gray-900">
               {confirmAction.type === 'delete-repo' && 'Delete Repository'}
               {confirmAction.type === 'delete-key' && 'Delete SSH Key'}
+              {confirmAction.type === 'delete-pat-token' && 'Delete PAT Token'}
               {confirmAction.type === 'approve' && 'Approve Deployment'}
               {confirmAction.type === 'reject' && 'Reject Deployment'}
             </h3>
@@ -323,6 +396,13 @@ export default function CodeDeploy() {
                 <>
                   Are you sure you want to delete SSH key{' '}
                   <span className="font-mono font-medium">{confirmAction.name}</span>?
+                </>
+              )}
+              {confirmAction.type === 'delete-pat-token' && (
+                <>
+                  Are you sure you want to delete PAT token{' '}
+                  <span className="font-mono font-medium">{confirmAction.name}</span>? Repositories using
+                  this token will no longer be able to authenticate.
                 </>
               )}
               {confirmAction.type === 'approve' && (
@@ -969,6 +1049,349 @@ function SshKeysTab({
   );
 }
 
+// PAT Tokens Tab
+function PatTokensTab({
+  tokens,
+  isLoading,
+  onDelete,
+  onEdit,
+  onCreateNew,
+}: {
+  tokens: CodePatToken[];
+  isLoading: boolean;
+  onDelete: (id: string, name: string) => void;
+  onEdit: (token: CodePatToken) => void;
+  onCreateNew: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (tokens.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+        <Key className="w-12 h-12 text-gray-300 mx-auto" />
+        <h3 className="mt-4 text-lg font-medium text-gray-900">No PAT Tokens</h3>
+        <p className="mt-2 text-sm text-gray-500">
+          Add Personal Access Tokens to authenticate with Git repositories using HTTPS.
+        </p>
+        <button
+          onClick={onCreateNew}
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
+        >
+          <Plus className="w-4 h-4" />
+          Add PAT Token
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={onCreateNew}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
+        >
+          <Plus className="w-4 h-4" />
+          Add PAT Token
+        </button>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Description
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Expiration
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Last Used
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {tokens.map((token) => (
+              <tr key={token.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-gray-400" />
+                    <span className="font-medium text-gray-900">{token.name}</span>
+                    {token.is_expired && (
+                      <span className="px-2 py-0.5 text-xs font-medium text-red-700 bg-red-100 rounded-full">
+                        Expired
+                      </span>
+                    )}
+                    {!token.is_expired && token.is_expiring_soon && (
+                      <span className="px-2 py-0.5 text-xs font-medium text-yellow-700 bg-yellow-100 rounded-full">
+                        Expiring Soon
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                  {token.description || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {token.expires_at ? (
+                    <span className={clsx(
+                      token.is_expired ? 'text-red-600' : token.is_expiring_soon ? 'text-yellow-600' : 'text-gray-500'
+                    )}>
+                      {new Date(token.expires_at).toLocaleDateString()}
+                      {token.days_until_expiration !== undefined && token.days_until_expiration >= 0 && (
+                        <span className="text-xs ml-1">({token.days_until_expiration}d)</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">Never</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {token.last_validated_at
+                    ? new Date(token.last_validated_at).toLocaleDateString()
+                    : 'Never'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => onEdit(token)}
+                      className="p-2 text-gray-400 hover:text-primary-600"
+                      title="Edit token"
+                    >
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(token.id, token.name)}
+                      className="p-2 text-gray-400 hover:text-red-600"
+                      title="Delete token"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Create PAT Token Modal
+function CreatePatTokenModal({
+  onClose,
+  onCreate,
+  isCreating,
+}: {
+  onClose: () => void;
+  onCreate: (data: CreatePatTokenRequest) => void;
+  isCreating: boolean;
+}) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [token, setToken] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onCreate({
+      name,
+      description: description || undefined,
+      token,
+      expires_at: expiresAt || undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+        <h3 className="text-lg font-semibold text-gray-900">Add PAT Token</h3>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="github-pat"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Description (optional)</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="Token for control repo access"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Token</label>
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 font-mono"
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              GitHub tokens start with ghp_, GitLab tokens are random strings
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Expiration Date (optional)</label>
+            <input
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Set this to match your token's expiration. You'll be warned when it's about to expire.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isCreating}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50"
+            >
+              {isCreating && <Loader2 className="w-4 h-4 animate-spin" />}
+              Add Token
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Edit PAT Token Modal
+function EditPatTokenModal({
+  token: initialToken,
+  onClose,
+  onUpdate,
+  isUpdating,
+}: {
+  token: CodePatToken;
+  onClose: () => void;
+  onUpdate: (data: UpdatePatTokenRequest) => void;
+  isUpdating: boolean;
+}) {
+  const [name, setName] = useState(initialToken.name);
+  const [description, setDescription] = useState(initialToken.description || '');
+  const [newToken, setNewToken] = useState('');
+  const [expiresAt, setExpiresAt] = useState(
+    initialToken.expires_at ? initialToken.expires_at.split('T')[0] : ''
+  );
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdate({
+      name: name !== initialToken.name ? name : undefined,
+      description: description !== (initialToken.description || '') ? description : undefined,
+      token: newToken || undefined,
+      expires_at: expiresAt || undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+        <h3 className="text-lg font-semibold text-gray-900">Edit PAT Token</h3>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">New Token (leave empty to keep current)</label>
+            <input
+              type="password"
+              value={newToken}
+              onChange={(e) => setNewToken(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 font-mono"
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Expiration Date</label>
+            <input
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUpdating}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50"
+            >
+              {isUpdating && <Loader2 className="w-4 h-4 animate-spin" />}
+              Update Token
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // Deployment Status Badge
 function DeploymentStatusBadge({ status }: { status?: DeploymentStatus }) {
   if (!status) {
@@ -1001,11 +1424,13 @@ function DeploymentStatusBadge({ status }: { status?: DeploymentStatus }) {
 // Create Repository Modal
 function CreateRepositoryModal({
   sshKeys,
+  patTokens,
   onClose,
   onCreate,
   isCreating,
 }: {
   sshKeys: { id: string; name: string }[];
+  patTokens: CodePatToken[];
   onClose: () => void;
   onCreate: (data: CreateRepositoryRequest) => void;
   isCreating: boolean;
@@ -1015,7 +1440,7 @@ function CreateRepositoryModal({
   const [branchPattern, setBranchPattern] = useState('*');
   const [authType, setAuthType] = useState<'ssh' | 'pat' | 'none'>('ssh');
   const [sshKeyId, setSshKeyId] = useState<string>('');
-  const [githubPat, setGithubPat] = useState('');
+  const [patTokenId, setPatTokenId] = useState<string>('');
   const [pollInterval, setPollInterval] = useState(300);
   const [isControlRepo, setIsControlRepo] = useState(false);
 
@@ -1027,7 +1452,7 @@ function CreateRepositoryModal({
       branch_pattern: branchPattern,
       auth_type: authType,
       ssh_key_id: authType === 'ssh' ? (sshKeyId || undefined) : undefined,
-      github_pat: authType === 'pat' ? githubPat : undefined,
+      pat_token_id: authType === 'pat' ? (patTokenId || undefined) : undefined,
       poll_interval_seconds: pollInterval,
       is_control_repo: isControlRepo,
     });
@@ -1138,18 +1563,26 @@ function CreateRepositoryModal({
 
           {authType === 'pat' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">GitHub Personal Access Token</label>
-              <input
-                type="password"
-                value={githubPat}
-                onChange={(e) => setGithubPat(e.target.value)}
-                required={authType === 'pat'}
+              <label className="block text-sm font-medium text-gray-700">PAT Token</label>
+              <select
+                value={patTokenId}
+                onChange={(e) => setPatTokenId(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Token with repository read access. Never stored in plaintext.
-              </p>
+              >
+                <option value="">Select a PAT token</option>
+                {patTokens.map((token) => (
+                  <option key={token.id} value={token.id} disabled={token.is_expired}>
+                    {token.name}
+                    {token.is_expired && ' (Expired)'}
+                    {!token.is_expired && token.is_expiring_soon && ' (Expiring Soon)'}
+                  </option>
+                ))}
+              </select>
+              {patTokens.length === 0 && (
+                <p className="mt-1 text-xs text-yellow-600">
+                  No PAT tokens available. Create one in the PAT Tokens tab first.
+                </p>
+              )}
             </div>
           )}
 
@@ -1193,7 +1626,7 @@ function CreateRepositoryModal({
                 !name ||
                 !url ||
                 (authType === 'ssh' && !sshKeyId) ||
-                (authType === 'pat' && !githubPat)
+                (authType === 'pat' && !patTokenId)
               }
               className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2"
             >
@@ -1211,12 +1644,14 @@ function CreateRepositoryModal({
 function EditRepositoryModal({
   repository,
   sshKeys,
+  patTokens,
   onClose,
   onUpdate,
   isUpdating,
 }: {
   repository: CodeRepository;
   sshKeys: { id: string; name: string }[];
+  patTokens: CodePatToken[];
   onClose: () => void;
   onUpdate: (data: UpdateRepositoryRequest) => void;
   isUpdating: boolean;
@@ -1226,9 +1661,9 @@ function EditRepositoryModal({
   const [branchPattern, setBranchPattern] = useState(repository.branch_pattern);
   const [authType, setAuthType] = useState<'ssh' | 'pat' | 'none'>(repository.auth_type);
   const [sshKeyId, setSshKeyId] = useState<string>(repository.ssh_key_id || '');
-  const [githubPat, setGithubPat] = useState('');
+  const [patTokenId, setPatTokenId] = useState<string>(repository.pat_token_id || '');
   const [clearSshKey, setClearSshKey] = useState(false);
-  const [clearGithubPat, setClearGithubPat] = useState(false);
+  const [clearPatToken, setClearPatToken] = useState(false);
   const [pollInterval, setPollInterval] = useState(repository.poll_interval_seconds);
   const [isControlRepo, setIsControlRepo] = useState(repository.is_control_repo);
 
@@ -1252,12 +1687,12 @@ function EditRepositoryModal({
       }
     }
 
-    // Handle PAT changes
+    // Handle PAT token changes
     if (authType === 'pat') {
-      if (clearGithubPat) {
-        updateData.clear_github_pat = true;
-      } else if (githubPat) {
-        updateData.github_pat = githubPat;
+      if (clearPatToken) {
+        updateData.clear_pat_token = true;
+      } else if (patTokenId && patTokenId !== repository.pat_token_id) {
+        updateData.pat_token_id = patTokenId;
       }
     }
 
@@ -1398,44 +1833,50 @@ function EditRepositoryModal({
           {authType === 'pat' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {repository.has_pat ? 'New GitHub Personal Access Token (leave blank to keep current)' : 'GitHub Personal Access Token'}
-                </label>
-                <input
-                  type="password"
-                  value={githubPat}
+                <label className="block text-sm font-medium text-gray-700">PAT Token</label>
+                <select
+                  value={patTokenId}
                   onChange={(e) => {
-                    setGithubPat(e.target.value);
-                    setClearGithubPat(false);
+                    setPatTokenId(e.target.value);
+                    setClearPatToken(false);
                   }}
-                  disabled={clearGithubPat}
-                  required={authType === 'pat' && !repository.has_pat}
+                  disabled={clearPatToken}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Token with repository read access. Never stored in plaintext.
-                </p>
-                {repository.has_pat && (
-                  <p className="mt-1 text-xs text-green-600">
-                    Current PAT is configured
+                >
+                  <option value="">Select a PAT token</option>
+                  {patTokens.map((token) => (
+                    <option key={token.id} value={token.id} disabled={token.is_expired}>
+                      {token.name}
+                      {token.is_expired && ' (Expired)'}
+                      {!token.is_expired && token.is_expiring_soon && ' (Expiring Soon)'}
+                    </option>
+                  ))}
+                </select>
+                {repository.pat_token_name && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Current: {repository.pat_token_name}
+                  </p>
+                )}
+                {patTokens.length === 0 && (
+                  <p className="mt-1 text-xs text-yellow-600">
+                    No PAT tokens available. Create one in the PAT Tokens tab first.
                   </p>
                 )}
               </div>
-              {repository.has_pat && (
+              {repository.pat_token_id && (
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    id="clear-github-pat"
-                    checked={clearGithubPat}
+                    id="clear-pat-token"
+                    checked={clearPatToken}
                     onChange={(e) => {
-                      setClearGithubPat(e.target.checked);
-                      if (e.target.checked) setGithubPat('');
+                      setClearPatToken(e.target.checked);
+                      if (e.target.checked) setPatTokenId('');
                     }}
                     className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
-                  <label htmlFor="clear-github-pat" className="text-sm text-red-600">
-                    Remove GitHub PAT
+                  <label htmlFor="clear-pat-token" className="text-sm text-red-600">
+                    Remove PAT Token
                   </label>
                 </div>
               )}

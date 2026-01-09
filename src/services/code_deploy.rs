@@ -12,14 +12,15 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::db::{
-    CodeDeploymentRepository, CodeEnvironmentRepository, CodeRepositoryRepository,
-    CodeSshKeyRepository,
+    CodeDeploymentRepository, CodeEnvironmentRepository, CodePatTokenRepository,
+    CodeRepositoryRepository, CodeSshKeyRepository,
 };
 use crate::models::{
     CodeDeployment, CodeDeploymentResponse, CodeDeploymentSummary, CodeEnvironment,
-    CodeEnvironmentResponse, CodeRepository, CodeRepositoryResponse,
-    CodeSshKeyResponse, CreateRepositoryRequest, CreateSshKeyRequest, DeploymentStatus,
-    ListDeploymentsQuery, ListEnvironmentsQuery, UpdateEnvironmentRequest, UpdateRepositoryRequest,
+    CodeEnvironmentResponse, CodePatTokenResponse, CodeRepository, CodeRepositoryResponse,
+    CodeSshKeyResponse, CreatePatTokenRequest, CreateRepositoryRequest, CreateSshKeyRequest,
+    DeploymentStatus, ListDeploymentsQuery, ListEnvironmentsQuery, UpdateEnvironmentRequest,
+    UpdatePatTokenRequest, UpdateRepositoryRequest,
 };
 use crate::services::git::{GitService, GitServiceConfig};
 use crate::services::r10k::{R10kConfig, R10kService, R10kSource};
@@ -150,6 +151,104 @@ impl CodeDeployService {
     }
 
     // ========================================================================
+    // PAT Token Operations
+    // ========================================================================
+
+    /// List all PAT tokens
+    pub async fn list_pat_tokens(&self) -> Result<Vec<CodePatTokenResponse>> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+        let tokens = repo.get_all().await?;
+        Ok(tokens.into_iter().map(CodePatTokenResponse::from).collect())
+    }
+
+    /// Get a PAT token by ID
+    pub async fn get_pat_token(&self, id: Uuid) -> Result<Option<CodePatTokenResponse>> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+        Ok(repo.get_by_id(id).await?.map(CodePatTokenResponse::from))
+    }
+
+    /// Create a new PAT token
+    pub async fn create_pat_token(&self, req: &CreatePatTokenRequest) -> Result<CodePatTokenResponse> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+
+        // Check if name already exists
+        if repo.get_by_name(&req.name).await?.is_some() {
+            return Err(anyhow::anyhow!("PAT token with name '{}' already exists", req.name));
+        }
+
+        // Encrypt the token
+        let encrypted_token = self.encrypt_private_key(&req.token)?;
+
+        let token = repo.create(req, &encrypted_token).await?;
+        Ok(CodePatTokenResponse::from(token))
+    }
+
+    /// Update a PAT token
+    pub async fn update_pat_token(&self, id: Uuid, req: &UpdatePatTokenRequest) -> Result<CodePatTokenResponse> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+
+        // Check token exists
+        if repo.get_by_id(id).await?.is_none() {
+            return Err(anyhow::anyhow!("PAT token not found"));
+        }
+
+        // If name is being changed, check it doesn't conflict
+        if let Some(name) = &req.name {
+            if let Some(existing) = repo.get_by_name(name).await? {
+                if existing.id != id {
+                    return Err(anyhow::anyhow!("PAT token with name '{}' already exists", name));
+                }
+            }
+        }
+
+        // Encrypt new token if provided
+        let encrypted_token = req.token.as_ref().map(|t| self.encrypt_private_key(t)).transpose()?;
+
+        let token = repo.update(id, req, encrypted_token.as_deref()).await?;
+        Ok(CodePatTokenResponse::from(token))
+    }
+
+    /// Delete a PAT token
+    pub async fn delete_pat_token(&self, id: Uuid) -> Result<bool> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+
+        // Check if any repository is using this token
+        let repo_repo = CodeRepositoryRepository::new(&self.pool);
+        for repository in repo_repo.get_all().await? {
+            if repository.pat_token_id == Some(id) {
+                return Err(anyhow::anyhow!(
+                    "PAT token is in use by repository '{}'",
+                    repository.name
+                ));
+            }
+        }
+
+        repo.delete(id).await
+    }
+
+    /// List PAT tokens that are expired or expiring soon
+    pub async fn list_expiring_pat_tokens(&self, days_threshold: i64) -> Result<Vec<CodePatTokenResponse>> {
+        let repo = CodePatTokenRepository::new(&self.pool);
+        let tokens = repo.get_expiring_tokens(days_threshold).await?;
+        Ok(tokens.into_iter().map(CodePatTokenResponse::from).collect())
+    }
+
+    /// Check for expiring PAT tokens and return notifications to be created
+    /// Returns a list of (token_name, days_until_expiration, is_expired) tuples
+    pub async fn check_expiring_pat_tokens(&self, days_threshold: i64) -> Result<Vec<(String, i64, bool)>> {
+        let tokens = self.list_expiring_pat_tokens(days_threshold).await?;
+        let mut warnings = Vec::new();
+
+        for token in tokens {
+            if let Some(days) = token.days_until_expiration {
+                warnings.push((token.name, days, token.is_expired));
+            }
+        }
+
+        Ok(warnings)
+    }
+
+    // ========================================================================
     // Repository Operations
     // ========================================================================
 
@@ -226,8 +325,15 @@ impl CodeDeployService {
                 }
             }
             AuthType::Pat => {
-                if req.github_pat.is_none() {
-                    return Err(anyhow::anyhow!("GitHub PAT required when auth_type is 'pat'"));
+                // Allow either pat_token_id (new) or github_pat (legacy)
+                if req.pat_token_id.is_some() {
+                    // Validate the PAT token exists
+                    let token_repo = CodePatTokenRepository::new(&self.pool);
+                    if token_repo.get_by_id(req.pat_token_id.unwrap()).await?.is_none() {
+                        return Err(anyhow::anyhow!("PAT token not found"));
+                    }
+                } else if req.github_pat.is_none() {
+                    return Err(anyhow::anyhow!("PAT token ID or GitHub PAT required when auth_type is 'pat'"));
                 }
             }
             AuthType::None => {
@@ -319,10 +425,30 @@ impl CodeDeployService {
                 (ssh_key, None)
             }
             AuthType::Pat => {
-                // Get PAT if configured
-                let github_pat = repository.github_pat_encrypted.as_ref().map(|encrypted| {
-                    self.decrypt_private_key(encrypted)
-                });
+                // Get PAT from centralized token store (preferred) or legacy encrypted field
+                let github_pat = if let Some(token_id) = repository.pat_token_id {
+                    // Use centralized PAT token
+                    let token_repo = CodePatTokenRepository::new(&self.pool);
+                    match token_repo.get_by_id(token_id).await? {
+                        Some(token) => {
+                            // Update last validated timestamp
+                            if let Err(e) = token_repo.update_last_validated(token_id).await {
+                                warn!("Failed to update PAT token last_validated_at: {}", e);
+                            }
+                            Some(self.decrypt_private_key(&token.token_encrypted))
+                        }
+                        None => {
+                            error!("PAT token {} not found for repository {}", token_id, repository.id);
+                            None
+                        }
+                    }
+                } else if let Some(encrypted) = &repository.github_pat_encrypted {
+                    // Fallback to legacy embedded PAT (deprecated)
+                    warn!("Repository {} is using deprecated embedded PAT, consider migrating to centralized PAT tokens", repository.id);
+                    Some(self.decrypt_private_key(encrypted))
+                } else {
+                    None
+                };
                 (None, github_pat)
             }
             AuthType::None => {
@@ -333,12 +459,25 @@ impl CodeDeployService {
 
         let ssh_key_ref = match &ssh_key {
             Some(Ok(key)) => Some(key.as_str()),
-            _ => None,
+            Some(Err(e)) => {
+                error!("Failed to decrypt SSH key for repository {}: {}", repository.id, e);
+                None
+            }
+            None => None,
         };
 
         let github_pat_ref = match &github_pat {
             Some(Ok(pat)) => Some(pat.as_str()),
-            _ => None,
+            Some(Err(e)) => {
+                error!("Failed to decrypt GitHub PAT for repository {}: {}", repository.id, e);
+                None
+            }
+            None => {
+                if repository.auth_type == AuthType::Pat {
+                    warn!("Repository {} is configured for PAT auth but no PAT is stored", repository.id);
+                }
+                None
+            }
         };
 
         // Clone or open the repository based on auth type

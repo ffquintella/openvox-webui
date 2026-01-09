@@ -115,6 +115,94 @@ pub struct CreateSshKeyRequest {
     pub private_key: String,
 }
 
+// ============================================================================
+// PAT Token Models
+// ============================================================================
+
+/// GitHub Personal Access Token for repository authentication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodePatToken {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    /// Token is encrypted at rest - never serialize to API responses
+    #[serde(skip_serializing)]
+    pub token_encrypted: String,
+    /// Optional expiration date for the token
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Last time this token was successfully used for authentication
+    pub last_validated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// API response for PAT token (excludes encrypted token)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodePatTokenResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_validated_at: Option<DateTime<Utc>>,
+    /// Days until expiration (if expires_at is set)
+    pub days_until_expiration: Option<i64>,
+    /// Whether the token is expired or will expire soon
+    pub is_expired: bool,
+    pub is_expiring_soon: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<CodePatToken> for CodePatTokenResponse {
+    fn from(token: CodePatToken) -> Self {
+        let now = Utc::now();
+        let (days_until_expiration, is_expired, is_expiring_soon) = match token.expires_at {
+            Some(expires_at) => {
+                let duration = expires_at.signed_duration_since(now);
+                let days = duration.num_days();
+                let expired = days < 0;
+                let expiring_soon = days >= 0 && days <= 30; // Warning 30 days before expiration
+                (Some(days), expired, expiring_soon)
+            }
+            None => (None, false, false),
+        };
+
+        Self {
+            id: token.id,
+            name: token.name,
+            description: token.description,
+            expires_at: token.expires_at,
+            last_validated_at: token.last_validated_at,
+            days_until_expiration,
+            is_expired,
+            is_expiring_soon,
+            created_at: token.created_at,
+            updated_at: token.updated_at,
+        }
+    }
+}
+
+/// Request to create a new PAT token
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePatTokenRequest {
+    pub name: String,
+    pub description: Option<String>,
+    /// The actual token value (will be encrypted before storage)
+    pub token: String,
+    /// Optional expiration date for the token
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// Request to update a PAT token
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePatTokenRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    /// If provided, will re-encrypt with new token value
+    pub token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 /// Authentication type for Git repositories
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -165,7 +253,9 @@ pub struct CodeRepository {
     pub auth_type: AuthType,
     /// SSH key ID (used when auth_type = ssh)
     pub ssh_key_id: Option<Uuid>,
-    /// Encrypted GitHub PAT (used when auth_type = pat)
+    /// PAT token ID (used when auth_type = pat) - new centralized approach
+    pub pat_token_id: Option<Uuid>,
+    /// Encrypted GitHub PAT (used when auth_type = pat) - DEPRECATED, kept for migration
     #[serde(skip_serializing)]
     pub github_pat_encrypted: Option<String>,
     /// Webhook secret for verifying incoming webhooks
@@ -217,7 +307,9 @@ pub struct CreateRepositoryRequest {
     pub auth_type: AuthType,
     /// SSH key ID (required if auth_type = ssh)
     pub ssh_key_id: Option<Uuid>,
-    /// GitHub Personal Access Token (required if auth_type = pat)
+    /// PAT token ID (required if auth_type = pat) - new centralized approach
+    pub pat_token_id: Option<Uuid>,
+    /// GitHub Personal Access Token (required if auth_type = pat) - DEPRECATED, use pat_token_id
     pub github_pat: Option<String>,
     #[serde(default = "default_poll_interval")]
     pub poll_interval_seconds: i32,
@@ -244,9 +336,14 @@ pub struct UpdateRepositoryRequest {
     /// Set to true to clear the SSH key
     #[serde(default)]
     pub clear_ssh_key: bool,
-    /// New GitHub PAT to set (if auth_type = pat)
+    /// PAT token ID (if auth_type = pat) - new centralized approach
+    pub pat_token_id: Option<Uuid>,
+    /// Set to true to clear the PAT token ID
+    #[serde(default)]
+    pub clear_pat_token: bool,
+    /// New GitHub PAT to set (if auth_type = pat) - DEPRECATED, use pat_token_id
     pub github_pat: Option<String>,
-    /// Set to true to clear the PAT
+    /// Set to true to clear the PAT - DEPRECATED
     #[serde(default)]
     pub clear_github_pat: bool,
     pub poll_interval_seconds: Option<i32>,

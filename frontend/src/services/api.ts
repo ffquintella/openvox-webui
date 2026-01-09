@@ -91,6 +91,9 @@ import type {
   RejectDeploymentRequest,
   ListDeploymentsQuery,
   ListEnvironmentsQuery,
+  CodePatToken,
+  CreatePatTokenRequest,
+  UpdatePatTokenRequest,
   // Group-scoped permissions types
   GroupPermissionInfo,
   AddGroupPermissionRequest,
@@ -800,6 +803,36 @@ export const api = {
 
   deleteSshKey: async (id: string): Promise<void> => {
     await client.delete(`/code/ssh-keys/${id}`);
+  },
+
+  // PAT Tokens
+  getPatTokens: async (): Promise<CodePatToken[]> => {
+    const response = await client.get('/code/pat-tokens');
+    return response.data;
+  },
+
+  getPatToken: async (id: string): Promise<CodePatToken> => {
+    const response = await client.get(`/code/pat-tokens/${id}`);
+    return response.data;
+  },
+
+  getExpiringPatTokens: async (days: number = 30): Promise<CodePatToken[]> => {
+    const response = await client.get('/code/pat-tokens/expiring', { params: { days } });
+    return response.data;
+  },
+
+  createPatToken: async (request: CreatePatTokenRequest): Promise<CodePatToken> => {
+    const response = await client.post('/code/pat-tokens', request);
+    return response.data;
+  },
+
+  updatePatToken: async (id: string, request: UpdatePatTokenRequest): Promise<CodePatToken> => {
+    const response = await client.put(`/code/pat-tokens/${id}`, request);
+    return response.data;
+  },
+
+  deletePatToken: async (id: string): Promise<void> => {
+    await client.delete(`/code/pat-tokens/${id}`);
   },
 
   // Repositories

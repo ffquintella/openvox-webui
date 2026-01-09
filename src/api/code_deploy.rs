@@ -15,9 +15,11 @@ use crate::{
     middleware::AuthUser,
     models::{
         ApproveDeploymentRequest, CodeDeploymentResponse, CodeEnvironmentResponse,
-        CodeRepositoryResponse, CodeSshKeyResponse, CreateRepositoryRequest, CreateSshKeyRequest,
+        CodePatTokenResponse, CodeRepositoryResponse, CodeSshKeyResponse,
+        CreatePatTokenRequest, CreateRepositoryRequest, CreateSshKeyRequest,
         ListDeploymentsQuery, ListEnvironmentsQuery, RejectDeploymentRequest,
-        TriggerDeploymentRequest, UpdateEnvironmentRequest, UpdateRepositoryRequest,
+        TriggerDeploymentRequest, UpdateEnvironmentRequest, UpdatePatTokenRequest,
+        UpdateRepositoryRequest,
     },
     utils::AppError,
     AppState,
@@ -30,6 +32,13 @@ pub fn routes() -> Router<AppState> {
         // SSH Keys
         .route("/ssh-keys", get(list_ssh_keys).post(create_ssh_key))
         .route("/ssh-keys/{id}", get(get_ssh_key).delete(delete_ssh_key))
+        // PAT Tokens
+        .route("/pat-tokens", get(list_pat_tokens).post(create_pat_token))
+        .route(
+            "/pat-tokens/{id}",
+            get(get_pat_token).put(update_pat_token).delete(delete_pat_token),
+        )
+        .route("/pat-tokens/expiring", get(list_expiring_pat_tokens))
         // Repositories
         .route("/repositories", get(list_repositories).post(create_repository))
         .route(
@@ -170,6 +179,139 @@ async fn delete_ssh_key(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ============================================================================
+// PAT Token Handlers
+// ============================================================================
+
+async fn list_pat_tokens(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> Result<Json<Vec<CodePatTokenResponse>>, AppError> {
+    require_permission(&auth_user, "code_pat_token_view")?;
+
+    let service = state.code_deploy_service()?;
+    let tokens = service.list_pat_tokens().await.map_err(|e| {
+        tracing::error!("Failed to list PAT tokens: {}", e);
+        AppError::internal("Failed to list PAT tokens")
+    })?;
+
+    Ok(Json(tokens))
+}
+
+async fn get_pat_token(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CodePatTokenResponse>, AppError> {
+    require_permission(&auth_user, "code_pat_token_view")?;
+
+    let service = state.code_deploy_service()?;
+    let token = service
+        .get_pat_token(id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get PAT token: {}", e);
+            AppError::internal("Failed to get PAT token")
+        })?
+        .ok_or_else(|| AppError::not_found("PAT token not found"))?;
+
+    Ok(Json(token))
+}
+
+async fn create_pat_token(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Json(payload): Json<CreatePatTokenRequest>,
+) -> Result<(StatusCode, Json<CodePatTokenResponse>), AppError> {
+    require_permission(&auth_user, "code_pat_token_manage")?;
+
+    let service = state.code_deploy_service()?;
+    let token = service.create_pat_token(&payload).await.map_err(|e| {
+        tracing::error!("Failed to create PAT token: {}", e);
+        if e.to_string().contains("already exists") {
+            AppError::conflict("PAT token with this name already exists")
+        } else {
+            AppError::internal("Failed to create PAT token")
+        }
+    })?;
+
+    Ok((StatusCode::CREATED, Json(token)))
+}
+
+async fn update_pat_token(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdatePatTokenRequest>,
+) -> Result<Json<CodePatTokenResponse>, AppError> {
+    require_permission(&auth_user, "code_pat_token_manage")?;
+
+    let service = state.code_deploy_service()?;
+    let token = service.update_pat_token(id, &payload).await.map_err(|e| {
+        tracing::error!("Failed to update PAT token: {}", e);
+        if e.to_string().contains("not found") {
+            AppError::not_found("PAT token not found")
+        } else if e.to_string().contains("already exists") {
+            AppError::conflict("PAT token with this name already exists")
+        } else {
+            AppError::internal("Failed to update PAT token")
+        }
+    })?;
+
+    Ok(Json(token))
+}
+
+async fn delete_pat_token(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    require_permission(&auth_user, "code_pat_token_manage")?;
+
+    let service = state.code_deploy_service()?;
+    let deleted = service.delete_pat_token(id).await.map_err(|e| {
+        tracing::error!("Failed to delete PAT token: {}", e);
+        if e.to_string().contains("in use") {
+            AppError::conflict(&e.to_string())
+        } else {
+            AppError::internal("Failed to delete PAT token")
+        }
+    })?;
+
+    if !deleted {
+        return Err(AppError::not_found("PAT token not found"));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ExpiringTokensQuery {
+    /// Number of days to look ahead (default: 30)
+    #[serde(default = "default_expiring_days")]
+    days: i64,
+}
+
+fn default_expiring_days() -> i64 {
+    30
+}
+
+async fn list_expiring_pat_tokens(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<ExpiringTokensQuery>,
+) -> Result<Json<Vec<CodePatTokenResponse>>, AppError> {
+    require_permission(&auth_user, "code_pat_token_view")?;
+
+    let service = state.code_deploy_service()?;
+    let tokens = service.list_expiring_pat_tokens(query.days).await.map_err(|e| {
+        tracing::error!("Failed to list expiring PAT tokens: {}", e);
+        AppError::internal("Failed to list expiring PAT tokens")
+    })?;
+
+    Ok(Json(tokens))
 }
 
 // ============================================================================

@@ -145,22 +145,40 @@ impl GitService {
         }
 
         let mut callbacks = RemoteCallbacks::new();
+        let mut has_auth = false;
 
         // Set up SSH authentication if key is provided
         if let Some(key) = ssh_private_key {
+            info!("Using SSH key authentication for {}", url);
             let key_string = key.to_string();
             callbacks.credentials(move |_url, username_from_url, _allowed_types| {
                 let username = username_from_url.unwrap_or("git");
+                debug!("SSH auth callback invoked for user: {}", username);
                 Cred::ssh_key_from_memory(username, None, &key_string, None)
             });
+            has_auth = true;
         } else if let Some(pat) = github_pat {
             // Set up HTTPS PAT authentication
+            info!("Using PAT authentication for {}", url);
             let pat_string = pat.to_string();
             callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
+                debug!("PAT auth callback invoked");
                 // For GitHub PAT: username is token, password is x-oauth-basic or empty
                 // Modern approach: username = PAT, password = empty string
                 Cred::userpass_plaintext(&pat_string, "")
             });
+            has_auth = true;
+        }
+
+        if !has_auth && url.starts_with("git@") {
+            error!("SSH URL provided but no SSH key available: {}", url);
+            return Err(anyhow::anyhow!(
+                "SSH authentication required but no SSH key provided"
+            ));
+        }
+
+        if !has_auth && url.starts_with("https://") && !url.contains("github.com") {
+            warn!("HTTPS URL without authentication - this will only work for public repositories: {}", url);
         }
 
         let mut fetch_options = FetchOptions::new();
