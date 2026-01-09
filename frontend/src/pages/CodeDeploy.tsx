@@ -1206,11 +1206,13 @@ function CreatePatTokenModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Convert date to ISO 8601 format for the backend
+    const expiresAtIso = expiresAt ? new Date(expiresAt + 'T23:59:59Z').toISOString() : undefined;
     onCreate({
       name,
       description: description || undefined,
       token,
-      expires_at: expiresAt || undefined,
+      expires_at: expiresAtIso,
     });
   };
 
@@ -1314,11 +1316,13 @@ function EditPatTokenModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Convert date to ISO 8601 format for the backend
+    const expiresAtIso = expiresAt ? new Date(expiresAt + 'T23:59:59Z').toISOString() : undefined;
     onUpdate({
       name: name !== initialToken.name ? name : undefined,
       description: description !== (initialToken.description || '') ? description : undefined,
       token: newToken || undefined,
-      expires_at: expiresAt || undefined,
+      expires_at: expiresAtIso,
     });
   };
 
