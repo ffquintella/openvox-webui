@@ -423,9 +423,14 @@ async fn get_node_classification(
     for fact in facts {
         facts_obj.insert(fact.name, fact.value);
     }
-    // Add certname as a pseudo-fact so rules can match against it
+    // Add certname as pseudo-facts so rules can match against it
+    // Add both clientcert and certname for compatibility
     facts_obj.insert(
         "clientcert".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
+    facts_obj.insert(
+        "certname".to_string(),
         serde_json::Value::String(certname.clone()),
     );
     let facts_json = serde_json::Value::Object(facts_obj);
@@ -517,9 +522,14 @@ async fn get_node_classification_public(
     for fact in facts {
         facts_obj.insert(fact.name, fact.value);
     }
-    // Add certname as a pseudo-fact so rules can match against it
+    // Add certname as pseudo-facts so rules can match against it
+    // Add both clientcert and certname for compatibility
     facts_obj.insert(
         "clientcert".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
+    facts_obj.insert(
+        "certname".to_string(),
         serde_json::Value::String(certname.clone()),
     );
     let facts_json = serde_json::Value::Object(facts_obj);
