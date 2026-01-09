@@ -898,11 +898,17 @@ export default function Groups() {
                                     setEditingRuleId(rule.id);
                                     setNewRuleFactPath(rule.fact_path);
                                     setNewRuleOperator(rule.operator);
-                                    setNewRuleValue(
-                                      typeof rule.value === 'object'
-                                        ? JSON.stringify(rule.value)
-                                        : String(rule.value)
-                                    );
+                                    // Convert value to string for editing
+                                    let valueStr: string;
+                                    if (Array.isArray(rule.value)) {
+                                      // For array values (in/not_in operators), join with commas
+                                      valueStr = rule.value.join(', ');
+                                    } else if (typeof rule.value === 'object') {
+                                      valueStr = JSON.stringify(rule.value);
+                                    } else {
+                                      valueStr = String(rule.value);
+                                    }
+                                    setNewRuleValue(valueStr);
                                   }}
                                   className="text-gray-400 hover:text-blue-600 transition-colors"
                                   title="Edit rule"
