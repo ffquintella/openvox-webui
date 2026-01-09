@@ -32,11 +32,44 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
-    Pool, Sqlite,
+    Pool, Sqlite, Row,
 };
-use tracing::{info, warn};
+use tracing::{error, info};
 
 use crate::config::DatabaseConfig;
+
+/// Required database tables that must exist after migrations
+/// This list should be updated when new migrations add tables
+const REQUIRED_TABLES: &[&str] = &[
+    // Core tables (initial migration)
+    "users",
+    "organizations",
+    "node_groups",
+    "classification_rules",
+    "pinned_nodes",
+    "fact_templates",
+    // RBAC tables
+    "roles",
+    "role_permissions",
+    "user_roles",
+    // Alerting tables
+    "alert_rules",
+    "alert_silences",
+    "alerts",
+    "notification_channels",
+    "notification_history",
+    // Reporting tables
+    "report_schedules",
+    "generated_reports",
+    // Code Deploy tables
+    "code_ssh_keys",
+    "code_repositories",
+    "code_environments",
+    "code_deployments",
+    "code_pat_tokens",
+    // Notification tables
+    "notifications",
+];
 
 /// Database connection pool type
 pub type DbPool = Pool<Sqlite>;
@@ -73,6 +106,9 @@ pub async fn init_pool(config: &DatabaseConfig) -> Result<DbPool> {
     // Run migrations
     run_migrations(&pool).await?;
 
+    // Verify database integrity after migrations
+    verify_database_integrity(&pool).await?;
+
     Ok(pool)
 }
 
@@ -86,9 +122,70 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            warn!("Migration error: {}", e);
+            error!("Migration error: {}", e);
             Err(e).context("Failed to run database migrations")
         }
+    }
+}
+
+/// Verify database integrity by checking all required tables exist
+///
+/// This check runs after migrations to ensure the database schema is complete.
+/// If any required tables are missing, the application will fail to start with
+/// a clear error message listing the missing tables.
+async fn verify_database_integrity(pool: &DbPool) -> Result<()> {
+    info!("Verifying database integrity");
+
+    // Query SQLite for all existing tables
+    let rows = sqlx::query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_sqlx_%'"
+    )
+    .fetch_all(pool)
+    .await
+    .context("Failed to query database tables")?;
+
+    let existing_tables: Vec<String> = rows
+        .iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect();
+
+    // Check for missing tables
+    let missing_tables: Vec<&str> = REQUIRED_TABLES
+        .iter()
+        .filter(|&&table| !existing_tables.iter().any(|t| t == table))
+        .copied()
+        .collect();
+
+    if missing_tables.is_empty() {
+        info!(
+            "Database integrity check passed: all {} required tables present",
+            REQUIRED_TABLES.len()
+        );
+        Ok(())
+    } else {
+        error!(
+            "Database integrity check FAILED: {} missing table(s)",
+            missing_tables.len()
+        );
+        for table in &missing_tables {
+            error!("  - Missing table: {}", table);
+        }
+        error!("");
+        error!("This usually means database migrations were not applied correctly.");
+        error!("Possible causes:");
+        error!("  1. The application binary was built before migrations were added");
+        error!("  2. The database file is from an older version");
+        error!("  3. Migrations failed silently");
+        error!("");
+        error!("To fix this:");
+        error!("  1. Rebuild and redeploy the application with the latest code");
+        error!("  2. Or manually apply missing migrations from the migrations/ directory");
+        error!("");
+
+        Err(anyhow::anyhow!(
+            "Database integrity check failed: missing tables: {}",
+            missing_tables.join(", ")
+        ))
     }
 }
 

@@ -108,6 +108,14 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Start Code Deploy scheduler if enabled
+    let _code_deploy_scheduler = if let Some(ref cd_config) = code_deploy_config {
+        info!("Starting Code Deploy scheduler");
+        Some(services::start_code_deploy_scheduler(db.clone(), cd_config.clone()))
+    } else {
+        None
+    };
+
     // Initialize notification service
     info!("Initializing notification service");
     let notification_service = Arc::new(NotificationService::new(db.clone()));
