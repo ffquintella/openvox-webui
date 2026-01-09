@@ -30,10 +30,10 @@ pub fn routes() -> Router<AppState> {
         .route("/mark-all-read", post(mark_all_read))
         .route("/bulk-mark-read", post(bulk_mark_read))
         .route("/stream", get(notification_stream))
-        .route("/:id", get(get_notification))
-        .route("/:id/read", put(mark_notification_read))
-        .route("/:id/dismiss", post(dismiss_notification))
-        .route("/:id", delete(delete_notification_handler))
+        .route("/{id}", get(get_notification))
+        .route("/{id}/read", put(mark_notification_read))
+        .route("/{id}/dismiss", post(dismiss_notification))
+        .route("/{id}", delete(delete_notification_handler))
 }
 
 /// List notifications
