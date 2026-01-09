@@ -10,7 +10,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use git2::{
     BranchType, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType,
 };
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 /// Information about a Git commit
 #[derive(Debug, Clone)]
@@ -78,7 +78,19 @@ impl GitService {
 
         if repo_path.exists() {
             debug!("Opening existing repository at {:?}", repo_path);
-            Repository::open(&repo_path).context("Failed to open existing repository")
+            match Repository::open(&repo_path) {
+                Ok(repo) => Ok(repo),
+                Err(e) => {
+                    warn!("Failed to open repository at {:?}: {}. Removing and re-cloning.", repo_path, e);
+                    // Remove the invalid repository directory
+                    if let Err(rm_err) = std::fs::remove_dir_all(&repo_path) {
+                        error!("Failed to remove invalid repository directory: {}", rm_err);
+                    }
+                    // Try to clone fresh
+                    info!("Cloning repository {} to {:?}", url, repo_path);
+                    self.clone_repository(url, &repo_path, ssh_private_key, None)
+                }
+            }
         } else {
             info!("Cloning repository {} to {:?}", url, repo_path);
             self.clone_repository(url, &repo_path, ssh_private_key, None)
@@ -98,7 +110,19 @@ impl GitService {
 
         if repo_path.exists() {
             debug!("Opening existing repository at {:?}", repo_path);
-            Repository::open(&repo_path).context("Failed to open existing repository")
+            match Repository::open(&repo_path) {
+                Ok(repo) => Ok(repo),
+                Err(e) => {
+                    warn!("Failed to open repository at {:?}: {}. Removing and re-cloning.", repo_path, e);
+                    // Remove the invalid repository directory
+                    if let Err(rm_err) = std::fs::remove_dir_all(&repo_path) {
+                        error!("Failed to remove invalid repository directory: {}", rm_err);
+                    }
+                    // Try to clone fresh
+                    info!("Cloning repository {} with PAT to {:?}", url, repo_path);
+                    self.clone_repository(url, &repo_path, None, github_pat)
+                }
+            }
         } else {
             info!("Cloning repository {} with PAT to {:?}", url, repo_path);
             self.clone_repository(url, &repo_path, None, github_pat)
