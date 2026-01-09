@@ -1,18 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, Filter, ChevronRight } from 'lucide-react';
+import { Search, Filter, ChevronRight, CheckCircle2, XCircle, Clock, HelpCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import { Node, NodeStatus } from '../types';
-
-const statusColors: Record<NodeStatus, string> = {
-  changed: 'bg-success-500',
-  unchanged: 'bg-blue-500',
-  failed: 'bg-danger-500',
-  unreported: 'bg-warning-500',
-  unknown: 'bg-gray-400',
-};
 
 const statusLabels: Record<NodeStatus, string> = {
   changed: 'Changed',
@@ -21,6 +13,33 @@ const statusLabels: Record<NodeStatus, string> = {
   unreported: 'Unreported',
   unknown: 'Unknown',
 };
+
+// Status Badge Component
+function StatusBadge({ status }: { status?: NodeStatus }) {
+  if (!status) {
+    return <span className="text-sm text-gray-400">-</span>;
+  }
+
+  const config: Record<
+    NodeStatus,
+    { icon: typeof CheckCircle2; color: string; bg: string; text: string }
+  > = {
+    changed: { icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-100', text: 'Changed' },
+    unchanged: { icon: CheckCircle2, color: 'text-blue-600', bg: 'bg-blue-100', text: 'Unchanged' },
+    failed: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', text: 'Failed' },
+    unreported: { icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-100', text: 'Unreported' },
+    unknown: { icon: HelpCircle, color: 'text-gray-600', bg: 'bg-gray-100', text: 'Unknown' },
+  };
+
+  const { icon: Icon, color, bg, text } = config[status];
+
+  return (
+    <span className={clsx('inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full', bg, color)}>
+      <Icon className="w-3 h-3" />
+      {text}
+    </span>
+  );
+}
 
 export default function Nodes() {
   const [search, setSearch] = useState('');
@@ -115,19 +134,7 @@ export default function Nodes() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="flex items-center">
-                    <span
-                      className={clsx(
-                        'w-2 h-2 rounded-full mr-2',
-                        statusColors[node.latest_report_status as NodeStatus] ||
-                          statusColors.unknown
-                      )}
-                    />
-                    <span className="text-sm text-gray-600">
-                      {statusLabels[node.latest_report_status as NodeStatus] ||
-                        'Unknown'}
-                    </span>
-                  </span>
+                  <StatusBadge status={node.latest_report_status as NodeStatus} />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {node.catalog_environment || '-'}
