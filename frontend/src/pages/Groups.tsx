@@ -722,7 +722,10 @@ export default function Groups() {
                       Define rules to automatically classify nodes based on their facts.
                     </p>
                     <button
-                      onClick={() => setIsAddRuleOpen(true)}
+                      onClick={() => {
+                        setIsAddRuleOpen(true);
+                        setEditingRuleId(null);
+                      }}
                       className="btn btn-secondary text-sm flex items-center"
                     >
                       <Plus className="w-4 h-4 mr-1" />
@@ -858,6 +861,7 @@ export default function Groups() {
                                           },
                                         });
                                         setEditingRuleId(null);
+                                        resetRuleForm();
                                       },
                                     }
                                   );
@@ -895,6 +899,7 @@ export default function Groups() {
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => {
+                                    setIsAddRuleOpen(false);
                                     setEditingRuleId(rule.id);
                                     setNewRuleFactPath(rule.fact_path);
                                     setNewRuleOperator(rule.operator);
