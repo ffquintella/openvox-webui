@@ -312,9 +312,15 @@ impl CodeDeployService {
             return Err(anyhow::anyhow!("Repository with name '{}' already exists", req.name));
         }
 
-        // Validate authentication credentials
+        // Validate authentication credentials and URL format
         match req.auth_type {
             AuthType::Ssh => {
+                // SSH auth requires SSH URL format (git@...)
+                if req.url.starts_with("https://") {
+                    return Err(anyhow::anyhow!(
+                        "SSH authentication requires an SSH URL (git@host:org/repo.git), not HTTPS"
+                    ));
+                }
                 if let Some(key_id) = req.ssh_key_id {
                     let key_repo = CodeSshKeyRepository::new(&self.pool);
                     if key_repo.get_by_id(key_id).await?.is_none() {
@@ -325,6 +331,12 @@ impl CodeDeployService {
                 }
             }
             AuthType::Pat => {
+                // PAT auth requires HTTPS URL format
+                if req.url.starts_with("git@") {
+                    return Err(anyhow::anyhow!(
+                        "PAT authentication requires an HTTPS URL (https://host/org/repo.git), not SSH"
+                    ));
+                }
                 // Allow either pat_token_id (new) or github_pat (legacy)
                 if req.pat_token_id.is_some() {
                     // Validate the PAT token exists
@@ -356,13 +368,50 @@ impl CodeDeployService {
         id: Uuid,
         req: &UpdateRepositoryRequest,
     ) -> Result<Option<CodeRepositoryResponse>> {
+        use crate::models::AuthType;
         let repo = CodeRepositoryRepository::new(&self.pool);
+
+        // Get current repository to check against
+        let Some(current) = repo.get_by_id(id).await? else {
+            return Ok(None);
+        };
+
+        // Determine the effective URL and auth type after update
+        let effective_url = req.url.as_ref().unwrap_or(&current.url);
+        let effective_auth_type = req.auth_type.unwrap_or(current.auth_type);
+
+        // Validate URL format matches auth type
+        match effective_auth_type {
+            AuthType::Ssh => {
+                if effective_url.starts_with("https://") {
+                    return Err(anyhow::anyhow!(
+                        "SSH authentication requires an SSH URL (git@host:org/repo.git), not HTTPS"
+                    ));
+                }
+            }
+            AuthType::Pat => {
+                if effective_url.starts_with("git@") {
+                    return Err(anyhow::anyhow!(
+                        "PAT authentication requires an HTTPS URL (https://host/org/repo.git), not SSH"
+                    ));
+                }
+            }
+            AuthType::None => {}
+        }
 
         // Validate SSH key if provided
         if let Some(key_id) = req.ssh_key_id {
             let key_repo = CodeSshKeyRepository::new(&self.pool);
             if key_repo.get_by_id(key_id).await?.is_none() {
                 return Err(anyhow::anyhow!("SSH key not found"));
+            }
+        }
+
+        // Validate PAT token if provided
+        if let Some(token_id) = req.pat_token_id {
+            let token_repo = CodePatTokenRepository::new(&self.pool);
+            if token_repo.get_by_id(token_id).await?.is_none() {
+                return Err(anyhow::anyhow!("PAT token not found"));
             }
         }
 
