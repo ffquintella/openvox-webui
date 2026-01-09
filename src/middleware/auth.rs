@@ -366,6 +366,22 @@ async fn authenticate_api_key(state: &AppState, token: &str) -> Result<AuthUser,
     })
 }
 
+/// Extract token from query string (for SSE/EventSource which can't send headers)
+fn extract_query_token(uri: &axum::http::Uri) -> Option<String> {
+    uri.query().and_then(|query| {
+        query.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let key = parts.next()?;
+            let value = parts.next()?;
+            if key == "token" {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+    })
+}
+
 /// Authentication middleware
 ///
 /// This middleware extracts and validates JWT tokens from the Authorization header.
@@ -375,7 +391,7 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
-    // Try Authorization header first; fall back to X-API-Key
+    // Try Authorization header first; fall back to X-API-Key, then query param (for SSE)
     let auth_header = request
         .headers()
         .get(AUTHORIZATION)
@@ -411,6 +427,23 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok())
     {
         authenticate_api_key(&state, token).await?
+    } else if let Some(token) = extract_query_token(request.uri()) {
+        // Support token in query param for SSE/EventSource (which can't send headers)
+        let token_data = validate_token(&token, &state.config.auth.jwt_secret)?;
+        if token_data.claims.token_type != TokenType::Access {
+            return Err(AuthError::InvalidTokenType);
+        }
+        let mut user: AuthUser = token_data
+            .claims
+            .try_into()
+            .map_err(|_| AuthError::InvalidToken)?;
+        let role_ids: Vec<Uuid> = user
+            .roles
+            .iter()
+            .filter_map(|name| state.rbac.get_role_by_name(name).map(|r| r.id))
+            .collect();
+        user.role_ids = role_ids;
+        user
     } else {
         return Err(AuthError::MissingToken);
     };

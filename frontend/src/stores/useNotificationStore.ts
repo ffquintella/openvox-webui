@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Notification, NotificationStats, NotificationEvent } from '../types/notification';
 import { notificationApi } from '../services/api';
+import { useAuthStore } from './authStore';
 
 interface NotificationStore {
   // State
@@ -138,7 +139,15 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       return;
     }
 
-    const eventSource = new EventSource('/api/v1/notifications/stream', {
+    // Get the auth token - EventSource API doesn't support custom headers,
+    // so we pass the token as a query parameter
+    const token = useAuthStore.getState().token;
+    if (!token) {
+      console.warn('No auth token available for SSE connection');
+      return;
+    }
+
+    const eventSource = new EventSource(`/api/v1/notifications/stream?token=${encodeURIComponent(token)}`, {
       withCredentials: true,
     });
 
