@@ -50,7 +50,7 @@ const REQUIRED_TABLES: &[&str] = &[
     "fact_templates",
     // RBAC tables
     "roles",
-    "role_permissions",
+    "permissions",
     "user_roles",
     // Alerting tables
     "alert_rules",
@@ -60,7 +60,8 @@ const REQUIRED_TABLES: &[&str] = &[
     "notification_history",
     // Reporting tables
     "report_schedules",
-    "generated_reports",
+    "saved_reports",
+    "report_executions",
     // Code Deploy tables
     "code_ssh_keys",
     "code_repositories",

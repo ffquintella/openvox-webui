@@ -4,6 +4,7 @@
 //! OpenVox infrastructure, including PuppetDB queries, node classification,
 //! and facter generation.
 
+use std::env;
 use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -27,6 +28,31 @@ use services::puppetdb::PuppetDbClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command line arguments
+    let args: Vec<String> = env::args().collect();
+
+    // Check for --fix-database flag
+    if args.iter().any(|arg| arg == "--fix-database") {
+        return fix_database().await;
+    }
+
+    // Check for --check-r10k-permissions flag
+    if args.iter().any(|arg| arg == "--check-r10k-permissions") {
+        return check_r10k_permissions();
+    }
+
+    // Check for --help flag
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_help();
+        return Ok(());
+    }
+
+    // Check for --version flag
+    if args.iter().any(|arg| arg == "--version" || arg == "-V") {
+        println!("OpenVox WebUI {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     // Load configuration first (before logging, so we know log format)
     let config = AppConfig::load().context("Failed to load configuration")?;
 
@@ -528,6 +554,378 @@ fn create_router(state: AppState, config: &AppConfig) -> Router {
         .layer(CompressionLayer::new())
         .layer(trace_layer)
         .layer(cors)
+}
+
+/// Print help message
+fn print_help() {
+    println!(
+        r#"OpenVox WebUI {}
+
+USAGE:
+    openvox-webui [OPTIONS]
+
+OPTIONS:
+    -h, --help              Print this help message
+    -V, --version           Print version information
+    --fix-database          Fix database by running all migrations and ensuring
+                            all required tables exist. This is useful when
+                            upgrading from an older version or recovering from
+                            migration failures.
+    --check-r10k-permissions
+                            Check r10k directory permissions and show commands
+                            to fix them. Run this if Code Deploy fails with
+                            "Read-only file system" errors.
+
+ENVIRONMENT:
+    OPENVOX_CONFIG      Path to configuration file (default: config.yaml)
+
+CONFIGURATION:
+    The application looks for configuration files in the following order:
+    1. Path specified by OPENVOX_CONFIG environment variable
+    2. ./config.yaml
+    3. /etc/openvox-webui/config.yaml
+
+For more information, see: https://github.com/openvoxproject/openvox-webui"#,
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+/// Fix database by running migrations without the integrity check,
+/// then verify all tables exist.
+async fn fix_database() -> Result<()> {
+    use sqlx::{
+        sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+        Row,
+    };
+    use std::time::Duration;
+
+    println!("OpenVox WebUI Database Repair Tool v{}", env!("CARGO_PKG_VERSION"));
+    println!();
+
+    // Load configuration
+    let config = AppConfig::load().context("Failed to load configuration")?;
+
+    // Extract database path and ensure directory exists
+    if let Some(path) = config.database.url.strip_prefix("sqlite://") {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent).context("Failed to create data directory")?;
+                println!("Created data directory: {:?}", parent);
+            }
+        }
+    }
+
+    println!("Database URL: {}", config.database.url);
+    println!();
+
+    // Parse the database URL and configure SQLite options
+    let connect_options = config
+        .database
+        .url
+        .parse::<SqliteConnectOptions>()
+        .context("Failed to parse database URL")?
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(config.database.connect_timeout_secs))
+        .create_if_missing(true);
+
+    println!("Connecting to database...");
+
+    // Create a minimal pool for repair operations
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(connect_options)
+        .await
+        .context("Failed to connect to database")?;
+
+    println!("Running database migrations...");
+
+    // Run migrations
+    match sqlx::migrate!("./migrations").run(&pool).await {
+        Ok(_) => {
+            println!("Migrations completed successfully.");
+        }
+        Err(e) => {
+            eprintln!("Migration error: {}", e);
+            return Err(e).context("Failed to run database migrations");
+        }
+    }
+
+    println!();
+    println!("Verifying database tables...");
+
+    // Query SQLite for all existing tables
+    let rows = sqlx::query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_sqlx_%'",
+    )
+    .fetch_all(&pool)
+    .await
+    .context("Failed to query database tables")?;
+
+    let existing_tables: Vec<String> = rows
+        .iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect();
+
+    println!("Found {} tables:", existing_tables.len());
+    for table in &existing_tables {
+        println!("  - {}", table);
+    }
+
+    // Required tables list (same as db/mod.rs)
+    let required_tables: &[&str] = &[
+        "users",
+        "organizations",
+        "node_groups",
+        "classification_rules",
+        "pinned_nodes",
+        "fact_templates",
+        "roles",
+        "permissions",
+        "user_roles",
+        "alert_rules",
+        "alert_silences",
+        "alerts",
+        "notification_channels",
+        "notification_history",
+        "report_schedules",
+        "saved_reports",
+        "report_executions",
+        "code_ssh_keys",
+        "code_repositories",
+        "code_environments",
+        "code_deployments",
+        "code_pat_tokens",
+        "notifications",
+    ];
+
+    // Check for missing tables
+    let missing_tables: Vec<&str> = required_tables
+        .iter()
+        .filter(|&&table| !existing_tables.iter().any(|t| t == table))
+        .copied()
+        .collect();
+
+    println!();
+
+    if missing_tables.is_empty() {
+        println!("Database repair completed successfully!");
+        println!("All {} required tables are present.", required_tables.len());
+        println!();
+        println!("You can now start the application normally.");
+    } else {
+        eprintln!("WARNING: {} missing table(s) after migrations:", missing_tables.len());
+        for table in &missing_tables {
+            eprintln!("  - {}", table);
+        }
+        eprintln!();
+        eprintln!("This may indicate a problem with the migration files.");
+        eprintln!("Please ensure you are running the latest version of the application.");
+        return Err(anyhow::anyhow!(
+            "Database repair incomplete: {} missing tables",
+            missing_tables.len()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Check r10k directory permissions and provide fix commands
+fn check_r10k_permissions() -> Result<()> {
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
+
+    println!("OpenVox WebUI r10k Permissions Checker v{}", env!("CARGO_PKG_VERSION"));
+    println!();
+
+    // Get current user info
+    let current_uid = unsafe { libc::getuid() };
+    let current_gid = unsafe { libc::getgid() };
+    let current_user = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+
+    println!("Current user: {} (uid={}, gid={})", current_user, current_uid, current_gid);
+    println!();
+
+    // Load configuration to get r10k paths
+    let config = AppConfig::load().context("Failed to load configuration")?;
+
+    // Collect directories to check
+    let mut dirs_to_check: Vec<(&str, String)> = Vec::new();
+
+    // Default r10k directories
+    dirs_to_check.push(("r10k cache", "/opt/puppetlabs/puppet/cache/r10k".to_string()));
+    dirs_to_check.push(("Puppet environments", "/etc/puppetlabs/code/environments".to_string()));
+
+    // Add configured directories if Code Deploy is enabled
+    if let Some(ref cd) = config.code_deploy {
+        if cd.enabled {
+            dirs_to_check.push(("repos_base_dir", cd.repos_base_dir.to_string_lossy().to_string()));
+            dirs_to_check.push(("ssh_keys_dir", cd.ssh_keys_dir.to_string_lossy().to_string()));
+            dirs_to_check.push(("environments_basedir", cd.environments_basedir.to_string_lossy().to_string()));
+            dirs_to_check.push(("r10k_cachedir (config)", cd.r10k_cachedir.to_string_lossy().to_string()));
+        }
+    }
+
+    println!("Checking directory permissions:");
+    println!("{}", "=".repeat(80));
+
+    let mut issues_found = false;
+    let mut fix_commands: Vec<String> = Vec::new();
+
+    for (name, path_str) in &dirs_to_check {
+        let path = Path::new(path_str);
+        print!("\n{}: {}\n", name, path_str);
+
+        if !path.exists() {
+            println!("  Status: DOES NOT EXIST");
+            fix_commands.push(format!("sudo mkdir -p {}", path_str));
+            fix_commands.push(format!("sudo chown -R openvox-webui:openvox-webui {}", path_str));
+            issues_found = true;
+            continue;
+        }
+
+        match fs::metadata(path) {
+            Ok(meta) => {
+                let owner_uid = meta.uid();
+                let owner_gid = meta.gid();
+                let mode = meta.mode();
+
+                // Try to get owner name
+                let owner_name = get_username(owner_uid).unwrap_or_else(|| format!("uid:{}", owner_uid));
+                let group_name = get_groupname(owner_gid).unwrap_or_else(|| format!("gid:{}", owner_gid));
+
+                println!("  Owner: {}:{} ({}:{})", owner_name, group_name, owner_uid, owner_gid);
+                println!("  Mode: {:o}", mode & 0o7777);
+
+                // Check if current user can write
+                let can_write = if current_uid == 0 {
+                    true // root can write anywhere
+                } else if current_uid == owner_uid {
+                    (mode & 0o200) != 0 // owner write bit
+                } else if current_gid == owner_gid {
+                    (mode & 0o020) != 0 // group write bit
+                } else {
+                    (mode & 0o002) != 0 // other write bit
+                };
+
+                // Also try to actually create a test file
+                let test_file = path.join(".openvox-permission-test");
+                let actual_write = fs::write(&test_file, "test").is_ok();
+                if actual_write {
+                    let _ = fs::remove_file(&test_file);
+                }
+
+                if can_write && actual_write {
+                    println!("  Status: OK (writable)");
+                } else {
+                    println!("  Status: NOT WRITABLE");
+                    issues_found = true;
+
+                    // Check subdirectories recursively for ownership issues
+                    if path.is_dir() {
+                        check_subdirs_ownership(path, current_uid);
+                    }
+
+                    if owner_uid != current_uid {
+                        fix_commands.push(format!("sudo chown -R openvox-webui:openvox-webui {}", path_str));
+                    }
+                }
+            }
+            Err(e) => {
+                println!("  Status: ERROR reading metadata: {}", e);
+                issues_found = true;
+            }
+        }
+    }
+
+    println!("\n{}", "=".repeat(80));
+
+    if issues_found {
+        // Deduplicate fix commands
+        fix_commands.sort();
+        fix_commands.dedup();
+
+        println!("\nISSUES FOUND! Run the following commands to fix permissions:\n");
+        println!("# Run these commands as root on the server:");
+        println!();
+        for cmd in &fix_commands {
+            println!("{}", cmd);
+        }
+        println!();
+        println!("# Or run this single command to fix all r10k directories:");
+        println!("sudo chown -R openvox-webui:openvox-webui /opt/puppetlabs/puppet/cache/r10k /etc/puppetlabs/code/environments");
+        println!();
+
+        // Also output a script that can be copied
+        println!("# Copy-paste friendly script:");
+        println!("cat << 'EOF' | sudo bash");
+        println!("#!/bin/bash");
+        println!("set -e");
+        println!("echo 'Fixing r10k directory permissions for openvox-webui...'");
+        println!("mkdir -p /opt/puppetlabs/puppet/cache/r10k");
+        println!("mkdir -p /etc/puppetlabs/code/environments");
+        println!("chown -R openvox-webui:openvox-webui /opt/puppetlabs/puppet/cache/r10k");
+        println!("chown -R openvox-webui:openvox-webui /etc/puppetlabs/code/environments");
+        println!("echo 'Done! Permissions fixed.'");
+        println!("EOF");
+    } else {
+        println!("\nAll directories have correct permissions.");
+        println!("If you're still seeing errors, check that:");
+        println!("  1. The service is running as the 'openvox-webui' user");
+        println!("  2. SELinux/AppArmor isn't blocking access");
+        println!("  3. The filesystem isn't mounted read-only");
+    }
+
+    Ok(())
+}
+
+/// Check subdirectories for ownership mismatches
+fn check_subdirs_ownership(path: &std::path::Path, expected_uid: u32) {
+    use std::fs;
+    use std::os::unix::fs::MetadataExt;
+
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let entry_path = entry.path();
+            if let Ok(meta) = entry_path.metadata() {
+                if meta.uid() != expected_uid {
+                    let owner = get_username(meta.uid()).unwrap_or_else(|| format!("uid:{}", meta.uid()));
+                    println!("    - {} owned by {} (not current user)", entry_path.display(), owner);
+                }
+            }
+        }
+    }
+}
+
+/// Get username from uid (Unix-specific)
+fn get_username(uid: u32) -> Option<String> {
+    use std::process::Command;
+    let output = Command::new("id")
+        .args(["-nu", &uid.to_string()])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Get group name from gid (Unix-specific)
+fn get_groupname(gid: u32) -> Option<String> {
+    use std::process::Command;
+    // Use getent to get group name
+    let output = Command::new("getent")
+        .args(["group", &gid.to_string()])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let line = String::from_utf8_lossy(&output.stdout);
+        Some(line.split(':').next()?.to_string())
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

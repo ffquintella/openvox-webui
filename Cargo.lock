@@ -3168,7 +3168,7 @@ dependencies = [
 
 [[package]]
 name = "openvox-webui"
-version = "0.17.10"
+version = "0.17.14"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3194,6 +3194,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "jsonwebtoken",
+ "libc",
  "num_cpus",
  "once_cell",
  "printpdf",
