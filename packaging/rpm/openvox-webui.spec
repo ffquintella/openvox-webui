@@ -124,6 +124,22 @@ chmod 750 %{_localstatedir}/log/openvox
 chown -R openvox-webui:openvox-webui %{_localstatedir}/log/openvox/webui
 chmod 750 %{_localstatedir}/log/openvox/webui
 
+# Ensure r10k cache directory exists and is writable by openvox-webui
+# This is needed for Code Deploy functionality
+if [ -d /opt/puppetlabs/puppet/cache ]; then
+    mkdir -p /opt/puppetlabs/puppet/cache/r10k
+    chown -R openvox-webui:openvox-webui /opt/puppetlabs/puppet/cache/r10k
+    chmod 750 /opt/puppetlabs/puppet/cache/r10k
+fi
+
+# Ensure puppet code environments directory is writable by openvox-webui
+# This is where r10k deploys puppet code
+if [ -d /etc/puppetlabs/code ]; then
+    mkdir -p /etc/puppetlabs/code/environments
+    chown -R openvox-webui:openvox-webui /etc/puppetlabs/code/environments
+    chmod 750 /etc/puppetlabs/code/environments
+fi
+
 # Run interactive configuration on first install (not upgrade)
 if [ $1 -eq 1 ]; then
     # Check if we're in an interactive terminal

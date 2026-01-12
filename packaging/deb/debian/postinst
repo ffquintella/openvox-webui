@@ -43,6 +43,22 @@ case "$1" in
             chmod 750 /etc/openvox-webui/ssl
         fi
 
+        # Ensure r10k cache directory exists and is writable by openvox-webui
+        # This is needed for Code Deploy functionality
+        if [ -d /opt/puppetlabs/puppet/cache ]; then
+            mkdir -p /opt/puppetlabs/puppet/cache/r10k
+            chown -R openvox-webui:openvox-webui /opt/puppetlabs/puppet/cache/r10k
+            chmod 750 /opt/puppetlabs/puppet/cache/r10k
+        fi
+
+        # Ensure puppet code environments directory is writable by openvox-webui
+        # This is where r10k deploys puppet code
+        if [ -d /etc/puppetlabs/code ]; then
+            mkdir -p /etc/puppetlabs/code/environments
+            chown -R openvox-webui:openvox-webui /etc/puppetlabs/code/environments
+            chmod 750 /etc/puppetlabs/code/environments
+        fi
+
         # Check if this is a fresh install (not upgrade)
         # dpkg passes the previously installed version as $2 for upgrades
         if [ -z "$2" ]; then

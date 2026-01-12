@@ -49,6 +49,8 @@ ProtectHostname=yes
 # Security hardening - Read/Write paths
 ReadWritePaths=/var/lib/openvox-webui
 ReadWritePaths=/var/log/openvox
+ReadWritePaths=/opt/puppetlabs/puppet/cache/r10k
+ReadWritePaths=/etc/puppetlabs/code/environments
 ReadOnlyPaths=/etc/openvox-webui
 
 # Security hardening - Network
