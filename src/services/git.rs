@@ -253,6 +253,8 @@ impl GitService {
 
         let mut fetch_options = FetchOptions::new();
         fetch_options.remote_callbacks(callbacks);
+        // Prune deleted remote branches so they're removed from local tracking
+        fetch_options.prune(git2::FetchPrune::On);
 
         // Fetch all refs
         match remote.fetch(&[] as &[&str], Some(&mut fetch_options), None) {
@@ -302,6 +304,8 @@ impl GitService {
 
         let mut fetch_options = FetchOptions::new();
         fetch_options.remote_callbacks(callbacks);
+        // Prune deleted remote branches so they're removed from local tracking
+        fetch_options.prune(git2::FetchPrune::On);
 
         // Fetch all refs
         match remote.fetch(&[] as &[&str], Some(&mut fetch_options), None) {
