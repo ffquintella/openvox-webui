@@ -53,7 +53,7 @@ pub struct FactsResponse {
 /// GET /api/v1/facts
 ///
 /// Query parameters:
-/// - `name`: Filter by fact name
+/// - `name`: Filter by fact name (supports dot-notation for structured facts like "os.family")
 /// - `value`: Filter by fact value (exact match)
 /// - `certname`: Filter by certname
 /// - `environment`: Filter by environment
@@ -68,7 +68,60 @@ async fn query_facts(
         .as_ref()
         .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
-    // Build query
+    // Check if the fact name contains a dot (structured fact path like "os.family")
+    // If so, use the fact-contents endpoint instead
+    if let Some(ref name) = query.name {
+        if name.contains('.') {
+            // Use fact-contents endpoint for structured facts
+            let fact_contents = puppetdb
+                .query_fact_contents_by_path(
+                    name,
+                    query.certname.as_deref(),
+                    query.limit.or(Some(100)),
+                )
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to query fact contents: {}", e)))?;
+
+            // Convert FactContent to Fact format for consistent API response
+            let facts: Vec<Fact> = fact_contents
+                .into_iter()
+                .filter(|fc| {
+                    // Apply value filter if specified
+                    if let Some(ref value) = query.value {
+                        match &fc.value {
+                            serde_json::Value::String(s) => s == value,
+                            serde_json::Value::Number(n) => &n.to_string() == value,
+                            serde_json::Value::Bool(b) => &b.to_string() == value,
+                            _ => false,
+                        }
+                    } else {
+                        true
+                    }
+                })
+                .filter(|fc| {
+                    // Apply environment filter if specified
+                    if let Some(ref env) = query.environment {
+                        fc.environment.as_ref().map(|e| e == env).unwrap_or(false)
+                    } else {
+                        true
+                    }
+                })
+                .map(|fc| Fact {
+                    certname: fc.certname,
+                    name: name.clone(),
+                    value: fc.value,
+                    environment: fc.environment,
+                })
+                .collect();
+
+            return Ok(Json(FactsResponse {
+                total: Some(facts.len() as u64),
+                facts,
+            }));
+        }
+    }
+
+    // Use standard facts endpoint for top-level facts
     let mut qb = QueryBuilder::new();
 
     if let Some(ref name) = query.name {

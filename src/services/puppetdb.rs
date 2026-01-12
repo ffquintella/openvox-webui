@@ -698,6 +698,51 @@ impl PuppetDbClient {
         self.get(&url).await
     }
 
+    /// Query fact contents by dot-notation path (e.g., "os.family", "networking.ip")
+    ///
+    /// This uses the fact-contents endpoint which supports querying nested structured facts.
+    /// The path is split by dots and converted to a PuppetDB path array query.
+    pub async fn query_fact_contents_by_path(
+        &self,
+        path: &str,
+        certname: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<FactContent>> {
+        let mut url = format!("{}/pdb/query/v4/fact-contents", self.base_url);
+
+        // Split the path by dots and format as JSON array elements
+        let path_parts: Vec<&str> = path.split('.').collect();
+        let path_json: String = path_parts
+            .iter()
+            .map(|p| format!("\"{}\"", p))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // Build the query - path must match exactly
+        let mut query_parts = vec![format!("[\"=\",\"path\",[{}]]", path_json)];
+
+        // Add certname filter if provided
+        if let Some(cn) = certname {
+            query_parts.push(format!("[\"=\",\"certname\",\"{}\"]", cn));
+        }
+
+        // Combine query parts with AND if multiple conditions
+        let query = if query_parts.len() > 1 {
+            format!("[\"and\",{}]", query_parts.join(","))
+        } else {
+            query_parts.remove(0)
+        };
+
+        url = format!("{}?query={}", url, urlencoding::encode(&query));
+
+        // Add limit if specified
+        if let Some(l) = limit {
+            url = format!("{}&limit={}", url, l);
+        }
+
+        self.get(&url).await
+    }
+
     // ==================== Report Endpoints ====================
 
     /// Get reports for a specific node
