@@ -59,6 +59,19 @@
   Stdlib::Absolutepath $code_deploy_ssh_keys_dir,
   Stdlib::Absolutepath $code_deploy_r10k_path,
   String $code_deploy_encryption_key,
+  # Backup parameters
+  Boolean $backup_enabled,
+  Stdlib::Absolutepath $backup_dir,
+  Enum['hourly', 'daily', 'weekly', 'custom', 'disabled'] $backup_frequency,
+  String $backup_time,
+  Optional[String] $backup_cron,
+  Integer $backup_day_of_week,
+  Integer $backup_max_backups,
+  Integer $backup_min_age_hours,
+  Boolean $backup_encryption_enabled,
+  Boolean $backup_require_password,
+  Boolean $backup_include_database,
+  Boolean $backup_include_config,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -257,4 +270,44 @@ code_deploy:
 #   ssh_keys_dir: "/etc/openvox-webui/code-deploy/ssh-keys"
 #   r10k_path: "/opt/puppetlabs/puppet/bin/r10k"
 #   encryption_key: "<randomly-generated-key>"
+<% } -%>
+
+<% if $backup_enabled { -%>
+# Server Backup configuration
+backup:
+  enabled: true
+  backup_dir: "<%= $backup_dir %>"
+  schedule:
+    frequency: "<%= $backup_frequency %>"
+    time: "<%= $backup_time %>"
+<% if $backup_cron { -%>
+    cron: "<%= $backup_cron %>"
+<% } -%>
+    day_of_week: <%= $backup_day_of_week %>
+  retention:
+    max_backups: <%= $backup_max_backups %>
+    min_age_hours: <%= $backup_min_age_hours %>
+  encryption:
+    enabled: <%= $backup_encryption_enabled %>
+    require_password: <%= $backup_require_password %>
+  include:
+    database: <%= $backup_include_database %>
+    config_files: <%= $backup_include_config %>
+<% } else { -%>
+# Server Backup (disabled)
+# backup:
+#   enabled: true
+#   backup_dir: "/var/lib/openvox-webui/backups"
+#   schedule:
+#     frequency: "daily"
+#     time: "02:00"
+#   retention:
+#     max_backups: 30
+#     min_age_hours: 24
+#   encryption:
+#     enabled: true
+#     require_password: true
+#   include:
+#     database: true
+#     config_files: true
 <% } -%>

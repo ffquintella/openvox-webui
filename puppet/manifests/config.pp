@@ -144,6 +144,19 @@ class openvox_webui::config {
         code_deploy_ssh_keys_dir       => $openvox_webui::code_deploy_ssh_keys_dir,
         code_deploy_r10k_path          => $openvox_webui::code_deploy_r10k_path,
         code_deploy_encryption_key     => $openvox_webui::code_deploy_encryption_key,
+        # Backup settings
+        backup_enabled                 => $openvox_webui::backup_enabled,
+        backup_dir                     => $openvox_webui::backup_dir,
+        backup_frequency               => $openvox_webui::backup_frequency,
+        backup_time                    => $openvox_webui::backup_time,
+        backup_cron                    => $openvox_webui::backup_cron,
+        backup_day_of_week             => $openvox_webui::backup_day_of_week,
+        backup_max_backups             => $openvox_webui::backup_max_backups,
+        backup_min_age_hours           => $openvox_webui::backup_min_age_hours,
+        backup_encryption_enabled      => $openvox_webui::backup_encryption_enabled,
+        backup_require_password        => $openvox_webui::backup_require_password,
+        backup_include_database        => $openvox_webui::backup_include_database,
+        backup_include_config          => $openvox_webui::backup_include_config,
       }),
     }
 
@@ -168,6 +181,21 @@ class openvox_webui::config {
 /bin/chown ${owner}:${group} '${ssh_keys_dir}' && \
 /bin/chmod 0700 '${ssh_keys_dir}'",
         creates => $ssh_keys_dir,
+        path    => ['/bin', '/usr/bin'],
+      }
+    }
+
+    # Create Backup directory if enabled
+    if $openvox_webui::backup_enabled {
+      $backup_directory = $openvox_webui::backup_dir
+      $backup_owner = $openvox_webui::user
+      $backup_group = $openvox_webui::group
+
+      exec { 'create-backup-dir':
+        command => "/bin/mkdir -p '${backup_directory}' && \
+/bin/chown ${backup_owner}:${backup_group} '${backup_directory}' && \
+/bin/chmod 0750 '${backup_directory}'",
+        creates => $backup_directory,
         path    => ['/bin', '/usr/bin'],
       }
     }

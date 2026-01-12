@@ -204,6 +204,42 @@
 #   Encryption key for storing sensitive data (SSH keys, PATs).
 #   Should be at least 32 characters. Auto-generated if not specified.
 #
+# @param backup_enabled
+#   Whether to enable automatic server backups.
+#
+# @param backup_dir
+#   Directory where backup files are stored.
+#
+# @param backup_frequency
+#   Backup frequency: hourly, daily, weekly, custom, or disabled.
+#
+# @param backup_time
+#   Time of day for daily/weekly backups (HH:MM format).
+#
+# @param backup_cron
+#   Custom cron expression (when backup_frequency is custom).
+#
+# @param backup_day_of_week
+#   Day of week for weekly backups (0=Sunday, 6=Saturday).
+#
+# @param backup_max_backups
+#   Maximum number of backups to retain.
+#
+# @param backup_min_age_hours
+#   Minimum age in hours before a backup can be deleted.
+#
+# @param backup_encryption_enabled
+#   Whether to encrypt backup files.
+#
+# @param backup_require_password
+#   Whether to require a password for encrypted backups.
+#
+# @param backup_include_database
+#   Whether to include database files in backups.
+#
+# @param backup_include_config
+#   Whether to include configuration files in backups.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -242,6 +278,16 @@
 #     code_deploy_repos_base_dir => '/var/lib/openvox-webui/repos',
 #     code_deploy_ssh_keys_dir   => '/etc/openvox-webui/ssh-keys',
 #     code_deploy_r10k_path      => '/opt/puppetlabs/puppet/bin/r10k',
+#   }
+#
+# @example Enabling automatic backups
+#   class { 'openvox_webui':
+#     backup_enabled            => true,
+#     backup_dir                => '/var/lib/openvox-webui/backups',
+#     backup_frequency          => 'daily',
+#     backup_time               => '02:00',
+#     backup_max_backups        => 30,
+#     backup_encryption_enabled => true,
 #   }
 #
 class openvox_webui (
@@ -357,6 +403,20 @@ class openvox_webui (
   Stdlib::Absolutepath                $code_deploy_ssh_keys_dir        = '/etc/openvox-webui/code-deploy/ssh-keys',
   Stdlib::Absolutepath                $code_deploy_r10k_path           = '/opt/puppetlabs/puppet/bin/r10k',
   String[32]                          $code_deploy_encryption_key      = fqdn_rand_string(64),
+
+  # Backup settings
+  Boolean                             $backup_enabled                  = false,
+  Stdlib::Absolutepath                $backup_dir                      = '/var/lib/openvox-webui/backups',
+  Enum['hourly', 'daily', 'weekly', 'custom', 'disabled'] $backup_frequency = 'daily',
+  String[1]                           $backup_time                     = '02:00',
+  Optional[String[1]]                 $backup_cron                     = undef,
+  Integer[0, 6]                       $backup_day_of_week              = 0,
+  Integer[1]                          $backup_max_backups              = 30,
+  Integer[1]                          $backup_min_age_hours            = 24,
+  Boolean                             $backup_encryption_enabled       = true,
+  Boolean                             $backup_require_password         = true,
+  Boolean                             $backup_include_database         = true,
+  Boolean                             $backup_include_config           = true,
 ) {
   contain openvox_webui::install
   contain openvox_webui::config
