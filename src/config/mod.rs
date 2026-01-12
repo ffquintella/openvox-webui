@@ -42,6 +42,9 @@ pub struct AppConfig {
     /// Server backup configuration
     #[serde(default)]
     pub backup: Option<BackupConfig>,
+    /// Node removal tracking configuration (for nodes with revoked/missing certificates)
+    #[serde(default)]
+    pub node_removal: Option<NodeRemovalConfig>,
 }
 
 /// Server configuration
@@ -1078,6 +1081,44 @@ impl Default for BackupFrequency {
     }
 }
 
+// ============================================================================
+// Node Removal Configuration
+// ============================================================================
+
+/// Node removal tracking configuration
+///
+/// Configures automatic tracking and removal of nodes with revoked or missing certificates.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NodeRemovalConfig {
+    /// Whether the node removal tracking feature is enabled
+    #[serde(default)]
+    pub enabled: bool,
+    /// Number of days to wait before removing a node (default: 10)
+    #[serde(default = "default_node_removal_retention_days")]
+    pub retention_days: i64,
+    /// How often to check for certificate status changes (in seconds, default: 300 = 5 minutes)
+    #[serde(default)]
+    pub check_interval_secs: Option<u64>,
+    /// How long to keep audit log entries (in days, default: 90)
+    #[serde(default)]
+    pub audit_retention_days: Option<i64>,
+}
+
+fn default_node_removal_retention_days() -> i64 {
+    10
+}
+
+impl Default for NodeRemovalConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention_days: default_node_removal_retention_days(),
+            check_interval_secs: Some(300),
+            audit_retention_days: Some(90),
+        }
+    }
+}
+
 /// Node groups configuration (loaded from separate file)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GroupsConfig {
@@ -1218,6 +1259,7 @@ impl Default for AppConfig {
             code_deploy: None,
             saml: None,
             backup: None,
+            node_removal: None,
         }
     }
 }

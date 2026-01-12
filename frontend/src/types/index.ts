@@ -1433,3 +1433,64 @@ export interface ListBackupsQuery {
   limit?: number;
   offset?: number;
 }
+
+// ============================================================================
+// Node Removal Types
+// ============================================================================
+
+export type RemovalReason = 'revoked_certificate' | 'no_certificate' | 'manual';
+export type RemovalAuditAction = 'marked' | 'unmarked' | 'removed' | 'extended';
+
+export interface PendingNodeRemoval {
+  id: string;
+  certname: string;
+  removal_reason: RemovalReason;
+  marked_at: string;
+  scheduled_removal_at: string;
+  removed_at?: string | null;
+  notes?: string | null;
+  marked_by?: string | null;
+  days_remaining: number;
+  is_overdue: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodeRemovalAudit {
+  id: string;
+  certname: string;
+  action: RemovalAuditAction;
+  reason?: string | null;
+  performed_by?: string | null;
+  details?: string | null;
+  created_at: string;
+}
+
+export interface PendingRemovalStats {
+  total_pending: number;
+  revoked_certificate_count: number;
+  no_certificate_count: number;
+  manual_count: number;
+  due_today: number;
+  overdue: number;
+}
+
+export interface NodeRemovalFeatureStatus {
+  enabled: boolean;
+  retention_days: number;
+  check_interval_secs: number;
+  puppetdb_connected: boolean;
+  puppet_ca_connected: boolean;
+}
+
+export interface MarkNodeForRemovalRequest {
+  certname: string;
+  reason?: RemovalReason;
+  notes?: string;
+}
+
+export interface ExtendRemovalDeadlineRequest {
+  certname: string;
+  extend_days: number;
+  notes?: string;
+}

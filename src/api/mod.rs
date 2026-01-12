@@ -18,6 +18,7 @@ mod facter;
 mod facts;
 mod groups;
 mod health;
+mod node_removal;
 mod nodes;
 mod notifications;
 mod organizations;
@@ -81,6 +82,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/code", code_deploy::routes())
         // Backup endpoints
         .nest("/backup", backup::routes())
+        // Node removal endpoints
+        .nest("/node-removal", node_removal::routes())
         // Notification endpoints
         .nest("/notifications", notifications::routes())
 }

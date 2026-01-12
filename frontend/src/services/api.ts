@@ -108,6 +108,13 @@ import type {
   VerifyBackupResponse,
   UpdateBackupScheduleRequest,
   ListBackupsQuery,
+  // Node Removal types
+  PendingNodeRemoval,
+  NodeRemovalAudit,
+  PendingRemovalStats,
+  NodeRemovalFeatureStatus,
+  MarkNodeForRemovalRequest,
+  ExtendRemovalDeadlineRequest,
 } from '../types';
 
 const client = axios.create({
@@ -1077,6 +1084,63 @@ export const backupApi = {
   // Restore history
   listRestores: async (): Promise<BackupRestore[]> => {
     const response = await client.get('/backup/restores');
+    return response.data;
+  },
+};
+
+// ============================================================================
+// Node Removal API
+// ============================================================================
+
+export const nodeRemovalApi = {
+  // Feature status
+  getFeatureStatus: async (): Promise<NodeRemovalFeatureStatus> => {
+    const response = await client.get('/node-removal/status');
+    return response.data;
+  },
+
+  // Pending removals
+  listPendingRemovals: async (): Promise<PendingNodeRemoval[]> => {
+    const response = await client.get('/node-removal/pending');
+    return response.data;
+  },
+
+  getPendingRemoval: async (certname: string): Promise<PendingNodeRemoval> => {
+    const response = await client.get(`/node-removal/pending/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  unmarkRemoval: async (certname: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.delete(`/node-removal/pending/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  // Manual marking
+  markForRemoval: async (request: MarkNodeForRemovalRequest): Promise<PendingNodeRemoval> => {
+    const response = await client.post('/node-removal/mark', request);
+    return response.data;
+  },
+
+  // Extend deadline
+  extendDeadline: async (request: ExtendRemovalDeadlineRequest): Promise<PendingNodeRemoval> => {
+    const response = await client.post('/node-removal/extend', request);
+    return response.data;
+  },
+
+  // Statistics
+  getStats: async (): Promise<PendingRemovalStats> => {
+    const response = await client.get('/node-removal/stats');
+    return response.data;
+  },
+
+  // Audit log
+  listAuditLog: async (): Promise<NodeRemovalAudit[]> => {
+    const response = await client.get('/node-removal/audit');
+    return response.data;
+  },
+
+  getNodeAuditLog: async (certname: string): Promise<NodeRemovalAudit[]> => {
+    const response = await client.get(`/node-removal/audit/${encodeURIComponent(certname)}`);
     return response.data;
   },
 };

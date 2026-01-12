@@ -161,6 +161,38 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Initialize Node Removal config if enabled
+    let node_removal_config = config.node_removal.clone().and_then(|nr_config| {
+        if nr_config.enabled {
+            info!(
+                "Node removal tracking enabled (retention: {} days)",
+                nr_config.retention_days
+            );
+            Some(nr_config)
+        } else {
+            info!("Node removal tracking is disabled");
+            None
+        }
+    });
+
+    // Start Node Removal scheduler if enabled (requires PuppetDB)
+    let _node_removal_scheduler = match (&node_removal_config, &puppetdb) {
+        (Some(ref nr_config), Some(ref pdb)) => {
+            info!("Starting Node Removal scheduler");
+            Some(services::start_node_removal_scheduler(
+                db.clone(),
+                nr_config.clone(),
+                puppet_ca.clone(),
+                pdb.clone(),
+            ))
+        }
+        (Some(_), None) => {
+            warn!("Node removal tracking is enabled but PuppetDB is not configured - scheduler not started");
+            None
+        }
+        _ => None,
+    };
+
     // Initialize notification service
     info!("Initializing notification service");
     let notification_service = Arc::new(NotificationService::new(db.clone()));
@@ -720,6 +752,8 @@ async fn fix_database() -> Result<()> {
         "server_backups",
         "backup_schedules",
         "backup_restores",
+        "pending_node_removals",
+        "node_removal_audit",
     ];
 
     // Check for missing tables

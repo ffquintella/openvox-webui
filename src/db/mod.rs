@@ -13,6 +13,7 @@ pub mod audit_repository;
 pub mod backup_repository;
 pub mod code_deploy_repository;
 pub mod migrations;
+pub mod node_removal_repository;
 pub mod organization_repository;
 pub mod repository;
 
@@ -27,6 +28,7 @@ pub use code_deploy_repository::{
     CodeDeploymentRepository, CodeEnvironmentRepository, CodePatTokenRepository,
     CodeRepositoryRepository, CodeSshKeyRepository,
 };
+pub use node_removal_repository::NodeRemovalRepository;
 pub use organization_repository::OrganizationRepository;
 
 use std::time::Duration;
@@ -76,6 +78,9 @@ const REQUIRED_TABLES: &[&str] = &[
     "server_backups",
     "backup_schedules",
     "backup_restores",
+    // Node removal tracking tables
+    "pending_node_removals",
+    "node_removal_audit",
 ];
 
 /// Database connection pool type

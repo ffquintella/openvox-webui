@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, Filter, ChevronRight, CheckCircle2, XCircle, Clock, HelpCircle } from 'lucide-react';
+import { Search, Filter, ChevronRight, CheckCircle2, XCircle, Clock, HelpCircle, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
-import { api } from '../services/api';
-import { Node, NodeStatus } from '../types';
+import { api, nodeRemovalApi } from '../services/api';
+import { Node, NodeStatus, PendingNodeRemoval } from '../types';
 
 const statusLabels: Record<NodeStatus, string> = {
   changed: 'Changed',
@@ -41,6 +41,32 @@ function StatusBadge({ status }: { status?: NodeStatus }) {
   );
 }
 
+// Pending Removal Badge Component
+function PendingRemovalBadge({ removal }: { removal: PendingNodeRemoval }) {
+  const reasonLabels: Record<string, string> = {
+    revoked_certificate: 'Revoked Certificate',
+    no_certificate: 'No Certificate',
+    manual: 'Manual',
+  };
+
+  const reasonLabel = reasonLabels[removal.removal_reason] || removal.removal_reason;
+  const isOverdue = removal.is_overdue;
+  const daysRemaining = removal.days_remaining;
+
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full',
+        isOverdue ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+      )}
+      title={`Reason: ${reasonLabel}. ${isOverdue ? 'Overdue for removal' : `${daysRemaining} days until removal`}`}
+    >
+      <AlertTriangle className="w-3 h-3" />
+      {isOverdue ? 'Pending Removal (Overdue)' : `Pending Removal (${daysRemaining}d)`}
+    </span>
+  );
+}
+
 export default function Nodes() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<NodeStatus | 'all'>('all');
@@ -49,6 +75,19 @@ export default function Nodes() {
     queryKey: ['nodes'],
     queryFn: api.getNodes,
   });
+
+  // Fetch pending removals to show status on nodes
+  const { data: pendingRemovals = [] } = useQuery({
+    queryKey: ['pendingRemovals'],
+    queryFn: nodeRemovalApi.listPendingRemovals,
+    // Silently fail if the feature is not enabled
+    retry: false,
+  });
+
+  // Create a lookup map for pending removals by certname
+  const pendingRemovalMap = new Map<string, PendingNodeRemoval>(
+    pendingRemovals.map((removal) => [removal.certname, removal])
+  );
 
   const filteredNodes = nodes.filter((node: Node) => {
     const matchesSearch = node.certname
@@ -139,34 +178,40 @@ export default function Nodes() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredNodes.map((node: Node) => (
-              <tr key={node.certname} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="font-medium text-gray-900">
-                    {node.certname}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <StatusBadge status={node.latest_report_status as NodeStatus} />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {node.catalog_environment || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {node.report_timestamp
-                    ? new Date(node.report_timestamp).toLocaleString()
-                    : '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <Link
-                    to={`/nodes/${node.certname}`}
-                    className="text-primary-600 hover:text-primary-800"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </Link>
-                </td>
-              </tr>
-            ))}
+            {filteredNodes.map((node: Node) => {
+              const pendingRemoval = pendingRemovalMap.get(node.certname);
+              return (
+                <tr key={node.certname} className={clsx('hover:bg-gray-50', pendingRemoval && 'bg-orange-50')}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="font-medium text-gray-900">
+                      {node.certname}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col gap-1">
+                      <StatusBadge status={node.latest_report_status as NodeStatus} />
+                      {pendingRemoval && <PendingRemovalBadge removal={pendingRemoval} />}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {node.catalog_environment || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {node.report_timestamp
+                      ? new Date(node.report_timestamp).toLocaleString()
+                      : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <Link
+                      to={`/nodes/${node.certname}`}
+                      className="text-primary-600 hover:text-primary-800"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
