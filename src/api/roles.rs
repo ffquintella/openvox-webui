@@ -27,7 +27,13 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}", get(get_role).put(update_role).delete(delete_role))
         .route(
             "/{id}/permissions",
-            get(get_role_permissions).put(update_role_permissions),
+            get(get_role_permissions)
+                .post(add_permission_to_role)
+                .put(update_role_permissions),
+        )
+        .route(
+            "/{id}/permissions/{permission_id}",
+            axum::routing::delete(remove_permission_from_role),
         )
         .route(
             "/{id}/group-permissions",
@@ -343,6 +349,230 @@ async fn update_role_permissions(
         })?;
 
     Ok(Json(permissions))
+}
+
+/// Add a single permission to a role
+///
+/// POST /api/v1/roles/:id/permissions
+async fn add_permission_to_role(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CreatePermissionRequest>,
+) -> Result<Json<Role>, (StatusCode, Json<ErrorResponse>)> {
+    // Get the current role
+    let role = state
+        .rbac_db
+        .get_role(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Don't allow modifying system roles' base permissions
+    if role.is_system {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "forbidden".to_string(),
+                message: "Cannot modify permissions of system roles".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Build the new permissions list by adding the new permission
+    let mut new_permissions: Vec<CreatePermissionRequest> = role
+        .permissions
+        .iter()
+        .map(|p| CreatePermissionRequest {
+            resource: p.resource.clone(),
+            action: p.action.clone(),
+            scope: Some(p.scope.clone()),
+            constraint: p.constraint.clone(),
+        })
+        .collect();
+
+    // Check if permission already exists
+    let already_exists = new_permissions.iter().any(|p| {
+        p.resource == payload.resource
+            && p.action == payload.action
+            && p.scope == payload.scope
+    });
+
+    if already_exists {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "conflict".to_string(),
+                message: "Permission already exists for this role".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    new_permissions.push(payload);
+
+    // Update all permissions
+    state
+        .rbac_db
+        .set_role_permissions(&id, new_permissions)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to add permission: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Fetch and return the updated role
+    let updated_role = state
+        .rbac_db
+        .get_role(&id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch updated role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found after update".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    Ok(Json(updated_role))
+}
+
+/// Remove a permission from a role
+///
+/// DELETE /api/v1/roles/:id/permissions/:permission_id
+async fn remove_permission_from_role(
+    State(state): State<AppState>,
+    Path((role_id, permission_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    // Get the current role
+    let role = state
+        .rbac_db
+        .get_role(&role_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to fetch role: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "not_found".to_string(),
+                    message: "Role not found".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    // Don't allow modifying system roles' permissions
+    if role.is_system {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "forbidden".to_string(),
+                message: "Cannot modify permissions of system roles".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Filter out the permission to remove
+    let new_permissions: Vec<CreatePermissionRequest> = role
+        .permissions
+        .iter()
+        .filter(|p| p.id != permission_id)
+        .map(|p| CreatePermissionRequest {
+            resource: p.resource.clone(),
+            action: p.action.clone(),
+            scope: Some(p.scope.clone()),
+            constraint: p.constraint.clone(),
+        })
+        .collect();
+
+    // Check if we actually removed anything
+    if new_permissions.len() == role.permissions.len() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "not_found".to_string(),
+                message: "Permission not found in this role".to_string(),
+                details: None,
+                code: None,
+            }),
+        ));
+    }
+
+    // Update permissions
+    state
+        .rbac_db
+        .set_role_permissions(&role_id, new_permissions)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: format!("Failed to remove permission: {}", e),
+                    details: None,
+                    code: None,
+                }),
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // =============================================================================
