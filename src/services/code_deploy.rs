@@ -845,6 +845,15 @@ impl CodeDeployService {
             // Mark as deploying
             deploy_repo.mark_deploying(deployment.id).await?;
 
+            // Setup .netrc for PAT authentication if needed
+            if let Err(e) = self.setup_netrc_for_repository(env.repository_id).await {
+                // Log warning but continue - might still work with existing credentials
+                warn!(
+                    "Failed to setup .netrc for repository (deployment may still succeed): {}",
+                    e
+                );
+            }
+
             // Run r10k deploy
             let result = self.r10k.deploy_environment(&env.name).await?;
 
@@ -1131,6 +1140,190 @@ impl CodeDeployService {
         let repo = CodeRepositoryRepository::new(&self.pool);
         repo.set_error(id, Some(error)).await
     }
+
+    // =========================================================================
+    // .netrc management for HTTPS PAT authentication
+    // =========================================================================
+
+    /// Setup .netrc file for PAT authentication before r10k deployment.
+    /// This allows git to authenticate via HTTPS using the PAT token.
+    ///
+    /// Returns Ok(true) if netrc was created/updated, Ok(false) if not needed.
+    pub async fn setup_netrc_for_repository(&self, repository_id: Uuid) -> Result<bool> {
+        use std::fs::{self, OpenOptions};
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo_repo = CodeRepositoryRepository::new(&self.pool);
+        let pat_repo = CodePatTokenRepository::new(&self.pool);
+
+        let Some(repository) = repo_repo.get_by_id(repository_id).await? else {
+            return Err(anyhow::anyhow!("Repository not found"));
+        };
+
+        // Only setup netrc for PAT authentication
+        if repository.auth_type != crate::models::AuthType::Pat {
+            return Ok(false);
+        }
+
+        // Get PAT token
+        let pat_token_id = repository.pat_token_id
+            .ok_or_else(|| anyhow::anyhow!("Repository uses PAT auth but no PAT token ID set"))?;
+
+        let pat_token = pat_repo.get_by_id(pat_token_id).await?
+            .ok_or_else(|| anyhow::anyhow!("PAT token not found"))?;
+
+        // Decrypt the token
+        let decrypted_token = self.decrypt_private_key(&pat_token.token_encrypted)?;
+
+        // Get username (required for netrc)
+        let username = pat_token.username
+            .ok_or_else(|| anyhow::anyhow!(
+                "PAT token '{}' has no username set. Please update the token with a username for HTTPS authentication.",
+                pat_token.name
+            ))?;
+
+        // Extract machine (hostname) from repository URL
+        let machine = extract_hostname_from_url(&repository.url)
+            .ok_or_else(|| anyhow::anyhow!("Could not extract hostname from repository URL: {}", repository.url))?;
+
+        // Get current user info for logging
+        let current_uid = unsafe { libc::getuid() };
+        let system_username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+
+        // Determine home directory
+        let home_dir = std::env::var("HOME")
+            .unwrap_or_else(|_| "/var/lib/openvox-webui".to_string());
+
+        let netrc_path = std::path::PathBuf::from(&home_dir).join(".netrc");
+
+        info!(
+            "Setting up .netrc for PAT authentication: machine='{}', user='{}', netrc_path='{}', running_as='{}'",
+            machine, username, netrc_path.display(), system_username
+        );
+
+        // Read existing .netrc content (if any)
+        let existing_content = fs::read_to_string(&netrc_path).unwrap_or_default();
+
+        // Build new entry
+        let new_entry = format!(
+            "machine {}\nlogin {}\npassword {}\n",
+            machine, username, decrypted_token
+        );
+
+        // Check if machine already exists in .netrc
+        let machine_pattern = format!("machine {}", machine);
+        let updated_content = if existing_content.contains(&machine_pattern) {
+            // Update existing entry
+            let mut lines: Vec<&str> = existing_content.lines().collect();
+            let mut i = 0;
+            while i < lines.len() {
+                if lines[i].trim().starts_with(&format!("machine {}", machine)) {
+                    // Remove machine, login, and password lines
+                    let mut j = i;
+                    while j < lines.len() {
+                        let line = lines[j].trim();
+                        if j > i && line.starts_with("machine ") {
+                            break;
+                        }
+                        j += 1;
+                    }
+                    // Remove the old entry
+                    lines.drain(i..j);
+                    break;
+                }
+                i += 1;
+            }
+            // Add the new entry
+            let mut result = lines.join("\n");
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(&new_entry);
+            result
+        } else {
+            // Append new entry
+            let mut result = existing_content;
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(&new_entry);
+            result
+        };
+
+        // Write the .netrc file
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&netrc_path)
+            .context("Failed to open .netrc file for writing")?;
+
+        file.write_all(updated_content.as_bytes())
+            .context("Failed to write .netrc file")?;
+
+        // Set permissions to 600 (owner read/write only)
+        let mut perms = file.metadata()?.permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&netrc_path, perms)
+            .context("Failed to set .netrc permissions")?;
+
+        info!(
+            ".netrc updated successfully for machine '{}' at '{}'",
+            machine, netrc_path.display()
+        );
+
+        Ok(true)
+    }
+
+    /// Setup .netrc for all PAT-authenticated repositories.
+    /// Call this on service startup to ensure authentication is ready.
+    pub async fn setup_all_netrc_entries(&self) -> Result<u32> {
+        let repo_repo = CodeRepositoryRepository::new(&self.pool);
+        let repositories = repo_repo.get_all().await?;
+
+        let mut count = 0;
+        for repo in repositories {
+            if repo.auth_type == crate::models::AuthType::Pat && repo.pat_token_id.is_some() {
+                match self.setup_netrc_for_repository(repo.id).await {
+                    Ok(true) => count += 1,
+                    Ok(false) => {}
+                    Err(e) => {
+                        warn!("Failed to setup .netrc for repository '{}': {}", repo.name, e);
+                    }
+                }
+            }
+        }
+
+        if count > 0 {
+            info!("Setup .netrc entries for {} PAT-authenticated repositories", count);
+        }
+
+        Ok(count)
+    }
+}
+
+/// Extract hostname from a git URL (HTTPS or SSH)
+fn extract_hostname_from_url(url: &str) -> Option<String> {
+    // Handle HTTPS URLs: https://github.com/user/repo.git
+    if url.starts_with("https://") || url.starts_with("http://") {
+        let without_proto = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
+        let host = without_proto.split('/').next()?;
+        // Remove port if present
+        let host = host.split(':').next()?;
+        return Some(host.to_string());
+    }
+
+    // Handle SSH URLs: git@github.com:user/repo.git
+    if url.starts_with("git@") {
+        let without_prefix = url.strip_prefix("git@")?;
+        let host = without_prefix.split(':').next()?;
+        return Some(host.to_string());
+    }
+
+    None
 }
 
 #[cfg(test)]

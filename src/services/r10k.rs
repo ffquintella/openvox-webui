@@ -275,6 +275,23 @@ impl R10kService {
     async fn execute_r10k(&self, args: &[&str]) -> Result<DeploymentResult> {
         let timeout_duration = Duration::from_secs(self.config.timeout_seconds);
 
+        // Log the exact command being executed
+        let command_str = format!(
+            "{} {}",
+            self.config.binary_path.display(),
+            args.join(" ")
+        );
+
+        // Get current user info for logging
+        let current_uid = unsafe { libc::getuid() };
+        let current_gid = unsafe { libc::getgid() };
+        let username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+
+        info!(
+            "Executing r10k command as user '{}' (uid={}, gid={}): {}",
+            username, current_uid, current_gid, command_str
+        );
+
         let mut cmd = Command::new(&self.config.binary_path);
         cmd.args(args)
             .stdout(Stdio::piped())
@@ -323,9 +340,25 @@ impl R10kService {
                 let success = exit_status.success();
                 let exit_code = exit_status.code();
 
-                debug!("r10k stdout: {}", stdout_str);
-                if !stderr_str.is_empty() {
-                    debug!("r10k stderr: {}", stderr_str);
+                // Log detailed command result
+                if success {
+                    info!(
+                        "r10k command succeeded: exit_code={:?}, stdout_len={}, stderr_len={}",
+                        exit_code,
+                        stdout_str.len(),
+                        stderr_str.len()
+                    );
+                    debug!("r10k stdout: {}", stdout_str);
+                    if !stderr_str.is_empty() {
+                        debug!("r10k stderr: {}", stderr_str);
+                    }
+                } else {
+                    error!(
+                        "r10k command FAILED: exit_code={:?}, command='{}'",
+                        exit_code, command_str
+                    );
+                    error!("r10k stdout:\n{}", stdout_str);
+                    error!("r10k stderr:\n{}", stderr_str);
                 }
 
                 Ok(DeploymentResult {
@@ -336,10 +369,19 @@ impl R10kService {
                     duration_ms: 0, // Will be set by caller
                 })
             }
-            Ok(Err(e)) => Err(e),
+            Ok(Err(e)) => {
+                error!(
+                    "r10k command execution error: command='{}', error='{}'",
+                    command_str, e
+                );
+                Err(e)
+            }
             Err(_) => {
                 // Timeout - kill the process
-                warn!("r10k deployment timed out after {}s", self.config.timeout_seconds);
+                error!(
+                    "r10k command TIMEOUT after {}s: command='{}'",
+                    self.config.timeout_seconds, command_str
+                );
                 let _ = child.kill().await;
 
                 Ok(DeploymentResult {

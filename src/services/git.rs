@@ -139,6 +139,16 @@ impl GitService {
         ssh_private_key: Option<&str>,
         github_pat: Option<&str>,
     ) -> Result<Repository> {
+        // Get current user info for logging
+        let current_uid = unsafe { libc::getuid() };
+        let current_gid = unsafe { libc::getgid() };
+        let username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+
+        info!(
+            "Git clone operation starting as user '{}' (uid={}, gid={}): url='{}', path='{}'",
+            username, current_uid, current_gid, url, path.display()
+        );
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).context("Failed to create repos directory")?;
@@ -146,10 +156,12 @@ impl GitService {
 
         let mut callbacks = RemoteCallbacks::new();
         let mut has_auth = false;
+        let auth_method: &str;
 
         // Set up SSH authentication if key is provided
         if let Some(key) = ssh_private_key {
             info!("Using SSH key authentication for {}", url);
+            auth_method = "SSH key";
             let key_string = key.to_string();
             callbacks.credentials(move |_url, username_from_url, _allowed_types| {
                 let username = username_from_url.unwrap_or("git");
@@ -160,6 +172,7 @@ impl GitService {
         } else if let Some(pat) = github_pat {
             // Set up HTTPS PAT authentication
             info!("Using PAT authentication for {}", url);
+            auth_method = "PAT";
             let pat_string = pat.to_string();
             callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
                 debug!("PAT auth callback invoked");
@@ -168,6 +181,8 @@ impl GitService {
                 Cred::userpass_plaintext(&pat_string, "")
             });
             has_auth = true;
+        } else {
+            auth_method = "none";
         }
 
         if !has_auth && url.starts_with("git@") {
@@ -187,13 +202,41 @@ impl GitService {
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(fetch_options);
 
-        builder
-            .clone(url, path)
-            .context("Failed to clone repository")
+        match builder.clone(url, path) {
+            Ok(repo) => {
+                info!(
+                    "Git clone succeeded: url='{}', path='{}', auth='{}'",
+                    url, path.display(), auth_method
+                );
+                Ok(repo)
+            }
+            Err(e) => {
+                error!(
+                    "Git clone FAILED: url='{}', path='{}', auth='{}', user='{}' (uid={}), error='{}'",
+                    url, path.display(), auth_method, username, current_uid, e
+                );
+                Err(e).context("Failed to clone repository")
+            }
+        }
     }
 
     /// Fetch updates from the remote
     pub fn fetch(&self, repo: &Repository, ssh_private_key: Option<&str>) -> Result<()> {
+        // Get current user and remote info for logging
+        let current_uid = unsafe { libc::getuid() };
+        let username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+        let remote_url = repo
+            .find_remote("origin")
+            .ok()
+            .and_then(|r| r.url().map(|s| s.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        info!(
+            "Git fetch operation starting as user '{}' (uid={}): remote='{}', auth='{}'",
+            username, current_uid, remote_url,
+            if ssh_private_key.is_some() { "SSH key" } else { "none" }
+        );
+
         let mut remote = repo
             .find_remote("origin")
             .context("Failed to find origin remote")?;
@@ -212,16 +255,38 @@ impl GitService {
         fetch_options.remote_callbacks(callbacks);
 
         // Fetch all refs
-        remote
-            .fetch(&[] as &[&str], Some(&mut fetch_options), None)
-            .context("Failed to fetch from remote")?;
-
-        debug!("Fetched updates from remote");
-        Ok(())
+        match remote.fetch(&[] as &[&str], Some(&mut fetch_options), None) {
+            Ok(_) => {
+                info!("Git fetch succeeded: remote='{}'", remote_url);
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "Git fetch FAILED: remote='{}', user='{}' (uid={}), error='{}'",
+                    remote_url, username, current_uid, e
+                );
+                Err(e).context("Failed to fetch from remote")
+            }
+        }
     }
 
     /// Fetch updates from the remote with PAT authentication
     pub fn fetch_with_pat(&self, repo: &Repository, github_pat: Option<&str>) -> Result<()> {
+        // Get current user and remote info for logging
+        let current_uid = unsafe { libc::getuid() };
+        let username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+        let remote_url = repo
+            .find_remote("origin")
+            .ok()
+            .and_then(|r| r.url().map(|s| s.to_string()))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        info!(
+            "Git fetch (PAT) operation starting as user '{}' (uid={}): remote='{}', auth='{}'",
+            username, current_uid, remote_url,
+            if github_pat.is_some() { "PAT" } else { "none" }
+        );
+
         let mut remote = repo
             .find_remote("origin")
             .context("Failed to find origin remote")?;
@@ -239,12 +304,19 @@ impl GitService {
         fetch_options.remote_callbacks(callbacks);
 
         // Fetch all refs
-        remote
-            .fetch(&[] as &[&str], Some(&mut fetch_options), None)
-            .context("Failed to fetch from remote")?;
-
-        debug!("Fetched updates from remote using PAT");
-        Ok(())
+        match remote.fetch(&[] as &[&str], Some(&mut fetch_options), None) {
+            Ok(_) => {
+                info!("Git fetch (PAT) succeeded: remote='{}'", remote_url);
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "Git fetch (PAT) FAILED: remote='{}', user='{}' (uid={}), error='{}'",
+                    remote_url, username, current_uid, e
+                );
+                Err(e).context("Failed to fetch from remote")
+            }
+        }
     }
 
     /// List all remote branches matching a pattern

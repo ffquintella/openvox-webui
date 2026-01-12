@@ -125,6 +125,8 @@ pub struct CodePatToken {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    /// Username for HTTPS authentication (used in .netrc for r10k)
+    pub username: Option<String>,
     /// Token is encrypted at rest - never serialize to API responses
     #[serde(skip_serializing)]
     pub token_encrypted: String,
@@ -142,6 +144,8 @@ pub struct CodePatTokenResponse {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    /// Username for HTTPS authentication
+    pub username: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub last_validated_at: Option<DateTime<Utc>>,
     /// Days until expiration (if expires_at is set)
@@ -171,6 +175,7 @@ impl From<CodePatToken> for CodePatTokenResponse {
             id: token.id,
             name: token.name,
             description: token.description,
+            username: token.username,
             expires_at: token.expires_at,
             last_validated_at: token.last_validated_at,
             days_until_expiration,
@@ -187,6 +192,8 @@ impl From<CodePatToken> for CodePatTokenResponse {
 pub struct CreatePatTokenRequest {
     pub name: String,
     pub description: Option<String>,
+    /// Username for HTTPS authentication (used in .netrc for r10k)
+    pub username: Option<String>,
     /// The actual token value (will be encrypted before storage)
     pub token: String,
     /// Optional expiration date for the token
@@ -198,6 +205,8 @@ pub struct CreatePatTokenRequest {
 pub struct UpdatePatTokenRequest {
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Username for HTTPS authentication
+    pub username: Option<String>,
     /// If provided, will re-encrypt with new token value
     pub token: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,

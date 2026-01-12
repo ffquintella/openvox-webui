@@ -144,6 +144,7 @@ struct PatTokenRow {
     id: String,
     name: String,
     description: Option<String>,
+    username: Option<String>,
     token_encrypted: String,
     expires_at: Option<String>,
     last_validated_at: Option<String>,
@@ -165,7 +166,7 @@ impl<'a> CodePatTokenRepository<'a> {
     pub async fn get_all(&self) -> Result<Vec<crate::models::CodePatToken>> {
         let rows = sqlx::query_as::<_, PatTokenRow>(
             r#"
-            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            SELECT id, name, description, username, token_encrypted, expires_at, last_validated_at, created_at, updated_at
             FROM code_pat_tokens
             ORDER BY name
             "#,
@@ -181,7 +182,7 @@ impl<'a> CodePatTokenRepository<'a> {
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<crate::models::CodePatToken>> {
         let row = sqlx::query_as::<_, PatTokenRow>(
             r#"
-            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            SELECT id, name, description, username, token_encrypted, expires_at, last_validated_at, created_at, updated_at
             FROM code_pat_tokens
             WHERE id = ?
             "#,
@@ -198,7 +199,7 @@ impl<'a> CodePatTokenRepository<'a> {
     pub async fn get_by_name(&self, name: &str) -> Result<Option<crate::models::CodePatToken>> {
         let row = sqlx::query_as::<_, PatTokenRow>(
             r#"
-            SELECT id, name, description, token_encrypted, expires_at, last_validated_at, created_at, updated_at
+            SELECT id, name, description, username, token_encrypted, expires_at, last_validated_at, created_at, updated_at
             FROM code_pat_tokens
             WHERE name = ?
             "#,
@@ -222,13 +223,14 @@ impl<'a> CodePatTokenRepository<'a> {
 
         sqlx::query(
             r#"
-            INSERT INTO code_pat_tokens (id, name, description, token_encrypted, expires_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO code_pat_tokens (id, name, description, username, token_encrypted, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
         .bind(&req.name)
         .bind(&req.description)
+        .bind(&req.username)
         .bind(encrypted_token)
         .bind(expires_at)
         .execute(self.pool)
@@ -259,6 +261,11 @@ impl<'a> CodePatTokenRepository<'a> {
         if req.description.is_some() {
             updates.push("description = ?");
             params.push(req.description.clone().unwrap_or_default());
+        }
+
+        if req.username.is_some() {
+            updates.push("username = ?");
+            params.push(req.username.clone().unwrap_or_default());
         }
 
         if let Some(token) = encrypted_token {
@@ -357,6 +364,7 @@ fn row_to_pat_token(row: PatTokenRow) -> crate::models::CodePatToken {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),
         name: row.name,
         description: row.description,
+        username: row.username,
         token_encrypted: row.token_encrypted,
         expires_at: row.expires_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
         last_validated_at: row.last_validated_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
