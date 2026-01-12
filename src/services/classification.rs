@@ -119,6 +119,8 @@ impl ClassificationService {
         let mut all_classes = serde_json::json!({});
         let mut all_variables = serde_json::json!({});
         let mut environment: Option<String> = None;
+        // Track which groups have already had their configs merged to avoid duplicates
+        let mut merged_group_ids: Vec<Uuid> = vec![];
 
         // Extract node's environment from facts (catalog_environment)
         let node_environment = get_fact_value(facts, "catalog_environment")
@@ -131,6 +133,26 @@ impl ClassificationService {
             children_map.entry(group.parent_id).or_default().push(group);
             group_index.insert(group.id, group);
         }
+
+        // Build a helper function to get all ancestors (parent chain) from root to group
+        let get_ancestor_chain = |group_id: Uuid| -> Vec<&NodeGroup> {
+            let mut chain = vec![];
+            let mut current_id = group_id;
+
+            // Walk up the tree from leaf to root
+            while let Some(group) = group_index.get(&current_id) {
+                chain.push(*group);
+                if let Some(parent_id) = group.parent_id {
+                    current_id = parent_id;
+                } else {
+                    break;
+                }
+            }
+
+            // Reverse to get root -> leaf order
+            chain.reverse();
+            chain
+        };
 
         // BFS from root groups; children are only considered if parent matched
         let mut queue: VecDeque<(&NodeGroup, bool)> = VecDeque::new();
@@ -212,39 +234,42 @@ impl ClassificationService {
             };
 
             if matched {
+                // Get the full ancestor chain (root to current group)
+                // This ensures we inherit configurations from ALL parents, not just immediate parent
+                let ancestor_chain = get_ancestor_chain(group.id);
+
+                // Merge classes and variables from all ancestors (root to leaf order)
+                // Only merge groups that haven't been merged yet to avoid duplicates
+                // This ensures parent configs are applied first, then child configs override
+                for ancestor in &ancestor_chain {
+                    if !merged_group_ids.contains(&ancestor.id) {
+                        merge_classes(&mut all_classes, &ancestor.classes);
+                        merge_parameters(&mut all_variables, &ancestor.variables);
+                        merged_group_ids.push(ancestor.id);
+                    }
+                }
+
+                // Handle environment with proper precedence:
+                // Leaf group environment takes precedence over parent environments
+                // We walk the chain from leaf to root, taking the first non-None environment
+                for ancestor in ancestor_chain.iter().rev() {
+                    let group_env = match &ancestor.environment {
+                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
+                        other => other.clone(),
+                    };
+
+                    if group_env.is_some() {
+                        environment = group_env;
+                        break; // Take the first (closest to leaf) environment
+                    }
+                }
+
                 matched_groups.push(GroupMatch {
                     id: group.id,
                     name: group.name.clone(),
                     match_type,
                     matched_rules,
                 });
-
-                // Deep merge classes (Puppet Enterprise format with per-class parameters)
-                merge_classes(&mut all_classes, &group.classes);
-                merge_parameters(&mut all_variables, &group.variables);
-
-                // Environment priority: Pinned/Rules > Inherited
-                // Non-inherited groups (pinned or rule-matched) can override inherited environments
-                // Note: Wildcards ("*", "All", "Any") are treated as "no environment" (None)
-                let group_env = match &group.environment {
-                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
-                    other => other.clone(),
-                };
-
-                match match_type {
-                    MatchType::Pinned | MatchType::Rules => {
-                        // Non-inherited match: always set environment if group has one
-                        if group_env.is_some() {
-                            environment = group_env;
-                        }
-                    }
-                    MatchType::Inherited => {
-                        // Inherited match: only set if no environment is set yet
-                        if environment.is_none() {
-                            environment = group_env;
-                        }
-                    }
-                }
 
                 // Enqueue children as inherited matches
                 if let Some(children) = children_map.get(&Some(group.id)) {
@@ -926,6 +951,136 @@ mod tests {
         let result = service.classify("web1.example.com", &facts);
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
+    }
+
+    #[test]
+    fn test_deep_hierarchy_inherits_all_ancestors() {
+        // Test that a deeply nested group (grandchild) inherits from all ancestors
+        // Hierarchy: Root -> Child -> Grandchild
+        let root_id = Uuid::new_v4();
+        let child_id = Uuid::new_v4();
+        let grandchild_id = Uuid::new_v4();
+
+        let root = NodeGroup {
+            id: root_id,
+            name: "root".to_string(),
+            environment: None, // No environment restriction for root
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "os.family".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("RedHat"),
+            }],
+            classes: serde_json::json!({
+                "base": {"version": "1.0"},
+                "common": {"root_param": "root_value"}
+            }),
+            variables: serde_json::json!({"root_var": "from_root"}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: child_id,
+            name: "child".to_string(),
+            parent_id: Some(root_id),
+            environment: Some("staging".to_string()), // Child environment
+            classes: serde_json::json!({
+                "middleware": {"version": "2.0"},
+                "common": {"child_param": "child_value"} // Merges with root's common class
+            }),
+            variables: serde_json::json!({"child_var": "from_child"}),
+            ..Default::default()
+        };
+
+        let grandchild = NodeGroup {
+            id: grandchild_id,
+            name: "grandchild".to_string(),
+            parent_id: Some(child_id),
+            environment: None, // No environment (should inherit from child)
+            classes: serde_json::json!({
+                "application": {"version": "3.0"},
+                "common": {"grandchild_param": "grandchild_value"} // Further merges common class
+            }),
+            variables: serde_json::json!({"grandchild_var": "from_grandchild"}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![root, child, grandchild]);
+        let facts = serde_json::json!({
+            "os": {"family": "RedHat"}
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+
+        // Should match all three groups
+        assert_eq!(result.groups.len(), 3);
+        assert_eq!(result.groups[0].name, "root");
+        assert_eq!(result.groups[0].match_type, MatchType::Rules);
+        assert_eq!(result.groups[1].name, "child");
+        assert_eq!(result.groups[1].match_type, MatchType::Inherited);
+        assert_eq!(result.groups[2].name, "grandchild");
+        assert_eq!(result.groups[2].match_type, MatchType::Inherited);
+
+        // Environment should be from closest ancestor with environment set (child's "staging")
+        // Since grandchild has None, we inherit from child
+        assert_eq!(result.environment, Some("staging".to_string()));
+
+        // Classes should be merged from all three groups
+        let classes = result.classes.as_object().unwrap();
+        assert!(classes.contains_key("base")); // From root
+        assert!(classes.contains_key("middleware")); // From child
+        assert!(classes.contains_key("application")); // From grandchild
+        assert!(classes.contains_key("common")); // Merged from all three
+
+        // Check that common class has parameters from all levels (deep merge)
+        let common = &classes["common"];
+        assert_eq!(common["root_param"], serde_json::json!("root_value"));
+        assert_eq!(common["child_param"], serde_json::json!("child_value"));
+        assert_eq!(common["grandchild_param"], serde_json::json!("grandchild_value"));
+
+        // Variables should be merged from all three groups
+        let vars = result.variables.as_object().unwrap();
+        assert_eq!(vars["root_var"], serde_json::json!("from_root"));
+        assert_eq!(vars["child_var"], serde_json::json!("from_child"));
+        assert_eq!(vars["grandchild_var"], serde_json::json!("from_grandchild"));
+    }
+
+    #[test]
+    fn test_child_without_parent_match_should_not_match() {
+        // Test that a child group doesn't match if its parent doesn't match
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "parent".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "os.family".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("RedHat"),
+            }],
+            classes: serde_json::json!({"parent_class": {}}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "child".to_string(),
+            parent_id: Some(parent_id),
+            pinned_nodes: vec!["node1.example.com".to_string()], // Even pinned!
+            classes: serde_json::json!({"child_class": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+        let facts = serde_json::json!({
+            "os": {"family": "Debian"} // Doesn't match parent's rule
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+
+        // Neither parent nor child should match
+        assert_eq!(result.groups.len(), 0);
+        assert!(result.classes.as_object().unwrap().is_empty());
     }
 
     #[test]
