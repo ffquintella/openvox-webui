@@ -19,6 +19,8 @@ pub use middleware::{
     auth_middleware, check_permission, optional_auth_middleware, require_permission_middleware,
     AuthUser, Claims, RbacError, RequirePermission,
 };
+use config::BackupConfig;
+use services::backup::BackupService;
 use services::code_deploy::{CodeDeployConfig, CodeDeployService};
 use services::notification::NotificationService;
 use services::puppet_ca::PuppetCAService;
@@ -43,6 +45,8 @@ pub struct AppState {
     pub rbac_db: Arc<DbRbacService>,
     /// Code Deploy service configuration (optional)
     pub code_deploy_config: Option<CodeDeployConfig>,
+    /// Backup service configuration (optional)
+    pub backup_config: Option<BackupConfig>,
     /// Notification service
     pub notification_service: Arc<NotificationService>,
 }
@@ -64,5 +68,23 @@ impl AppState {
         }
 
         Ok(CodeDeployService::new(self.db.clone(), config))
+    }
+
+    /// Get a Backup service instance
+    ///
+    /// Returns an error if backup is not enabled in configuration.
+    pub fn backup_service(&self) -> Result<BackupService, AppError> {
+        let config = self
+            .backup_config
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("Backup feature is not enabled"))?;
+
+        if !config.enabled {
+            return Err(AppError::service_unavailable(
+                "Backup feature is not enabled",
+            ));
+        }
+
+        Ok(BackupService::new(self.db.clone(), config))
     }
 }

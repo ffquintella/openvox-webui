@@ -39,6 +39,9 @@ pub struct AppConfig {
     /// SAML 2.0 SSO configuration
     #[serde(default)]
     pub saml: Option<SamlConfig>,
+    /// Server backup configuration
+    #[serde(default)]
+    pub backup: Option<BackupConfig>,
 }
 
 /// Server configuration
@@ -894,6 +897,187 @@ impl Default for SamlSessionConfig {
     }
 }
 
+// =============================================================================
+// Server Backup Configuration
+// =============================================================================
+
+/// Server backup configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackupConfig {
+    /// Whether the backup feature is enabled
+    #[serde(default)]
+    pub enabled: bool,
+    /// Directory where backup files are stored
+    #[serde(default = "default_backup_dir")]
+    pub backup_dir: PathBuf,
+    /// Backup schedule configuration
+    #[serde(default)]
+    pub schedule: BackupScheduleConfig,
+    /// Retention configuration
+    #[serde(default)]
+    pub retention: BackupRetentionConfig,
+    /// Encryption configuration
+    #[serde(default)]
+    pub encryption: BackupEncryptionConfig,
+    /// What to include in backups
+    #[serde(default)]
+    pub include: BackupIncludeConfig,
+}
+
+/// Backup schedule configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackupScheduleConfig {
+    /// Backup frequency (hourly, daily, weekly, custom, disabled)
+    #[serde(default = "default_backup_frequency")]
+    pub frequency: BackupFrequency,
+    /// Custom cron expression (when frequency is custom)
+    #[serde(default)]
+    pub cron: Option<String>,
+    /// Time of day for daily/weekly backups (HH:MM format)
+    #[serde(default = "default_backup_time")]
+    pub time: String,
+    /// Day of week for weekly backups (0=Sunday, 6=Saturday)
+    #[serde(default)]
+    pub day_of_week: u8,
+}
+
+/// Backup frequency options
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackupFrequency {
+    Hourly,
+    Daily,
+    Weekly,
+    Custom,
+    Disabled,
+}
+
+/// Backup retention configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackupRetentionConfig {
+    /// Maximum number of backups to keep
+    #[serde(default = "default_max_backups")]
+    pub max_backups: u32,
+    /// Minimum age in hours before a backup can be deleted
+    #[serde(default = "default_min_age_hours")]
+    pub min_age_hours: u32,
+}
+
+/// Backup encryption configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackupEncryptionConfig {
+    /// Whether encryption is enabled
+    #[serde(default = "default_encryption_enabled")]
+    pub enabled: bool,
+    /// Whether password is required (if false, uses a system key)
+    #[serde(default = "default_require_password")]
+    pub require_password: bool,
+}
+
+/// What to include in backups
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackupIncludeConfig {
+    /// Include database files (openvox.db, .wal, .shm)
+    #[serde(default = "default_include_database")]
+    pub database: bool,
+    /// Include configuration files (config.yaml, groups.yaml)
+    #[serde(default = "default_include_config")]
+    pub config_files: bool,
+}
+
+fn default_backup_dir() -> PathBuf {
+    PathBuf::from("/var/lib/openvox-webui/backups")
+}
+
+fn default_backup_frequency() -> BackupFrequency {
+    BackupFrequency::Daily
+}
+
+fn default_backup_time() -> String {
+    "02:00".to_string()
+}
+
+fn default_max_backups() -> u32 {
+    30
+}
+
+fn default_min_age_hours() -> u32 {
+    24
+}
+
+fn default_encryption_enabled() -> bool {
+    true
+}
+
+fn default_require_password() -> bool {
+    true
+}
+
+fn default_include_database() -> bool {
+    true
+}
+
+fn default_include_config() -> bool {
+    true
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            backup_dir: default_backup_dir(),
+            schedule: BackupScheduleConfig::default(),
+            retention: BackupRetentionConfig::default(),
+            encryption: BackupEncryptionConfig::default(),
+            include: BackupIncludeConfig::default(),
+        }
+    }
+}
+
+impl Default for BackupScheduleConfig {
+    fn default() -> Self {
+        Self {
+            frequency: default_backup_frequency(),
+            cron: None,
+            time: default_backup_time(),
+            day_of_week: 0,
+        }
+    }
+}
+
+impl Default for BackupRetentionConfig {
+    fn default() -> Self {
+        Self {
+            max_backups: default_max_backups(),
+            min_age_hours: default_min_age_hours(),
+        }
+    }
+}
+
+impl Default for BackupEncryptionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_encryption_enabled(),
+            require_password: default_require_password(),
+        }
+    }
+}
+
+impl Default for BackupIncludeConfig {
+    fn default() -> Self {
+        Self {
+            database: default_include_database(),
+            config_files: default_include_config(),
+        }
+    }
+}
+
+impl Default for BackupFrequency {
+    fn default() -> Self {
+        BackupFrequency::Daily
+    }
+}
+
 /// Node groups configuration (loaded from separate file)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GroupsConfig {
@@ -1033,6 +1217,7 @@ impl Default for AppConfig {
             groups_config_path: None,
             code_deploy: None,
             saml: None,
+            backup: None,
         }
     }
 }
@@ -1390,6 +1575,47 @@ impl AppConfig {
             if let Some(ref mut saml) = self.saml {
                 saml.idp.sso_url = Some(sso_url);
             }
+        }
+
+        // Backup configuration overrides
+        if let Ok(enabled) = std::env::var("BACKUP_ENABLED") {
+            if enabled.to_lowercase() == "true" || enabled == "1" {
+                let backup = self.backup.get_or_insert_with(BackupConfig::default);
+                backup.enabled = true;
+            }
+        }
+        if let Ok(dir) = std::env::var("BACKUP_DIR") {
+            let backup = self.backup.get_or_insert_with(BackupConfig::default);
+            backup.backup_dir = PathBuf::from(dir);
+        }
+        if let Ok(freq) = std::env::var("BACKUP_FREQUENCY") {
+            let backup = self.backup.get_or_insert_with(BackupConfig::default);
+            backup.schedule.frequency = match freq.to_lowercase().as_str() {
+                "hourly" => BackupFrequency::Hourly,
+                "daily" => BackupFrequency::Daily,
+                "weekly" => BackupFrequency::Weekly,
+                "custom" => BackupFrequency::Custom,
+                "disabled" => BackupFrequency::Disabled,
+                _ => BackupFrequency::Daily,
+            };
+        }
+        if let Ok(time) = std::env::var("BACKUP_TIME") {
+            let backup = self.backup.get_or_insert_with(BackupConfig::default);
+            backup.schedule.time = time;
+        }
+        if let Ok(cron) = std::env::var("BACKUP_CRON") {
+            let backup = self.backup.get_or_insert_with(BackupConfig::default);
+            backup.schedule.cron = Some(cron);
+        }
+        if let Ok(max) = std::env::var("BACKUP_MAX_BACKUPS") {
+            if let Ok(n) = max.parse() {
+                let backup = self.backup.get_or_insert_with(BackupConfig::default);
+                backup.retention.max_backups = n;
+            }
+        }
+        if let Ok(encryption) = std::env::var("BACKUP_ENCRYPTION_ENABLED") {
+            let backup = self.backup.get_or_insert_with(BackupConfig::default);
+            backup.encryption.enabled = encryption.to_lowercase() == "true" || encryption == "1";
         }
     }
 

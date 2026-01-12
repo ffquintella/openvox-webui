@@ -2,6 +2,9 @@
 
 pub mod alerting;
 pub mod auth;
+pub mod backup;
+pub mod backup_encryption;
+pub mod backup_scheduler;
 pub mod cache;
 pub mod classification;
 pub mod code_deploy;
@@ -20,6 +23,8 @@ pub mod scheduler;
 
 pub use alerting::AlertingService;
 pub use auth::AuthService;
+pub use backup::BackupService;
+pub use backup_encryption::EncryptedData;
 pub use cache::{
     Cache, CacheEntry, CacheEvictionStats, CacheServiceStats, CacheStats, CacheSyncJob,
     CachedPuppetDbService,
@@ -41,3 +46,4 @@ pub use reporting::ReportingService;
 pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};
 pub use code_deploy_scheduler::{start_code_deploy_scheduler, CodeDeploySchedulerState};
+pub use backup_scheduler::{start_backup_scheduler, BackupSchedulerState};

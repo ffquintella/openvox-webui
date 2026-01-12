@@ -142,6 +142,25 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Initialize Backup config if enabled
+    let backup_config = config.backup.clone().and_then(|backup| {
+        if backup.enabled {
+            info!("Backup feature enabled, backup dir: {:?}", backup.backup_dir);
+            Some(backup)
+        } else {
+            info!("Backup feature is disabled");
+            None
+        }
+    });
+
+    // Start Backup scheduler if enabled
+    let _backup_scheduler = if let Some(ref backup_cfg) = backup_config {
+        info!("Starting Backup scheduler");
+        Some(services::start_backup_scheduler(db.clone(), backup_cfg.clone()))
+    } else {
+        None
+    };
+
     // Initialize notification service
     info!("Initializing notification service");
     let notification_service = Arc::new(NotificationService::new(db.clone()));
@@ -155,6 +174,7 @@ async fn main() -> Result<()> {
         rbac,
         rbac_db,
         code_deploy_config,
+        backup_config,
         notification_service,
     };
 
@@ -697,6 +717,9 @@ async fn fix_database() -> Result<()> {
         "code_deployments",
         "code_pat_tokens",
         "notifications",
+        "server_backups",
+        "backup_schedules",
+        "backup_restores",
     ];
 
     // Check for missing tables

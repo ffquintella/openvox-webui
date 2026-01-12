@@ -11,6 +11,7 @@ mod analytics;
 mod api_keys;
 mod audit_logs;
 mod auth;
+mod backup;
 mod ca;
 mod code_deploy;
 mod facter;
@@ -78,6 +79,8 @@ pub fn protected_routes() -> Router<AppState> {
         .merge(ca::routes())
         // Code deploy endpoints
         .nest("/code", code_deploy::routes())
+        // Backup endpoints
+        .nest("/backup", backup::routes())
         // Notification endpoints
         .nest("/notifications", notifications::routes())
 }

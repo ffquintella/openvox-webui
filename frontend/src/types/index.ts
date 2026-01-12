@@ -1322,3 +1322,114 @@ export interface AddGroupPermissionRequest {
   group_id: string;
   action: Action;
 }
+
+// ============================================================================
+// Backup Types
+// ============================================================================
+
+export type BackupStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'deleted';
+export type BackupTrigger = 'manual' | 'scheduled';
+
+export interface ServerBackup {
+  id: string;
+  filename: string;
+  file_size: number;
+  file_size_formatted: string;
+  is_encrypted: boolean;
+  trigger_type: BackupTrigger;
+  status: BackupStatus;
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_seconds?: number | null;
+  created_by?: string | null;
+  created_by_username?: string | null;
+  includes_database: boolean;
+  includes_config: boolean;
+  database_version?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface BackupSchedule {
+  id: string;
+  name: string;
+  is_active: boolean;
+  frequency: string;
+  cron_expression?: string | null;
+  time_of_day: string;
+  day_of_week: number;
+  day_of_week_name: string;
+  retention_count: number;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
+}
+
+export interface BackupRestore {
+  id: string;
+  backup_id: string;
+  backup_filename?: string | null;
+  status: BackupStatus;
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_seconds?: number | null;
+  restored_by?: string | null;
+  restored_by_username?: string | null;
+  created_at: string;
+}
+
+export interface BackupFeatureStatus {
+  enabled: boolean;
+  backup_dir: string;
+  backup_dir_exists: boolean;
+  backup_dir_writable: boolean;
+  encryption_enabled: boolean;
+  schedule_active: boolean;
+  total_backups: number;
+  total_size: number;
+  total_size_formatted: string;
+  last_backup_at?: string | null;
+  next_scheduled_backup?: string | null;
+}
+
+export interface CreateBackupRequest {
+  password?: string;
+  notes?: string;
+  include_database?: boolean;
+  include_config?: boolean;
+}
+
+export interface RestoreBackupRequest {
+  password: string;
+  confirm: boolean;
+}
+
+export interface VerifyBackupRequest {
+  password: string;
+}
+
+export interface VerifyBackupResponse {
+  valid: boolean;
+  checksum_match: boolean;
+  can_decrypt: boolean;
+  file_count?: number | null;
+  total_size?: number | null;
+  error?: string | null;
+}
+
+export interface UpdateBackupScheduleRequest {
+  is_active?: boolean;
+  frequency?: string;
+  cron_expression?: string | null;
+  time_of_day?: string | null;
+  day_of_week?: number | null;
+  retention_count?: number;
+}
+
+export interface ListBackupsQuery {
+  status?: string;
+  trigger_type?: string;
+  limit?: number;
+  offset?: number;
+}

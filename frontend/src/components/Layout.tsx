@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Info,
   Rocket,
+  HardDrive,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../stores/authStore';
@@ -42,6 +43,7 @@ const navigation = [
 
 const adminNavigation = [
   { name: 'Code Deploy', href: '/code-deploy', icon: Rocket },
+  { name: 'Backup', href: '/backup', icon: HardDrive },
   { name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
   { name: 'Users', href: '/users', icon: Users },
   { name: 'Roles', href: '/roles', icon: Shield },

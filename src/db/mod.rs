@@ -10,6 +10,7 @@
 pub mod alerting_repository;
 pub mod api_key_repository;
 pub mod audit_repository;
+pub mod backup_repository;
 pub mod code_deploy_repository;
 pub mod migrations;
 pub mod organization_repository;
@@ -21,6 +22,7 @@ pub use alerting_repository::{
 };
 pub use api_key_repository::ApiKeyRepository;
 pub use audit_repository::AuditRepository;
+pub use backup_repository::BackupRepository;
 pub use code_deploy_repository::{
     CodeDeploymentRepository, CodeEnvironmentRepository, CodePatTokenRepository,
     CodeRepositoryRepository, CodeSshKeyRepository,
@@ -70,6 +72,10 @@ const REQUIRED_TABLES: &[&str] = &[
     "code_pat_tokens",
     // Notification tables
     "notifications",
+    // Backup tables
+    "server_backups",
+    "backup_schedules",
+    "backup_restores",
 ];
 
 /// Database connection pool type

@@ -97,6 +97,17 @@ import type {
   // Group-scoped permissions types
   GroupPermissionInfo,
   AddGroupPermissionRequest,
+  // Backup types
+  ServerBackup,
+  BackupSchedule,
+  BackupRestore,
+  BackupFeatureStatus,
+  CreateBackupRequest,
+  RestoreBackupRequest,
+  VerifyBackupRequest,
+  VerifyBackupResponse,
+  UpdateBackupScheduleRequest,
+  ListBackupsQuery,
 } from '../types';
 
 const client = axios.create({
@@ -1000,6 +1011,72 @@ export const notificationApi = {
     link?: string;
   }): Promise<{ notification: any }> => {
     const response = await client.post('/notifications', data);
+    return response.data;
+  },
+};
+
+// ============================================================================
+// Backup API
+// ============================================================================
+
+export const backupApi = {
+  // Feature status
+  getFeatureStatus: async (): Promise<BackupFeatureStatus> => {
+    const response = await client.get('/backup/status');
+    return response.data;
+  },
+
+  // Backups
+  listBackups: async (query?: ListBackupsQuery): Promise<ServerBackup[]> => {
+    const response = await client.get('/backup/backups', { params: query });
+    return response.data;
+  },
+
+  getBackup: async (id: string): Promise<ServerBackup> => {
+    const response = await client.get(`/backup/backups/${id}`);
+    return response.data;
+  },
+
+  createBackup: async (request: CreateBackupRequest): Promise<ServerBackup> => {
+    const response = await client.post('/backup/backups', request);
+    return response.data;
+  },
+
+  deleteBackup: async (id: string): Promise<void> => {
+    await client.delete(`/backup/backups/${id}`);
+  },
+
+  downloadBackup: async (id: string): Promise<Blob> => {
+    const response = await client.get(`/backup/backups/${id}/download`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  verifyBackup: async (id: string, request: VerifyBackupRequest): Promise<VerifyBackupResponse> => {
+    const response = await client.post(`/backup/backups/${id}/verify`, request);
+    return response.data;
+  },
+
+  restoreBackup: async (id: string, request: RestoreBackupRequest): Promise<BackupRestore> => {
+    const response = await client.post(`/backup/backups/${id}/restore`, request);
+    return response.data;
+  },
+
+  // Schedule
+  getSchedule: async (): Promise<BackupSchedule | null> => {
+    const response = await client.get('/backup/schedule');
+    return response.data;
+  },
+
+  updateSchedule: async (request: UpdateBackupScheduleRequest): Promise<BackupSchedule> => {
+    const response = await client.put('/backup/schedule', request);
+    return response.data;
+  },
+
+  // Restore history
+  listRestores: async (): Promise<BackupRestore[]> => {
+    const response = await client.get('/backup/restores');
     return response.data;
   },
 };
