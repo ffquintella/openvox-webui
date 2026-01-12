@@ -1201,6 +1201,7 @@ function CreatePatTokenModal({
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [username, setUsername] = useState('');
   const [token, setToken] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
 
@@ -1211,6 +1212,7 @@ function CreatePatTokenModal({
     onCreate({
       name,
       description: description || undefined,
+      username: username || undefined,
       token,
       expires_at: expiresAtIso,
     });
@@ -1242,6 +1244,20 @@ function CreatePatTokenModal({
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
               placeholder="Token for control repo access"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="your-github-username"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Your Git username for HTTPS authentication. Required for r10k deployments.
+            </p>
           </div>
 
           <div>
@@ -1309,6 +1325,7 @@ function EditPatTokenModal({
 }) {
   const [name, setName] = useState(initialToken.name);
   const [description, setDescription] = useState(initialToken.description || '');
+  const [username, setUsername] = useState(initialToken.username || '');
   const [newToken, setNewToken] = useState('');
   const [expiresAt, setExpiresAt] = useState(
     initialToken.expires_at ? initialToken.expires_at.split('T')[0] : ''
@@ -1321,6 +1338,7 @@ function EditPatTokenModal({
     onUpdate({
       name: name !== initialToken.name ? name : undefined,
       description: description !== (initialToken.description || '') ? description : undefined,
+      username: username !== (initialToken.username || '') ? username : undefined,
       token: newToken || undefined,
       expires_at: expiresAtIso,
     });
@@ -1350,6 +1368,20 @@ function EditPatTokenModal({
               onChange={(e) => setDescription(e.target.value)}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              placeholder="your-github-username"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Your Git username for HTTPS authentication. Required for r10k deployments.
+            </p>
           </div>
 
           <div>

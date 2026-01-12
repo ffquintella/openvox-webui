@@ -1146,6 +1146,7 @@ export interface CodePatToken {
   id: string;
   name: string;
   description?: string;
+  username?: string;
   expires_at?: string;
   last_validated_at?: string;
   days_until_expiration?: number;
@@ -1158,6 +1159,7 @@ export interface CodePatToken {
 export interface CreatePatTokenRequest {
   name: string;
   description?: string;
+  username?: string;
   token: string;
   expires_at?: string;
 }
@@ -1165,6 +1167,7 @@ export interface CreatePatTokenRequest {
 export interface UpdatePatTokenRequest {
   name?: string;
   description?: string;
+  username?: string;
   token?: string;
   expires_at?: string;
 }
