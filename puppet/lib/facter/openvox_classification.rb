@@ -255,6 +255,7 @@ begin
   require 'uri'
   require 'json'
   require 'yaml'
+  require 'openssl'
 
   config_paths = [
     '/etc/openvox-webui/client.yaml',
@@ -301,11 +302,46 @@ begin
 
         if uri.scheme == 'https'
           http.use_ssl = true
-          http.verify_mode = OpenSSL::SSL::VERIFY_NONE # Quick check, full verification in main fact
+
+          # Respect SSL verification settings from config
+          if config['ssl_verify'] == false
+            http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+          else
+            http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+            # Custom CA certificate - try multiple locations
+            ca_file = config['ssl_ca']
+
+            # If not configured, try common Puppet CA locations
+            if ca_file.nil? || !File.exist?(ca_file)
+              puppet_ca_paths = [
+                '/etc/puppetlabs/puppet/ssl/certs/ca.pem',
+                '/etc/puppet/ssl/certs/ca.pem',
+                '/var/lib/puppet/ssl/certs/ca.pem'
+              ]
+              ca_file = puppet_ca_paths.find { |p| File.exist?(p) }
+            end
+
+            http.ca_file = ca_file if ca_file && File.exist?(ca_file)
+          end
+
+          # Client certificate authentication (if configured)
+          ssl_cert = config['ssl_cert']
+          ssl_key = config['ssl_key']
+          if ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+            http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
+            http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+          end
         end
 
         request = Net::HTTP::Get.new(uri.request_uri)
         request['Accept'] = 'application/json'
+
+        # Add authentication if configured
+        api_token = config['api_token'] || config['token']
+        api_key = config['api_key']
+        request['Authorization'] = "Bearer #{api_token}" if api_token
+        request['X-API-Key'] = api_key if api_key
 
         response = http.request(request)
 
