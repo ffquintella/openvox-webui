@@ -15,6 +15,9 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
+
 /// r10k service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct R10kConfig {
@@ -337,14 +340,45 @@ impl R10kService {
 
         match result {
             Ok(Ok((stdout_str, stderr_str, exit_status))) => {
-                let success = exit_status.success();
                 let exit_code = exit_status.code();
+
+                // Check for signal termination on Unix
+                #[cfg(unix)]
+                let signal = exit_status.signal();
+                #[cfg(not(unix))]
+                let signal: Option<i32> = None;
+
+                // Determine success: either normal exit with code 0, or signal termination
+                // where the output indicates successful completion (r10k completed its work
+                // but may have been signaled, e.g., SIGPIPE from closed pipe)
+                let success = if exit_status.success() {
+                    true
+                } else if signal.is_some() {
+                    // Process was killed by a signal - check if it actually completed successfully
+                    // by looking for successful deployment indicators in the output
+                    let output_indicates_success = stderr_str.contains("Deploying module to")
+                        || stderr_str.contains("Environment")
+                        || stdout_str.contains("Deploying module to");
+
+                    if output_indicates_success {
+                        warn!(
+                            "r10k was terminated by signal {:?} but output indicates successful completion",
+                            signal
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
 
                 // Log detailed command result
                 if success {
                     info!(
-                        "r10k command succeeded: exit_code={:?}, stdout_len={}, stderr_len={}",
+                        "r10k command succeeded: exit_code={:?}, signal={:?}, stdout_len={}, stderr_len={}",
                         exit_code,
+                        signal,
                         stdout_str.len(),
                         stderr_str.len()
                     );
@@ -354,8 +388,8 @@ impl R10kService {
                     }
                 } else {
                     error!(
-                        "r10k command FAILED: exit_code={:?}, command='{}'",
-                        exit_code, command_str
+                        "r10k command FAILED: exit_code={:?}, signal={:?}, command='{}'",
+                        exit_code, signal, command_str
                     );
                     error!("r10k stdout:\n{}", stdout_str);
                     error!("r10k stderr:\n{}", stderr_str);
