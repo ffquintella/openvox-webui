@@ -247,7 +247,6 @@ fi
 %license LICENSE
 %doc README.md CHANGELOG.md ROADMAP.md
 %{_bindir}/openvox-webui
-%{_bindir}/openvox-webui-scheduled-reports
 %dir %{_sysconfdir}/openvox-webui
 %dir %attr(750,root,openvox-webui) %{_sysconfdir}/openvox-webui/ssl
 %config(noreplace) %attr(640,root,openvox-webui) %{_sysconfdir}/openvox-webui/config.yaml
