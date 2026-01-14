@@ -1203,12 +1203,13 @@ impl<'a> CodeDeploymentRepository<'a> {
         requested_by: Option<Uuid>,
     ) -> Result<CodeDeployment> {
         let id = Uuid::new_v4();
+        let now = Utc::now().to_rfc3339();
 
         sqlx::query(
             r#"
             INSERT INTO code_deployments (id, environment_id, commit_sha, commit_message,
                                          commit_author, status, requested_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -1218,6 +1219,8 @@ impl<'a> CodeDeploymentRepository<'a> {
         .bind(commit_author)
         .bind(status.as_str())
         .bind(requested_by.map(|u| u.to_string()))
+        .bind(&now)
+        .bind(&now)
         .execute(self.pool)
         .await
         .context("Failed to create deployment")?;
@@ -1229,15 +1232,18 @@ impl<'a> CodeDeploymentRepository<'a> {
 
     /// Approve a deployment
     pub async fn approve(&self, id: Uuid, approved_by: Uuid) -> Result<Option<CodeDeployment>> {
+        let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
+            SET status = 'approved', approved_by = ?, approved_at = ?,
+                updated_at = ?
             WHERE id = ? AND status = 'pending'
             "#,
         )
         .bind(approved_by.to_string())
+        .bind(&now)
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -1257,16 +1263,19 @@ impl<'a> CodeDeploymentRepository<'a> {
         rejected_by: Uuid,
         reason: &str,
     ) -> Result<Option<CodeDeployment>> {
+        let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'rejected', approved_by = ?, rejected_at = CURRENT_TIMESTAMP,
-                rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = 'rejected', approved_by = ?, rejected_at = ?,
+                rejection_reason = ?, updated_at = ?
             WHERE id = ? AND status = 'pending'
             "#,
         )
         .bind(rejected_by.to_string())
+        .bind(&now)
         .bind(reason)
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -1281,13 +1290,16 @@ impl<'a> CodeDeploymentRepository<'a> {
 
     /// Mark deployment as started
     pub async fn mark_deploying(&self, id: Uuid) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
         sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'deploying', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            SET status = 'deploying', started_at = ?, updated_at = ?
             WHERE id = ?
             "#,
         )
+        .bind(&now)
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -1298,15 +1310,18 @@ impl<'a> CodeDeploymentRepository<'a> {
 
     /// Mark deployment as succeeded
     pub async fn mark_success(&self, id: Uuid, r10k_output: Option<&str>) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
         sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'success', completed_at = CURRENT_TIMESTAMP, r10k_output = ?,
-                updated_at = CURRENT_TIMESTAMP
+            SET status = 'success', completed_at = ?, r10k_output = ?,
+                updated_at = ?
             WHERE id = ?
             "#,
         )
+        .bind(&now)
         .bind(r10k_output)
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -1322,16 +1337,19 @@ impl<'a> CodeDeploymentRepository<'a> {
         error_message: &str,
         r10k_output: Option<&str>,
     ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
         sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error_message = ?,
-                r10k_output = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = 'failed', completed_at = ?, error_message = ?,
+                r10k_output = ?, updated_at = ?
             WHERE id = ?
             "#,
         )
+        .bind(&now)
         .bind(error_message)
         .bind(r10k_output)
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
