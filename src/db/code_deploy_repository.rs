@@ -1207,8 +1207,8 @@ impl<'a> CodeDeploymentRepository<'a> {
         sqlx::query(
             r#"
             INSERT INTO code_deployments (id, environment_id, commit_sha, commit_message,
-                                         commit_author, status, requested_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                         commit_author, status, requested_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             "#,
         )
         .bind(id.to_string())

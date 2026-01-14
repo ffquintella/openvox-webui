@@ -827,7 +827,7 @@ function DeploymentsTab({
                   <GitCommit className="w-4 h-4" />
                   <code className="font-mono">{deployment.commit_sha.substring(0, 7)}</code>
                 </div>
-                <span>{new Date(deployment.created_at).toLocaleString()}</span>
+                <span>{new Date(deployment.started_at || deployment.created_at).toLocaleString()}</span>
               </div>
             </div>
           ))}
