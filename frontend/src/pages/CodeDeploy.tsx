@@ -16,6 +16,7 @@ import {
   ChevronRight,
   GitCommit,
   Pencil,
+  Play,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -31,6 +32,8 @@ import {
   useApproveDeployment,
   useRejectDeployment,
   useRetryDeployment,
+  useCancelDeployment,
+  useTriggerDeployment,
   useSshKeys,
   useCreateSshKey,
   useDeleteSshKey,
@@ -84,6 +87,8 @@ export default function CodeDeploy() {
   const approveMutation = useApproveDeployment();
   const rejectMutation = useRejectDeployment();
   const retryMutation = useRetryDeployment();
+  const cancelMutation = useCancelDeployment();
+  const triggerDeployMutation = useTriggerDeployment();
   const createKeyMutation = useCreateSshKey();
   const deleteKeyMutation = useDeleteSshKey();
   const createPatTokenMutation = useCreatePatToken();
@@ -287,6 +292,7 @@ export default function CodeDeploy() {
           isLoading={envsLoading}
           onUpdateEnvironment={(id, request) => updateEnvMutation.mutate({ id, request })}
           onApprove={(id) => setConfirmAction({ type: 'approve', id })}
+          onForceDeploy={(environmentId) => triggerDeployMutation.mutate({ environment_id: environmentId })}
         />
       )}
 
@@ -299,6 +305,7 @@ export default function CodeDeploy() {
           onApprove={(id) => setConfirmAction({ type: 'approve', id })}
           onReject={(id) => setConfirmAction({ type: 'reject', id })}
           onRetry={(id) => retryMutation.mutate(id)}
+          onCancel={(id) => cancelMutation.mutate(id)}
         />
       )}
 
@@ -634,11 +641,13 @@ function EnvironmentsTab({
   isLoading,
   onUpdateEnvironment,
   onApprove,
+  onForceDeploy,
 }: {
   environments: CodeEnvironment[];
   isLoading: boolean;
   onUpdateEnvironment: (id: string, request: { auto_deploy?: boolean; requires_approval?: boolean }) => void;
   onApprove: (id: string) => void;
+  onForceDeploy: (environmentId: string) => void;
 }) {
   if (isLoading) {
     return (
@@ -740,15 +749,25 @@ function EnvironmentsTab({
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
-                {env.pending_deployment && (
+                <div className="flex items-center justify-end gap-2">
+                  {env.pending_deployment && (
+                    <button
+                      onClick={() => onApprove(env.pending_deployment!.id)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Approve
+                    </button>
+                  )}
                   <button
-                    onClick={() => onApprove(env.pending_deployment!.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200"
+                    onClick={() => onForceDeploy(env.id)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-primary-700 bg-primary-100 rounded-md hover:bg-primary-200"
+                    title="Force deploy this environment"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Approve
+                    <Play className="w-4 h-4" />
+                    Deploy
                   </button>
-                )}
+                </div>
               </td>
             </tr>
           ))}
@@ -767,6 +786,7 @@ function DeploymentsTab({
   onApprove,
   onReject,
   onRetry,
+  onCancel,
 }: {
   deployments: CodeDeployment[];
   isLoading: boolean;
@@ -775,6 +795,7 @@ function DeploymentsTab({
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onRetry: (id: string) => void;
+  onCancel: (id: string) => void;
 }) {
   const selectedDeployment = deployments.find((d) => d.id === selectedId);
 
@@ -929,6 +950,17 @@ function DeploymentsTab({
                 >
                   <RefreshCw className="w-4 h-4" />
                   Retry
+                </button>
+              )}
+              {(selectedDeployment.status === 'pending' ||
+                selectedDeployment.status === 'approved' ||
+                selectedDeployment.status === 'deploying') && (
+                <button
+                  onClick={() => onCancel(selectedDeployment.id)}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Cancel
                 </button>
               )}
             </div>

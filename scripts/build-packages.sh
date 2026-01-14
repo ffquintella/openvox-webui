@@ -43,6 +43,11 @@ RPM_ARCH="x86_64"
 DOCKER_PLATFORM="linux/amd64"
 RUST_TARGET="x86_64-unknown-linux-gnu"
 
+# Cache directories for incremental builds
+CACHE_DIR="${CACHE_DIR:-${HOME}/.cache/openvox-webui-build}"
+CARGO_CACHE_DIR="${CACHE_DIR}/cargo"
+NPM_CACHE_DIR="${CACHE_DIR}/npm"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -80,6 +85,7 @@ usage() {
     echo "  --docker         Use Docker for building (default: enabled)"
     echo "  --no-docker      Disable Docker and build natively (requires local tools)"
     echo "  --clean          Clean build directory before building"
+    echo "  --clean-cache    Clean the incremental build cache (Cargo + npm)"
     echo "  --sign           Sign packages after building (requires GPG key)"
     echo ""
     echo "Targets:"
@@ -95,15 +101,18 @@ usage() {
     echo "  $0 -v 1.0.0 deb          # Build DEB with version 1.0.0"
     echo "  $0 --no-docker rpm       # Build RPM natively (requires local Rust/Node.js)"
     echo "  $0 --clean --sign all    # Clean build, then build and sign all"
+    echo "  $0 --clean-cache rpm     # Clean cache and rebuild RPM from scratch"
     echo ""
     echo "Environment Variables:"
     echo "  VERSION          Package version (overrides -v)"
     echo "  RELEASE          Release number (overrides -r)"
     echo "  BUILD_DIR        Build directory (overrides -o)"
+    echo "  CACHE_DIR        Cache directory for incremental builds (default: ~/.cache/openvox-webui-build)"
     echo "  GPG_KEY_ID       GPG key ID for signing packages"
     echo ""
-    echo "Note: Docker builds compile everything inside the container (Rust + Node.js)."
-    echo "      First build may take 10-15 minutes; subsequent builds use cached layers."
+    echo "Note: Docker builds use incremental compilation with cached Cargo and npm directories."
+    echo "      First build may take 10-15 minutes; subsequent builds are much faster."
+    echo "      Cache location: \${CACHE_DIR:-~/.cache/openvox-webui-build}"
 }
 
 check_dependencies() {
@@ -150,6 +159,12 @@ clean_build_dir() {
     log_info "Cleaning build directory: ${BUILD_DIR}"
     rm -rf "${BUILD_DIR}"
     mkdir -p "${BUILD_DIR}"
+}
+
+clean_cache_dir() {
+    log_info "Cleaning incremental build cache: ${CACHE_DIR}"
+    rm -rf "${CACHE_DIR}"
+    log_info "Cache cleaned. Next build will be a full rebuild."
 }
 
 build_frontend() {
@@ -402,6 +417,12 @@ CHANGELOG_EOF
 build_rpm_docker() {
     log_step "Building RPM package using Docker (platform: ${DOCKER_PLATFORM})..."
 
+    # Create cache directories if they don't exist
+    mkdir -p "${CARGO_CACHE_DIR}/registry"
+    mkdir -p "${CARGO_CACHE_DIR}/git"
+    mkdir -p "${CARGO_CACHE_DIR}/target-rpm"
+    mkdir -p "${NPM_CACHE_DIR}"
+
     # Create Dockerfile for RPM build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.rpm"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
@@ -433,37 +454,52 @@ DOCKERFILE_EOF
     log_info "Building Docker image for RPM (this may take a while on first run)..."
     docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
 
-    # Run build and packaging in Docker container
-    log_info "Running RPM build in Docker container..."
+    # Run build and packaging in Docker container with cached volumes
+    log_info "Running RPM build in Docker container (with incremental build cache)..."
+    log_info "Cache directory: ${CACHE_DIR}"
     docker run --rm \
         --platform "${DOCKER_PLATFORM}" \
-        --tmpfs /tmp:exec,size=8g \
         -v "${SOURCE_DIR}:/source:ro" \
         -v "${BUILD_DIR}:/output" \
+        -v "${CARGO_CACHE_DIR}/registry:/root/.cargo/registry" \
+        -v "${CARGO_CACHE_DIR}/git:/root/.cargo/git" \
+        -v "${CARGO_CACHE_DIR}/target-rpm:/build/target" \
+        -v "${NPM_CACHE_DIR}:/root/.npm" \
         -e VERSION="${VERSION}" \
         -e RELEASE="${RELEASE}" \
         openvox-webui-rpm-builder \
         /bin/bash -c '
             set -e
-            cd /tmp
+
+            # Work in /build which has the cached target directory mounted
+            cd /build
+
             # Copy source excluding target/ and node_modules/ to save space
-            mkdir -p openvox-webui-${VERSION}
-            cd /source
-            find . -maxdepth 1 ! -name target ! -name node_modules ! -name build ! -name . -exec cp -r {} /tmp/openvox-webui-${VERSION}/ \;
-            cd /tmp/openvox-webui-${VERSION}
+            # But keep the structure so cargo can use the cached target/
+            rm -rf src frontend/src packaging config migrations tests Cargo.toml Cargo.lock 2>/dev/null || true
+            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations .
+            cp -r /source/frontend .
+            rm -rf frontend/node_modules frontend/dist 2>/dev/null || true
 
             # Build frontend
             echo "Building frontend..."
             cd frontend
-            npm ci --prefer-offline 2>/dev/null || npm ci
+            npm ci --cache /root/.npm --prefer-offline 2>/dev/null || npm ci --cache /root/.npm
             npm run build
             cd ..
 
-            # Build backend
-            echo "Building backend..."
+            # Build backend (uses cached target/ directory)
+            echo "Building backend (incremental)..."
             cargo build --release
 
             # Create source tarball for rpmbuild
+            mkdir -p /tmp/openvox-webui-${VERSION}
+            cp -r src frontend/dist packaging config migrations Cargo.toml Cargo.lock target/release/openvox-webui /tmp/openvox-webui-${VERSION}/
+            mkdir -p /tmp/openvox-webui-${VERSION}/target/release
+            cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
+            mkdir -p /tmp/openvox-webui-${VERSION}/frontend
+            cp -r frontend/dist /tmp/openvox-webui-${VERSION}/frontend/
+
             cd /tmp
             tar czf openvox-webui-${VERSION}.tar.gz openvox-webui-${VERSION}
 
@@ -505,6 +541,12 @@ DOCKERFILE_EOF
 build_deb_docker() {
     log_step "Building DEB package using Docker (platform: ${DOCKER_PLATFORM})..."
 
+    # Create cache directories if they don't exist
+    mkdir -p "${CARGO_CACHE_DIR}/registry"
+    mkdir -p "${CARGO_CACHE_DIR}/git"
+    mkdir -p "${CARGO_CACHE_DIR}/target-deb"
+    mkdir -p "${NPM_CACHE_DIR}"
+
     # Create Dockerfile for DEB build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.deb"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
@@ -542,35 +584,51 @@ DOCKERFILE_EOF
     log_info "Building Docker image for DEB (this may take a while on first run)..."
     docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
 
-    # Run build and packaging in Docker container
-    log_info "Running DEB build in Docker container..."
+    # Run build and packaging in Docker container with cached volumes
+    log_info "Running DEB build in Docker container (with incremental build cache)..."
+    log_info "Cache directory: ${CACHE_DIR}"
     docker run --rm \
         --platform "${DOCKER_PLATFORM}" \
-        --tmpfs /tmp:exec,size=8g \
         -v "${SOURCE_DIR}:/source:ro" \
         -v "${BUILD_DIR}:/output" \
+        -v "${CARGO_CACHE_DIR}/registry:/root/.cargo/registry" \
+        -v "${CARGO_CACHE_DIR}/git:/root/.cargo/git" \
+        -v "${CARGO_CACHE_DIR}/target-deb:/build/target" \
+        -v "${NPM_CACHE_DIR}:/root/.npm" \
         -e VERSION="${VERSION}" \
         -e RELEASE="${RELEASE}" \
         openvox-webui-deb-builder \
         /bin/bash -c '
             set -e
-            cd /tmp
+
+            # Work in /build which has the cached target directory mounted
+            cd /build
+
             # Copy source excluding target/ and node_modules/ to save space
-            mkdir -p openvox-webui-${VERSION}
-            cd /source
-            find . -maxdepth 1 ! -name target ! -name node_modules ! -name build ! -name . -exec cp -r {} /tmp/openvox-webui-${VERSION}/ \;
-            cd /tmp/openvox-webui-${VERSION}
+            # But keep the structure so cargo can use the cached target/
+            rm -rf src frontend/src packaging config migrations tests Cargo.toml Cargo.lock debian 2>/dev/null || true
+            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations .
+            cp -r /source/frontend .
+            rm -rf frontend/node_modules frontend/dist 2>/dev/null || true
 
             # Build frontend
             echo "Building frontend..."
             cd frontend
-            npm ci --prefer-offline 2>/dev/null || npm ci
+            npm ci --cache /root/.npm --prefer-offline 2>/dev/null || npm ci --cache /root/.npm
             npm run build
             cd ..
 
-            # Build backend
-            echo "Building backend..."
+            # Build backend (uses cached target/ directory)
+            echo "Building backend (incremental)..."
             cargo build --release
+
+            # Now prepare for dpkg-buildpackage in /tmp
+            mkdir -p /tmp/openvox-webui-${VERSION}
+            cp -r src frontend packaging config migrations Cargo.toml Cargo.lock /tmp/openvox-webui-${VERSION}/
+            mkdir -p /tmp/openvox-webui-${VERSION}/target/release
+            cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
+
+            cd /tmp/openvox-webui-${VERSION}
 
             # Copy debian directory
             cp -r packaging/deb/debian .
@@ -656,6 +714,7 @@ BUILD_DEB=false
 BUILD_SOURCE=false
 BUILD_BINARY=false
 CLEAN_BUILD=false
+CLEAN_CACHE=false
 SIGN_PACKAGES=false
 
 while [[ $# -gt 0 ]]; do
@@ -690,6 +749,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN_BUILD=true
+            shift
+            ;;
+        --clean-cache)
+            CLEAN_CACHE=true
             shift
             ;;
         --sign)
@@ -748,6 +811,7 @@ log_info "Build directory: ${BUILD_DIR}"
 log_info "Use Docker:      ${USE_DOCKER}"
 if [[ "$USE_DOCKER" == "true" ]]; then
 log_info "Docker platform: ${DOCKER_PLATFORM}"
+log_info "Cache directory: ${CACHE_DIR}"
 fi
 echo "========================================"
 echo ""
@@ -755,7 +819,12 @@ echo ""
 # Check dependencies
 check_dependencies
 
-# Clean if requested
+# Clean cache if requested
+if [[ "$CLEAN_CACHE" == "true" ]]; then
+    clean_cache_dir
+fi
+
+# Clean build directory if requested
 if [[ "$CLEAN_BUILD" == "true" ]]; then
     clean_build_dir
 fi

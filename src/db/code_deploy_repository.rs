@@ -1,7 +1,7 @@
 //! Repository pattern implementation for code deploy database access
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -126,12 +126,8 @@ fn row_to_ssh_key(row: SshKeyRow) -> CodeSshKey {
         name: row.name,
         public_key: row.public_key,
         private_key_encrypted: row.private_key_encrypted,
-        created_at: DateTime::parse_from_rfc3339(&row.created_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
-        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
+        created_at: parse_timestamp_required(&row.created_at),
+        updated_at: parse_timestamp_required(&row.updated_at),
     }
 }
 
@@ -366,14 +362,10 @@ fn row_to_pat_token(row: PatTokenRow) -> crate::models::CodePatToken {
         description: row.description,
         username: row.username,
         token_encrypted: row.token_encrypted,
-        expires_at: row.expires_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-        last_validated_at: row.last_validated_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-        created_at: DateTime::parse_from_rfc3339(&row.created_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
-        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
+        expires_at: row.expires_at.and_then(|s| parse_timestamp(&s)),
+        last_validated_at: row.last_validated_at.and_then(|s| parse_timestamp(&s)),
+        created_at: parse_timestamp_required(&row.created_at),
+        updated_at: parse_timestamp_required(&row.updated_at),
     }
 }
 
@@ -658,17 +650,9 @@ fn row_to_repository(row: RepositoryRow) -> CodeRepository {
         poll_interval_seconds: row.poll_interval_seconds,
         is_control_repo: row.is_control_repo,
         last_error: row.last_error,
-        last_error_at: row.last_error_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
-        created_at: DateTime::parse_from_rfc3339(&row.created_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
-        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
+        last_error_at: row.last_error_at.and_then(|s| parse_timestamp(&s)),
+        created_at: parse_timestamp_required(&row.created_at),
+        updated_at: parse_timestamp_required(&row.updated_at),
     }
 }
 
@@ -963,24 +947,12 @@ fn row_to_environment(row: EnvironmentRow) -> CodeEnvironment {
         current_commit: row.current_commit,
         current_commit_message: row.current_commit_message,
         current_commit_author: row.current_commit_author,
-        current_commit_date: row.current_commit_date.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
-        last_synced_at: row.last_synced_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
+        current_commit_date: row.current_commit_date.and_then(|s| parse_timestamp(&s)),
+        last_synced_at: row.last_synced_at.and_then(|s| parse_timestamp(&s)),
         auto_deploy: row.auto_deploy,
         requires_approval: row.requires_approval,
-        created_at: DateTime::parse_from_rfc3339(&row.created_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
-        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
+        created_at: parse_timestamp_required(&row.created_at),
+        updated_at: parse_timestamp_required(&row.updated_at),
     }
 }
 
@@ -1358,15 +1330,17 @@ impl<'a> CodeDeploymentRepository<'a> {
         Ok(())
     }
 
-    /// Cancel a pending or approved deployment
+    /// Cancel a pending, approved, or deploying deployment
     pub async fn cancel(&self, id: Uuid) -> Result<bool> {
+        let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             r#"
             UPDATE code_deployments
-            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('pending', 'approved')
+            SET status = 'cancelled', updated_at = ?
+            WHERE id = ? AND status IN ('pending', 'approved', 'deploying')
             "#,
         )
+        .bind(&now)
         .bind(id.to_string())
         .execute(self.pool)
         .await
@@ -1389,6 +1363,27 @@ impl<'a> CodeDeploymentRepository<'a> {
     }
 }
 
+/// Parse a timestamp string that may be in RFC3339 format or SQLite datetime format.
+/// SQLite uses "YYYY-MM-DD HH:MM:SS" format, while RFC3339 uses "YYYY-MM-DDTHH:MM:SS+00:00".
+fn parse_timestamp(s: &str) -> Option<DateTime<Utc>> {
+    // Try RFC3339 first (preferred format)
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+
+    // Try SQLite datetime format (legacy format from before the fix)
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(naive.and_utc());
+    }
+
+    None
+}
+
+/// Parse a required timestamp, falling back to current time if parsing fails.
+fn parse_timestamp_required(s: &str) -> DateTime<Utc> {
+    parse_timestamp(s).unwrap_or_else(Utc::now)
+}
+
 fn row_to_deployment(row: DeploymentRow) -> CodeDeployment {
     CodeDeployment {
         id: Uuid::parse_str(&row.id).unwrap_or_default(),
@@ -1399,41 +1394,22 @@ fn row_to_deployment(row: DeploymentRow) -> CodeDeployment {
         status: DeploymentStatus::from_str(&row.status).unwrap_or_default(),
         requested_by: row.requested_by.and_then(|s| Uuid::parse_str(&s).ok()),
         approved_by: row.approved_by.and_then(|s| Uuid::parse_str(&s).ok()),
-        approved_at: row.approved_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
-        rejected_at: row.rejected_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
+        approved_at: row.approved_at.and_then(|s| parse_timestamp(&s)),
+        rejected_at: row.rejected_at.and_then(|s| parse_timestamp(&s)),
         rejection_reason: row.rejection_reason,
-        started_at: row.started_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
-        completed_at: row.completed_at.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
+        started_at: row.started_at.and_then(|s| parse_timestamp(&s)),
+        completed_at: row.completed_at.and_then(|s| parse_timestamp(&s)),
         error_message: row.error_message,
         r10k_output: row.r10k_output,
-        created_at: DateTime::parse_from_rfc3339(&row.created_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
-        updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now()),
+        created_at: parse_timestamp_required(&row.created_at),
+        updated_at: parse_timestamp_required(&row.updated_at),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Datelike, Timelike};
 
     #[test]
     fn test_generate_webhook_secret() {
@@ -1442,5 +1418,58 @@ mod tests {
         // Should be URL-safe base64
         assert!(!secret.contains('+'));
         assert!(!secret.contains('/'));
+    }
+
+    #[test]
+    fn test_parse_timestamp_rfc3339() {
+        // RFC3339 format with timezone offset
+        let result = parse_timestamp("2026-01-14T13:17:57+00:00");
+        assert!(result.is_some());
+        let dt = result.unwrap();
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 1);
+        assert_eq!(dt.day(), 14);
+        assert_eq!(dt.hour(), 13);
+        assert_eq!(dt.minute(), 17);
+        assert_eq!(dt.second(), 57);
+    }
+
+    #[test]
+    fn test_parse_timestamp_rfc3339_zulu() {
+        // RFC3339 format with Z suffix
+        let result = parse_timestamp("2026-01-14T13:17:57Z");
+        assert!(result.is_some());
+        let dt = result.unwrap();
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 1);
+    }
+
+    #[test]
+    fn test_parse_timestamp_sqlite_format() {
+        // SQLite datetime format (legacy)
+        let result = parse_timestamp("2026-01-14 13:17:57");
+        assert!(result.is_some());
+        let dt = result.unwrap();
+        assert_eq!(dt.year(), 2026);
+        assert_eq!(dt.month(), 1);
+        assert_eq!(dt.day(), 14);
+        assert_eq!(dt.hour(), 13);
+        assert_eq!(dt.minute(), 17);
+        assert_eq!(dt.second(), 57);
+    }
+
+    #[test]
+    fn test_parse_timestamp_invalid() {
+        assert!(parse_timestamp("not a date").is_none());
+        assert!(parse_timestamp("").is_none());
+    }
+
+    #[test]
+    fn test_parse_timestamp_required_fallback() {
+        // Invalid timestamp should return current time
+        let before = Utc::now();
+        let result = parse_timestamp_required("invalid");
+        let after = Utc::now();
+        assert!(result >= before && result <= after);
     }
 }

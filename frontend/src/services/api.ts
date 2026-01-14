@@ -930,6 +930,11 @@ export const api = {
     return response.data;
   },
 
+  cancelDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/cancel`);
+    return response.data;
+  },
+
   // Deployment Queue Stats
   getDeploymentQueueStats: async (): Promise<{
     pending: number;

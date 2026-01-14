@@ -4,16 +4,20 @@
 //! Supports generating r10k configuration, executing deployments, and
 //! managing Puppetfile processing.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
@@ -96,15 +100,66 @@ pub struct DeploymentResult {
     pub duration_ms: u64,
 }
 
+/// Registry of running deployment processes
+/// Maps deployment ID to process ID for cancellation support
+pub type ProcessRegistry = Arc<RwLock<HashMap<Uuid, u32>>>;
+
 /// r10k service for managing Puppet code deployments
 pub struct R10kService {
     config: R10kConfig,
+    /// Registry of running processes (deployment_id -> pid)
+    process_registry: ProcessRegistry,
 }
 
 impl R10kService {
     /// Create a new r10k service with the given configuration
     pub fn new(config: R10kConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            process_registry: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Get a reference to the process registry
+    pub fn process_registry(&self) -> ProcessRegistry {
+        Arc::clone(&self.process_registry)
+    }
+
+    /// Kill a running deployment process by deployment ID
+    pub async fn kill_deployment(&self, deployment_id: Uuid) -> Result<bool> {
+        let pid = {
+            let registry = self.process_registry.read().await;
+            registry.get(&deployment_id).copied()
+        };
+
+        if let Some(pid) = pid {
+            info!(
+                "Killing r10k process (pid={}) for deployment {}",
+                pid, deployment_id
+            );
+
+            #[cfg(unix)]
+            {
+                // Send SIGTERM to the process
+                let result = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                if result == 0 {
+                    info!("Successfully sent SIGTERM to process {}", pid);
+                    // Remove from registry
+                    let mut registry = self.process_registry.write().await;
+                    registry.remove(&deployment_id);
+                    return Ok(true);
+                } else {
+                    warn!("Failed to kill process {}: errno={}", pid, std::io::Error::last_os_error());
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                warn!("Process killing not supported on this platform");
+            }
+        }
+
+        Ok(false)
     }
 
     /// Check if r10k is available and properly configured
@@ -133,6 +188,15 @@ impl R10kService {
 
     /// Deploy a specific environment
     pub async fn deploy_environment(&self, environment: &str) -> Result<DeploymentResult> {
+        self.deploy_environment_with_tracking(environment, None).await
+    }
+
+    /// Deploy a specific environment with optional deployment ID for process tracking
+    pub async fn deploy_environment_with_tracking(
+        &self,
+        environment: &str,
+        deployment_id: Option<Uuid>,
+    ) -> Result<DeploymentResult> {
         let start = std::time::Instant::now();
 
         info!("Starting r10k deployment for environment: {}", environment);
@@ -163,7 +227,9 @@ impl R10kService {
 
         debug!("Executing: {:?} {:?}", self.config.binary_path, args);
 
-        let result = self.execute_r10k(&args).await;
+        let result = self
+            .execute_r10k_with_tracking(&args, deployment_id)
+            .await;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -276,6 +342,15 @@ impl R10kService {
 
     /// Execute an r10k command with timeout
     async fn execute_r10k(&self, args: &[&str]) -> Result<DeploymentResult> {
+        self.execute_r10k_with_tracking(args, None).await
+    }
+
+    /// Execute an r10k command with timeout and optional process tracking
+    async fn execute_r10k_with_tracking(
+        &self,
+        args: &[&str],
+        deployment_id: Option<Uuid>,
+    ) -> Result<DeploymentResult> {
         let timeout_duration = Duration::from_secs(self.config.timeout_seconds);
 
         // Log the exact command being executed
@@ -301,6 +376,18 @@ impl R10kService {
             .stderr(Stdio::piped());
 
         let mut child = cmd.spawn().context("Failed to spawn r10k process")?;
+
+        // Register the process if we have a deployment ID
+        if let Some(deploy_id) = deployment_id {
+            if let Some(pid) = child.id() {
+                let mut registry = self.process_registry.write().await;
+                registry.insert(deploy_id, pid);
+                info!(
+                    "Registered r10k process (pid={}) for deployment {}",
+                    pid, deploy_id
+                );
+            }
+        }
 
         // Get stdout and stderr handles
         let mut stdout = child.stdout.take().expect("stdout was configured");
@@ -338,8 +425,20 @@ impl R10kService {
         })
         .await;
 
+        // Cleanup: remove from registry when done
+        let cleanup = || async {
+            if let Some(deploy_id) = deployment_id {
+                let mut registry = self.process_registry.write().await;
+                if registry.remove(&deploy_id).is_some() {
+                    debug!("Unregistered r10k process for deployment {}", deploy_id);
+                }
+            }
+        };
+
         match result {
             Ok(Ok((stdout_str, stderr_str, exit_status))) => {
+                cleanup().await;
+
                 let exit_code = exit_status.code();
 
                 // Check for signal termination on Unix
@@ -404,6 +503,7 @@ impl R10kService {
                 })
             }
             Ok(Err(e)) => {
+                cleanup().await;
                 error!(
                     "r10k command execution error: command='{}', error='{}'",
                     command_str, e
@@ -411,6 +511,7 @@ impl R10kService {
                 Err(e)
             }
             Err(_) => {
+                cleanup().await;
                 // Timeout - kill the process
                 error!(
                     "r10k command TIMEOUT after {}s: command='{}'",

@@ -1,7 +1,7 @@
 # OpenVox WebUI Makefile
 # Development convenience targets
 
-.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major
+.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache
 
 # Default target
 help:
@@ -33,10 +33,11 @@ help:
 	@echo "  make fmt            - Format all code"
 	@echo "  make check          - Run all checks (lint, fmt, typecheck)"
 	@echo ""
-	@echo "Packaging:"
-	@echo "  make package        - Build RPM and DEB packages"
-	@echo "  make package-rpm    - Build RPM package only"
-	@echo "  make package-deb    - Build DEB package only"
+	@echo "Packaging (incremental builds with Docker cache):"
+	@echo "  make package            - Build RPM and DEB packages"
+	@echo "  make package-rpm        - Build RPM package only (incremental)"
+	@echo "  make package-deb        - Build DEB package only (incremental)"
+	@echo "  make package-clean-cache - Clear build cache for full rebuild"
 	@echo ""
 	@echo "Versioning:"
 	@echo "  make version        - Show current version"
@@ -149,8 +150,13 @@ check: fmt-check lint
 	cd frontend && npm run typecheck
 
 # =============================================================================
-# Packaging
+# Packaging (uses Docker with incremental build cache)
+# Cache location: ~/.cache/openvox-webui-build
+# First build takes ~10-15 min, subsequent builds are much faster
 # =============================================================================
+
+# Build cache directory (can be overridden)
+CACHE_DIR ?= $(HOME)/.cache/openvox-webui-build
 
 package:
 	./scripts/build-packages.sh
@@ -160,6 +166,11 @@ package-rpm:
 
 package-deb:
 	./scripts/build-packages.sh deb
+
+package-clean-cache:
+	@echo "Cleaning package build cache..."
+	rm -rf $(CACHE_DIR)
+	@echo "Cache cleared. Next build will be a full rebuild."
 
 # =============================================================================
 # Database

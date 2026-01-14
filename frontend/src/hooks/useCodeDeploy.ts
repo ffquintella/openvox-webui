@@ -272,3 +272,14 @@ export function useRetryDeployment() {
     },
   });
 }
+
+export function useCancelDeployment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.cancelDeployment(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['code-deployments'] });
+      queryClient.invalidateQueries({ queryKey: ['code-environments'] });
+    },
+  });
+}

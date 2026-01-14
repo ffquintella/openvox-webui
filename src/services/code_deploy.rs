@@ -815,6 +815,20 @@ impl CodeDeployService {
         deploy_repo.reject(id, rejected_by, reason).await
     }
 
+    /// Cancel a pending, approved, or deploying deployment
+    /// If the deployment is currently running, this will also kill the r10k process
+    pub async fn cancel_deployment(&self, id: Uuid) -> Result<bool> {
+        // First try to kill any running process for this deployment
+        let killed = self.r10k.kill_deployment(id).await?;
+        if killed {
+            tracing::info!("Killed running r10k process for deployment {}", id);
+        }
+
+        // Then update the database status
+        let deploy_repo = CodeDeploymentRepository::new(&self.pool);
+        deploy_repo.cancel(id).await
+    }
+
     /// Process the deployment queue (run approved deployments)
     pub async fn process_deployment_queue(&self) -> Result<u32> {
         let _lock = self.deployment_lock.lock().await;
@@ -854,8 +868,11 @@ impl CodeDeployService {
                 );
             }
 
-            // Run r10k deploy
-            let result = self.r10k.deploy_environment(&env.name).await?;
+            // Run r10k deploy with process tracking for cancellation support
+            let result = self
+                .r10k
+                .deploy_environment_with_tracking(&env.name, Some(deployment.id))
+                .await?;
 
             if result.success {
                 deploy_repo

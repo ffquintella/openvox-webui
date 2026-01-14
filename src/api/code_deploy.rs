@@ -58,6 +58,7 @@ pub fn routes() -> Router<AppState> {
         .route("/deployments/{id}", get(get_deployment))
         .route("/deployments/{id}/approve", post(approve_deployment))
         .route("/deployments/{id}/reject", post(reject_deployment))
+        .route("/deployments/{id}/cancel", post(cancel_deployment))
         .route("/deployments/{id}/retry", post(retry_deployment))
 }
 
@@ -669,6 +670,37 @@ async fn reject_deployment(
             AppError::internal("Failed to get deployment")
         })?
         .ok_or_else(|| AppError::internal("Deployment rejected but not found"))?;
+
+    Ok(Json(response))
+}
+
+async fn cancel_deployment(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<CodeDeploymentResponse>, AppError> {
+    require_permission(&auth_user, "code_deployment_approve")?;
+
+    let service = state.code_deploy_service()?;
+    let cancelled = service.cancel_deployment(id).await.map_err(|e| {
+        tracing::error!("Failed to cancel deployment: {}", e);
+        AppError::internal("Failed to cancel deployment")
+    })?;
+
+    if !cancelled {
+        return Err(AppError::bad_request(
+            "Deployment not found or cannot be cancelled (only pending, approved, or deploying deployments can be cancelled)",
+        ));
+    }
+
+    let response = service
+        .get_deployment(id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get deployment: {}", e);
+            AppError::internal("Failed to get deployment")
+        })?
+        .ok_or_else(|| AppError::internal("Deployment cancelled but not found"))?;
 
     Ok(Json(response))
 }
