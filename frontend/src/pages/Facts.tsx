@@ -59,14 +59,16 @@ export default function Facts() {
         {/* Fact Names */}
         <div className="card h-[600px] overflow-hidden flex flex-col">
           <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <div className="flex items-stretch border border-gray-300 rounded-lg bg-white hover:border-gray-400 focus-within:border-primary-600 focus-within:ring-1 focus-within:ring-primary-600 transition-colors">
+              <div className="flex items-center justify-center px-3 py-2 border-r border-gray-200">
+                <Search className="w-5 h-5 text-gray-400" />
+              </div>
               <input
                 type="text"
                 placeholder="Search facts..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="input pl-10"
+                className="flex-1 px-3 py-2 outline-none bg-transparent rounded-r-lg"
               />
             </div>
           </div>
