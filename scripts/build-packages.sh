@@ -476,8 +476,8 @@ DOCKERFILE_EOF
 
             # Copy source excluding target/ and node_modules/ to save space
             # But keep the structure so cargo can use the cached target/
-            rm -rf src frontend/src packaging config migrations tests Cargo.toml Cargo.lock 2>/dev/null || true
-            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations /source/tests .
+            rm -rf src frontend/src packaging config migrations tests puppet Cargo.toml Cargo.lock 2>/dev/null || true
+            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations /source/tests /source/puppet .
             cp -r /source/frontend .
             rm -rf frontend/node_modules frontend/dist 2>/dev/null || true
 
@@ -494,7 +494,7 @@ DOCKERFILE_EOF
 
             # Create source tarball for rpmbuild
             mkdir -p /tmp/openvox-webui-${VERSION}
-            cp -r src frontend/dist packaging config migrations Cargo.toml Cargo.lock target/release/openvox-webui /tmp/openvox-webui-${VERSION}/
+            cp -r src frontend/dist packaging config migrations puppet Cargo.toml Cargo.lock target/release/openvox-webui /tmp/openvox-webui-${VERSION}/
             mkdir -p /tmp/openvox-webui-${VERSION}/target/release
             cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
             mkdir -p /tmp/openvox-webui-${VERSION}/frontend
@@ -606,8 +606,8 @@ DOCKERFILE_EOF
 
             # Copy source excluding target/ and node_modules/ to save space
             # But keep the structure so cargo can use the cached target/
-            rm -rf src frontend/src packaging config migrations tests Cargo.toml Cargo.lock debian 2>/dev/null || true
-            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations /source/tests .
+            rm -rf src frontend/src packaging config migrations tests puppet Cargo.toml Cargo.lock debian 2>/dev/null || true
+            cp -r /source/src /source/Cargo.toml /source/Cargo.lock /source/packaging /source/config /source/migrations /source/tests /source/puppet .
             cp -r /source/frontend .
             rm -rf frontend/node_modules frontend/dist 2>/dev/null || true
 
@@ -624,7 +624,7 @@ DOCKERFILE_EOF
 
             # Now prepare for dpkg-buildpackage in /tmp
             mkdir -p /tmp/openvox-webui-${VERSION}
-            cp -r src frontend packaging config migrations Cargo.toml Cargo.lock /tmp/openvox-webui-${VERSION}/
+            cp -r src frontend packaging config migrations puppet Cargo.toml Cargo.lock /tmp/openvox-webui-${VERSION}/
             mkdir -p /tmp/openvox-webui-${VERSION}/target/release
             cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
 
