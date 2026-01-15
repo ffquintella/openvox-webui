@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Environment group feature for node groups that assign environments instead of filtering by them
 
+### Fixed
+- Child groups now only match nodes that also match their parent group
+
 ## [0.22.0] - 2025-01-15
 
 ### Added

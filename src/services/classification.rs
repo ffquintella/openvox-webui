@@ -287,16 +287,10 @@ impl ClassificationService {
                         queue.push_back((*child, true));
                     }
                 }
-            } else if parent_matched {
-                // Parent matched but this group's rules didn't match
-                // Still need to check children in case they have different rules that DO match
-                if let Some(children) = children_map.get(&Some(group.id)) {
-                    for child in children {
-                        // parent_matched remains true so children can still inherit from grandparent
-                        queue.push_back((*child, true));
-                    }
-                }
             }
+            // NOTE: If parent matched but this group didn't match, we do NOT enqueue children.
+            // Children can only be considered if their direct parent matched.
+            // This ensures proper hierarchical classification where each level acts as a gate.
         }
 
         ClassificationResult {
@@ -1155,5 +1149,115 @@ mod tests {
         assert_eq!(result2.groups.len(), 1);
         assert_eq!(result2.groups[0].name, "Puppet Servers");
         assert_eq!(result2.environment, Some("pserver".to_string()));
+    }
+
+    #[test]
+    fn test_environment_group_child_inherits_only_matching_nodes() {
+        // Test scenario: Parent is an environment group with rules
+        // Child has no rules, should only match nodes that match the parent
+        //
+        // Parent: "Homolog" (environment group) with rule clientcert ~ .*vhm.*
+        // Child: "R - Docker Apps" with no rules
+        //
+        // Node A (segdc1vhm0001): certname contains "vhm" -> should match both
+        // Node B (apldc1vds0045): certname doesn't contain "vhm" -> should match neither
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Homolog".to_string(),
+            environment: Some("homolog".to_string()),
+            is_environment_group: true, // This is an environment group
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*vhm.*"),
+            }],
+            classes: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "R - Docker Apps".to_string(),
+            parent_id: Some(parent_id),
+            environment: Some("homolog".to_string()),
+            // No rules - should inherit from parent
+            rules: vec![],
+            classes: serde_json::json!({"docker": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node A: certname contains "vhm" - should match both parent and child
+        let facts_a = serde_json::json!({
+            "clientcert": "segdc1vhm0001.fgv.br"
+        });
+        let result_a = service.classify("segdc1vhm0001.fgv.br", &facts_a);
+        assert_eq!(result_a.groups.len(), 2, "Node with 'vhm' should match both groups");
+        assert_eq!(result_a.groups[0].name, "Homolog");
+        assert_eq!(result_a.groups[1].name, "R - Docker Apps");
+        assert_eq!(result_a.groups[1].match_type, MatchType::Inherited);
+
+        // Node B: certname doesn't contain "vhm" - should match neither
+        let facts_b = serde_json::json!({
+            "clientcert": "apldc1vds0045.fgv.br"
+        });
+        let result_b = service.classify("apldc1vds0045.fgv.br", &facts_b);
+        assert_eq!(result_b.groups.len(), 0, "Node without 'vhm' should not match any group");
+    }
+
+    #[test]
+    fn test_child_with_rules_must_also_match_parent() {
+        // Test that even if a child group has its own rules that match,
+        // the node must ALSO match the parent for the child to match
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            classes: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Docker Hosts".to_string(),
+            parent_id: Some(parent_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "docker_installed".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!(true),
+            }],
+            classes: serde_json::json!({"docker": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node with Docker but NOT Linux - should not match child
+        let facts = serde_json::json!({
+            "kernel": "Windows",
+            "docker_installed": true
+        });
+        let result = service.classify("win-docker.example.com", &facts);
+        assert_eq!(result.groups.len(), 0, "Windows node should not match even with Docker");
+
+        // Node with Linux AND Docker - should match both
+        let facts = serde_json::json!({
+            "kernel": "Linux",
+            "docker_installed": true
+        });
+        let result = service.classify("linux-docker.example.com", &facts);
+        assert_eq!(result.groups.len(), 2, "Linux node with Docker should match both groups");
     }
 }
