@@ -483,6 +483,12 @@ export interface RbacSettings {
   custom_roles_count: number;
 }
 
+export interface NodeBootstrapSettings {
+  puppet_server_url?: string | null;
+  repository_base_url?: string | null;
+  agent_package_name: string;
+}
+
 export interface SettingsResponse {
   server: ServerSettings;
   puppetdb?: PuppetDbSettings | null;
@@ -493,6 +499,7 @@ export interface SettingsResponse {
   cache: CacheSettings;
   dashboard: DashboardConfig;
   rbac: RbacSettings;
+  node_bootstrap?: NodeBootstrapSettings | null;
 }
 
 export interface RbacConfigResponse {
@@ -1493,4 +1500,15 @@ export interface ExtendRemovalDeadlineRequest {
   certname: string;
   extend_days: number;
   notes?: string;
+}
+
+// ============================================================================
+// Node Bootstrap Types
+// ============================================================================
+
+export interface BootstrapConfigResponse {
+  puppet_server_url?: string | null;
+  repository_base_url?: string | null;
+  agent_package_name: string;
+  webui_url: string;
 }

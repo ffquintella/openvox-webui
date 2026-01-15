@@ -20,6 +20,7 @@ import {
   Users,
   Eye,
   EyeOff,
+  Monitor,
 } from 'lucide-react';
 import {
   useSettings,
@@ -238,6 +239,43 @@ function GeneralSettingsTab() {
           <SettingRow label="Report TTL" value={`${settings.cache.report_ttl_secs}s`} />
           <SettingRow label="Max Entries" value={settings.cache.max_entries.toString()} />
         </div>
+      </div>
+
+      {/* Node Bootstrap Settings */}
+      <div className="card">
+        <div className="flex items-center mb-4">
+          <Monitor className="w-5 h-5 text-primary-600 mr-2" />
+          <h2 className="text-lg font-semibold">Node Bootstrap</h2>
+        </div>
+        {settings.node_bootstrap ? (
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <SettingRow
+              label="Puppet Server"
+              value={settings.node_bootstrap.puppet_server_url || 'Not configured'}
+              variant={settings.node_bootstrap.puppet_server_url ? 'neutral' : 'warning'}
+            />
+            <SettingRow
+              label="Agent Package"
+              value={settings.node_bootstrap.agent_package_name}
+            />
+            {settings.node_bootstrap.repository_base_url && (
+              <div className="col-span-2">
+                <SettingRow
+                  label="Repository URL"
+                  value={settings.node_bootstrap.repository_base_url}
+                  mono
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">
+            Node bootstrap not configured. Add <code className="bg-gray-100 px-1 rounded">node_bootstrap</code> to your config.yaml to enable.
+          </p>
+        )}
+        <p className="mt-4 text-xs text-gray-500">
+          These settings are used when bootstrapping new nodes. Configure them to enable the Add Node feature.
+        </p>
       </div>
     </div>
   );

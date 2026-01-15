@@ -115,6 +115,8 @@ import type {
   NodeRemovalFeatureStatus,
   MarkNodeForRemovalRequest,
   ExtendRemovalDeadlineRequest,
+  // Bootstrap types
+  BootstrapConfigResponse,
 } from '../types';
 
 const client = axios.create({
@@ -491,6 +493,13 @@ export const api = {
 
   getServerInfo: async (): Promise<ServerInfoResponse> => {
     const response = await client.get('/settings/server');
+    return response.data;
+  },
+
+  // Bootstrap (public endpoint - no auth required)
+  getBootstrapConfig: async (): Promise<BootstrapConfigResponse> => {
+    // Use axios directly since this is a public endpoint
+    const response = await axios.get('/api/v1/bootstrap/config');
     return response.data;
   },
 

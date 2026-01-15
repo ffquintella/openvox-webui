@@ -217,3 +217,20 @@ rbac:
 #   session:
 #     relay_state_cookie: "saml_relay_state"  # Cookie name for storing relay state
 #     request_max_age_secs: 300               # Maximum age of SAML requests (5 minutes)
+
+# Node Bootstrap configuration
+# Settings for the bootstrap script that helps add new Puppet agents to the infrastructure
+# node_bootstrap:
+#   # Puppet Server URL that agents will connect to
+#   puppet_server_url: "puppet.example.com"
+#
+#   # Custom repository base URL for OpenVox/Puppet packages
+#   # If not set, the script will use default Vox Pupuli repositories:
+#   #   - YUM: https://yum.voxpupuli.org/openvox8
+#   #   - APT: https://apt.voxpupuli.org/openvox8
+#   # For custom YUM-based repos: "https://yum.example.com/openvox8"
+#   # For custom APT-based repos: "https://apt.example.com/openvox8"
+#   # repository_base_url: "https://yum.voxpupuli.org/openvox8"
+#
+#   # Package name to install (default: openvox-agent)
+#   agent_package_name: "openvox-agent"

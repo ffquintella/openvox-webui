@@ -13,6 +13,7 @@ const SamlCallback = lazy(() => import('./pages/SamlCallback'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Nodes = lazy(() => import('./pages/Nodes'));
 const NodeDetail = lazy(() => import('./pages/NodeDetail'));
+const AddNode = lazy(() => import('./pages/AddNode'));
 const Groups = lazy(() => import('./pages/Groups'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Facts = lazy(() => import('./pages/Facts'));
@@ -90,6 +91,7 @@ function App() {
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/nodes" element={<Nodes />} />
+                      <Route path="/nodes/add" element={<AddNode />} />
                       <Route path="/nodes/:certname" element={<NodeDetail />} />
                       <Route path="/groups" element={<Groups />} />
                       <Route path="/reports" element={<Reports />} />

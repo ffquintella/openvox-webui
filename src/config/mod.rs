@@ -45,6 +45,9 @@ pub struct AppConfig {
     /// Node removal tracking configuration (for nodes with revoked/missing certificates)
     #[serde(default)]
     pub node_removal: Option<NodeRemovalConfig>,
+    /// Node bootstrap configuration (for adding new nodes)
+    #[serde(default)]
+    pub node_bootstrap: Option<NodeBootstrapConfig>,
 }
 
 /// Server configuration
@@ -1119,6 +1122,44 @@ impl Default for NodeRemovalConfig {
     }
 }
 
+// ============================================================================
+// Node Bootstrap Configuration
+// ============================================================================
+
+/// Node bootstrap configuration for adding new agents
+///
+/// Configures the bootstrap script that new nodes can download to
+/// automatically install and configure the Puppet agent.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NodeBootstrapConfig {
+    /// Puppet Server URL (e.g., "puppet.example.com" or "puppet.example.com:8140")
+    /// This is the server address that agents will connect to
+    #[serde(default)]
+    pub puppet_server_url: Option<String>,
+    /// Custom repository base URL for OpenVox/Puppet packages
+    /// For YUM: e.g., "https://yum.example.com/openvox"
+    /// For APT: e.g., "https://apt.example.com/openvox"
+    #[serde(default)]
+    pub repository_base_url: Option<String>,
+    /// Package name to install (default: "openvox-agent")
+    #[serde(default = "default_agent_package_name")]
+    pub agent_package_name: String,
+}
+
+fn default_agent_package_name() -> String {
+    "openvox-agent".to_string()
+}
+
+impl Default for NodeBootstrapConfig {
+    fn default() -> Self {
+        Self {
+            puppet_server_url: None,
+            repository_base_url: None,
+            agent_package_name: default_agent_package_name(),
+        }
+    }
+}
+
 /// Node groups configuration (loaded from separate file)
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct GroupsConfig {
@@ -1260,6 +1301,7 @@ impl Default for AppConfig {
             saml: None,
             backup: None,
             node_removal: None,
+            node_bootstrap: None,
         }
     }
 }
@@ -1658,6 +1700,20 @@ impl AppConfig {
         if let Ok(encryption) = std::env::var("BACKUP_ENCRYPTION_ENABLED") {
             let backup = self.backup.get_or_insert_with(BackupConfig::default);
             backup.encryption.enabled = encryption.to_lowercase() == "true" || encryption == "1";
+        }
+
+        // Node Bootstrap configuration overrides
+        if let Ok(url) = std::env::var("NODE_BOOTSTRAP_PUPPET_SERVER_URL") {
+            let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
+            bootstrap.puppet_server_url = Some(url);
+        }
+        if let Ok(url) = std::env::var("NODE_BOOTSTRAP_REPOSITORY_BASE_URL") {
+            let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
+            bootstrap.repository_base_url = Some(url);
+        }
+        if let Ok(name) = std::env::var("NODE_BOOTSTRAP_AGENT_PACKAGE_NAME") {
+            let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
+            bootstrap.agent_package_name = name;
         }
     }
 

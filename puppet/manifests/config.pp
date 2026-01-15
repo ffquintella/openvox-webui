@@ -157,6 +157,10 @@ class openvox_webui::config {
         backup_require_password        => $openvox_webui::backup_require_password,
         backup_include_database        => $openvox_webui::backup_include_database,
         backup_include_config          => $openvox_webui::backup_include_config,
+        # Node Bootstrap settings
+        node_bootstrap_puppet_server_url   => $openvox_webui::node_bootstrap_puppet_server_url,
+        node_bootstrap_repository_base_url => $openvox_webui::node_bootstrap_repository_base_url,
+        node_bootstrap_agent_package_name  => $openvox_webui::node_bootstrap_agent_package_name,
       }),
     }
 

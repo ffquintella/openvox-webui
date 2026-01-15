@@ -12,6 +12,7 @@ mod api_keys;
 mod audit_logs;
 mod auth;
 mod backup;
+mod bootstrap;
 mod ca;
 mod code_deploy;
 mod facter;
@@ -50,6 +51,8 @@ pub fn public_routes() -> Router<AppState> {
         .nest("/webhooks", code_deploy::webhook_routes())
         // Server info endpoint (needed for login page to detect SAML)
         .nest("/settings", settings::public_routes())
+        // Bootstrap script endpoints (no auth required for node enrollment)
+        .nest("/bootstrap", bootstrap::public_routes())
 }
 
 /// Protected API routes (authentication required)

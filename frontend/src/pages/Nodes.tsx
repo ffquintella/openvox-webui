@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, Filter, ChevronRight, CheckCircle2, XCircle, Clock, HelpCircle, AlertTriangle } from 'lucide-react';
+import { Search, Filter, ChevronRight, CheckCircle2, XCircle, Clock, HelpCircle, AlertTriangle, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { api, nodeRemovalApi } from '../services/api';
 import { Node, NodeStatus, PendingNodeRemoval } from '../types';
@@ -110,9 +110,18 @@ export default function Nodes() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Nodes</h1>
-        <span className="text-sm text-gray-500">
-          {filteredNodes.length} nodes
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-500">
+            {filteredNodes.length} nodes
+          </span>
+          <Link
+            to="/nodes/add"
+            className="btn btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Node
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

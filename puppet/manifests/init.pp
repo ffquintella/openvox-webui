@@ -240,6 +240,16 @@
 # @param backup_include_config
 #   Whether to include configuration files in backups.
 #
+# @param node_bootstrap_puppet_server_url
+#   Puppet Server URL that new agents will connect to (e.g., 'puppet.example.com').
+#
+# @param node_bootstrap_repository_base_url
+#   Custom repository base URL for OpenVox/Puppet packages.
+#   If not set, uses default Vox Pupuli repositories.
+#
+# @param node_bootstrap_agent_package_name
+#   Name of the agent package to install on new nodes.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -288,6 +298,13 @@
 #     backup_time               => '02:00',
 #     backup_max_backups        => 30,
 #     backup_encryption_enabled => true,
+#   }
+#
+# @example Configuring Node Bootstrap for adding new agents
+#   class { 'openvox_webui':
+#     node_bootstrap_puppet_server_url => 'puppet.example.com',
+#     # Optional: use custom repository instead of Vox Pupuli defaults
+#     # node_bootstrap_repository_base_url => 'https://yum.example.com/openvox8',
 #   }
 #
 class openvox_webui (
@@ -417,6 +434,11 @@ class openvox_webui (
   Boolean                             $backup_require_password         = true,
   Boolean                             $backup_include_database         = true,
   Boolean                             $backup_include_config           = true,
+
+  # Node Bootstrap settings
+  Optional[String[1]]                 $node_bootstrap_puppet_server_url    = undef,
+  Optional[String[1]]                 $node_bootstrap_repository_base_url  = undef,
+  String[1]                           $node_bootstrap_agent_package_name   = 'openvox-agent',
 ) {
   contain openvox_webui::install
   contain openvox_webui::config
