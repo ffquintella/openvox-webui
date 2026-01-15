@@ -16,6 +16,15 @@ export interface Node {
   cached_catalog_status?: string | null;
 }
 
+// Node deletion response
+export interface DeleteNodeResponse {
+  success: boolean;
+  message: string;
+  pinned_associations_removed: number;
+  certificate_revoked: boolean;
+  puppetdb_deactivated: boolean;
+}
+
 // Group types
 export type RuleMatchType = 'all' | 'any';
 

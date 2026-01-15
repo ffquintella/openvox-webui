@@ -25,8 +25,11 @@ export default function AddNode() {
     fetchConfig();
   }, []);
 
-  // Build the curl command using the current window location
-  const curlCommand = `curl -sSL ${window.location.origin}/api/v1/bootstrap/script | sudo bash`;
+  // Build the curl command using the openvox_server_url for the hostname
+  // This assumes the WebUI is accessible on the same hostname as the OpenVox server
+  const protocol = window.location.protocol;
+  const serverHost = config?.openvox_server_url || window.location.host;
+  const curlCommand = `curl -sSL ${protocol}//${serverHost}/api/v1/bootstrap/script | sudo bash`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(curlCommand);

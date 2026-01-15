@@ -497,7 +497,14 @@ export default function Groups() {
                     >
                       <option value="">None (root group)</option>
                       {groups
-                        .filter((g: NodeGroup) => g.id !== selectedGroup?.id)
+                        .filter((g: NodeGroup) => {
+                          // When editing, filter out the group being edited (can't be its own parent)
+                          // When creating, show all groups as potential parents
+                          if (isEditOpen && selectedGroup) {
+                            return g.id !== selectedGroup.id;
+                          }
+                          return true;
+                        })
                         .map((g: NodeGroup) => (
                           <option key={g.id} value={g.id}>
                             {g.name}

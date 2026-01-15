@@ -406,6 +406,19 @@ impl<'a> GroupRepository<'a> {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Remove all pinned node relationships for a specific certname across all groups
+    ///
+    /// This is used when deleting a node to clean up all group associations.
+    pub async fn remove_all_pinned_for_certname(&self, certname: &str) -> Result<u64> {
+        let result = sqlx::query("DELETE FROM pinned_nodes WHERE certname = ?")
+            .bind(certname)
+            .execute(self.pool)
+            .await
+            .context("Failed to remove pinned node associations")?;
+
+        Ok(result.rows_affected())
+    }
+
     /// Get nodes that match a group (pinned + classified by rules)
     /// For now, returns only pinned nodes. Full classification requires PuppetDB integration.
     pub async fn get_group_nodes(&self, group_id: Uuid) -> Result<Vec<String>> {

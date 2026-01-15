@@ -1065,6 +1065,66 @@ impl PuppetDbClient {
         self.get(&url).await
     }
 
+    /// Deactivate a node in PuppetDB
+    ///
+    /// This marks the node as deactivated, which means:
+    /// - The node will no longer appear in queries by default
+    /// - Facts, catalogs, and reports are retained for historical purposes
+    /// - The node can be reactivated if it sends new data
+    ///
+    /// Uses the PuppetDB command API to submit a deactivate node command.
+    pub async fn deactivate_node(&self, certname: &str) -> Result<()> {
+        let url = format!("{}/pdb/cmd/v1", self.base_url);
+
+        #[derive(serde::Serialize)]
+        struct DeactivateCommand {
+            command: &'static str,
+            version: u8,
+            payload: DeactivatePayload,
+        }
+
+        #[derive(serde::Serialize)]
+        struct DeactivatePayload {
+            certname: String,
+            producer_timestamp: String,
+        }
+
+        let command = DeactivateCommand {
+            command: "deactivate node",
+            version: 3,
+            payload: DeactivatePayload {
+                certname: certname.to_string(),
+                producer_timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        };
+
+        debug!("PuppetDB: Deactivating node '{}' via command API", certname);
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&command)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("PuppetDB ERROR: Failed to deactivate node '{}': {}", certname, e);
+                anyhow::anyhow!("Failed to send deactivate command: {}", e)
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_else(|_| String::new());
+            error!(
+                "PuppetDB ERROR: Deactivate node failed with status {}: {}",
+                status, body
+            );
+            anyhow::bail!("Failed to deactivate node: {} - {}", status, body);
+        }
+
+        info!("PuppetDB: Successfully deactivated node '{}'", certname);
+        Ok(())
+    }
+
     // ==================== Helper Methods ====================
 
     /// Internal GET request handler

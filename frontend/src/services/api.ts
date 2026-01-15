@@ -28,6 +28,7 @@ import type {
   GeneratedFacts,
   ExportFormat,
   SettingsResponse,
+  DeleteNodeResponse,
   DashboardConfig,
   RbacConfigResponse,
   ExportConfigResponse,
@@ -209,6 +210,11 @@ export const api = {
 
   getNodeReports: async (certname: string): Promise<Report[]> => {
     const response = await client.get(`/nodes/${certname}/reports`);
+    return response.data;
+  },
+
+  deleteNode: async (certname: string): Promise<DeleteNodeResponse> => {
+    const response = await client.delete(`/nodes/${certname}`);
     return response.data;
   },
 

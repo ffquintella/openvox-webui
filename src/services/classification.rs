@@ -162,25 +162,26 @@ impl ClassificationService {
             }
         }
 
-        while let Some((group, inherited)) = queue.pop_front() {
+        while let Some((group, parent_matched)) = queue.pop_front() {
             tracing::debug!(
-                "Classifying node '{}' against group '{}' (id={}, inherited={})",
+                "Classifying node '{}' against group '{}' (id={}, parent_matched={})",
                 certname,
                 group.name,
                 group.id,
-                inherited
+                parent_matched
             );
 
             let mut matched = false;
             let mut matched_rules = vec![];
-            let match_type = if inherited {
-                matched = true;
-                MatchType::Inherited
-            } else if group.pinned_nodes.contains(&certname.to_string()) {
+            let match_type = if group.pinned_nodes.contains(&certname.to_string()) {
                 // Pinned nodes ALWAYS match, regardless of environment
                 // This allows environment assignment without bootstrap problems
                 matched = true;
                 MatchType::Pinned
+            } else if parent_matched && group.rules.is_empty() {
+                // Child group with no rules of its own inherits from parent
+                matched = true;
+                MatchType::Inherited
             } else {
                 // Check environment for rule-based matching
                 // If the group has a specific environment set (not None, "*", "All", or "Any"),
@@ -271,9 +272,19 @@ impl ClassificationService {
                     matched_rules,
                 });
 
-                // Enqueue children as inherited matches
+                // Enqueue children for evaluation - they inherit classes/variables but must match their own rules
                 if let Some(children) = children_map.get(&Some(group.id)) {
                     for child in children {
+                        // parent_matched=true means this child can inherit classes/variables from ancestors
+                        queue.push_back((*child, true));
+                    }
+                }
+            } else if parent_matched {
+                // Parent matched but this group's rules didn't match
+                // Still need to check children in case they have different rules that DO match
+                if let Some(children) = children_map.get(&Some(group.id)) {
+                    for child in children {
+                        // parent_matched remains true so children can still inherit from grandparent
                         queue.push_back((*child, true));
                     }
                 }

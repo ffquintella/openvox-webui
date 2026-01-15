@@ -89,6 +89,7 @@ impl TestApp {
             rbac,
             rbac_db,
             code_deploy_config,
+            backup_config: None,
             notification_service,
         };
 
@@ -302,6 +303,9 @@ pub fn test_config() -> AppConfig {
         groups_config_path: None,
         code_deploy: None,
         saml: None,
+        backup: None,
+        node_removal: None,
+        node_bootstrap: None,
     }
 }
 

@@ -12,8 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     db::repository::GroupRepository,
-    middleware::{AuthUser, OptionalClientCert},
-    models::{default_organization_uuid, ClassificationResult, Fact, Node, Report},
+    middleware::{
+        rbac::{check_permission, RbacError},
+        AuthUser, OptionalClientCert,
+    },
+    models::{default_organization_uuid, Action, ClassificationResult, Fact, Node, Report, Resource as RbacResource},
     services::{
         classification::ClassificationService,
         puppetdb::{QueryBuilder, QueryParams, Resource},
@@ -26,7 +29,7 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_nodes))
-        .route("/{certname}", get(get_node))
+        .route("/{certname}", get(get_node).delete(delete_node))
         .route("/{certname}/facts", get(get_node_facts))
         .route("/{certname}/reports", get(get_node_reports))
         .route("/{certname}/resources", get(get_node_resources))
@@ -552,4 +555,118 @@ async fn get_node_classification_public(
     );
 
     Ok(Json(classification))
+}
+
+/// Response for node deletion
+#[derive(Debug, Serialize)]
+pub struct DeleteNodeResponse {
+    /// Whether the deletion was successful
+    pub success: bool,
+    /// Human-readable message
+    pub message: String,
+    /// Number of pinned node associations removed
+    pub pinned_associations_removed: u64,
+    /// Whether the certificate was revoked (if it existed)
+    pub certificate_revoked: bool,
+    /// Whether the node was deactivated in PuppetDB
+    pub puppetdb_deactivated: bool,
+}
+
+/// DELETE /api/v1/nodes/:certname - Delete a node
+///
+/// This operation:
+/// 1. Removes all pinned node associations from groups
+/// 2. Attempts to revoke the node's certificate (if Puppet CA is configured and cert exists)
+/// 3. Attempts to deactivate the node in PuppetDB (if configured)
+///
+/// Requires the `nodes:delete` permission.
+async fn delete_node(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(certname): Path<String>,
+) -> Result<Json<DeleteNodeResponse>, AppError> {
+    // Check permission
+    check_permission(
+        &state.rbac,
+        &auth_user,
+        RbacResource::Nodes,
+        Action::Delete,
+        None,
+        None,
+    )
+    .map_err(|e| match e {
+        RbacError::PermissionDenied { reason, .. } => AppError::Forbidden(reason),
+        RbacError::NotAuthenticated => AppError::Unauthorized("Authentication required".to_string()),
+        RbacError::RoleNotFound(name) => AppError::Internal(format!("Role not found: {}", name)),
+    })?;
+
+    tracing::info!(
+        "User '{}' is deleting node '{}'",
+        auth_user.username,
+        certname
+    );
+
+    // Step 1: Remove all pinned node associations
+    let group_repo = GroupRepository::new(&state.db);
+    let pinned_removed = group_repo
+        .remove_all_pinned_for_certname(&certname)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to remove pinned associations for '{}': {}", certname, e);
+            AppError::Internal(format!("Failed to remove pinned associations: {}", e))
+        })?;
+
+    if pinned_removed > 0 {
+        tracing::info!(
+            "Removed {} pinned node associations for '{}'",
+            pinned_removed,
+            certname
+        );
+    }
+
+    // Step 2: Attempt to revoke certificate if CA is configured
+    let mut certificate_revoked = false;
+    if let Some(ca) = state.puppet_ca.as_ref() {
+        match ca.revoke_certificate(&certname).await {
+            Ok(_) => {
+                tracing::info!("Revoked certificate for '{}'", certname);
+                certificate_revoked = true;
+            }
+            Err(e) => {
+                // Certificate might not exist or already be revoked - this is not a fatal error
+                tracing::debug!(
+                    "Could not revoke certificate for '{}': {} (may not exist)",
+                    certname,
+                    e
+                );
+            }
+        }
+    }
+
+    // Step 3: Attempt to deactivate node in PuppetDB if configured
+    let mut puppetdb_deactivated = false;
+    if let Some(puppetdb) = state.puppetdb.as_ref() {
+        match puppetdb.deactivate_node(&certname).await {
+            Ok(_) => {
+                tracing::info!("Deactivated node '{}' in PuppetDB", certname);
+                puppetdb_deactivated = true;
+            }
+            Err(e) => {
+                // Node might not exist in PuppetDB - this is not a fatal error
+                tracing::debug!(
+                    "Could not deactivate node '{}' in PuppetDB: {} (may not exist)",
+                    certname,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(Json(DeleteNodeResponse {
+        success: true,
+        message: format!("Node '{}' has been deleted", certname),
+        pinned_associations_removed: pinned_removed,
+        certificate_revoked,
+        puppetdb_deactivated,
+    }))
 }

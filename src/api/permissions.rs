@@ -125,7 +125,7 @@ fn get_resource_description(resource: &Resource) -> String {
 
 fn get_resource_actions(resource: &Resource) -> Vec<String> {
     match resource {
-        Resource::Nodes => vec!["read", "classify"],
+        Resource::Nodes => vec!["read", "classify", "delete"],
         Resource::Groups => vec!["read", "create", "update", "delete", "admin"],
         Resource::Reports => vec!["read", "export"],
         Resource::Facts => vec!["read", "generate", "export"],

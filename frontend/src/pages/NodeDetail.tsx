@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Server,
@@ -21,9 +21,11 @@ import {
   Tag,
   ArrowRightLeft,
   Loader2,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { Report, NodeGroup, ResourceEvent } from '../types';
+import type { Report, NodeGroup, ResourceEvent, DeleteNodeResponse } from '../types';
 
 type TabId = 'overview' | 'facts' | 'reports' | 'groups';
 
@@ -789,7 +791,11 @@ function GroupMembership({
 
 export default function NodeDetail() {
   const { certname } = useParams<{ certname: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<DeleteNodeResponse | null>(null);
 
   const {
     data: node,
@@ -830,11 +836,40 @@ export default function NodeDetail() {
     queryFn: api.getGroups,
   });
 
+  // Delete node mutation
+  const deleteNodeMutation = useMutation({
+    mutationFn: () => api.deleteNode(certname!),
+    onSuccess: (result) => {
+      setDeleteResult(result);
+      // Invalidate nodes list cache
+      queryClient.invalidateQueries({ queryKey: ['nodes'] });
+    },
+    onError: (error: Error) => {
+      setShowDeleteConfirm(false);
+      // Show error to user - the API will return an error message
+      alert(`Failed to delete node: ${error.message}`);
+    },
+  });
+
   const handleRefresh = () => {
     refetchNode();
     refetchFacts();
     refetchReports();
     refetchGroups();
+  };
+
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    deleteNodeMutation.mutate();
+  };
+
+  const handleDeleteResultClose = () => {
+    setDeleteResult(null);
+    setShowDeleteConfirm(false);
+    navigate('/nodes');
   };
 
   // Normalize facts from PuppetDB array format to object format
@@ -920,15 +955,123 @@ export default function NodeDetail() {
             </div>
           </div>
 
-          <button
-            onClick={handleRefresh}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </button>
+            <button
+              onClick={handleDeleteClick}
+              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete this node"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && !deleteResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+              <div className="p-2 bg-red-100 rounded-full">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-semibold">Delete Node</h3>
+            </div>
+            <div className="text-sm text-gray-600 space-y-3">
+              <p>
+                Are you sure you want to delete node{' '}
+                <span className="font-mono font-medium text-gray-900">{certname}</span>?
+              </p>
+              <p>This action will:</p>
+              <ul className="list-disc list-inside space-y-1 text-gray-600 ml-2">
+                <li>Remove the node from all pinned group configurations</li>
+                <li>Revoke the node's certificate (if it exists)</li>
+                <li>Deactivate the node in PuppetDB</li>
+              </ul>
+              <p className="text-red-600 font-medium">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteNodeMutation.isPending}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleteNodeMutation.isPending}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleteNodeMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete Node
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Result Modal */}
+      {deleteResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 text-green-600 mb-4">
+              <div className="p-2 bg-green-100 rounded-full">
+                <CheckCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-semibold">Node Deleted</h3>
+            </div>
+            <div className="text-sm text-gray-600 space-y-3">
+              <p>{deleteResult.message}</p>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pinned associations removed:</span>
+                  <span className="font-medium">{deleteResult.pinned_associations_removed}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Certificate revoked:</span>
+                  <span className={`font-medium ${deleteResult.certificate_revoked ? 'text-green-600' : 'text-gray-400'}`}>
+                    {deleteResult.certificate_revoked ? 'Yes' : 'No (may not exist)'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">PuppetDB deactivated:</span>
+                  <span className={`font-medium ${deleteResult.puppetdb_deactivated ? 'text-green-600' : 'text-gray-400'}`}>
+                    {deleteResult.puppetdb_deactivated ? 'Yes' : 'No (may not exist)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={handleDeleteResultClose}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
+              >
+                Return to Nodes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

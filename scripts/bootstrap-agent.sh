@@ -467,7 +467,10 @@ main() {
     fi
 
     # Check if OpenVox server is configured
-    if [ "${OPENVOX_SERVER}" = "{{OPENVOX_SERVER}}" ] || [ -z "${OPENVOX_SERVER}" ]; then
+    # Note: The placeholder check uses a split string to avoid being replaced by the template engine
+    local placeholder="{{OPENVOX_SERVER"
+    placeholder="${placeholder}}}"
+    if [ "${OPENVOX_SERVER}" = "${placeholder}" ] || [ -z "${OPENVOX_SERVER}" ]; then
         log_error "OpenVox server URL is not configured!"
         log_error "Please configure the OpenVox Server URL in OpenVox WebUI settings."
         exit 1
