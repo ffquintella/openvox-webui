@@ -73,7 +73,7 @@
   Boolean $backup_include_database,
   Boolean $backup_include_config,
   # Node Bootstrap parameters
-  Optional[String] $node_bootstrap_puppet_server_url,
+  Optional[String] $node_bootstrap_openvox_server_url,
   Optional[String] $node_bootstrap_repository_base_url,
   String $node_bootstrap_agent_package_name,
 | -%>
@@ -316,18 +316,18 @@ backup:
 #     config_files: true
 <% } -%>
 
-<% if $node_bootstrap_puppet_server_url { -%>
+<% if $node_bootstrap_openvox_server_url { -%>
 # Node Bootstrap configuration
 node_bootstrap:
-  puppet_server_url: "<%= $node_bootstrap_puppet_server_url %>"
+  openvox_server_url: "<%= $node_bootstrap_openvox_server_url %>"
 <% if $node_bootstrap_repository_base_url { -%>
   repository_base_url: "<%= $node_bootstrap_repository_base_url %>"
 <% } -%>
   agent_package_name: "<%= $node_bootstrap_agent_package_name %>"
 <% } else { -%>
-# Node Bootstrap (disabled - puppet_server_url not configured)
+# Node Bootstrap (disabled - openvox_server_url not configured)
 # node_bootstrap:
-#   puppet_server_url: "puppet.example.com"
+#   openvox_server_url: "openvox.example.com"
 #   repository_base_url: "https://yum.voxpupuli.org/openvox8"
 #   agent_package_name: "openvox-agent"
 <% } -%>

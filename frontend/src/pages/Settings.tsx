@@ -250,9 +250,9 @@ function GeneralSettingsTab() {
         {settings.node_bootstrap ? (
           <div className="grid grid-cols-2 gap-4 text-sm">
             <SettingRow
-              label="Puppet Server"
-              value={settings.node_bootstrap.puppet_server_url || 'Not configured'}
-              variant={settings.node_bootstrap.puppet_server_url ? 'neutral' : 'warning'}
+              label="OpenVox Server"
+              value={settings.node_bootstrap.openvox_server_url || 'Not configured'}
+              variant={settings.node_bootstrap.openvox_server_url ? 'neutral' : 'warning'}
             />
             <SettingRow
               label="Agent Package"

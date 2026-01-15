@@ -484,7 +484,7 @@ export interface RbacSettings {
 }
 
 export interface NodeBootstrapSettings {
-  puppet_server_url?: string | null;
+  openvox_server_url?: string | null;
   repository_base_url?: string | null;
   agent_package_name: string;
 }
@@ -1507,7 +1507,7 @@ export interface ExtendRemovalDeadlineRequest {
 // ============================================================================
 
 export interface BootstrapConfigResponse {
-  puppet_server_url?: string | null;
+  openvox_server_url?: string | null;
   repository_base_url?: string | null;
   agent_package_name: string;
   webui_url: string;

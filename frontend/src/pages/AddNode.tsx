@@ -54,7 +54,7 @@ export default function AddNode() {
     );
   }
 
-  const isConfigured = config?.puppet_server_url;
+  const isConfigured = config?.openvox_server_url;
 
   return (
     <div>
@@ -80,7 +80,7 @@ export default function AddNode() {
             <div>
               <h3 className="font-medium text-amber-800">Configuration Required</h3>
               <p className="text-amber-700 text-sm mt-1">
-                The Puppet Server URL has not been configured. Please configure it in{' '}
+                The OpenVox Server URL has not been configured. Please configure it in{' '}
                 <Link to="/settings" className="underline font-medium">Settings</Link>{' '}
                 before bootstrapping nodes.
               </p>
@@ -89,7 +89,7 @@ export default function AddNode() {
               </p>
               <pre className="bg-amber-100 text-amber-900 p-2 rounded mt-2 text-xs overflow-x-auto">
 {`node_bootstrap:
-  puppet_server_url: "puppet.example.com"
+  openvox_server_url: "openvox.example.com"
   repository_base_url: "https://yum.example.com/openvox"
   agent_package_name: "openvox-agent"`}
               </pre>
@@ -106,9 +106,9 @@ export default function AddNode() {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div className="flex justify-between py-2 border-b border-gray-100">
-            <span className="text-gray-500">Puppet Server</span>
+            <span className="text-gray-500">OpenVox Server</span>
             <span className="font-medium text-gray-900">
-              {config?.puppet_server_url || <span className="text-amber-600">Not configured</span>}
+              {config?.openvox_server_url || <span className="text-amber-600">Not configured</span>}
             </span>
           </div>
           <div className="flex justify-between py-2 border-b border-gray-100">

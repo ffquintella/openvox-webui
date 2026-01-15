@@ -31,7 +31,7 @@
 set -e
 
 # Configuration (injected by OpenVox WebUI)
-PUPPET_SERVER="{{PUPPET_SERVER}}"
+OPENVOX_SERVER="{{OPENVOX_SERVER}}"
 REPO_BASE_URL="{{REPO_BASE_URL}}"
 PACKAGE_NAME="{{PACKAGE_NAME}}"
 
@@ -76,16 +76,16 @@ log_step() {
 
 print_banner() {
     echo ""
-    echo -e "${BLUE}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║           OpenVox Agent Bootstrap Script                          ║${NC}"
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║             OpenVox Agent Bootstrap Script                         ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo "  Puppet Server: ${PUPPET_SERVER}"
-    echo "  Package:       ${PACKAGE_NAME}"
+    echo "  OpenVox Server: ${OPENVOX_SERVER:-Not configured}"
+    echo "  Package:        ${PACKAGE_NAME}"
     if [ -n "${REPO_BASE_URL}" ]; then
-        echo "  Repository:    ${REPO_BASE_URL}"
+        echo "  Repository:     ${REPO_BASE_URL}"
     else
-        echo "  Repository:    Vox Pupuli (default)"
+        echo "  Repository:     Vox Pupuli (default)"
     fi
     echo ""
 }
@@ -336,14 +336,14 @@ configure_puppet() {
     # Configure puppet.conf
     cat > "$puppet_conf" << EOF
 [main]
-server = ${PUPPET_SERVER}
+server = ${OPENVOX_SERVER}
 
 [agent]
 # Run puppet agent every 30 minutes
 runinterval = 30m
 EOF
 
-    log_info "Puppet configured with server: ${PUPPET_SERVER}"
+    log_info "Puppet configured with server: ${OPENVOX_SERVER}"
 }
 
 enable_puppet_service() {
@@ -409,7 +409,7 @@ show_help() {
     echo "  --help, -h          Show this help message"
     echo ""
     echo "Environment Variables:"
-    echo "  PUPPET_SERVER       Override the Puppet server URL"
+    echo "  OPENVOX_SERVER      Override the OpenVox server URL"
     echo "  PACKAGE_NAME        Override the package to install"
     echo ""
     echo "Supported Operating Systems:"
@@ -449,8 +449,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Allow environment variable overrides
-if [ -n "${PUPPET_SERVER_OVERRIDE:-}" ]; then
-    PUPPET_SERVER="$PUPPET_SERVER_OVERRIDE"
+if [ -n "${OPENVOX_SERVER_OVERRIDE:-}" ]; then
+    OPENVOX_SERVER="$OPENVOX_SERVER_OVERRIDE"
 fi
 if [ -n "${PACKAGE_NAME_OVERRIDE:-}" ]; then
     PACKAGE_NAME="$PACKAGE_NAME_OVERRIDE"
@@ -466,10 +466,10 @@ main() {
         exit 1
     fi
 
-    # Check if puppet server is configured
-    if [ "${PUPPET_SERVER}" = "{{PUPPET_SERVER}}" ] || [ -z "${PUPPET_SERVER}" ]; then
-        log_error "Puppet server URL is not configured!"
-        log_error "Please configure the Puppet Server URL in OpenVox WebUI settings."
+    # Check if OpenVox server is configured
+    if [ "${OPENVOX_SERVER}" = "{{OPENVOX_SERVER}}" ] || [ -z "${OPENVOX_SERVER}" ]; then
+        log_error "OpenVox server URL is not configured!"
+        log_error "Please configure the OpenVox Server URL in OpenVox WebUI settings."
         exit 1
     fi
 
@@ -481,7 +481,7 @@ main() {
         echo "Would perform the following steps:"
         echo "  1. Setup package repository for $OS_FAMILY ($REPO_PATH)"
         echo "  2. Install ${PACKAGE_NAME}"
-        echo "  3. Configure puppet.conf with server: ${PUPPET_SERVER}"
+        echo "  3. Configure puppet.conf with server: ${OPENVOX_SERVER}"
         echo "  4. Enable puppet service"
         echo "  5. Run puppet agent to submit certificate request"
         exit 0

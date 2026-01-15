@@ -128,7 +128,7 @@ pub struct RbacSettings {
 
 #[derive(Debug, Serialize)]
 pub struct NodeBootstrapSettings {
-    pub puppet_server_url: Option<String>,
+    pub openvox_server_url: Option<String>,
     pub repository_base_url: Option<String>,
     pub agent_package_name: String,
 }
@@ -192,7 +192,7 @@ async fn get_settings(State(state): State<AppState>) -> Json<SettingsResponse> {
             custom_roles_count: config.rbac.roles.len(),
         },
         node_bootstrap: config.node_bootstrap.as_ref().map(|nb| NodeBootstrapSettings {
-            puppet_server_url: nb.puppet_server_url.clone(),
+            openvox_server_url: nb.openvox_server_url.clone(),
             repository_base_url: nb.repository_base_url.clone(),
             agent_package_name: nb.agent_package_name.clone(),
         }),

@@ -219,15 +219,15 @@ rbac:
 #     request_max_age_secs: 300               # Maximum age of SAML requests (5 minutes)
 
 # Node Bootstrap configuration
-# Settings for the bootstrap script that helps add new Puppet agents to the infrastructure
+# Settings for the bootstrap script that helps add new OpenVox agents to the infrastructure
 # node_bootstrap:
-#   # Puppet Server URL that agents will connect to
-#   puppet_server_url: "puppet.example.com"
+#   # OpenVox Server URL that agents will connect to
+#   openvox_server_url: "openvox.example.com"
 #
 #   # Custom repository base URL for OpenVox/Puppet packages
 #   # If not set, the script will use default Vox Pupuli repositories:
 #   #   - YUM: https://yum.voxpupuli.org/openvox8
-#   #   - APT: https://apt.voxpupuli.org/openvox8
+#   #   - APT: https://apt.voxpupuli.org
 #   # For custom YUM-based repos: "https://yum.example.com/openvox8"
 #   # For custom APT-based repos: "https://apt.example.com/openvox8"
 #   # repository_base_url: "https://yum.voxpupuli.org/openvox8"

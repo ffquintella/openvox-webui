@@ -1129,13 +1129,13 @@ impl Default for NodeRemovalConfig {
 /// Node bootstrap configuration for adding new agents
 ///
 /// Configures the bootstrap script that new nodes can download to
-/// automatically install and configure the Puppet agent.
+/// automatically install and configure the OpenVox agent.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NodeBootstrapConfig {
-    /// Puppet Server URL (e.g., "puppet.example.com" or "puppet.example.com:8140")
+    /// OpenVox Server URL (e.g., "openvox.example.com" or "openvox.example.com:8140")
     /// This is the server address that agents will connect to
-    #[serde(default)]
-    pub puppet_server_url: Option<String>,
+    #[serde(default, alias = "puppet_server_url")]
+    pub openvox_server_url: Option<String>,
     /// Custom repository base URL for OpenVox/Puppet packages
     /// For YUM: e.g., "https://yum.example.com/openvox"
     /// For APT: e.g., "https://apt.example.com/openvox"
@@ -1153,7 +1153,7 @@ fn default_agent_package_name() -> String {
 impl Default for NodeBootstrapConfig {
     fn default() -> Self {
         Self {
-            puppet_server_url: None,
+            openvox_server_url: None,
             repository_base_url: None,
             agent_package_name: default_agent_package_name(),
         }
@@ -1703,9 +1703,12 @@ impl AppConfig {
         }
 
         // Node Bootstrap configuration overrides
-        if let Ok(url) = std::env::var("NODE_BOOTSTRAP_PUPPET_SERVER_URL") {
+        // Support both new name (OPENVOX_SERVER) and legacy name (PUPPET_SERVER) for backwards compatibility
+        if let Ok(url) = std::env::var("NODE_BOOTSTRAP_OPENVOX_SERVER_URL")
+            .or_else(|_| std::env::var("NODE_BOOTSTRAP_PUPPET_SERVER_URL"))
+        {
             let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
-            bootstrap.puppet_server_url = Some(url);
+            bootstrap.openvox_server_url = Some(url);
         }
         if let Ok(url) = std::env::var("NODE_BOOTSTRAP_REPOSITORY_BASE_URL") {
             let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
