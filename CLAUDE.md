@@ -7,6 +7,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **IMPORTANT:** When creating git commits, do NOT include:
 Keep commit messages clean and focused only on describing the changes made.
 
+## Changelog
+
+**IMPORTANT:** Before committing user-facing changes, update the changelog at `puppet/CHANGELOG.md`:
+1. Add changes under the `[Unreleased]` section
+2. Use appropriate categories: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`
+3. When releasing a version, move unreleased changes to a new version section with date
+
 ## Project Overview
 
 OpenVox WebUI is a web interface for managing OpenVox infrastructure. It provides PuppetDB integration, node classification (similar to Puppet Enterprise), facter generation, and dashboard visualization.
