@@ -27,6 +27,13 @@ pub struct NodeGroup {
     /// Environment this group applies to
     pub environment: Option<String>,
 
+    /// When true, this group assigns its environment to matching nodes
+    /// instead of filtering by the node's current environment.
+    /// This allows environment-defining groups (e.g., "Production Servers")
+    /// to set a node's environment based on classification rules.
+    #[serde(default)]
+    pub is_environment_group: bool,
+
     /// Whether to match all rules (AND) or any rule (OR)
     pub rule_match_type: RuleMatchType,
 
@@ -53,6 +60,7 @@ impl Default for NodeGroup {
             description: None,
             parent_id: None,
             environment: None,
+            is_environment_group: false,
             rule_match_type: RuleMatchType::All,
             classes: serde_json::json!({}),
             variables: serde_json::json!({}),
@@ -80,6 +88,9 @@ pub struct CreateGroupRequest {
     pub description: Option<String>,
     pub parent_id: Option<Uuid>,
     pub environment: Option<String>,
+    /// When true, this group assigns its environment to matching nodes
+    /// instead of filtering by the node's current environment
+    pub is_environment_group: Option<bool>,
     pub rule_match_type: Option<RuleMatchType>,
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,
@@ -93,6 +104,9 @@ pub struct UpdateGroupRequest {
     pub description: Option<String>,
     pub parent_id: Option<Uuid>,
     pub environment: Option<String>,
+    /// When true, this group assigns its environment to matching nodes
+    /// instead of filtering by the node's current environment
+    pub is_environment_group: Option<bool>,
     pub rule_match_type: Option<RuleMatchType>,
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,

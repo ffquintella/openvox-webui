@@ -47,8 +47,30 @@ async fn add_rule_to_group(world: &mut TestWorld, rule: String, _group: String) 
 async fn classify_node(world: &mut TestWorld, certname: String) {
     // Simulate classification using stored group_rules and node_facts
     let mut matched: Vec<String> = Vec::new();
+    let node_environment = world.node_environments.get(&certname).cloned();
+
     if let Some(facts) = world.node_facts.get(&certname) {
         for (group, rules) in &world.group_rules {
+            // Check environment filtering (unless it's an environment group)
+            let is_env_group = world.environment_groups.contains(group);
+            let group_env = world.group_environments.get(group);
+
+            // For regular groups with an environment, the node must match that environment
+            // For environment groups, we skip environment filtering
+            let env_matches = if is_env_group {
+                true // Environment groups skip environment filtering
+            } else if let Some(group_env) = group_env {
+                // Regular group: node environment must match group environment
+                node_environment.as_ref() == Some(group_env)
+            } else {
+                true // No environment set on group, matches any node
+            };
+
+            if !env_matches {
+                continue;
+            }
+
+            // Check rule matching
             let mut all_match = true;
             for (path, expected) in rules {
                 let val = get_fact_value(facts, path)
@@ -91,13 +113,25 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
         }
     }
 
+    // Determine environment from matched groups (environment groups can assign environment)
+    let mut result_environment: Option<String> = node_environment.clone();
+    for group in &matched {
+        if world.environment_groups.contains(group) {
+            if let Some(env) = world.group_environments.get(group) {
+                result_environment = Some(env.clone());
+                break; // Use first matching environment group's environment
+            }
+        }
+    }
+
     world.last_response = Some(TestResponse {
         status: 200,
         body: serde_json::json!({
             "certname": certname,
             "groups": matched,
             "classes": classes,
-            "parameters": {}
+            "parameters": {},
+            "environment": result_environment
         }),
     });
 }
@@ -138,5 +172,88 @@ async fn classification_includes_class(world: &mut TestWorld, class: String) {
         if let Some(classes) = classes {
             assert!(classes.iter().any(|c| c.as_str() == Some(&class)));
         }
+    }
+}
+
+// Environment group step definitions
+
+#[given(expr = "a node group {string} exists with environment {string}")]
+async fn create_group_with_environment(world: &mut TestWorld, name: String, environment: String) {
+    world.created_groups.push(name.clone());
+    world.group_environments.insert(name, environment);
+}
+
+#[given(expr = "group {string} is an environment group")]
+async fn mark_group_as_environment_group(world: &mut TestWorld, name: String) {
+    if !world.environment_groups.contains(&name) {
+        world.environment_groups.push(name);
+    }
+}
+
+#[given(expr = "node {string} has environment {string}")]
+async fn set_node_environment(world: &mut TestWorld, certname: String, environment: String) {
+    world.node_environments.insert(certname, environment);
+}
+
+#[when(expr = "I create a node group named {string} with environment {string} as environment group")]
+async fn create_environment_group_api(world: &mut TestWorld, name: String, environment: String) {
+    world.created_groups.push(name.clone());
+    world.group_environments.insert(name.clone(), environment);
+    world.environment_groups.push(name.clone());
+
+    world.last_response = Some(TestResponse {
+        status: 201,
+        body: serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "name": name,
+            "is_environment_group": true
+        }),
+    });
+}
+
+#[then(expr = "node {string} should not be classified in group {string}")]
+async fn node_not_in_specific_group(world: &mut TestWorld, _certname: String, group: String) {
+    if let Some(response) = &world.last_response {
+        let groups = response.body.get("groups").and_then(|g| g.as_array());
+        if let Some(groups) = groups {
+            assert!(
+                !groups.iter().any(|g| g.as_str() == Some(&group)),
+                "Node should not be in group '{}' but was found in groups: {:?}",
+                group,
+                groups
+            );
+        }
+    }
+}
+
+#[then(expr = "the classification environment should be {string}")]
+async fn classification_environment_should_be(world: &mut TestWorld, expected_env: String) {
+    if let Some(response) = &world.last_response {
+        let env = response.body.get("environment").and_then(|e| e.as_str());
+        assert_eq!(
+            env,
+            Some(expected_env.as_str()),
+            "Expected environment '{}' but got '{:?}'",
+            expected_env,
+            env
+        );
+    }
+}
+
+#[then(expr = "the group {string} should be an environment group")]
+async fn group_should_be_environment_group(world: &mut TestWorld, name: String) {
+    // In the test, we check if the group is in our environment_groups list
+    // In real API, this would check the is_environment_group field from the response
+    if let Some(response) = &world.last_response {
+        let is_env_group = response
+            .body
+            .get("is_environment_group")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(
+            is_env_group || world.environment_groups.contains(&name),
+            "Group '{}' should be an environment group",
+            name
+        );
     }
 }

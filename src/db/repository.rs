@@ -24,6 +24,7 @@ struct GroupRow {
     description: Option<String>,
     parent_id: Option<String>,
     environment: Option<String>,
+    is_environment_group: i32,
     rule_match_type: String,
     classes: String,
     #[allow(dead_code)] // Kept for database backward compatibility
@@ -76,7 +77,7 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   rule_match_type, classes, parameters, variables
+                   is_environment_group, rule_match_type, classes, parameters, variables
             FROM node_groups
             WHERE organization_id = ?
             ORDER BY name
@@ -117,7 +118,7 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   rule_match_type, classes, parameters, variables
+                   is_environment_group, rule_match_type, classes, parameters, variables
             FROM node_groups
             ORDER BY organization_id, name
             "#,
@@ -153,7 +154,7 @@ impl<'a> GroupRepository<'a> {
         let row = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   rule_match_type, classes, parameters, variables
+                   is_environment_group, rule_match_type, classes, parameters, variables
             FROM node_groups
             WHERE organization_id = ? AND id = ?
             "#,
@@ -190,11 +191,13 @@ impl<'a> GroupRepository<'a> {
             .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|| "{}".to_string());
 
+        let is_environment_group = req.is_environment_group.unwrap_or(false);
+
         sqlx::query(
             r#"
             INSERT INTO node_groups (id, organization_id, name, description, parent_id, environment,
-                                     rule_match_type, classes, parameters, variables)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     is_environment_group, rule_match_type, classes, parameters, variables)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -203,6 +206,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&req.description)
         .bind(req.parent_id.map(|p| p.to_string()))
         .bind(&req.environment)
+        .bind(if is_environment_group { 1 } else { 0 })
         .bind(&rule_match_type)
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
@@ -235,6 +239,9 @@ impl<'a> GroupRepository<'a> {
         let description = req.description.clone().or(existing.description);
         let parent_id = req.parent_id.or(existing.parent_id);
         let environment = req.environment.clone().or(existing.environment);
+        let is_environment_group = req
+            .is_environment_group
+            .unwrap_or(existing.is_environment_group);
         let rule_match_type = req
             .rule_match_type
             .unwrap_or(existing.rule_match_type)
@@ -259,7 +266,7 @@ impl<'a> GroupRepository<'a> {
             r#"
             UPDATE node_groups
             SET name = ?, description = ?, parent_id = ?, environment = ?,
-                rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
+                is_environment_group = ?, rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE organization_id = ? AND id = ?
             "#,
@@ -268,6 +275,7 @@ impl<'a> GroupRepository<'a> {
         .bind(&description)
         .bind(parent_id.map(|p| p.to_string()))
         .bind(&environment)
+        .bind(if is_environment_group { 1 } else { 0 })
         .bind(&rule_match_type)
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
@@ -463,6 +471,7 @@ impl<'a> GroupRepository<'a> {
             description: row.description,
             parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
             environment: row.environment,
+            is_environment_group: row.is_environment_group != 0,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
             variables,
@@ -514,6 +523,7 @@ impl<'a> GroupRepository<'a> {
             description: row.description,
             parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
             environment: row.environment,
+            is_environment_group: row.is_environment_group != 0,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
             variables,

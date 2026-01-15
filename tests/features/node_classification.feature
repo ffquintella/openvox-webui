@@ -82,3 +82,66 @@ Feature: Node Classification
     When I classify node "web1.example.com"
     Then the classification should include class "profile::base"
     And the classification should include class "profile::webserver"
+
+  # Environment Group Feature Tests
+  # Environment groups ASSIGN environments to nodes instead of filtering by the node's current environment
+
+  Scenario: Node does not match group with different environment (default behavior)
+    Given a node group "production_servers" exists with environment "production"
+    And a classification rule "role = webserver" on group "production_servers"
+    And a node "web1.example.com" exists with facts:
+      """
+      {
+        "role": "webserver"
+      }
+      """
+    And node "web1.example.com" has environment "staging"
+    When I classify node "web1.example.com"
+    Then node "web1.example.com" should not be classified in group "production_servers"
+
+  Scenario: Environment group matches node regardless of node's current environment
+    Given a node group "homolog_servers" exists with environment "Homolog"
+    And group "homolog_servers" is an environment group
+    And a classification rule "certname = web1.example.com" on group "homolog_servers"
+    And a node "web1.example.com" exists with facts:
+      """
+      {
+        "certname": "web1.example.com"
+      }
+      """
+    And node "web1.example.com" has environment "production"
+    When I classify node "web1.example.com"
+    Then node "web1.example.com" should be classified in group "homolog_servers"
+    And the classification environment should be "Homolog"
+
+  Scenario: Environment group assigns environment to node without environment
+    Given a node group "development_env" exists with environment "development"
+    And group "development_env" is an environment group
+    And a classification rule "role = dev" on group "development_env"
+    And a node "dev1.example.com" exists with facts:
+      """
+      {
+        "role": "dev"
+      }
+      """
+    When I classify node "dev1.example.com"
+    Then node "dev1.example.com" should be classified in group "development_env"
+    And the classification environment should be "development"
+
+  Scenario: Regular group with environment still filters by node environment
+    Given a node group "prod_webservers" exists with environment "production"
+    And a classification rule "role = webserver" on group "prod_webservers"
+    And a node "web1.example.com" exists with facts:
+      """
+      {
+        "role": "webserver"
+      }
+      """
+    And node "web1.example.com" has environment "production"
+    When I classify node "web1.example.com"
+    Then node "web1.example.com" should be classified in group "prod_webservers"
+
+  Scenario: Create environment group via API
+    When I create a node group named "env_group" with environment "staging" as environment group
+    Then the response status should be 201
+    And the group "env_group" should be an environment group

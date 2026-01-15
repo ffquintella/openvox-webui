@@ -50,6 +50,7 @@ export default function Groups() {
   const [formDescription, setFormDescription] = useState('');
   const [formParentId, setFormParentId] = useState<string>('');
   const [formEnvironment, setFormEnvironment] = useState('');
+  const [formIsEnvironmentGroup, setFormIsEnvironmentGroup] = useState(false);
   const [formMatchType, setFormMatchType] = useState<RuleMatchType>('all');
 
   // Rule form state
@@ -205,6 +206,7 @@ export default function Groups() {
     setFormDescription('');
     setFormParentId('');
     setFormEnvironment('');
+    setFormIsEnvironmentGroup(false);
     setFormMatchType('all');
   };
 
@@ -221,6 +223,7 @@ export default function Groups() {
       description: formDescription || undefined,
       parent_id: formParentId || undefined,
       environment: formEnvironment || undefined,
+      is_environment_group: formIsEnvironmentGroup || undefined,
       rule_match_type: formMatchType,
     });
   };
@@ -235,6 +238,7 @@ export default function Groups() {
         description: formDescription || undefined,
         parent_id: formParentId || null,
         environment: formEnvironment || null,
+        is_environment_group: formIsEnvironmentGroup,
         rule_match_type: formMatchType,
       },
     });
@@ -378,6 +382,7 @@ export default function Groups() {
     setFormDescription(selectedGroup.description || '');
     setFormParentId(selectedGroup.parent_id || '');
     setFormEnvironment(selectedGroup.environment || '');
+    setFormIsEnvironmentGroup(selectedGroup.is_environment_group || false);
     setFormMatchType(selectedGroup.rule_match_type);
     setIsEditOpen(true);
   };
@@ -523,6 +528,24 @@ export default function Groups() {
                     />
                   </div>
                 </div>
+                {formEnvironment && (
+                  <div className="flex items-start">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formIsEnvironmentGroup}
+                        onChange={(e) => setFormIsEnvironmentGroup(e.target.checked)}
+                        className="mr-2"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Environment Group</span>
+                        <p className="text-xs text-gray-500">
+                          When enabled, this group assigns its environment to matching nodes instead of filtering by the node's current environment
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
                 <div>
                   <label className="label">Rule Match Type</label>
                   <div className="flex gap-4">
@@ -647,6 +670,11 @@ export default function Groups() {
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Environment</p>
                   <p className="font-medium text-gray-900 mt-1">
                     {selectedGroup.environment || 'Any'}
+                    {selectedGroup.is_environment_group && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                        Assigns
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">

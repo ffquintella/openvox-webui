@@ -43,6 +43,15 @@ pub struct TestWorld {
     /// Group classes (group_name -> list of classes)
     pub group_classes: HashMap<String, Vec<String>>,
 
+    /// Group environments (group_name -> environment)
+    pub group_environments: HashMap<String, String>,
+
+    /// Environment groups (group names that are environment groups)
+    pub environment_groups: Vec<String>,
+
+    /// Node environments (certname -> environment)
+    pub node_environments: HashMap<String, String>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,

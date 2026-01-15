@@ -46,6 +46,8 @@ export interface NodeGroup {
   description?: string | null;
   parent_id?: string | null;
   environment?: string | null;
+  /** When true, this group assigns its environment to matching nodes instead of filtering by it */
+  is_environment_group?: boolean;
   rule_match_type: RuleMatchType;
   classes: PuppetClasses;
   variables: Record<string, unknown>;
@@ -58,6 +60,8 @@ export interface CreateGroupRequest {
   description?: string;
   parent_id?: string;
   environment?: string;
+  /** When true, this group assigns its environment to matching nodes instead of filtering by it */
+  is_environment_group?: boolean;
   rule_match_type?: RuleMatchType;
   classes?: PuppetClasses;
   variables?: Record<string, unknown>;
@@ -68,6 +72,8 @@ export interface UpdateGroupRequest {
   description?: string;
   parent_id?: string | null;
   environment?: string | null;
+  /** When true, this group assigns its environment to matching nodes instead of filtering by it */
+  is_environment_group?: boolean;
   rule_match_type?: RuleMatchType;
   classes?: PuppetClasses;
   variables?: Record<string, unknown>;

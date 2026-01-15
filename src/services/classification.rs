@@ -184,16 +184,24 @@ impl ClassificationService {
                 MatchType::Inherited
             } else {
                 // Check environment for rule-based matching
-                // If the group has a specific environment set (not None, "*", "All", or "Any"),
-                // only nodes in that environment should match via rules
-                let environment_matches = match &group.environment {
-                    None => true, // No environment restriction
-                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
-                    Some(env) => {
-                        // Group has specific environment requirement
-                        match &node_environment {
-                            Some(node_env) => node_env == env,
-                            None => false, // Node has no environment, cannot match specific requirement
+                // UNLESS this is an "environment group" - which ASSIGNS environments rather than filtering by them
+                //
+                // Environment groups allow you to define groups like "Production Servers" or "Staging Servers"
+                // that use rules (e.g., clientcert ~ .*prod.*) to classify nodes and SET their environment,
+                // rather than filtering nodes that are already in a specific environment.
+                let environment_matches = if group.is_environment_group {
+                    // Environment groups skip environment filtering - they ASSIGN environments
+                    true
+                } else {
+                    match &group.environment {
+                        None => true, // No environment restriction
+                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
+                        Some(env) => {
+                            // Group has specific environment requirement
+                            match &node_environment {
+                                Some(node_env) => node_env == env,
+                                None => false, // Node has no environment, cannot match specific requirement
+                            }
                         }
                     }
                 };
