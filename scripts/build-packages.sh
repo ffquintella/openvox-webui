@@ -494,11 +494,12 @@ DOCKERFILE_EOF
 
             # Create source tarball for rpmbuild
             mkdir -p /tmp/openvox-webui-${VERSION}
-            cp -r src frontend/dist packaging config migrations puppet Cargo.toml Cargo.lock target/release/openvox-webui /tmp/openvox-webui-${VERSION}/
+            cp -r src frontend/dist packaging config migrations puppet Cargo.toml Cargo.lock /tmp/openvox-webui-${VERSION}/
             # Copy documentation files
             cp /source/README.md /source/CHANGELOG.md /source/ROADMAP.md /source/LICENSE /tmp/openvox-webui-${VERSION}/ 2>/dev/null || true
             mkdir -p /tmp/openvox-webui-${VERSION}/target/release
             cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
+            cp target/release/run-scheduled-reports /tmp/openvox-webui-${VERSION}/target/release/
             mkdir -p /tmp/openvox-webui-${VERSION}/frontend
             cp -r frontend/dist /tmp/openvox-webui-${VERSION}/frontend/
 
@@ -631,6 +632,7 @@ DOCKERFILE_EOF
             cp /source/README.md /source/CHANGELOG.md /source/ROADMAP.md /source/LICENSE /tmp/openvox-webui-${VERSION}/ 2>/dev/null || true
             mkdir -p /tmp/openvox-webui-${VERSION}/target/release
             cp target/release/openvox-webui /tmp/openvox-webui-${VERSION}/target/release/
+            cp target/release/run-scheduled-reports /tmp/openvox-webui-${VERSION}/target/release/
 
             cd /tmp/openvox-webui-${VERSION}
 

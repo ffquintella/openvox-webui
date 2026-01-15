@@ -17,11 +17,9 @@ override_dh_auto_install:
 	install -D -m 755 target/release/openvox-webui \
 		debian/openvox-webui/usr/bin/openvox-webui
 
-	# Install scheduled reports binary if it exists
-	if [ -f target/release/run-scheduled-reports ]; then \
-		install -D -m 755 target/release/run-scheduled-reports \
-			debian/openvox-webui/usr/bin/openvox-webui-scheduled-reports; \
-	fi
+	# Install scheduled reports binary
+	install -D -m 755 target/release/run-scheduled-reports \
+		debian/openvox-webui/usr/bin/openvox-webui-scheduled-reports
 
 	# Install frontend assets
 	mkdir -p debian/openvox-webui/usr/share/openvox-webui/static

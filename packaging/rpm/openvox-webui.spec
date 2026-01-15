@@ -79,10 +79,8 @@ install -d %{buildroot}%{_unitdir}
 # Install binary
 install -m 755 target/release/openvox-webui %{buildroot}%{_bindir}/openvox-webui
 
-# Install scheduled report runner binary if it exists
-if [ -f target/release/run-scheduled-reports ]; then
-    install -m 755 target/release/run-scheduled-reports %{buildroot}%{_bindir}/openvox-webui-scheduled-reports
-fi
+# Install scheduled report runner binary
+install -m 755 target/release/run-scheduled-reports %{buildroot}%{_bindir}/openvox-webui-scheduled-reports
 
 # Install frontend assets
 cp -r frontend/dist/* %{buildroot}%{_datadir}/openvox-webui/static/
@@ -247,6 +245,7 @@ fi
 %license LICENSE
 %doc README.md CHANGELOG.md ROADMAP.md
 %{_bindir}/openvox-webui
+%{_bindir}/openvox-webui-scheduled-reports
 %dir %{_sysconfdir}/openvox-webui
 %dir %attr(750,root,openvox-webui) %{_sysconfdir}/openvox-webui/ssl
 %config(noreplace) %attr(640,root,openvox-webui) %{_sysconfdir}/openvox-webui/config.yaml
