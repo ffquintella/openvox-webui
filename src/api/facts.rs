@@ -68,51 +68,69 @@ async fn query_facts(
         .as_ref()
         .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
+    // Helper function to query fact-contents endpoint and convert to Fact format
+    async fn query_fact_contents_as_facts(
+        puppetdb: &crate::services::puppetdb::PuppetDbClient,
+        name: &str,
+        certname: Option<&str>,
+        value_filter: Option<&str>,
+        env_filter: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<Fact>, AppError> {
+        let fact_contents = puppetdb
+            .query_fact_contents_by_path(name, certname, limit.or(Some(100)))
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to query fact contents: {}", e)))?;
+
+        // Convert FactContent to Fact format for consistent API response
+        let facts: Vec<Fact> = fact_contents
+            .into_iter()
+            .filter(|fc| {
+                // Apply value filter if specified
+                if let Some(value) = value_filter {
+                    match &fc.value {
+                        serde_json::Value::String(s) => s == value,
+                        serde_json::Value::Number(n) => &n.to_string() == value,
+                        serde_json::Value::Bool(b) => &b.to_string() == value,
+                        _ => false,
+                    }
+                } else {
+                    true
+                }
+            })
+            .filter(|fc| {
+                // Apply environment filter if specified
+                if let Some(env) = env_filter {
+                    fc.environment.as_ref().map(|e| e == env).unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .map(|fc| Fact {
+                certname: fc.certname,
+                name: name.to_string(),
+                value: fc.value,
+                environment: fc.environment,
+            })
+            .collect();
+
+        Ok(facts)
+    }
+
     // Check if the fact name contains a dot (structured fact path like "os.family")
     // If so, use the fact-contents endpoint instead
     if let Some(ref name) = query.name {
         if name.contains('.') {
-            // Use fact-contents endpoint for structured facts
-            let fact_contents = puppetdb
-                .query_fact_contents_by_path(
-                    name,
-                    query.certname.as_deref(),
-                    query.limit.or(Some(100)),
-                )
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to query fact contents: {}", e)))?;
-
-            // Convert FactContent to Fact format for consistent API response
-            let facts: Vec<Fact> = fact_contents
-                .into_iter()
-                .filter(|fc| {
-                    // Apply value filter if specified
-                    if let Some(ref value) = query.value {
-                        match &fc.value {
-                            serde_json::Value::String(s) => s == value,
-                            serde_json::Value::Number(n) => &n.to_string() == value,
-                            serde_json::Value::Bool(b) => &b.to_string() == value,
-                            _ => false,
-                        }
-                    } else {
-                        true
-                    }
-                })
-                .filter(|fc| {
-                    // Apply environment filter if specified
-                    if let Some(ref env) = query.environment {
-                        fc.environment.as_ref().map(|e| e == env).unwrap_or(false)
-                    } else {
-                        true
-                    }
-                })
-                .map(|fc| Fact {
-                    certname: fc.certname,
-                    name: name.clone(),
-                    value: fc.value,
-                    environment: fc.environment,
-                })
-                .collect();
+            // Use fact-contents endpoint for structured facts with nested paths
+            let facts = query_fact_contents_as_facts(
+                puppetdb,
+                name,
+                query.certname.as_deref(),
+                query.value.as_deref(),
+                query.environment.as_deref(),
+                query.limit,
+            )
+            .await?;
 
             return Ok(Json(FactsResponse {
                 total: Some(facts.len() as u64),
@@ -156,6 +174,29 @@ async fn query_facts(
         .query_facts_advanced(&qb, params)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to query facts: {}", e)))?;
+
+    // If querying by name and got no results, try fact-contents endpoint
+    // This handles external facts and structured facts that don't appear in the standard facts endpoint
+    if facts.is_empty() {
+        if let Some(ref name) = query.name {
+            let fallback_facts = query_fact_contents_as_facts(
+                puppetdb,
+                name,
+                query.certname.as_deref(),
+                query.value.as_deref(),
+                query.environment.as_deref(),
+                query.limit,
+            )
+            .await?;
+
+            if !fallback_facts.is_empty() {
+                return Ok(Json(FactsResponse {
+                    total: Some(fallback_facts.len() as u64),
+                    facts: fallback_facts,
+                }));
+            }
+        }
+    }
 
     Ok(Json(FactsResponse {
         total: Some(facts.len() as u64),
