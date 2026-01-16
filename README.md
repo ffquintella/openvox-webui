@@ -4,6 +4,8 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 
 ![OpenVox WebUI Dashboard](docs/images/dashboard.png)
 
+![OpenVox WebUI Node Groups](docs/images/nodegroups.png)
+
 ## Features
 
 - **PuppetDB Integration**: Query and visualize node data, facts, reports, and resources
@@ -68,7 +70,7 @@ docker-compose down
 
 ## Project Structure
 
-```
+```text
 openvox-webui/
 ├── src/                    # Rust backend source
 │   ├── api/               # API route handlers

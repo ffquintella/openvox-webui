@@ -4,6 +4,7 @@ import {
   Plus,
   FolderTree,
   ChevronRight,
+  ChevronDown,
   Trash2,
   X,
   Loader2,
@@ -78,6 +79,22 @@ export default function Groups() {
   const [isAddVarOpen, setIsAddVarOpen] = useState(false);
   const [newVarKey, setNewVarKey] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
+
+  // Collapsed state for group tree (store IDs of collapsed groups)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroupCollapse = (groupId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selecting the group when clicking the collapse toggle
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupId)) {
+        newSet.delete(groupId);
+      } else {
+        newSet.add(groupId);
+      }
+      return newSet;
+    });
+  };
 
   const queryClient = useQueryClient();
 
@@ -400,6 +417,8 @@ export default function Groups() {
   const renderGroupItem = (group: NodeGroup, depth: number = 0) => {
     const children = groupHierarchy.childrenMap.get(group.id) || [];
     const isSelected = selectedGroup?.id === group.id;
+    const hasChildren = children.length > 0;
+    const isCollapsed = collapsedGroups.has(group.id);
 
     return (
       <div key={group.id}>
@@ -412,6 +431,22 @@ export default function Groups() {
           style={{ paddingLeft: `${16 + depth * 20}px` }}
         >
           <div className="flex items-center min-w-0">
+            {/* Collapse/Expand toggle for groups with children */}
+            {hasChildren ? (
+              <button
+                onClick={(e) => toggleGroupCollapse(group.id, e)}
+                className="p-0.5 hover:bg-gray-200 rounded mr-1 flex-shrink-0"
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+              >
+                {isCollapsed ? (
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
+            ) : (
+              <span className="w-5 mr-1 flex-shrink-0" /> /* Spacer for alignment */
+            )}
             {depth > 0 && (
               <GitBranch className="w-4 h-4 text-gray-300 mr-2 flex-shrink-0" />
             )}
@@ -435,7 +470,8 @@ export default function Groups() {
             <ChevronRight className="w-4 h-4 text-gray-400" />
           </div>
         </button>
-        {children.map(child => renderGroupItem(child, depth + 1))}
+        {/* Only render children if not collapsed */}
+        {!isCollapsed && children.map(child => renderGroupItem(child, depth + 1))}
       </div>
     );
   };
