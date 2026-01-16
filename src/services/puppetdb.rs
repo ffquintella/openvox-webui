@@ -615,12 +615,41 @@ impl PuppetDbClient {
     // ==================== Fact Endpoints ====================
 
     /// Get facts for a specific node
+    ///
+    /// This function queries both the /facts and /fact-contents endpoints to ensure
+    /// all facts are returned, including external facts that may only appear in fact-contents.
     pub async fn get_node_facts(&self, certname: &str) -> Result<Vec<Fact>> {
         // Use the facts endpoint with a certname query filter
         // The /nodes/{certname}/facts endpoint is not supported by all PuppetDB versions
         let query = QueryBuilder::new().equals("certname", certname);
-        self.query_facts_advanced(&query, QueryParams::default())
-            .await
+        let mut facts = self
+            .query_facts_advanced(&query, QueryParams::default())
+            .await?;
+
+        // Also query fact-contents to get external facts that may not appear in /facts
+        // Only include top-level facts (path length == 1) to avoid duplicating nested facts
+        if let Ok(fact_contents) = self.get_node_fact_contents(certname).await {
+            // Create a set of existing fact names for deduplication
+            let existing_names: std::collections::HashSet<String> =
+                facts.iter().map(|f| f.name.clone()).collect();
+
+            // Collect new facts first, then extend (to avoid borrow issues)
+            let new_facts: Vec<Fact> = fact_contents
+                .into_iter()
+                .filter(|fc| fc.path.len() == 1) // Only top-level facts
+                .filter(|fc| !existing_names.contains(&fc.path[0])) // Not already in facts
+                .map(|fc| Fact {
+                    certname: fc.certname,
+                    name: fc.path.into_iter().next().unwrap_or_default(),
+                    value: fc.value,
+                    environment: fc.environment,
+                })
+                .collect();
+
+            facts.extend(new_facts);
+        }
+
+        Ok(facts)
     }
 
     /// Get a specific fact for a node
@@ -698,6 +727,20 @@ impl PuppetDbClient {
         self.get(&url).await
     }
 
+    /// Get all fact contents for a specific node
+    ///
+    /// This queries the fact-contents endpoint filtered by certname, which returns
+    /// all facts including external facts that may not appear in the standard /facts endpoint.
+    pub async fn get_node_fact_contents(&self, certname: &str) -> Result<Vec<FactContent>> {
+        let query = format!("[\"=\",\"certname\",\"{}\"]", certname);
+        let url = format!(
+            "{}/pdb/query/v4/fact-contents?query={}",
+            self.base_url,
+            urlencoding::encode(&query)
+        );
+        self.get(&url).await
+    }
+
     /// Query fact contents by dot-notation path (e.g., "os.family", "networking.ip")
     ///
     /// This uses the fact-contents endpoint which supports querying nested structured facts.
@@ -720,6 +763,44 @@ impl PuppetDbClient {
 
         // Build the query - path must match exactly
         let mut query_parts = vec![format!("[\"=\",\"path\",[{}]]", path_json)];
+
+        // Add certname filter if provided
+        if let Some(cn) = certname {
+            query_parts.push(format!("[\"=\",\"certname\",\"{}\"]", cn));
+        }
+
+        // Combine query parts with AND if multiple conditions
+        let query = if query_parts.len() > 1 {
+            format!("[\"and\",{}]", query_parts.join(","))
+        } else {
+            query_parts.remove(0)
+        };
+
+        url = format!("{}?query={}", url, urlencoding::encode(&query));
+
+        // Add limit if specified
+        if let Some(l) = limit {
+            url = format!("{}&limit={}", url, l);
+        }
+
+        self.get(&url).await
+    }
+
+    /// Query fact contents by fact name
+    ///
+    /// This queries the fact-contents endpoint filtered by the "name" field,
+    /// which is the top-level fact name. This is useful for finding all values
+    /// of a specific external fact across nodes.
+    pub async fn query_fact_contents_by_name(
+        &self,
+        name: &str,
+        certname: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<FactContent>> {
+        let mut url = format!("{}/pdb/query/v4/fact-contents", self.base_url);
+
+        // Build the query - filter by name field
+        let mut query_parts = vec![format!("[\"=\",\"name\",\"{}\"]", name)];
 
         // Add certname filter if provided
         if let Some(cn) = certname {

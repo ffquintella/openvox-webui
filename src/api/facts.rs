@@ -69,6 +69,7 @@ async fn query_facts(
         .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
     // Helper function to query fact-contents endpoint and convert to Fact format
+    // Tries multiple query strategies: by path first, then by name if no results
     async fn query_fact_contents_as_facts(
         puppetdb: &crate::services::puppetdb::PuppetDbClient,
         name: &str,
@@ -77,10 +78,23 @@ async fn query_facts(
         env_filter: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Vec<Fact>, AppError> {
-        let fact_contents = puppetdb
+        // First try by path (works for most facts)
+        let mut fact_contents = puppetdb
             .query_fact_contents_by_path(name, certname, limit.or(Some(100)))
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to query fact contents: {}", e)))?;
+            .unwrap_or_default();
+
+        // If no results, try by name (works for external facts)
+        if fact_contents.is_empty() {
+            fact_contents = puppetdb
+                .query_fact_contents_by_name(name, certname, limit.or(Some(100)))
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to query fact contents: {}", e)))?;
+
+            // Filter to only include entries where path length is 1 (top-level facts)
+            // to avoid returning nested values for structured facts
+            fact_contents.retain(|fc| fc.path.len() == 1);
+        }
 
         // Convert FactContent to Fact format for consistent API response
         let facts: Vec<Fact> = fact_contents
