@@ -51,6 +51,7 @@ export default function Groups() {
   const [formParentId, setFormParentId] = useState<string>('');
   const [formEnvironment, setFormEnvironment] = useState('');
   const [formIsEnvironmentGroup, setFormIsEnvironmentGroup] = useState(false);
+  const [formMatchAllNodes, setFormMatchAllNodes] = useState(false);
   const [formMatchType, setFormMatchType] = useState<RuleMatchType>('all');
 
   // Rule form state
@@ -207,6 +208,7 @@ export default function Groups() {
     setFormParentId('');
     setFormEnvironment('');
     setFormIsEnvironmentGroup(false);
+    setFormMatchAllNodes(false);
     setFormMatchType('all');
   };
 
@@ -224,6 +226,7 @@ export default function Groups() {
       parent_id: formParentId || undefined,
       environment: formEnvironment || undefined,
       is_environment_group: formIsEnvironmentGroup || undefined,
+      match_all_nodes: formMatchAllNodes || undefined,
       rule_match_type: formMatchType,
     });
   };
@@ -239,6 +242,7 @@ export default function Groups() {
         parent_id: formParentId || null,
         environment: formEnvironment || null,
         is_environment_group: formIsEnvironmentGroup,
+        match_all_nodes: formMatchAllNodes,
         rule_match_type: formMatchType,
       },
     });
@@ -383,6 +387,7 @@ export default function Groups() {
     setFormParentId(selectedGroup.parent_id || '');
     setFormEnvironment(selectedGroup.environment || '');
     setFormIsEnvironmentGroup(selectedGroup.is_environment_group || false);
+    setFormMatchAllNodes(selectedGroup.match_all_nodes || false);
     setFormMatchType(selectedGroup.rule_match_type);
     setIsEditOpen(true);
   };
@@ -546,6 +551,22 @@ export default function Groups() {
                     </label>
                   </div>
                 )}
+                <div className="flex items-start">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formMatchAllNodes}
+                      onChange={(e) => setFormMatchAllNodes(e.target.checked)}
+                      className="mr-2"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Match All Nodes</span>
+                      <p className="text-xs text-gray-500">
+                        When enabled, this group matches all nodes (within parent context) when no rules are defined. When disabled (default), groups with no rules match no nodes.
+                      </p>
+                    </div>
+                  </label>
+                </div>
                 <div>
                   <label className="label">Rule Match Type</label>
                   <div className="flex gap-4">

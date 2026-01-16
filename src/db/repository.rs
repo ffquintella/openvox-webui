@@ -25,6 +25,7 @@ struct GroupRow {
     parent_id: Option<String>,
     environment: Option<String>,
     is_environment_group: i32,
+    match_all_nodes: i32,
     rule_match_type: String,
     classes: String,
     #[allow(dead_code)] // Kept for database backward compatibility
@@ -77,7 +78,7 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
             FROM node_groups
             WHERE organization_id = ?
             ORDER BY name
@@ -118,7 +119,7 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
             FROM node_groups
             ORDER BY organization_id, name
             "#,
@@ -154,7 +155,7 @@ impl<'a> GroupRepository<'a> {
         let row = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
             FROM node_groups
             WHERE organization_id = ? AND id = ?
             "#,
@@ -192,12 +193,13 @@ impl<'a> GroupRepository<'a> {
             .unwrap_or_else(|| "{}".to_string());
 
         let is_environment_group = req.is_environment_group.unwrap_or(false);
+        let match_all_nodes = req.match_all_nodes.unwrap_or(false);
 
         sqlx::query(
             r#"
             INSERT INTO node_groups (id, organization_id, name, description, parent_id, environment,
-                                     is_environment_group, rule_match_type, classes, parameters, variables)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -207,6 +209,7 @@ impl<'a> GroupRepository<'a> {
         .bind(req.parent_id.map(|p| p.to_string()))
         .bind(&req.environment)
         .bind(if is_environment_group { 1 } else { 0 })
+        .bind(if match_all_nodes { 1 } else { 0 })
         .bind(&rule_match_type)
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
@@ -242,6 +245,9 @@ impl<'a> GroupRepository<'a> {
         let is_environment_group = req
             .is_environment_group
             .unwrap_or(existing.is_environment_group);
+        let match_all_nodes = req
+            .match_all_nodes
+            .unwrap_or(existing.match_all_nodes);
         let rule_match_type = req
             .rule_match_type
             .unwrap_or(existing.rule_match_type)
@@ -266,7 +272,7 @@ impl<'a> GroupRepository<'a> {
             r#"
             UPDATE node_groups
             SET name = ?, description = ?, parent_id = ?, environment = ?,
-                is_environment_group = ?, rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
+                is_environment_group = ?, match_all_nodes = ?, rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE organization_id = ? AND id = ?
             "#,
@@ -276,6 +282,7 @@ impl<'a> GroupRepository<'a> {
         .bind(parent_id.map(|p| p.to_string()))
         .bind(&environment)
         .bind(if is_environment_group { 1 } else { 0 })
+        .bind(if match_all_nodes { 1 } else { 0 })
         .bind(&rule_match_type)
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
@@ -472,6 +479,7 @@ impl<'a> GroupRepository<'a> {
             parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
             environment: row.environment,
             is_environment_group: row.is_environment_group != 0,
+            match_all_nodes: row.match_all_nodes != 0,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
             variables,
@@ -524,6 +532,7 @@ impl<'a> GroupRepository<'a> {
             parent_id: row.parent_id.and_then(|p| Uuid::parse_str(&p).ok()),
             environment: row.environment,
             is_environment_group: row.is_environment_group != 0,
+            match_all_nodes: row.match_all_nodes != 0,
             rule_match_type: parse_rule_match_type(&row.rule_match_type),
             classes,
             variables,

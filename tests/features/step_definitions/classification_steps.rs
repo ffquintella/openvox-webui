@@ -48,44 +48,72 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
     // Simulate classification using stored group_rules and node_facts
     let mut matched: Vec<String> = Vec::new();
     let node_environment = world.node_environments.get(&certname).cloned();
+    let facts = world.node_facts.get(&certname).cloned().unwrap_or(serde_json::json!({}));
 
-    if let Some(facts) = world.node_facts.get(&certname) {
-        for (group, rules) in &world.group_rules {
-            // Check environment filtering (unless it's an environment group)
-            let is_env_group = world.environment_groups.contains(group);
-            let group_env = world.group_environments.get(group);
+    // First pass: match groups with rules
+    for (group, rules) in &world.group_rules {
+        // Check environment filtering (unless it's an environment group)
+        let is_env_group = world.environment_groups.contains(group);
+        let group_env = world.group_environments.get(group);
 
-            // For regular groups with an environment, the node must match that environment
-            // For environment groups, we skip environment filtering
-            let env_matches = if is_env_group {
-                true // Environment groups skip environment filtering
-            } else if let Some(group_env) = group_env {
-                // Regular group: node environment must match group environment
-                node_environment.as_ref() == Some(group_env)
-            } else {
-                true // No environment set on group, matches any node
-            };
+        // For regular groups with an environment, the node must match that environment
+        // For environment groups, we skip environment filtering
+        let env_matches = if is_env_group {
+            true // Environment groups skip environment filtering
+        } else if let Some(group_env) = group_env {
+            // Regular group: node environment must match group environment
+            node_environment.as_ref() == Some(group_env)
+        } else {
+            true // No environment set on group, matches any node
+        };
 
-            if !env_matches {
-                continue;
-            }
+        if !env_matches {
+            continue;
+        }
 
-            // Check rule matching
-            let mut all_match = true;
-            for (path, expected) in rules {
-                let val = get_fact_value(facts, path)
-                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-                    .or_else(|| get_fact_value(facts, path).map(|v| v.to_string()));
-                if val.as_deref() != Some(expected.as_str()) {
-                    all_match = false;
-                    break;
-                }
-            }
-            if all_match {
-                matched.push(group.clone());
+        // Check rule matching
+        let mut all_match = true;
+        for (path, expected) in rules {
+            let val = get_fact_value(&facts, path)
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .or_else(|| get_fact_value(&facts, path).map(|v| v.to_string()));
+            if val.as_deref() != Some(expected.as_str()) {
+                all_match = false;
+                break;
             }
         }
+        if all_match {
+            matched.push(group.clone());
+        }
     }
+
+    // Second pass: match groups with match_all_nodes=true and no rules
+    for group in &world.match_all_nodes_groups {
+        // Skip if already matched (has rules)
+        if matched.contains(group) {
+            continue;
+        }
+
+        // Check if group has rules - if so, it was handled above
+        if world.group_rules.contains_key(group) {
+            continue;
+        }
+
+        // Check if this is a child group
+        if let Some(parent) = world.group_parents.get(group) {
+            // Child group with match_all_nodes: only match if parent matched
+            if matched.contains(parent) {
+                matched.push(group.clone());
+            }
+        } else {
+            // Root group with match_all_nodes: match all nodes
+            matched.push(group.clone());
+        }
+    }
+
+    // NOTE: Child groups NO LONGER automatically inherit from parents
+    // They must have match_all_nodes=true to inherit (handled in the second pass above)
+    // This matches the new behavior where groups with no rules match no nodes by default
 
     // Collect classes from matched groups and their parents
     let mut classes: Vec<String> = Vec::new();
@@ -255,5 +283,28 @@ async fn group_should_be_environment_group(world: &mut TestWorld, name: String) 
             "Group '{}' should be an environment group",
             name
         );
+    }
+}
+
+// Match All Nodes step definitions
+
+#[given(expr = "a node group {string} exists with match_all_nodes enabled")]
+async fn create_group_with_match_all_nodes(world: &mut TestWorld, name: String) {
+    world.created_groups.push(name.clone());
+    if !world.match_all_nodes_groups.contains(&name) {
+        world.match_all_nodes_groups.push(name);
+    }
+}
+
+#[given(expr = "a node group {string} exists with parent {string} and match_all_nodes enabled")]
+async fn create_child_group_with_match_all_nodes(
+    world: &mut TestWorld,
+    name: String,
+    parent: String,
+) {
+    world.created_groups.push(name.clone());
+    world.group_parents.insert(name.clone(), parent);
+    if !world.match_all_nodes_groups.contains(&name) {
+        world.match_all_nodes_groups.push(name);
     }
 }

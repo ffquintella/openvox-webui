@@ -49,6 +49,9 @@ pub struct TestWorld {
     /// Environment groups (group names that are environment groups)
     pub environment_groups: Vec<String>,
 
+    /// Match all nodes groups (group names that have match_all_nodes=true)
+    pub match_all_nodes_groups: Vec<String>,
+
     /// Node environments (certname -> environment)
     pub node_environments: HashMap<String, String>,
 

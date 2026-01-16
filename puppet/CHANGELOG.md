@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Environment group feature for node groups that assign environments instead of filtering by them
+- Match All Nodes option for node groups to control behavior when no rules are defined
 
 ### Fixed
 - Child groups now only match nodes that also match their parent group

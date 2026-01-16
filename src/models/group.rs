@@ -34,6 +34,11 @@ pub struct NodeGroup {
     #[serde(default)]
     pub is_environment_group: bool,
 
+    /// When true, groups with no rules will match all nodes (that pass environment filtering).
+    /// When false (default), groups with no rules will match no nodes unless inherited from parent.
+    #[serde(default)]
+    pub match_all_nodes: bool,
+
     /// Whether to match all rules (AND) or any rule (OR)
     pub rule_match_type: RuleMatchType,
 
@@ -61,6 +66,7 @@ impl Default for NodeGroup {
             parent_id: None,
             environment: None,
             is_environment_group: false,
+            match_all_nodes: false,
             rule_match_type: RuleMatchType::All,
             classes: serde_json::json!({}),
             variables: serde_json::json!({}),
@@ -91,6 +97,8 @@ pub struct CreateGroupRequest {
     /// When true, this group assigns its environment to matching nodes
     /// instead of filtering by the node's current environment
     pub is_environment_group: Option<bool>,
+    /// When true, groups with no rules will match all nodes from parent (or all nodes if root)
+    pub match_all_nodes: Option<bool>,
     pub rule_match_type: Option<RuleMatchType>,
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,
@@ -107,6 +115,8 @@ pub struct UpdateGroupRequest {
     /// When true, this group assigns its environment to matching nodes
     /// instead of filtering by the node's current environment
     pub is_environment_group: Option<bool>,
+    /// When true, groups with no rules will match all nodes from parent (or all nodes if root)
+    pub match_all_nodes: Option<bool>,
     pub rule_match_type: Option<RuleMatchType>,
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,

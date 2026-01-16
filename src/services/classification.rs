@@ -173,51 +173,58 @@ impl ClassificationService {
 
             let mut matched = false;
             let mut matched_rules = vec![];
+
+            // Check environment filtering first (applies to all non-pinned matches)
+            // UNLESS this is an "environment group" - which ASSIGNS environments rather than filtering by them
+            let environment_matches = if group.is_environment_group {
+                // Environment groups skip environment filtering - they ASSIGN environments
+                true
+            } else {
+                match &group.environment {
+                    None => true, // No environment restriction
+                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
+                    Some(env) => {
+                        // Group has specific environment requirement
+                        match &node_environment {
+                            Some(node_env) => node_env == env,
+                            None => false, // Node has no environment, cannot match specific requirement
+                        }
+                    }
+                }
+            };
+
             let match_type = if group.pinned_nodes.contains(&certname.to_string()) {
                 // Pinned nodes ALWAYS match, regardless of environment
                 // This allows environment assignment without bootstrap problems
                 matched = true;
                 MatchType::Pinned
-            } else if parent_matched && group.rules.is_empty() {
-                // Child group with no rules of its own inherits from parent
-                matched = true;
-                MatchType::Inherited
-            } else {
-                // Check environment for rule-based matching
-                // UNLESS this is an "environment group" - which ASSIGNS environments rather than filtering by them
-                //
-                // Environment groups allow you to define groups like "Production Servers" or "Staging Servers"
-                // that use rules (e.g., clientcert ~ .*prod.*) to classify nodes and SET their environment,
-                // rather than filtering nodes that are already in a specific environment.
-                let environment_matches = if group.is_environment_group {
-                    // Environment groups skip environment filtering - they ASSIGN environments
-                    true
-                } else {
-                    match &group.environment {
-                        None => true, // No environment restriction
-                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
-                        Some(env) => {
-                            // Group has specific environment requirement
-                            match &node_environment {
-                                Some(node_env) => node_env == env,
-                                None => false, // Node has no environment, cannot match specific requirement
-                            }
-                        }
+            } else if !environment_matches {
+                // Environment doesn't match - skip this group and its children
+                tracing::debug!(
+                    "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping",
+                    certname,
+                    node_environment,
+                    group.name,
+                    group.environment
+                );
+                continue;
+            } else if group.rules.is_empty() {
+                // Group has no rules - behavior depends on match_all_nodes setting
+                if group.match_all_nodes {
+                    // match_all_nodes=true: Match all nodes (within parent context if has parent)
+                    // If has parent, only match if parent matched
+                    // If no parent (root group), match all nodes that pass environment filter
+                    if group.parent_id.is_none() || parent_matched {
+                        matched = true;
                     }
-                };
-
-                if !environment_matches {
-                    tracing::debug!(
-                        "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping rule evaluation",
-                        certname,
-                        node_environment,
-                        group.name,
-                        group.environment
-                    );
-                    continue; // Skip this group and its children
+                    MatchType::Rules // Using Rules type since it's an explicit match configuration
+                } else {
+                    // match_all_nodes=false (default): Groups with no rules match NO nodes
+                    // This is true regardless of whether parent matched or not
+                    MatchType::Rules
                 }
-
-                // Evaluate rules only when not inherited and not pinned
+            } else {
+                // Evaluate rules
                 let evaluations = self.evaluate_rules(&group.rules, facts);
                 matched_rules = evaluations
                     .iter()
@@ -703,6 +710,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "child".to_string(),
             parent_id: Some(parent_id),
+            match_all_nodes: true, // Child inherits from parent when this is enabled
             classes: serde_json::json!({"class_child": {"child": true}, "class_parent": {"p": "child"}}),
             ..Default::default()
         };
@@ -716,7 +724,7 @@ mod tests {
 
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
-        assert_eq!(result.groups[1].match_type, MatchType::Inherited);
+        assert_eq!(result.groups[1].match_type, MatchType::Rules); // Changed from Inherited since match_all_nodes uses Rules type
         // Classes should be merged with deep merge
         assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
         assert!(result.classes.as_object().unwrap().contains_key("class_child"));
@@ -740,6 +748,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "child".to_string(),
             parent_id: Some(parent_id),
+            match_all_nodes: true, // Child inherits from parent when this is enabled
             classes: serde_json::json!({"class_child": {}}),
             ..Default::default()
         };
@@ -751,7 +760,7 @@ mod tests {
 
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
-        assert_eq!(result.groups[1].match_type, MatchType::Inherited);
+        assert_eq!(result.groups[1].match_type, MatchType::Rules); // Child has match_all_nodes=true, uses Rules type
         assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
         assert!(result.classes.as_object().unwrap().contains_key("class_child"));
     }
@@ -996,7 +1005,8 @@ mod tests {
             id: child_id,
             name: "child".to_string(),
             parent_id: Some(root_id),
-            environment: Some("staging".to_string()), // Child environment
+            environment: None, // No environment restriction (inherits from parent)
+            match_all_nodes: true, // Required to inherit from parent
             classes: serde_json::json!({
                 "middleware": {"version": "2.0"},
                 "common": {"child_param": "child_value"} // Merges with root's common class
@@ -1010,6 +1020,7 @@ mod tests {
             name: "grandchild".to_string(),
             parent_id: Some(child_id),
             environment: None, // No environment (should inherit from child)
+            match_all_nodes: true, // Required to inherit from parent
             classes: serde_json::json!({
                 "application": {"version": "3.0"},
                 "common": {"grandchild_param": "grandchild_value"} // Further merges common class
@@ -1030,13 +1041,12 @@ mod tests {
         assert_eq!(result.groups[0].name, "root");
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[1].name, "child");
-        assert_eq!(result.groups[1].match_type, MatchType::Inherited);
+        assert_eq!(result.groups[1].match_type, MatchType::Rules); // match_all_nodes=true uses Rules type
         assert_eq!(result.groups[2].name, "grandchild");
-        assert_eq!(result.groups[2].match_type, MatchType::Inherited);
+        assert_eq!(result.groups[2].match_type, MatchType::Rules); // match_all_nodes=true uses Rules type
 
-        // Environment should be from closest ancestor with environment set (child's "staging")
-        // Since grandchild has None, we inherit from child
-        assert_eq!(result.environment, Some("staging".to_string()));
+        // Environment should be None since no group in the hierarchy has an environment
+        assert_eq!(result.environment, None);
 
         // Classes should be merged from all three groups
         let classes = result.classes.as_object().unwrap();
@@ -1182,7 +1192,8 @@ mod tests {
             id: Uuid::new_v4(),
             name: "R - Docker Apps".to_string(),
             parent_id: Some(parent_id),
-            environment: Some("homolog".to_string()),
+            environment: None, // No environment - inherits from parent
+            match_all_nodes: true, // Required to inherit from parent
             // No rules - should inherit from parent
             rules: vec![],
             classes: serde_json::json!({"docker": {}}),
@@ -1199,7 +1210,7 @@ mod tests {
         assert_eq!(result_a.groups.len(), 2, "Node with 'vhm' should match both groups");
         assert_eq!(result_a.groups[0].name, "Homolog");
         assert_eq!(result_a.groups[1].name, "R - Docker Apps");
-        assert_eq!(result_a.groups[1].match_type, MatchType::Inherited);
+        assert_eq!(result_a.groups[1].match_type, MatchType::Rules); // match_all_nodes=true uses Rules type
 
         // Node B: certname doesn't contain "vhm" - should match neither
         let facts_b = serde_json::json!({
@@ -1259,5 +1270,126 @@ mod tests {
         });
         let result = service.classify("linux-docker.example.com", &facts);
         assert_eq!(result.groups.len(), 2, "Linux node with Docker should match both groups");
+    }
+
+    #[test]
+    fn test_match_all_nodes_root_group() {
+        // Test that a root group with match_all_nodes=true matches all nodes
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "All Nodes".to_string(),
+            match_all_nodes: true, // Matches all nodes
+            rules: vec![],         // No rules
+            classes: serde_json::json!({"base": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Any node should match
+        let facts = serde_json::json!({
+            "kernel": "Linux"
+        });
+        let result = service.classify("any-node.example.com", &facts);
+        assert_eq!(result.groups.len(), 1, "Node should match group with match_all_nodes=true");
+        assert_eq!(result.groups[0].name, "All Nodes");
+    }
+
+    #[test]
+    fn test_match_all_nodes_false_root_group() {
+        // Test that a root group with match_all_nodes=false and no rules matches NO nodes
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Empty Group".to_string(),
+            match_all_nodes: false, // Default - should not match when no rules
+            rules: vec![],          // No rules
+            classes: serde_json::json!({"base": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        let facts = serde_json::json!({
+            "kernel": "Linux"
+        });
+        let result = service.classify("any-node.example.com", &facts);
+        assert_eq!(result.groups.len(), 0, "Node should NOT match group with match_all_nodes=false and no rules");
+    }
+
+    #[test]
+    fn test_match_all_nodes_child_respects_parent() {
+        // Test that a child group with match_all_nodes=true still requires parent to match
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            classes: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "All Linux Nodes".to_string(),
+            parent_id: Some(parent_id),
+            match_all_nodes: true, // Matches all nodes within parent context
+            rules: vec![],         // No rules
+            classes: serde_json::json!({"linux_base": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Linux node should match both parent and child
+        let linux_facts = serde_json::json!({
+            "kernel": "Linux"
+        });
+        let result = service.classify("linux-node.example.com", &linux_facts);
+        assert_eq!(result.groups.len(), 2, "Linux node should match both groups");
+        assert_eq!(result.groups[0].name, "Linux");
+        assert_eq!(result.groups[1].name, "All Linux Nodes");
+
+        // Windows node should match neither (parent doesn't match)
+        let windows_facts = serde_json::json!({
+            "kernel": "Windows"
+        });
+        let result = service.classify("windows-node.example.com", &windows_facts);
+        assert_eq!(result.groups.len(), 0, "Windows node should not match - parent doesn't match");
+    }
+
+    #[test]
+    fn test_match_all_nodes_with_environment_filter() {
+        // Test that match_all_nodes still respects environment filtering
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Production All".to_string(),
+            environment: Some("production".to_string()),
+            is_environment_group: false, // Regular group - filters by environment
+            match_all_nodes: true,       // Would match all nodes IF environment passes
+            rules: vec![],
+            classes: serde_json::json!({"production": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Node in production environment should match
+        let prod_facts = serde_json::json!({
+            "catalog_environment": "production"
+        });
+        let result = service.classify("prod-node.example.com", &prod_facts);
+        assert_eq!(result.groups.len(), 1, "Production node should match");
+
+        // Node in staging environment should NOT match
+        let staging_facts = serde_json::json!({
+            "catalog_environment": "staging"
+        });
+        let result = service.classify("staging-node.example.com", &staging_facts);
+        assert_eq!(result.groups.len(), 0, "Staging node should not match - wrong environment");
     }
 }

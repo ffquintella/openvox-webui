@@ -145,3 +145,51 @@ Feature: Node Classification
     When I create a node group named "env_group" with environment "staging" as environment group
     Then the response status should be 201
     And the group "env_group" should be an environment group
+
+  # Match All Nodes Feature Tests
+  # Groups with match_all_nodes=true match all nodes when no rules exist
+
+  Scenario: Group with match_all_nodes matches all nodes when no rules
+    Given a node group "all_nodes" exists with match_all_nodes enabled
+    And a node "any-node.example.com" exists with facts:
+      """
+      {
+        "kernel": "Linux"
+      }
+      """
+    When I classify node "any-node.example.com"
+    Then node "any-node.example.com" should be classified in group "all_nodes"
+
+  Scenario: Group without match_all_nodes and no rules matches no nodes
+    Given a node group "empty_group" exists
+    And a node "any-node.example.com" exists with facts:
+      """
+      {
+        "kernel": "Linux"
+      }
+      """
+    When I classify node "any-node.example.com"
+    Then node "any-node.example.com" should not be classified in group "empty_group"
+
+  Scenario: Child group with match_all_nodes respects parent rules
+    Given a node group "linux" exists
+    And a classification rule "kernel = Linux" on group "linux"
+    And a node group "all_linux" exists with parent "linux" and match_all_nodes enabled
+    And a node "linux-node.example.com" exists with facts:
+      """
+      {
+        "kernel": "Linux"
+      }
+      """
+    And a node "windows-node.example.com" exists with facts:
+      """
+      {
+        "kernel": "Windows"
+      }
+      """
+    When I classify node "linux-node.example.com"
+    Then node "linux-node.example.com" should be classified in group "linux"
+    And node "linux-node.example.com" should be classified in group "all_linux"
+    When I classify node "windows-node.example.com"
+    Then node "windows-node.example.com" should not be classified in group "linux"
+    And node "windows-node.example.com" should not be classified in group "all_linux"
