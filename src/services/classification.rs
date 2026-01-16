@@ -210,17 +210,33 @@ impl ClassificationService {
                 continue;
             } else if group.rules.is_empty() {
                 // Group has no rules - behavior depends on match_all_nodes setting
+                tracing::debug!(
+                    "Group '{}' has no rules, match_all_nodes={}, parent_matched={}",
+                    group.name,
+                    group.match_all_nodes,
+                    parent_matched
+                );
                 if group.match_all_nodes {
                     // match_all_nodes=true: Match all nodes (within parent context if has parent)
                     // If has parent, only match if parent matched
                     // If no parent (root group), match all nodes that pass environment filter
                     if group.parent_id.is_none() || parent_matched {
                         matched = true;
+                        tracing::debug!("Group '{}' matched (match_all_nodes=true)", group.name);
+                    } else {
+                        tracing::debug!(
+                            "Group '{}' NOT matched (match_all_nodes=true but parent didn't match)",
+                            group.name
+                        );
                     }
                     MatchType::Rules // Using Rules type since it's an explicit match configuration
                 } else {
                     // match_all_nodes=false (default): Groups with no rules match NO nodes
                     // This is true regardless of whether parent matched or not
+                    tracing::debug!(
+                        "Group '{}' NOT matched (no rules, match_all_nodes=false)",
+                        group.name
+                    );
                     MatchType::Rules
                 }
             } else {
@@ -291,8 +307,23 @@ impl ClassificationService {
                 if let Some(children) = children_map.get(&Some(group.id)) {
                     for child in children {
                         // parent_matched=true means this child can inherit classes/variables from ancestors
+                        tracing::debug!(
+                            "Enqueueing child group '{}' (parent '{}' matched)",
+                            child.name,
+                            group.name
+                        );
                         queue.push_back((*child, true));
                     }
+                }
+            } else {
+                // Group didn't match - children will NOT be evaluated
+                if let Some(children) = children_map.get(&Some(group.id)) {
+                    tracing::debug!(
+                        "Group '{}' didn't match, NOT enqueueing {} children: {:?}",
+                        group.name,
+                        children.len(),
+                        children.iter().map(|c| &c.name).collect::<Vec<_>>()
+                    );
                 }
             }
             // NOTE: If parent matched but this group didn't match, we do NOT enqueue children.
@@ -1391,5 +1422,653 @@ mod tests {
         });
         let result = service.classify("staging-node.example.com", &staging_facts);
         assert_eq!(result.groups.len(), 0, "Staging node should not match - wrong environment");
+    }
+
+    #[test]
+    fn test_child_with_rules_does_not_match_when_parent_has_no_rules_and_no_match_all() {
+        // Test scenario from user bug report:
+        // - Grandparent: "Homolog" (has rules, matches)
+        // - Parent: "ADM - ESI (H)" (0 rules, match_all_nodes=false) -> should NOT match
+        // - Child: "R - Docker Apps" (has rules that match) -> should NOT match because parent doesn't
+        //
+        // Even if a child group has rules that match the node,
+        // it should NOT match if its parent doesn't match.
+
+        let grandparent_id = Uuid::new_v4();
+        let parent_id = Uuid::new_v4();
+
+        let grandparent = NodeGroup {
+            id: grandparent_id,
+            name: "Homolog".to_string(),
+            environment: Some("homolog".to_string()),
+            is_environment_group: true,
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*vhm.*"),
+            }],
+            classes: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "ADM - ESI (H)".to_string(),
+            parent_id: Some(grandparent_id),
+            match_all_nodes: false, // No rules + match_all_nodes=false = matches NO nodes
+            rules: vec![],          // No rules!
+            classes: serde_json::json!({}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "R - Docker Apps".to_string(),
+            parent_id: Some(parent_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*vhm.*"),
+            }],
+            classes: serde_json::json!({"docker": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![grandparent, parent, child]);
+
+        // Node that matches grandparent and child rules, but parent has no rules
+        let facts = serde_json::json!({
+            "clientcert": "segdc1vhm0001.fgv.br"
+        });
+        let result = service.classify("segdc1vhm0001.fgv.br", &facts);
+
+        // Should only match grandparent (Homolog), NOT parent or child
+        // Because parent has no rules and match_all_nodes=false, it doesn't match
+        // And since parent doesn't match, child shouldn't even be evaluated
+        assert_eq!(
+            result.groups.len(),
+            1,
+            "Should only match grandparent, not parent or child. Got: {:?}",
+            result.groups.iter().map(|g| &g.name).collect::<Vec<_>>()
+        );
+        assert_eq!(result.groups[0].name, "Homolog");
+    }
+
+    // =========================================================================
+    // Comprehensive Classification Scenario Tests
+    // =========================================================================
+
+    #[test]
+    fn test_scenario_simple_root_group_with_rules() {
+        // Scenario: Single root group with rules
+        // - Group: "Linux Servers" with rule kernel=Linux
+        // - Node A: kernel=Linux -> should match
+        // - Node B: kernel=Windows -> should not match
+
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Linux Servers".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Node A: Linux
+        let result = service.classify("linux.example.com", &serde_json::json!({"kernel": "Linux"}));
+        assert_eq!(result.groups.len(), 1, "Linux node should match");
+        assert_eq!(result.groups[0].name, "Linux Servers");
+
+        // Node B: Windows
+        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
+        assert_eq!(result.groups.len(), 0, "Windows node should not match");
+    }
+
+    #[test]
+    fn test_scenario_root_group_no_rules_match_all_false() {
+        // Scenario: Root group with no rules and match_all_nodes=false
+        // - Group: "Empty Group" with no rules, match_all_nodes=false
+        // - Any node -> should NOT match
+
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Empty Group".to_string(),
+            match_all_nodes: false,
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        let result = service.classify("any.example.com", &serde_json::json!({"kernel": "Linux"}));
+        assert_eq!(result.groups.len(), 0, "No node should match group with no rules and match_all_nodes=false");
+    }
+
+    #[test]
+    fn test_scenario_root_group_no_rules_match_all_true() {
+        // Scenario: Root group with no rules and match_all_nodes=true
+        // - Group: "All Nodes" with no rules, match_all_nodes=true
+        // - Any node -> should match
+
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "All Nodes".to_string(),
+            match_all_nodes: true,
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        let result = service.classify("any.example.com", &serde_json::json!({"kernel": "Linux"}));
+        assert_eq!(result.groups.len(), 1, "All nodes should match group with match_all_nodes=true");
+        assert_eq!(result.groups[0].name, "All Nodes");
+    }
+
+    #[test]
+    fn test_scenario_parent_with_rules_child_with_rules() {
+        // Scenario: Parent has rules, child has rules
+        // - Parent: "Linux" with rule kernel=Linux
+        // - Child: "Web Servers" with rule role=webserver
+        // - Node A: kernel=Linux, role=webserver -> matches both
+        // - Node B: kernel=Linux, role=dbserver -> matches parent only
+        // - Node C: kernel=Windows, role=webserver -> matches neither
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Web Servers".to_string(),
+            parent_id: Some(parent_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("webserver"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node A: Linux + webserver -> both
+        let result = service.classify("web.example.com", &serde_json::json!({"kernel": "Linux", "role": "webserver"}));
+        assert_eq!(result.groups.len(), 2, "Node A should match both groups");
+
+        // Node B: Linux + dbserver -> parent only
+        let result = service.classify("db.example.com", &serde_json::json!({"kernel": "Linux", "role": "dbserver"}));
+        assert_eq!(result.groups.len(), 1, "Node B should match parent only");
+        assert_eq!(result.groups[0].name, "Linux");
+
+        // Node C: Windows + webserver -> neither
+        let result = service.classify("winweb.example.com", &serde_json::json!({"kernel": "Windows", "role": "webserver"}));
+        assert_eq!(result.groups.len(), 0, "Node C should match neither");
+    }
+
+    #[test]
+    fn test_scenario_parent_with_rules_child_no_rules_match_all_false() {
+        // Scenario: Parent has rules, child has NO rules, match_all_nodes=false
+        // - Parent: "Linux" with rule kernel=Linux
+        // - Child: "Empty Child" with no rules, match_all_nodes=false
+        // - Node A: kernel=Linux -> matches parent only (child has no rules)
+        // - Node B: kernel=Windows -> matches neither
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Empty Child".to_string(),
+            parent_id: Some(parent_id),
+            match_all_nodes: false, // Child has no rules and match_all_nodes=false
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node A: Linux -> parent only
+        let result = service.classify("linux.example.com", &serde_json::json!({"kernel": "Linux"}));
+        assert_eq!(result.groups.len(), 1, "Node A should match parent only, not empty child");
+        assert_eq!(result.groups[0].name, "Linux");
+
+        // Node B: Windows -> neither
+        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
+        assert_eq!(result.groups.len(), 0, "Node B should match neither");
+    }
+
+    #[test]
+    fn test_scenario_parent_with_rules_child_no_rules_match_all_true() {
+        // Scenario: Parent has rules, child has NO rules, match_all_nodes=true
+        // - Parent: "Linux" with rule kernel=Linux
+        // - Child: "All Linux" with no rules, match_all_nodes=true
+        // - Node A: kernel=Linux -> matches both (child inherits from parent)
+        // - Node B: kernel=Windows -> matches neither (parent doesn't match, so child isn't evaluated)
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "All Linux".to_string(),
+            parent_id: Some(parent_id),
+            match_all_nodes: true, // Child has no rules but match_all_nodes=true
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node A: Linux -> both
+        let result = service.classify("linux.example.com", &serde_json::json!({"kernel": "Linux"}));
+        assert_eq!(result.groups.len(), 2, "Node A should match both groups");
+        assert_eq!(result.groups[0].name, "Linux");
+        assert_eq!(result.groups[1].name, "All Linux");
+
+        // Node B: Windows -> neither
+        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
+        assert_eq!(result.groups.len(), 0, "Node B should match neither (parent didn't match)");
+    }
+
+    #[test]
+    fn test_scenario_parent_no_rules_match_all_false_child_with_rules() {
+        // Scenario: Parent has NO rules (match_all_nodes=false), child HAS rules
+        // This is the bug scenario reported by the user!
+        // - Parent: "Empty Parent" with no rules, match_all_nodes=false
+        // - Child: "Specific Child" with rule role=webserver
+        // - Node A: role=webserver -> should match NEITHER (parent doesn't match, child not evaluated)
+
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "Empty Parent".to_string(),
+            match_all_nodes: false,
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Specific Child".to_string(),
+            parent_id: Some(parent_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("webserver"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+
+        // Node A: webserver -> NEITHER (parent doesn't match)
+        let result = service.classify("web.example.com", &serde_json::json!({"role": "webserver"}));
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Node should not match child because parent has no rules and match_all_nodes=false"
+        );
+    }
+
+    #[test]
+    fn test_scenario_three_level_hierarchy_all_with_rules() {
+        // Scenario: Three-level hierarchy, all groups have rules
+        // - Root: "Linux" with rule kernel=Linux
+        // - Child: "Web" with rule role=webserver
+        // - Grandchild: "Nginx" with rule app=nginx
+        // Test various combinations
+
+        let root_id = Uuid::new_v4();
+        let child_id = Uuid::new_v4();
+
+        let root = NodeGroup {
+            id: root_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: child_id,
+            name: "Web".to_string(),
+            parent_id: Some(root_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("webserver"),
+            }],
+            ..Default::default()
+        };
+
+        let grandchild = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Nginx".to_string(),
+            parent_id: Some(child_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "app".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("nginx"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![root, child, grandchild]);
+
+        // Node: Linux + webserver + nginx -> all three
+        let result = service.classify(
+            "nginx.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "webserver", "app": "nginx"}),
+        );
+        assert_eq!(result.groups.len(), 3, "Should match all three");
+
+        // Node: Linux + webserver + apache -> root and child only
+        let result = service.classify(
+            "apache.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "webserver", "app": "apache"}),
+        );
+        assert_eq!(result.groups.len(), 2, "Should match root and child only");
+
+        // Node: Linux + dbserver + nginx -> root only
+        let result = service.classify(
+            "db.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "dbserver", "app": "nginx"}),
+        );
+        assert_eq!(result.groups.len(), 1, "Should match root only");
+        assert_eq!(result.groups[0].name, "Linux");
+
+        // Node: Windows + webserver + nginx -> none
+        let result = service.classify(
+            "winweb.example.com",
+            &serde_json::json!({"kernel": "Windows", "role": "webserver", "app": "nginx"}),
+        );
+        assert_eq!(result.groups.len(), 0, "Should match none");
+    }
+
+    #[test]
+    fn test_scenario_three_level_middle_no_rules_match_all_false() {
+        // Scenario: Three-level hierarchy, middle group has no rules with match_all_nodes=false
+        // - Root: "Linux" with rule kernel=Linux
+        // - Child: "Empty Middle" with NO rules, match_all_nodes=false
+        // - Grandchild: "Specific" with rule app=nginx
+        //
+        // Since middle has no rules and match_all_nodes=false, it won't match,
+        // so grandchild won't be evaluated!
+
+        let root_id = Uuid::new_v4();
+        let child_id = Uuid::new_v4();
+
+        let root = NodeGroup {
+            id: root_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: child_id,
+            name: "Empty Middle".to_string(),
+            parent_id: Some(root_id),
+            match_all_nodes: false, // No rules, match_all_nodes=false
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let grandchild = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Specific".to_string(),
+            parent_id: Some(child_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "app".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("nginx"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![root, child, grandchild]);
+
+        // Node: Linux + nginx -> should only match root!
+        // Middle doesn't match (no rules, match_all_nodes=false), so grandchild isn't evaluated
+        let result = service.classify(
+            "nginx.example.com",
+            &serde_json::json!({"kernel": "Linux", "app": "nginx"}),
+        );
+        assert_eq!(
+            result.groups.len(),
+            1,
+            "Should match root only, middle blocks grandchild. Got: {:?}",
+            result.groups.iter().map(|g| &g.name).collect::<Vec<_>>()
+        );
+        assert_eq!(result.groups[0].name, "Linux");
+    }
+
+    #[test]
+    fn test_scenario_three_level_middle_no_rules_match_all_true() {
+        // Scenario: Three-level hierarchy, middle group has no rules with match_all_nodes=true
+        // - Root: "Linux" with rule kernel=Linux
+        // - Child: "All Linux" with NO rules, match_all_nodes=true
+        // - Grandchild: "Specific" with rule app=nginx
+        //
+        // Middle has match_all_nodes=true, so it matches all Linux nodes
+        // Grandchild is then evaluated and matches if app=nginx
+
+        let root_id = Uuid::new_v4();
+        let child_id = Uuid::new_v4();
+
+        let root = NodeGroup {
+            id: root_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: child_id,
+            name: "All Linux".to_string(),
+            parent_id: Some(root_id),
+            match_all_nodes: true, // No rules, but match_all_nodes=true
+            rules: vec![],
+            ..Default::default()
+        };
+
+        let grandchild = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Nginx".to_string(),
+            parent_id: Some(child_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "app".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("nginx"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![root, child, grandchild]);
+
+        // Node: Linux + nginx -> all three
+        let result = service.classify(
+            "nginx.example.com",
+            &serde_json::json!({"kernel": "Linux", "app": "nginx"}),
+        );
+        assert_eq!(result.groups.len(), 3, "Should match all three");
+
+        // Node: Linux + apache -> root and middle only
+        let result = service.classify(
+            "apache.example.com",
+            &serde_json::json!({"kernel": "Linux", "app": "apache"}),
+        );
+        assert_eq!(result.groups.len(), 2, "Should match root and middle");
+        assert_eq!(result.groups[0].name, "Linux");
+        assert_eq!(result.groups[1].name, "All Linux");
+    }
+
+    #[test]
+    fn test_scenario_sibling_groups_independent() {
+        // Scenario: Sibling groups should be evaluated independently
+        // - Root: "Linux" with rule kernel=Linux
+        // - Child A: "Web" with rule role=webserver
+        // - Child B: "DB" with rule role=dbserver
+        //
+        // A node can match root + one child, or root + both children if it matches both
+
+        let root_id = Uuid::new_v4();
+
+        let root = NodeGroup {
+            id: root_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+
+        let child_a = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Web".to_string(),
+            parent_id: Some(root_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("webserver"),
+            }],
+            ..Default::default()
+        };
+
+        let child_b = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "DB".to_string(),
+            parent_id: Some(root_id),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("dbserver"),
+            }],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![root, child_a, child_b]);
+
+        // Node: Linux + webserver -> root + Web
+        let result = service.classify(
+            "web.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "webserver"}),
+        );
+        assert_eq!(result.groups.len(), 2);
+
+        // Node: Linux + dbserver -> root + DB
+        let result = service.classify(
+            "db.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "dbserver"}),
+        );
+        assert_eq!(result.groups.len(), 2);
+
+        // Node: Linux only -> root only
+        let result = service.classify(
+            "linux.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "other"}),
+        );
+        assert_eq!(result.groups.len(), 1);
+        assert_eq!(result.groups[0].name, "Linux");
+    }
+
+    #[test]
+    fn test_scenario_pinned_node_bypasses_rules() {
+        // Scenario: Pinned nodes should match regardless of rules
+        // - Group: "Special" with rule role=special, pinned_nodes=["pinned.example.com"]
+        // - Node A (pinned): should match even without matching facts
+        // - Node B (not pinned, matches rule): should match
+        // - Node C (not pinned, doesn't match rule): should not match
+
+        let group = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Special".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "role".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("special"),
+            }],
+            pinned_nodes: vec!["pinned.example.com".to_string()],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![group]);
+
+        // Node A: pinned -> matches even with wrong facts
+        let result = service.classify("pinned.example.com", &serde_json::json!({"role": "other"}));
+        assert_eq!(result.groups.len(), 1, "Pinned node should match");
+        assert_eq!(result.groups[0].match_type, MatchType::Pinned);
+
+        // Node B: not pinned but matches rule
+        let result = service.classify("special.example.com", &serde_json::json!({"role": "special"}));
+        assert_eq!(result.groups.len(), 1, "Rule-matching node should match");
+        assert_eq!(result.groups[0].match_type, MatchType::Rules);
+
+        // Node C: not pinned, doesn't match rule
+        let result = service.classify("other.example.com", &serde_json::json!({"role": "other"}));
+        assert_eq!(result.groups.len(), 0, "Non-matching node should not match");
     }
 }

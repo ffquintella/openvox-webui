@@ -241,6 +241,7 @@ impl GroupBuilder {
             parent_id: self.parent_id,
             environment: self.environment,
             is_environment_group: false,
+            match_all_nodes: false,
             rule_match_type: RuleMatchType::All,
             classes: self.classes,
             variables: serde_json::json!({}),

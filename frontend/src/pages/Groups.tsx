@@ -680,7 +680,7 @@ export default function Groups() {
               </div>
 
               {/* Group Info */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-4 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Parent Group</p>
                   <p className="font-medium text-gray-900 mt-1">
@@ -702,6 +702,16 @@ export default function Groups() {
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Match Type</p>
                   <p className="font-medium text-gray-900 mt-1">
                     {selectedGroup.rule_match_type === 'all' ? 'All rules (AND)' : 'Any rule (OR)'}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Match All Nodes</p>
+                  <p className="font-medium text-gray-900 mt-1">
+                    {selectedGroup.match_all_nodes ? (
+                      <span className="text-green-600">Yes</span>
+                    ) : (
+                      <span className="text-gray-500">No</span>
+                    )}
                   </p>
                 </div>
               </div>
