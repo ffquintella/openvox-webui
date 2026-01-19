@@ -36,6 +36,11 @@
 #   Whether to remove environment settings from puppet.conf [agent] section.
 #   This prevents conflicts between agent-side environment settings and ENC classification.
 #
+# @param classification_key
+#   Shared key for authenticating to the classification API.
+#   Must match the key configured in OpenVox WebUI (CLASSIFICATION_SHARED_KEY).
+#   Required when the /classify endpoint requires authentication.
+#
 # @example Basic usage with auto-detected URL
 #   include openvox_webui::enc
 #
@@ -68,6 +73,7 @@ class openvox_webui::enc (
   Boolean                   $ssl_verify               = false,
   Stdlib::Absolutepath      $puppet_conf_path         = '/etc/puppetlabs/puppet/puppet.conf',
   Boolean                   $remove_agent_environment = true,
+  Optional[String]          $classification_key       = undef,
 ) {
   # Validate we're on a Puppet Server (check for service existence)
   # Only validate if we're managing the service
@@ -124,8 +130,9 @@ class openvox_webui::enc (
     group   => 'root',
     mode    => '0755',
     content => epp('openvox_webui/enc.sh.epp', {
-        webui_url  => $effective_webui_url,
-        ssl_verify => $ssl_verify,
+        webui_url          => $effective_webui_url,
+        ssl_verify         => $ssl_verify,
+        classification_key => $classification_key,
     }),
     require => File[$enc_dir],
   }

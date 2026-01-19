@@ -43,6 +43,8 @@ pub fn public_routes() -> Router<AppState> {
     Router::new()
         // Use /classify path to avoid conflict with protected /classification endpoint
         .route("/{certname}/classify", get(get_node_classification_public))
+        // Environment-only endpoint (unauthenticated) - used early in Puppet agent run
+        .route("/{certname}/environment", get(get_node_environment_public))
 }
 
 /// Query parameters for listing nodes
@@ -583,6 +585,82 @@ async fn get_node_classification_public(
     );
 
     Ok(Json(classification))
+}
+
+/// Response for environment-only endpoint
+#[derive(Debug, Serialize)]
+pub struct EnvironmentResponse {
+    /// The node's certname
+    pub certname: String,
+    /// The assigned environment (if any)
+    pub environment: Option<String>,
+}
+
+/// GET /api/v1/nodes/:certname/environment - Get node environment (UNAUTHENTICATED)
+///
+/// This endpoint is intentionally unauthenticated to allow Puppet agents to determine
+/// their environment early in the agent run, before certificates are available.
+///
+/// Only returns the environment assignment - no sensitive classification data.
+/// This is safe because:
+/// - Environment names are not sensitive
+/// - The node must already exist in PuppetDB (has run at least once)
+/// - No classes, variables, or other sensitive data is exposed
+async fn get_node_environment_public(
+    State(state): State<AppState>,
+    Path(certname): Path<String>,
+) -> AppResult<Json<EnvironmentResponse>> {
+    tracing::debug!(
+        "Environment lookup (unauthenticated) for node '{}'",
+        certname
+    );
+
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
+
+    // Get facts for the node from PuppetDB
+    let facts = puppetdb
+        .get_node_facts(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
+
+    // Convert facts to JSON object for classification
+    let mut facts_obj = serde_json::Map::new();
+    for fact in facts {
+        facts_obj.insert(fact.name, fact.value);
+    }
+    // Add certname as pseudo-facts so rules can match against it
+    facts_obj.insert(
+        "clientcert".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
+    facts_obj.insert(
+        "certname".to_string(),
+        serde_json::Value::String(certname.clone()),
+    );
+    let facts_json = serde_json::Value::Object(facts_obj);
+
+    // Get ALL groups from ALL organizations for cross-org classification
+    let group_repo = GroupRepository::new(&state.db);
+    let all_groups = group_repo
+        .get_all_across_organizations()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
+
+    // Classify the node to determine environment
+    let classification_service = ClassificationService::new(all_groups);
+    let classification = classification_service.classify_across_organizations(
+        &certname,
+        &facts_json,
+        default_organization_uuid(),
+    );
+
+    Ok(Json(EnvironmentResponse {
+        certname,
+        environment: classification.environment,
+    }))
 }
 
 /// Response for node deletion

@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configure via `classification.shared_key` in config.yaml or `CLASSIFICATION_SHARED_KEY` env var
   - Facter client supports `classification_key` config option
   - Facter client supports `auto_generate_classification_key` to auto-generate and persist key
+- New unauthenticated `/api/v1/nodes/:certname/environment` endpoint for early environment detection
+  - Returns only the environment assignment (no sensitive data)
+  - Allows Puppet agents to determine their environment before certificates are available
+- ENC script now supports `classification_key` parameter for shared key authentication
+
+### Changed
+
+- `openvox_environment` fact now uses dedicated `/environment` endpoint (no authentication required)
 
 ### Security
 - Classification endpoint (`/api/v1/nodes/:certname/classify`) now requires client certificate authentication (mTLS)

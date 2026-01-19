@@ -283,9 +283,113 @@ Facter.add(:openvox_classes) do
 end
 
 Facter.add(:openvox_environment) do
+  # This fact uses a separate unauthenticated endpoint to get the environment
+  # This allows it to work early in the Puppet agent run before certificates are available
   setcode do
-    classification = Facter.value(:openvox_classification)
-    classification['environment'] if classification
+    require 'net/http'
+    require 'uri'
+    require 'json'
+    require 'yaml'
+    require 'openssl'
+
+    # Find and load configuration
+    config_paths = [
+      '/etc/openvox-webui/client.yaml',
+      '/etc/puppetlabs/facter/openvox-client.yaml',
+      '/etc/puppetlabs/puppet/openvox-client.yaml'
+    ]
+
+    config_file = config_paths.find { |p| File.exist?(p) }
+    next nil unless config_file
+
+    begin
+      config = YAML.load_file(config_file)
+    rescue StandardError => e
+      Facter.warn("openvox_environment: Failed to load config: #{e.message}")
+      next nil
+    end
+
+    api_url = config['api_url'] || config['url']
+    next nil unless api_url
+
+    # Get certname
+    certname = config['certname'] || Facter.value(:clientcert)
+
+    if certname.nil? || certname.empty?
+      puppet_conf_paths = [
+        '/etc/puppetlabs/puppet/puppet.conf',
+        '/etc/puppet/puppet.conf'
+      ]
+      puppet_conf_paths.each do |conf_path|
+        next unless File.exist?(conf_path)
+
+        begin
+          File.readlines(conf_path).each do |line|
+            if line =~ /^\s*certname\s*=\s*(\S+)/
+              certname = Regexp.last_match(1)
+              break
+            end
+          end
+        rescue StandardError
+          # Ignore errors reading puppet.conf
+        end
+        break if certname
+      end
+    end
+
+    certname ||= Facter.value(:fqdn)
+    next nil unless certname
+
+    # Use the unauthenticated /environment endpoint
+    environment_url = "#{api_url.chomp('/')}/api/v1/nodes/#{certname}/environment"
+
+    begin
+      uri = URI.parse(environment_url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.open_timeout = config['timeout'] || 10
+      http.read_timeout = config['timeout'] || 30
+
+      if uri.scheme == 'https'
+        http.use_ssl = true
+
+        if config['ssl_verify'] == false
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+        else
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+          # Custom CA certificate
+          ca_file = config['ssl_ca']
+          if ca_file.nil? || !File.exist?(ca_file)
+            puppet_ca_paths = [
+              '/etc/puppetlabs/puppet/ssl/certs/ca.pem',
+              '/etc/puppet/ssl/certs/ca.pem',
+              '/var/lib/puppet/ssl/certs/ca.pem'
+            ]
+            ca_file = puppet_ca_paths.find { |p| File.exist?(p) }
+          end
+
+          http.ca_file = ca_file if ca_file && File.exist?(ca_file)
+        end
+        # Note: No client certificate needed - this endpoint is unauthenticated
+      end
+
+      request = Net::HTTP::Get.new(uri.request_uri)
+      request['Accept'] = 'application/json'
+      request['User-Agent'] = 'OpenVox-Facter/1.0'
+
+      response = http.request(request)
+
+      if response.code.to_i == 200
+        data = JSON.parse(response.body)
+        data['environment']
+      else
+        Facter.debug("openvox_environment: API returned #{response.code}")
+        nil
+      end
+    rescue StandardError => e
+      Facter.debug("openvox_environment: Failed to fetch environment: #{e.message}")
+      nil
+    end
   end
 end
 

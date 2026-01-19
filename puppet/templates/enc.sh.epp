@@ -1,19 +1,23 @@
 <%- |
   String $webui_url,
   Boolean $ssl_verify = false,
+  Optional[String] $classification_key = undef,
 | -%>
 #!/bin/bash
 # External Node Classifier for OpenVox WebUI
 # Managed by Puppet - DO NOT EDIT MANUALLY
 #
 # This script is called by Puppet Server to get node classification from OpenVox WebUI.
-# It queries the PUBLIC classification API (/classify) which does not require authentication.
+# It queries the classification API (/classify) using shared key authentication.
 
 set -e
 
 # Configuration
 WEBUI_URL="<%= $webui_url %>"
 CERTNAME="$1"
+<% if $classification_key { -%>
+CLASSIFICATION_KEY="<%= $classification_key %>"
+<% } -%>
 
 # Validate input
 if [ -z "$CERTNAME" ]; then
@@ -29,8 +33,13 @@ CURL_OPTS="-s"
 CURL_OPTS="${CURL_OPTS} -k"
 <% } -%>
 
-# Query OpenVox WebUI PUBLIC classification API (no auth required)
-# Use /classify endpoint (public) instead of /classification (requires JWT)
+<% if $classification_key { -%>
+# Add shared key authentication header
+CURL_OPTS="${CURL_OPTS} -H 'X-Classification-Key: ${CLASSIFICATION_KEY}'"
+<% } -%>
+
+# Query OpenVox WebUI classification API
+# Uses shared key authentication if configured
 CLASSIFICATION=$(curl ${CURL_OPTS} "${WEBUI_URL}/api/v1/nodes/${CERTNAME}/classify" 2>&1)
 
 # Check if we got valid JSON
