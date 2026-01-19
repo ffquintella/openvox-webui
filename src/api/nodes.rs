@@ -4,7 +4,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header::HeaderMap, StatusCode},
     routing::get,
     Json, Router,
 };
@@ -14,7 +14,7 @@ use crate::{
     db::repository::GroupRepository,
     middleware::{
         rbac::{check_permission, RbacError},
-        AuthUser, ClientCert, OptionalClientCert,
+        AuthUser, OptionalClientCert,
     },
     models::{default_organization_uuid, Action, ClassificationResult, Fact, Node, Report, Resource as RbacResource},
     services::{
@@ -478,25 +478,64 @@ async fn get_node_classification(
 async fn get_node_classification_public(
     State(state): State<AppState>,
     Path(certname): Path<String>,
-    client_cert: ClientCert,
+    headers: HeaderMap,
+    client_cert: OptionalClientCert,
 ) -> AppResult<Json<ClassificationResult>> {
-    // Verify certificate CN matches the requested certname
-    if !client_cert.matches_certname(&certname) {
-        tracing::warn!(
-            "Classification: Certificate CN '{}' does not match requested certname '{}'",
-            client_cert.cn,
-            certname
-        );
-        return Err(AppError::Forbidden(format!(
-            "Certificate CN '{}' does not match requested node '{}'",
-            client_cert.cn, certname
-        )));
-    }
+    // Check for shared key authentication first
+    let shared_key_header = headers
+        .get("X-Classification-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
-    tracing::debug!(
-        "Classification: Client certificate authentication successful for node '{}'",
-        certname
-    );
+    let configured_shared_key = state
+        .config
+        .classification
+        .as_ref()
+        .and_then(|c| c.shared_key.as_ref());
+
+    let authenticated = if let (Some(header_key), Some(config_key)) = (&shared_key_header, configured_shared_key) {
+        // Shared key authentication
+        if header_key == config_key {
+            tracing::debug!(
+                "Classification: Shared key authentication successful for node '{}' (debug mode)",
+                certname
+            );
+            true
+        } else {
+            tracing::warn!(
+                "Classification: Invalid shared key provided for node '{}'",
+                certname
+            );
+            false
+        }
+    } else if let Some(ref cert) = client_cert.0 {
+        // Client certificate authentication
+        if cert.matches_certname(&certname) {
+            tracing::debug!(
+                "Classification: Client certificate authentication successful for node '{}'",
+                certname
+            );
+            true
+        } else {
+            tracing::warn!(
+                "Classification: Certificate CN '{}' does not match requested certname '{}'",
+                cert.cn,
+                certname
+            );
+            return Err(AppError::Forbidden(format!(
+                "Certificate CN '{}' does not match requested node '{}'",
+                cert.cn, certname
+            )));
+        }
+    } else {
+        false
+    };
+
+    if !authenticated {
+        return Err(AppError::Unauthorized(
+            "Client certificate or shared key required. Provide X-SSL-Client-CN header or X-Classification-Key header.".to_string()
+        ));
+    }
 
     let puppetdb = state
         .puppetdb

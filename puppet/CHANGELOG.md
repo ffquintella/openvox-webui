@@ -18,9 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Environment group feature for node groups that assign environments instead of filtering by them
 - Match All Nodes option for node groups to control behavior when no rules are defined
+- Shared key authentication option for classification endpoint (debug mode)
+  - Configure via `classification.shared_key` in config.yaml or `CLASSIFICATION_SHARED_KEY` env var
+  - Facter client supports `classification_key` config option
+  - Facter client supports `auto_generate_classification_key` to auto-generate and persist key
 
 ### Security
 - Classification endpoint (`/api/v1/nodes/:certname/classify`) now requires client certificate authentication (mTLS)
+- Added optional shared key authentication as alternative to mTLS for debugging purposes
 
 ### Fixed
 - Pinned nodes now correctly match their group even when parent groups don't match via rules

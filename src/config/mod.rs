@@ -48,6 +48,9 @@ pub struct AppConfig {
     /// Node bootstrap configuration (for adding new nodes)
     #[serde(default)]
     pub node_bootstrap: Option<NodeBootstrapConfig>,
+    /// Classification endpoint configuration
+    #[serde(default)]
+    pub classification: Option<ClassificationConfig>,
 }
 
 /// Server configuration
@@ -1150,6 +1153,15 @@ fn default_agent_package_name() -> String {
     "openvox-agent".to_string()
 }
 
+/// Classification endpoint configuration
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ClassificationConfig {
+    /// Shared key for alternative authentication to the /classify endpoint
+    /// This allows debugging without requiring client certificates
+    #[serde(default)]
+    pub shared_key: Option<String>,
+}
+
 impl Default for NodeBootstrapConfig {
     fn default() -> Self {
         Self {
@@ -1302,6 +1314,7 @@ impl Default for AppConfig {
             backup: None,
             node_removal: None,
             node_bootstrap: None,
+            classification: None,
         }
     }
 }
@@ -1717,6 +1730,12 @@ impl AppConfig {
         if let Ok(name) = std::env::var("NODE_BOOTSTRAP_AGENT_PACKAGE_NAME") {
             let bootstrap = self.node_bootstrap.get_or_insert_with(NodeBootstrapConfig::default);
             bootstrap.agent_package_name = name;
+        }
+
+        // Classification endpoint overrides
+        if let Ok(key) = std::env::var("CLASSIFICATION_SHARED_KEY") {
+            let classification = self.classification.get_or_insert_with(ClassificationConfig::default);
+            classification.shared_key = Some(key);
         }
     }
 

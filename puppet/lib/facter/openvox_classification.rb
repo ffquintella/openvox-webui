@@ -52,11 +52,37 @@ Facter.add(:openvox_classification) do
       return nil
     end
 
-    # Get authentication - client certificate is REQUIRED for the /classify endpoint
+    # Get authentication options
+    # Priority: 1. Client certificate (most secure), 2. Classification shared key (debug mode)
     api_token = config['api_token'] || config['token']
     api_key = config['api_key']
     ssl_cert = config['ssl_cert']
     ssl_key = config['ssl_key']
+    classification_key = config['classification_key']
+
+    # Auto-generate classification key if configured to do so
+    # The key is stored in a file and reused across runs
+    if classification_key.nil? && config['auto_generate_classification_key'] == true
+      key_file = '/etc/openvox-webui/classification_key'
+      if File.exist?(key_file)
+        classification_key = File.read(key_file).strip
+        Facter.debug("openvox_classification: Using existing classification key from #{key_file}")
+      else
+        # Generate a random 32-character hex key
+        require 'securerandom'
+        classification_key = SecureRandom.hex(16)
+        begin
+          # Ensure directory exists
+          FileUtils.mkdir_p(File.dirname(key_file))
+          File.write(key_file, classification_key)
+          File.chmod(0o600, key_file)
+          Facter.debug("openvox_classification: Generated new classification key in #{key_file}")
+        rescue StandardError => e
+          Facter.warn("openvox_classification: Could not save classification key: #{e.message}")
+          classification_key = nil
+        end
+      end
+    end
 
     # Get certname from multiple sources (in priority order):
     # 1. Config file override
@@ -148,8 +174,9 @@ Facter.add(:openvox_classification) do
             Facter.debug('openvox_classification: No CA file found, using system defaults')
           end
 
-          # Client certificate authentication (REQUIRED)
+          # Client certificate authentication
           # Auto-detect Puppet agent certificates if not configured
+          # Note: Can be skipped if classification_key is provided (debug mode)
           if ssl_cert.nil? || ssl_key.nil?
             puppet_cert_paths = [
               "/etc/puppetlabs/puppet/ssl/certs/#{certname}.pem",
@@ -167,9 +194,11 @@ Facter.add(:openvox_classification) do
             Facter.debug("openvox_classification: Using client cert: #{ssl_cert}")
             http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
             http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+          elsif classification_key
+            Facter.debug('openvox_classification: Using classification key authentication (no client cert)')
           else
-            Facter.warn('openvox_classification: Client certificate required but not found. '\
-                        'Configure ssl_cert/ssl_key or ensure Puppet agent certificates exist.')
+            Facter.warn('openvox_classification: Authentication required. '\
+                        'Configure ssl_cert/ssl_key, classification_key, or ensure Puppet agent certificates exist.')
             return nil
           end
         end
@@ -180,11 +209,16 @@ Facter.add(:openvox_classification) do
       request['Accept'] = 'application/json'
       request['User-Agent'] = 'OpenVox-Facter/1.0'
 
-      # Add authentication header
+      # Add authentication headers
       if api_token
         request['Authorization'] = "Bearer #{api_token}"
       elsif api_key
         request['X-API-Key'] = api_key
+      end
+
+      # Add classification shared key header if configured (for debug mode)
+      if classification_key
+        request['X-Classification-Key'] = classification_key
       end
 
       # Make the request
@@ -339,10 +373,20 @@ begin
             http.ca_file = ca_file if ca_file && File.exist?(ca_file)
           end
 
-          # Client certificate authentication (REQUIRED)
+          # Client certificate authentication
           # Auto-detect Puppet agent certificates if not configured
+          # Can be skipped if classification_key is provided (debug mode)
           ssl_cert = config['ssl_cert']
           ssl_key = config['ssl_key']
+          classification_key = config['classification_key']
+
+          # Load classification key from file if auto-generated
+          if classification_key.nil?
+            key_file = '/etc/openvox-webui/classification_key'
+            if File.exist?(key_file)
+              classification_key = File.read(key_file).strip
+            end
+          end
 
           if ssl_cert.nil? || ssl_key.nil?
             puppet_cert_paths = [
@@ -357,11 +401,14 @@ begin
             ssl_key ||= puppet_key_paths.find { |p| File.exist?(p) }
           end
 
-          # Skip if no certificates found (node not yet bootstrapped)
-          next unless ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+          # Skip if no auth method available
+          has_client_cert = ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+          next unless has_client_cert || classification_key
 
-          http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
-          http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+          if has_client_cert
+            http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
+            http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+          end
         end
 
         request = Net::HTTP::Get.new(uri.request_uri)
@@ -370,8 +417,10 @@ begin
         # Add authentication if configured
         api_token = config['api_token'] || config['token']
         api_key = config['api_key']
+        classification_key ||= config['classification_key']
         request['Authorization'] = "Bearer #{api_token}" if api_token
         request['X-API-Key'] = api_key if api_key
+        request['X-Classification-Key'] = classification_key if classification_key
 
         response = http.request(request)
 

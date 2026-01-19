@@ -234,3 +234,13 @@ rbac:
 #
 #   # Package name to install (default: openvox-agent)
 #   agent_package_name: "openvox-agent"
+
+# Classification endpoint configuration
+# Settings for the /api/v1/nodes/{certname}/classify endpoint used by Puppet agents
+# classification:
+#   # Shared key for alternative authentication (debug mode)
+#   # When set, clients can authenticate with X-Classification-Key header instead of client certificates
+#   # This is useful for debugging or testing without requiring mTLS setup
+#   # WARNING: Less secure than client certificate authentication - use only for debugging
+#   # Can also be set via CLASSIFICATION_SHARED_KEY environment variable
+#   shared_key: "your-secret-shared-key-here"
