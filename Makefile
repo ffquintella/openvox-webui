@@ -207,8 +207,9 @@ CURRENT_VERSION := $(shell grep '^version = ' Cargo.toml | head -1 | sed 's/vers
 
 version:
 	@echo "Current version: $(CURRENT_VERSION)"
-	@echo "  Cargo.toml:         $$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
+	@echo "  Cargo.toml:            $$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')"
 	@echo "  frontend/package.json: $$(grep '"version"' frontend/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')"
+	@echo "  puppet/metadata.json:  $$(grep '"version"' puppet/metadata.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')"
 
 version-patch:
 	@./scripts/bump-version.sh patch
@@ -216,7 +217,7 @@ version-patch:
 version-minor:
 	@./scripts/bump-version.sh minor
 	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
-	git add Cargo.toml frontend/package.json; \
+	git add Cargo.toml Cargo.lock frontend/package.json puppet/metadata.json; \
 	git commit -m "chore: bump version to v$$NEW_VERSION"; \
 	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
 	echo ""; \
@@ -226,7 +227,7 @@ version-minor:
 version-major:
 	@./scripts/bump-version.sh major
 	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
-	git add Cargo.toml frontend/package.json; \
+	git add Cargo.toml Cargo.lock frontend/package.json puppet/metadata.json; \
 	git commit -m "chore: bump version to v$$NEW_VERSION"; \
 	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
 	echo ""; \

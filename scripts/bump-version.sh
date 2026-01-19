@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bump version in Cargo.toml and frontend/package.json
+# Bump version in Cargo.toml, frontend/package.json, and puppet/metadata.json
 # Usage: ./scripts/bump-version.sh [patch|minor|major]
 
 set -e
@@ -8,6 +8,7 @@ BUMP_TYPE="${1:-patch}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CARGO_TOML="$ROOT_DIR/Cargo.toml"
 PACKAGE_JSON="$ROOT_DIR/frontend/package.json"
+METADATA_JSON="$ROOT_DIR/puppet/metadata.json"
 
 # Get current version from Cargo.toml
 CURRENT_VERSION=$(grep '^version = ' "$CARGO_TOML" | head -1 | sed 's/version = "\(.*\)"/\1/')
@@ -68,16 +69,29 @@ else
     sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" "$PACKAGE_JSON"
 fi
 
+# Update puppet/metadata.json
+# Get current puppet version (may differ from main version)
+PUPPET_CURRENT_VERSION=$(grep '"version"' "$METADATA_JSON" | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    sed -i '' "s/\"version\": \"$PUPPET_CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" "$METADATA_JSON"
+else
+    # Linux
+    sed -i "s/\"version\": \"$PUPPET_CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" "$METADATA_JSON"
+fi
+
 # Verify updates
 CARGO_VERSION=$(grep '^version = ' "$CARGO_TOML" | head -1 | sed 's/version = "\(.*\)"/\1/')
 PACKAGE_VERSION=$(grep '"version"' "$PACKAGE_JSON" | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+METADATA_VERSION=$(grep '"version"' "$METADATA_JSON" | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
 
 echo ""
 echo "Updated versions:"
 echo "  Cargo.toml:            $CARGO_VERSION"
 echo "  frontend/package.json: $PACKAGE_VERSION"
+echo "  puppet/metadata.json:  $METADATA_VERSION"
 
-if [ "$CARGO_VERSION" != "$NEW_VERSION" ] || [ "$PACKAGE_VERSION" != "$NEW_VERSION" ]; then
+if [ "$CARGO_VERSION" != "$NEW_VERSION" ] || [ "$PACKAGE_VERSION" != "$NEW_VERSION" ] || [ "$METADATA_VERSION" != "$NEW_VERSION" ]; then
     echo ""
     echo "Warning: Version mismatch detected!"
     exit 1
@@ -86,5 +100,5 @@ fi
 echo ""
 echo "Version bump complete. Don't forget to:"
 echo "  1. Review the changes: git diff"
-echo "  2. Stage the files: git add Cargo.toml frontend/package.json"
+echo "  2. Stage the files: git add Cargo.toml frontend/package.json puppet/metadata.json"
 echo "  3. Commit with version: git commit -m 'chore: bump version to v$NEW_VERSION'"
