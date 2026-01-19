@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Match All Nodes option for node groups to control behavior when no rules are defined
 
 ### Fixed
-- Child groups now only match nodes that also match their parent group
+- Pinned nodes now correctly match their group even when parent groups don't match via rules
+- Child groups now only match nodes that also match their parent group (for non-pinned nodes)
 
 ## [0.22.0] - 2025-01-15
 

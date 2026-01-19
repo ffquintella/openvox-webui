@@ -154,6 +154,81 @@ impl ClassificationService {
             chain
         };
 
+        // Pre-process: Find all groups where this node is pinned
+        // Pinned groups need special handling because they should match even if their
+        // parent chain doesn't match through normal rule evaluation
+        let pinned_group_ids: Vec<Uuid> = self
+            .groups
+            .iter()
+            .filter(|g| g.pinned_nodes.contains(&certname.to_string()))
+            .map(|g| g.id)
+            .collect();
+
+        // Track groups that have been processed (either through BFS or pinned processing)
+        let mut processed_groups: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+        // Process pinned groups first - they match regardless of parent chain
+        for pinned_id in &pinned_group_ids {
+            if let Some(pinned_group) = group_index.get(pinned_id) {
+                tracing::debug!(
+                    "Processing pinned group '{}' for node '{}'",
+                    pinned_group.name,
+                    certname
+                );
+
+                // Get the full ancestor chain for this pinned group
+                let ancestor_chain = get_ancestor_chain(*pinned_id);
+
+                // Merge classes and variables from all ancestors (root to leaf order)
+                for ancestor in &ancestor_chain {
+                    if !merged_group_ids.contains(&ancestor.id) {
+                        merge_classes(&mut all_classes, &ancestor.classes);
+                        merge_parameters(&mut all_variables, &ancestor.variables);
+                        merged_group_ids.push(ancestor.id);
+                    }
+                }
+
+                // Handle environment - leaf (pinned) group takes precedence
+                for ancestor in ancestor_chain.iter().rev() {
+                    let group_env = match &ancestor.environment {
+                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
+                        other => other.clone(),
+                    };
+
+                    if group_env.is_some() {
+                        environment = group_env;
+                        break;
+                    }
+                }
+
+                // Add the pinned group to matched groups
+                matched_groups.push(GroupMatch {
+                    id: pinned_group.id,
+                    name: pinned_group.name.clone(),
+                    match_type: MatchType::Pinned,
+                    matched_rules: vec![],
+                });
+
+                // Mark this group and all its ancestors as processed
+                for ancestor in &ancestor_chain {
+                    processed_groups.insert(ancestor.id);
+                }
+
+                // Enqueue children of the pinned group for normal evaluation
+                if let Some(children) = children_map.get(&Some(pinned_group.id)) {
+                    for child in children {
+                        if !processed_groups.contains(&child.id) {
+                            tracing::debug!(
+                                "Enqueueing child group '{}' of pinned group '{}'",
+                                child.name,
+                                pinned_group.name
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // BFS from root groups; children are only considered if parent matched
         let mut queue: VecDeque<(&NodeGroup, bool)> = VecDeque::new();
         if let Some(roots) = children_map.get(&None) {
@@ -163,6 +238,19 @@ impl ClassificationService {
         }
 
         while let Some((group, parent_matched)) = queue.pop_front() {
+            // Skip groups already processed via pinning
+            if processed_groups.contains(&group.id) {
+                // But still enqueue children if this group was matched via pinning
+                if let Some(children) = children_map.get(&Some(group.id)) {
+                    for child in children {
+                        if !processed_groups.contains(&child.id) {
+                            queue.push_back((*child, true));
+                        }
+                    }
+                }
+                continue;
+            }
+
             tracing::debug!(
                 "Classifying node '{}' against group '{}' (id={}, parent_matched={})",
                 certname,
@@ -1100,8 +1188,9 @@ mod tests {
     }
 
     #[test]
-    fn test_child_without_parent_match_should_not_match() {
-        // Test that a child group doesn't match if its parent doesn't match
+    fn test_child_without_parent_match_pinned_still_matches() {
+        // Test that a pinned child group DOES match even if its parent doesn't match via rules
+        // This is the expected behavior: pinning is an explicit override that bypasses rules
         let parent_id = Uuid::new_v4();
         let parent = NodeGroup {
             id: parent_id,
@@ -1120,7 +1209,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "child".to_string(),
             parent_id: Some(parent_id),
-            pinned_nodes: vec!["node1.example.com".to_string()], // Even pinned!
+            pinned_nodes: vec!["node1.example.com".to_string()], // Pinned!
             classes: serde_json::json!({"child_class": {}}),
             ..Default::default()
         };
@@ -1132,7 +1221,50 @@ mod tests {
 
         let result = service.classify("node1.example.com", &facts);
 
-        // Neither parent nor child should match
+        // Pinned child should match, inheriting parent's classes/variables
+        assert_eq!(result.groups.len(), 1);
+        assert_eq!(result.groups[0].name, "child");
+        assert_eq!(result.groups[0].match_type, MatchType::Pinned);
+        // Should have both parent and child classes (inherited via pinning)
+        let classes = result.classes.as_object().unwrap();
+        assert!(classes.contains_key("parent_class"));
+        assert!(classes.contains_key("child_class"));
+    }
+
+    #[test]
+    fn test_non_pinned_child_without_parent_match_should_not_match() {
+        // Test that a non-pinned child group doesn't match if its parent doesn't match
+        let parent_id = Uuid::new_v4();
+        let parent = NodeGroup {
+            id: parent_id,
+            name: "parent".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "os.family".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("RedHat"),
+            }],
+            classes: serde_json::json!({"parent_class": {}}),
+            ..Default::default()
+        };
+
+        let child = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "child".to_string(),
+            parent_id: Some(parent_id),
+            match_all_nodes: true, // Would match all nodes, but parent must match first
+            classes: serde_json::json!({"child_class": {}}),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![parent, child]);
+        let facts = serde_json::json!({
+            "os": {"family": "Debian"} // Doesn't match parent's rule
+        });
+
+        let result = service.classify("node1.example.com", &facts);
+
+        // Neither parent nor child should match (child isn't pinned)
         assert_eq!(result.groups.len(), 0);
         assert!(result.classes.as_object().unwrap().is_empty());
     }
