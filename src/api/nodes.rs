@@ -14,7 +14,7 @@ use crate::{
     db::repository::GroupRepository,
     middleware::{
         rbac::{check_permission, RbacError},
-        AuthUser, OptionalClientCert,
+        AuthUser, ClientCert, OptionalClientCert,
     },
     models::{default_organization_uuid, Action, ClassificationResult, Fact, Node, Report, Resource as RbacResource},
     services::{
@@ -459,14 +459,15 @@ async fn get_node_classification(
 ///
 /// GET /api/v1/nodes/:certname/classify (public route)
 ///
-/// This endpoint does NOT require JWT authentication. When deployed behind
-/// a reverse proxy with mTLS enabled, the proxy should pass client certificate
-/// headers (X-SSL-Client-CN, X-SSL-Client-DN, X-SSL-Client-Verify) and the
-/// endpoint will verify that the certificate CN matches the requested certname.
+/// This endpoint requires client certificate authentication (mTLS).
+/// It does NOT require JWT authentication, but the client must present a valid
+/// certificate whose CN matches the requested certname.
 ///
-/// When no client certificate headers are present (e.g., direct access without
-/// mTLS proxy), the endpoint allows access but logs a warning. In production,
-/// you should configure a reverse proxy to handle client certificate validation.
+/// When deployed behind a reverse proxy with mTLS enabled, the proxy should pass
+/// client certificate headers (X-SSL-Client-CN, X-SSL-Client-DN, X-SSL-Client-Verify).
+///
+/// The endpoint verifies that the certificate CN matches the requested certname,
+/// preventing nodes from fetching classification data for other nodes.
 ///
 /// This endpoint classifies the node against ALL organizations and:
 /// - Returns the classification from the matching organization
@@ -477,37 +478,25 @@ async fn get_node_classification(
 async fn get_node_classification_public(
     State(state): State<AppState>,
     Path(certname): Path<String>,
-    client_cert: OptionalClientCert,
+    client_cert: ClientCert,
 ) -> AppResult<Json<ClassificationResult>> {
-    // Check client certificate if provided via proxy headers
-    match &client_cert.0 {
-        Some(cert) => {
-            // Client cert headers present - verify CN matches certname
-            if !cert.matches_certname(&certname) {
-                tracing::warn!(
-                    "Public classification: Certificate CN '{}' does not match requested certname '{}'",
-                    cert.cn,
-                    certname
-                );
-                return Err(AppError::Forbidden(format!(
-                    "Certificate CN '{}' does not match requested node '{}'",
-                    cert.cn, certname
-                )));
-            }
-            tracing::debug!(
-                "Public classification: Client certificate authentication successful for node '{}'",
-                certname
-            );
-        }
-        None => {
-            // No client certificate headers - allow but log for awareness
-            // In production, a reverse proxy should be configured to pass client cert headers
-            tracing::debug!(
-                "Public classification: No client certificate headers for node '{}' (direct access or proxy not configured for mTLS)",
-                certname
-            );
-        }
+    // Verify certificate CN matches the requested certname
+    if !client_cert.matches_certname(&certname) {
+        tracing::warn!(
+            "Classification: Certificate CN '{}' does not match requested certname '{}'",
+            client_cert.cn,
+            certname
+        );
+        return Err(AppError::Forbidden(format!(
+            "Certificate CN '{}' does not match requested node '{}'",
+            client_cert.cn, certname
+        )));
     }
+
+    tracing::debug!(
+        "Classification: Client certificate authentication successful for node '{}'",
+        certname
+    );
 
     let puppetdb = state
         .puppetdb

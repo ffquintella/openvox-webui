@@ -52,7 +52,7 @@ Facter.add(:openvox_classification) do
       return nil
     end
 
-    # Get authentication (optional - the public /classify endpoint doesn't require auth)
+    # Get authentication - client certificate is REQUIRED for the /classify endpoint
     api_token = config['api_token'] || config['token']
     api_key = config['api_key']
     ssl_cert = config['ssl_cert']
@@ -148,15 +148,29 @@ Facter.add(:openvox_classification) do
             Facter.debug('openvox_classification: No CA file found, using system defaults')
           end
 
-          # Client certificate authentication
-          if ssl_cert && ssl_key
-            if File.exist?(ssl_cert) && File.exist?(ssl_key)
-              Facter.debug("openvox_classification: Using client cert: #{ssl_cert}")
-              http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
-              http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
-            else
-              Facter.warn("openvox_classification: Client cert/key files not found: #{ssl_cert}, #{ssl_key}")
-            end
+          # Client certificate authentication (REQUIRED)
+          # Auto-detect Puppet agent certificates if not configured
+          if ssl_cert.nil? || ssl_key.nil?
+            puppet_cert_paths = [
+              "/etc/puppetlabs/puppet/ssl/certs/#{certname}.pem",
+              "/etc/puppet/ssl/certs/#{certname}.pem"
+            ]
+            puppet_key_paths = [
+              "/etc/puppetlabs/puppet/ssl/private_keys/#{certname}.pem",
+              "/etc/puppet/ssl/private_keys/#{certname}.pem"
+            ]
+            ssl_cert ||= puppet_cert_paths.find { |p| File.exist?(p) }
+            ssl_key ||= puppet_key_paths.find { |p| File.exist?(p) }
+          end
+
+          if ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+            Facter.debug("openvox_classification: Using client cert: #{ssl_cert}")
+            http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
+            http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+          else
+            Facter.warn('openvox_classification: Client certificate required but not found. '\
+                        'Configure ssl_cert/ssl_key or ensure Puppet agent certificates exist.')
+            return nil
           end
         end
       end
@@ -325,13 +339,29 @@ begin
             http.ca_file = ca_file if ca_file && File.exist?(ca_file)
           end
 
-          # Client certificate authentication (if configured)
+          # Client certificate authentication (REQUIRED)
+          # Auto-detect Puppet agent certificates if not configured
           ssl_cert = config['ssl_cert']
           ssl_key = config['ssl_key']
-          if ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
-            http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
-            http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
+
+          if ssl_cert.nil? || ssl_key.nil?
+            puppet_cert_paths = [
+              "/etc/puppetlabs/puppet/ssl/certs/#{certname}.pem",
+              "/etc/puppet/ssl/certs/#{certname}.pem"
+            ]
+            puppet_key_paths = [
+              "/etc/puppetlabs/puppet/ssl/private_keys/#{certname}.pem",
+              "/etc/puppet/ssl/private_keys/#{certname}.pem"
+            ]
+            ssl_cert ||= puppet_cert_paths.find { |p| File.exist?(p) }
+            ssl_key ||= puppet_key_paths.find { |p| File.exist?(p) }
           end
+
+          # Skip if no certificates found (node not yet bootstrapped)
+          next unless ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
+
+          http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
+          http.key = OpenSSL::PKey::RSA.new(File.read(ssl_key))
         end
 
         request = Net::HTTP::Get.new(uri.request_uri)

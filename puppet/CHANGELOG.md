@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment group feature for node groups that assign environments instead of filtering by them
 - Match All Nodes option for node groups to control behavior when no rules are defined
 
+### Security
+- Classification endpoint (`/api/v1/nodes/:certname/classify`) now requires client certificate authentication (mTLS)
+
 ### Fixed
 - Pinned nodes now correctly match their group even when parent groups don't match via rules
 - Child groups now only match nodes that also match their parent group (for non-pinned nodes)
