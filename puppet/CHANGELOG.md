@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Returns only the environment assignment (no sensitive data)
   - Allows Puppet agents to determine their environment before certificates are available
 - ENC script now supports `classification_key` parameter for shared key authentication
+- ENC script now falls back to unauthenticated `/environment` endpoint when `/classify` auth fails
+- Main `openvox_webui` class now accepts `classification_key` parameter
+- `openvox_webui::client` class now supports `classification_key` parameter for shared key authentication
 
 ### Changed
 

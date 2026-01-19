@@ -64,6 +64,12 @@
 #   openvox_webui::enc::manage_puppet_conf: true
 #   openvox_webui::enc::ssl_verify: false
 #
+# @example With shared key authentication
+#   class { 'openvox_webui::enc':
+#     webui_url          => 'https://openvox.example.com',
+#     classification_key => 'my-secret-shared-key',
+#   }
+#
 class openvox_webui::enc (
   Optional[Stdlib::HTTPUrl] $webui_url                = undef,
   Stdlib::Absolutepath      $enc_script_path          = '/opt/openvox/enc.sh',
@@ -163,7 +169,8 @@ class openvox_webui::enc (
     if $remove_agent_environment {
       exec { 'puppet_config_remove_agent_environment':
         command => '/opt/puppetlabs/bin/puppet config delete environment --section agent',
-        onlyif  => '/opt/puppetlabs/bin/puppet config print environment --section agent 2>/dev/null',
+        # Only run if environment is explicitly set in [agent] section of puppet.conf
+        onlyif  => "/bin/grep -q '^[[:space:]]*environment[[:space:]]*=' ${puppet_conf_path}",
         notify  => $config_notify,
       }
     }

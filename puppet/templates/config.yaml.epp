@@ -76,6 +76,8 @@
   Optional[String] $node_bootstrap_openvox_server_url,
   Optional[String] $node_bootstrap_repository_base_url,
   String $node_bootstrap_agent_package_name,
+  # Classification parameters
+  Optional[String] $classification_key,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -190,6 +192,9 @@ dashboard:
 classification:
   cache_ttl: <%= $cache_ttl %>
   max_rules_per_group: <%= $max_rules_per_group %>
+<% if $classification_key { -%>
+  shared_key: "<%= $classification_key %>"
+<% } -%>
 
 facter:
   templates_dir: "/etc/openvox-webui/templates"

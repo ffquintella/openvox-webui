@@ -50,6 +50,11 @@
 # @param manage_config
 #   Whether to manage the configuration file.
 #
+# @param classification_key
+#   Shared key for authenticating to the classification API (/classify endpoint).
+#   This is an alternative to mTLS client certificate authentication.
+#   Must match the key configured on the OpenVox WebUI server.
+#
 # @example Basic usage with Puppet certificates (recommended)
 #   class { 'openvox_webui::client':
 #     api_url          => 'https://openvox.example.com:5051',
@@ -68,6 +73,13 @@
 #   openvox_webui::client::use_puppet_certs: true
 #   openvox_webui::client::template_name: 'classification'
 #
+# @example Using shared key authentication (alternative to mTLS)
+#   class { 'openvox_webui::client':
+#     api_url            => 'https://openvox.example.com:5051',
+#     use_puppet_certs   => false,
+#     classification_key => 'my-secret-shared-key',
+#   }
+#
 class openvox_webui::client (
   Stdlib::HTTPUrl                     $api_url,
   Optional[Sensitive[String[1]]]      $api_token        = undef,
@@ -78,13 +90,14 @@ class openvox_webui::client (
   Optional[Stdlib::Absolutepath]      $ssl_key          = undef,
   Boolean                             $ssl_verify       = true,
   Integer[1, 120]                     $timeout          = 30,
-  Stdlib::Absolutepath                $config_dir       = '/etc/puppetlabs/facter',
-  String[1]                           $template_name    = 'classification',
-  Boolean                             $manage_config    = true,
+  Stdlib::Absolutepath                $config_dir         = '/etc/puppetlabs/facter',
+  String[1]                           $template_name      = 'classification',
+  Boolean                             $manage_config      = true,
+  Optional[String[1]]                 $classification_key = undef,
 ) {
   # Validate that we have some form of authentication
-  if !$use_puppet_certs and !$api_token and !$api_key {
-    fail('openvox_webui::client requires either use_puppet_certs, api_token, or api_key')
+  if !$use_puppet_certs and !$api_token and !$api_key and !$classification_key {
+    fail('openvox_webui::client requires either use_puppet_certs, api_token, api_key, or classification_key')
   }
 
   # Determine SSL paths
@@ -132,15 +145,16 @@ class openvox_webui::client (
       group   => $root_group,
       mode    => '0640',
       content => epp('openvox_webui/client.yaml.epp', {
-          api_url    => $api_url,
-          api_token  => $api_token,
-          api_key    => $api_key,
-          ssl_ca     => $effective_ssl_ca,
-          ssl_cert   => $effective_ssl_cert,
-          ssl_key    => $effective_ssl_key,
-          ssl_verify => $ssl_verify,
-          timeout    => $timeout,
-          template   => $template_name,
+          api_url            => $api_url,
+          api_token          => $api_token,
+          api_key            => $api_key,
+          ssl_ca             => $effective_ssl_ca,
+          ssl_cert           => $effective_ssl_cert,
+          ssl_key            => $effective_ssl_key,
+          ssl_verify         => $ssl_verify,
+          timeout            => $timeout,
+          template           => $template_name,
+          classification_key => $classification_key,
       }),
       require => File[$config_dir],
     }

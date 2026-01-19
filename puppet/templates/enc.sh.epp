@@ -9,8 +9,10 @@
 #
 # This script is called by Puppet Server to get node classification from OpenVox WebUI.
 # It queries the classification API (/classify) using shared key authentication.
+# If authentication fails, it falls back to the unauthenticated /environment endpoint
+# to at least get the correct environment assignment.
 
-set -e
+# Don't use set -e as grep returns non-zero when no match found
 
 # Configuration
 WEBUI_URL="<%= $webui_url %>"
@@ -26,26 +28,48 @@ if [ -z "$CERTNAME" ]; then
     exit 1
 fi
 
-# Build curl options
+# Build curl options for basic requests
 CURL_OPTS="-s"
 <% unless $ssl_verify { -%>
 # Allow self-signed certificates
 CURL_OPTS="${CURL_OPTS} -k"
 <% } -%>
 
+# Build curl options for authenticated requests
+CURL_AUTH_OPTS="${CURL_OPTS}"
 <% if $classification_key { -%>
 # Add shared key authentication header
-CURL_OPTS="${CURL_OPTS} -H 'X-Classification-Key: ${CLASSIFICATION_KEY}'"
+CURL_AUTH_OPTS="${CURL_AUTH_OPTS} -H 'X-Classification-Key: ${CLASSIFICATION_KEY}'"
 <% } -%>
+
+# Function to get environment from unauthenticated endpoint
+get_environment_only() {
+    local env_response
+    env_response=$(eval curl ${CURL_OPTS} "${WEBUI_URL}/api/v1/nodes/${CERTNAME}/environment" 2>/dev/null) || true
+    if echo "$env_response" | grep -q '"environment"' 2>/dev/null; then
+        echo "$env_response" | python3 -c '
+import sys
+import json
+try:
+    data = json.load(sys.stdin)
+    env = data.get("environment") or "production"
+    print(env)
+except:
+    print("production")
+' 2>/dev/null || echo "production"
+    else
+        echo "production"
+    fi
+}
 
 # Query OpenVox WebUI classification API
 # Uses shared key authentication if configured
-CLASSIFICATION=$(curl ${CURL_OPTS} "${WEBUI_URL}/api/v1/nodes/${CERTNAME}/classify" 2>&1)
+CLASSIFICATION=$(eval curl ${CURL_AUTH_OPTS} "${WEBUI_URL}/api/v1/nodes/${CERTNAME}/classify" 2>&1) || true
 
-# Check if we got valid JSON
-if echo "$CLASSIFICATION" | grep -q "^{"; then
+# Check if we got valid JSON with successful classification
+if echo "$CLASSIFICATION" | grep -q '"certname"' 2>/dev/null; then
     # Convert JSON to YAML format expected by Puppet
-    echo "$CLASSIFICATION" | python3 -c '
+    YAML_OUTPUT=$(echo "$CLASSIFICATION" | python3 -c '
 import sys
 import json
 import yaml
@@ -73,19 +97,22 @@ except json.JSONDecodeError as e:
 except Exception as e:
     print(f"Error processing classification: {e}", file=sys.stderr)
     sys.exit(1)
-'
+' 2>&1)
     EXIT_CODE=$?
-    if [ $EXIT_CODE -ne 0 ]; then
-        # Python script failed - return minimal classification
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo "$YAML_OUTPUT"
+    else
+        # Python script failed - try to get environment from unauthenticated endpoint
+        ENVIRONMENT=$(get_environment_only)
         echo "---"
-        echo "environment: production"
+        echo "environment: ${ENVIRONMENT}"
         echo "classes: {}"
-        exit 0
     fi
 else
-    # Node not found or API error - return minimal classification
-    # This prevents Puppet from failing when node isn't classified yet
+    # Authentication failed or API error
+    # Try to get environment from unauthenticated /environment endpoint
+    ENVIRONMENT=$(get_environment_only)
     echo "---"
-    echo "environment: production"
+    echo "environment: ${ENVIRONMENT}"
     echo "classes: {}"
 fi

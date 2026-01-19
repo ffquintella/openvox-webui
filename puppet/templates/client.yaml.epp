@@ -8,6 +8,7 @@
   Boolean                        $ssl_verify,
   Integer                        $timeout,
   String[1]                      $template,
+  Optional[String[1]]            $classification_key,
 | -%>
 # OpenVox WebUI Client Configuration
 # Managed by Puppet - DO NOT EDIT
@@ -45,3 +46,8 @@ ssl_verify: <%= $ssl_verify %>
 
 # Request timeout in seconds
 timeout: <%= $timeout %>
+<%- if $classification_key { -%>
+
+# Shared key for classification endpoint authentication (alternative to mTLS)
+classification_key: <%= $classification_key %>
+<%- } -%>

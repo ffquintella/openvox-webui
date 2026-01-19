@@ -250,6 +250,11 @@
 # @param node_bootstrap_agent_package_name
 #   Name of the agent package to install on new nodes.
 #
+# @param classification_key
+#   Shared key for authenticating to the classification API (/classify endpoint).
+#   Must match the CLASSIFICATION_SHARED_KEY configured on the OpenVox WebUI server.
+#   This key is passed to the ENC script and facter client for authentication.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -305,6 +310,16 @@
 #     node_bootstrap_openvox_server_url => 'openvox.example.com',
 #     # Optional: use custom repository instead of Vox Pupuli defaults
 #     # node_bootstrap_repository_base_url => 'https://yum.example.com/openvox8',
+#   }
+#
+# @example Configuring classification endpoint with shared key authentication
+#   class { 'openvox_webui':
+#     classification_key => 'my-secret-shared-key',
+#   }
+#   # Then configure the ENC with the same key:
+#   class { 'openvox_webui::enc':
+#     webui_url          => 'https://openvox.example.com',
+#     classification_key => 'my-secret-shared-key',
 #   }
 #
 class openvox_webui (
@@ -439,6 +454,9 @@ class openvox_webui (
   Optional[String[1]]                 $node_bootstrap_openvox_server_url    = undef,
   Optional[String[1]]                 $node_bootstrap_repository_base_url  = undef,
   String[1]                           $node_bootstrap_agent_package_name   = 'openvox-agent',
+
+  # Classification endpoint settings
+  Optional[String[1]]                 $classification_key                  = undef,
 ) {
   contain openvox_webui::install
   contain openvox_webui::config

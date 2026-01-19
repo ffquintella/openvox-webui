@@ -161,6 +161,8 @@ class openvox_webui::config {
         node_bootstrap_openvox_server_url  => $openvox_webui::node_bootstrap_openvox_server_url,
         node_bootstrap_repository_base_url => $openvox_webui::node_bootstrap_repository_base_url,
         node_bootstrap_agent_package_name  => $openvox_webui::node_bootstrap_agent_package_name,
+        # Classification settings
+        classification_key                 => $openvox_webui::classification_key,
       }),
     }
 
