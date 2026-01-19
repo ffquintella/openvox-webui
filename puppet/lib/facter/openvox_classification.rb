@@ -348,6 +348,18 @@ begin
         http.open_timeout = 5
         http.read_timeout = 10
 
+        # Initialize auth variables
+        classification_key = config['classification_key']
+        has_client_cert = false
+
+        # Load classification key from file if auto-generated
+        if classification_key.nil?
+          key_file = '/etc/openvox-webui/classification_key'
+          if File.exist?(key_file)
+            classification_key = File.read(key_file).strip
+          end
+        end
+
         if uri.scheme == 'https'
           http.use_ssl = true
 
@@ -378,15 +390,6 @@ begin
           # Can be skipped if classification_key is provided (debug mode)
           ssl_cert = config['ssl_cert']
           ssl_key = config['ssl_key']
-          classification_key = config['classification_key']
-
-          # Load classification key from file if auto-generated
-          if classification_key.nil?
-            key_file = '/etc/openvox-webui/classification_key'
-            if File.exist?(key_file)
-              classification_key = File.read(key_file).strip
-            end
-          end
 
           if ssl_cert.nil? || ssl_key.nil?
             puppet_cert_paths = [
@@ -401,9 +404,8 @@ begin
             ssl_key ||= puppet_key_paths.find { |p| File.exist?(p) }
           end
 
-          # Skip if no auth method available
+          # Check if we have client cert available
           has_client_cert = ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
-          next unless has_client_cert || classification_key
 
           if has_client_cert
             http.cert = OpenSSL::X509::Certificate.new(File.read(ssl_cert))
@@ -411,26 +413,28 @@ begin
           end
         end
 
-        request = Net::HTTP::Get.new(uri.request_uri)
-        request['Accept'] = 'application/json'
+        # Only proceed if we have auth (client cert or classification key)
+        if has_client_cert || classification_key
+          request = Net::HTTP::Get.new(uri.request_uri)
+          request['Accept'] = 'application/json'
 
-        # Add authentication if configured
-        api_token = config['api_token'] || config['token']
-        api_key = config['api_key']
-        classification_key ||= config['classification_key']
-        request['Authorization'] = "Bearer #{api_token}" if api_token
-        request['X-API-Key'] = api_key if api_key
-        request['X-Classification-Key'] = classification_key if classification_key
+          # Add authentication if configured
+          api_token = config['api_token'] || config['token']
+          api_key = config['api_key']
+          request['Authorization'] = "Bearer #{api_token}" if api_token
+          request['X-API-Key'] = api_key if api_key
+          request['X-Classification-Key'] = classification_key if classification_key
 
-        response = http.request(request)
+          response = http.request(request)
 
-        if response.code.to_i == 200
-          data = JSON.parse(response.body)
+          if response.code.to_i == 200
+            data = JSON.parse(response.body)
 
-          # Register each variable as a top-level fact
-          (data['variables'] || {}).each do |key, value|
-            Facter.add(key.to_sym) do
-              setcode { value }
+            # Register each variable as a top-level fact
+            (data['variables'] || {}).each do |key, value|
+              Facter.add(key.to_sym) do
+                setcode { value }
+              end
             end
           end
         end
