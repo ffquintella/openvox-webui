@@ -975,6 +975,36 @@ export type ConditionOperator = 'all' | 'any';
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved' | 'silenced';
 export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'retrying';
 
+// Alert Condition Types
+export type AlertConditionType =
+  | 'NodeStatus'
+  | 'NodeFact'
+  | 'ReportMetric'
+  | 'EnvironmentFilter'
+  | 'GroupFilter'
+  | 'NodeCountThreshold'
+  | 'TimeWindowFilter'
+  | 'LastReportTime'
+  | 'ConsecutiveFailures'
+  | 'ConsecutiveChanges'
+  | 'ClassChangeFrequency';
+
+export type ConditionValueOperator =
+  | '='
+  | '!='
+  | '~'
+  | '!~'
+  | '>'
+  | '>='
+  | '<'
+  | '<='
+  | 'in'
+  | 'not_in'
+  | 'exists'
+  | 'not_exists'
+  | 'contains'
+  | 'not_contains';
+
 export interface WebhookConfig {
   url: string;
   method?: string;
@@ -1031,9 +1061,27 @@ export interface UpdateChannelRequest {
 }
 
 export interface AlertCondition {
-  field: string;
-  operator: string;
-  value: unknown;
+  type: AlertConditionType;
+  enabled: boolean;
+  config: AlertConditionConfig;
+}
+
+export interface AlertConditionConfig {
+  operator?: ConditionValueOperator;
+  value?: unknown;
+  fact_path?: string;
+  metric_name?: string;
+  threshold?: number;
+  threshold_hours?: number;
+  time_window_hours?: number;
+  class_name?: string;
+  environment?: string;
+  group_id?: string;
+  min_count?: number;
+  max_count?: number;
+  start_hour?: number;
+  end_hour?: number;
+  days_of_week?: number[];
 }
 
 export interface AlertRule {
@@ -1041,8 +1089,10 @@ export interface AlertRule {
   name: string;
   description?: string;
   rule_type: AlertRuleType;
-  conditions: AlertCondition[];
-  condition_operator: ConditionOperator;
+  conditions: {
+    operator: 'AND' | 'OR';
+    conditions: AlertCondition[];
+  };
   severity: AlertSeverity;
   cooldown_minutes: number;
   is_enabled: boolean;
@@ -1056,8 +1106,10 @@ export interface CreateAlertRuleRequest {
   name: string;
   description?: string;
   rule_type: AlertRuleType;
-  conditions: AlertCondition[];
-  condition_operator?: ConditionOperator;
+  conditions: {
+    operator: 'AND' | 'OR';
+    conditions: AlertCondition[];
+  };
   severity?: AlertSeverity;
   cooldown_minutes?: number;
   is_enabled?: boolean;
@@ -1067,8 +1119,10 @@ export interface CreateAlertRuleRequest {
 export interface UpdateAlertRuleRequest {
   name?: string;
   description?: string;
-  conditions?: AlertCondition[];
-  condition_operator?: ConditionOperator;
+  conditions?: {
+    operator: 'AND' | 'OR';
+    conditions: AlertCondition[];
+  };
   severity?: AlertSeverity;
   cooldown_minutes?: number;
   is_enabled?: boolean;

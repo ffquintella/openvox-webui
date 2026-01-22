@@ -17,7 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Comprehensive documentation in [docs/ALERT_RULES_CONDITIONS.md](docs/ALERT_RULES_CONDITIONS.md)
   - API endpoints: `/api/v1/alerting/rules/:id/test` for rule testing
   - Database schema for alert rules, conditions, and triggers
-  - Frontend condition builder UI with context-sensitive value editors
+  - **Frontend Condition Builder UI:** Interactive condition editor with full support for all 11 condition types
+    - Visual condition builder component with add/remove/duplicate functionality
+    - Context-sensitive input fields based on condition type
+    - Support for AND/OR logical operators between conditions
+    - Real-time validation and summary of conditions
+    - Responsive design with dark mode support
+    - Individual enable/disable toggle for each condition
+    - TypeScript types updated to match backend condition structure
+    - Integration with alert rule creation and editing modals
   
 - **Advanced Alerting Conditions:** Extended conditions for infrastructure health monitoring
   - **LastReportTime:** Detect stale nodes (haven't reported in N hours)

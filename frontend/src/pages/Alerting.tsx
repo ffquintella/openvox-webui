@@ -32,7 +32,9 @@ import type {
   CreateAlertRuleRequest,
   UpdateAlertRuleRequest,
   CreateSilenceRequest,
+  AlertCondition,
 } from '../types';
+import ConditionBuilder from '../components/ConditionBuilder';
 
 type TabId = 'alerts' | 'rules' | 'channels' | 'silences';
 
@@ -811,6 +813,14 @@ function RuleModal({
   const [severity, setSeverity] = useState<AlertSeverity>(rule?.severity || 'warning');
   const [isEnabled, setIsEnabled] = useState(rule?.is_enabled ?? true);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(rule?.channels || []);
+  const [conditions, setConditions] = useState<AlertCondition[]>(
+    rule?.conditions.conditions || [
+      { type: 'NodeStatus', enabled: true, config: { operator: '=', value: 'failed' } },
+    ]
+  );
+  const [conditionOperator, setConditionOperator] = useState<'AND' | 'OR'>(
+    rule?.conditions.operator || 'AND'
+  );
 
   const createMutation = useMutation({
     mutationFn: api.createRule,
@@ -834,6 +844,10 @@ function RuleModal({
       const request: UpdateAlertRuleRequest = {
         name,
         description: description || undefined,
+                conditions: {
+                  operator: conditionOperator,
+                  conditions,
+                },
         severity,
         is_enabled: isEnabled,
         channel_ids: selectedChannels,
@@ -844,8 +858,11 @@ function RuleModal({
         name,
         description: description || undefined,
         rule_type: ruleType,
+                conditions: {
+                  operator: conditionOperator,
+                  conditions,
+                },
         severity,
-        conditions: [{ field: 'node.status', operator: 'eq', value: 'failed' }],
         channel_ids: selectedChannels,
       };
       createMutation.mutate(request);
@@ -855,8 +872,8 @@ function RuleModal({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 dark:bg-gray-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black bg-opacity-50 p-4">
+      <div className="my-8 w-full max-w-4xl rounded-lg bg-white p-6 dark:bg-gray-800">
         <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">
           {isEditing ? 'Edit Alert Rule' : 'New Alert Rule'}
         </h3>
@@ -882,6 +899,19 @@ function RuleModal({
               onChange={(e) => setDescription(e.target.value)}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
               rows={2}
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Conditions
+                        </label>
+                        <ConditionBuilder
+                          conditions={conditions}
+                          operator={conditionOperator}
+                          onChange={(newConditions, newOperator) => {
+                            setConditions(newConditions);
+                            setConditionOperator(newOperator);
+                          }}
+                        />
+                      </div>
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
