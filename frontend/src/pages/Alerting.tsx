@@ -899,19 +899,19 @@ function RuleModal({
               onChange={(e) => setDescription(e.target.value)}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
               rows={2}
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Conditions
-                        </label>
-                        <ConditionBuilder
-                          conditions={conditions}
-                          operator={conditionOperator}
-                          onChange={(newConditions, newOperator) => {
-                            setConditions(newConditions);
-                            setConditionOperator(newOperator);
-                          }}
-                        />
-                      </div>
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Conditions
+            </label>
+            <ConditionBuilder
+              conditions={conditions}
+              operator={conditionOperator}
+              onChange={(newConditions, newOperator) => {
+                setConditions(newConditions);
+                setConditionOperator(newOperator);
+              }}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">

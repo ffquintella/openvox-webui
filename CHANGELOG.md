@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed syntax error in Alerting.tsx where textarea element was not properly closed
+
 ### Added
 - **Alert Rules Conditions System:** Comprehensive condition evaluation engine for alert rules
   - Condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter, LastReportTime, ConsecutiveFailures, ConsecutiveChanges, ClassChangeFrequency
