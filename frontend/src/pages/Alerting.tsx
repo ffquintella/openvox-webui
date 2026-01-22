@@ -814,12 +814,12 @@ function RuleModal({
   const [isEnabled, setIsEnabled] = useState(rule?.is_enabled ?? true);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(rule?.channels || []);
   const [conditions, setConditions] = useState<AlertCondition[]>(
-    rule?.conditions.conditions || [
+    rule?.conditions || [
       { type: 'NodeStatus', enabled: true, config: { operator: '=', value: 'failed' } },
     ]
   );
   const [conditionOperator, setConditionOperator] = useState<'AND' | 'OR'>(
-    rule?.conditions.operator || 'AND'
+    rule?.condition_operator || 'AND'
   );
 
   const createMutation = useMutation({
@@ -827,6 +827,10 @@ function RuleModal({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
+    },
+    onError: (error) => {
+      console.error('Failed to create alert rule:', error);
+      alert(`Failed to create alert rule: ${error.message || 'Unknown error'}`);
     },
   });
 
@@ -836,35 +840,38 @@ function RuleModal({
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
     },
+    onError: (error) => {
+      console.error('Failed to update alert rule:', error);
+      alert(`Failed to update alert rule: ${error.message || 'Unknown error'}`);
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted', { name, description, ruleType, severity, selectedChannels, conditions, conditionOperator });
     if (isEditing) {
       const request: UpdateAlertRuleRequest = {
         name,
         description: description || undefined,
-                conditions: {
-                  operator: conditionOperator,
-                  conditions,
-                },
+        conditions,
+        condition_operator: conditionOperator,
         severity,
         is_enabled: isEnabled,
         channel_ids: selectedChannels,
       };
+      console.log('Update request:', request);
       updateMutation.mutate(request);
     } else {
       const request: CreateAlertRuleRequest = {
         name,
         description: description || undefined,
         rule_type: ruleType,
-                conditions: {
-                  operator: conditionOperator,
-                  conditions,
-                },
+        conditions,
+        condition_operator: conditionOperator,
         severity,
         channel_ids: selectedChannels,
       };
+      console.log('Create request:', request);
       createMutation.mutate(request);
     }
   };

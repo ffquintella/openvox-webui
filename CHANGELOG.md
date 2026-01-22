@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed syntax error in Alerting.tsx where textarea element was not properly closed
+- Added error handling and debugging logs to alert rule form submission
+- Fixed alert rule creation API - corrected conditions payload structure to match backend expectations (conditions as array, condition_operator as separate field)
 
 ### Added
 - **Alert Rules Conditions System:** Comprehensive condition evaluation engine for alert rules
