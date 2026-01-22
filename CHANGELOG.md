@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Operator dropdown: Shows symbols and descriptions (e.g., "= (equals) - Exact match")
   - Type dropdown: Explains each condition type (e.g., "Last Report Time - Detect stale nodes")
 - **Added Advanced Mode Help:** Comprehensive help section in advanced mode explaining how to fill config JSON with examples
+- **Improved Notification Channel Creation:** Dynamic labels and hints for channel types
+  - Label changes based on channel type (e.g., "SMTP URL" for Email, "Slack Webhook URL" for Slack)
+  - Specific placeholder examples for each channel type
+  - Error handling with user-friendly messages
+  - Type dropdown now shows channel descriptions
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats

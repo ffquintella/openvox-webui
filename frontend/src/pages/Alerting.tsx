@@ -714,7 +714,57 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       onClose();
     },
+    onError: (error: any) => {
+      console.error('Failed to create channel:', error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to create channel: ${errorMsg}`);
+    },
   });
+
+  const getChannelHint = () => {
+    switch (channelType) {
+      case 'webhook':
+        return 'URL of your webhook endpoint (e.g., https://example.com/webhook)';
+      case 'email':
+        return 'SMTP server URL (e.g., smtp://user:password@mail.example.com:587)';
+      case 'slack':
+        return 'Slack webhook URL (e.g., https://hooks.slack.com/services/...)';
+      case 'teams':
+        return 'Microsoft Teams webhook URL (e.g., https://outlook.webhook.office.com/...)';
+      default:
+        return '';
+    }
+  };
+
+  const getUrlPlaceholder = () => {
+    switch (channelType) {
+      case 'webhook':
+        return 'https://example.com/webhook';
+      case 'email':
+        return 'smtp://user:password@mail.example.com:587';
+      case 'slack':
+        return 'https://hooks.slack.com/services/XXX/YYY/ZZZ';
+      case 'teams':
+        return 'https://outlook.webhook.office.com/webhookb2/...';
+      default:
+        return '';
+    }
+  };
+
+  const getUrlLabel = () => {
+    switch (channelType) {
+      case 'webhook':
+        return 'Webhook URL';
+      case 'email':
+        return 'SMTP URL';
+      case 'slack':
+        return 'Slack Webhook URL';
+      case 'teams':
+        return 'Microsoft Teams Webhook URL';
+      default:
+        return 'URL';
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -754,23 +804,27 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setChannelType(e.target.value as ChannelType)}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
             >
-              <option value="webhook">Webhook</option>
-              <option value="slack">Slack</option>
-              <option value="teams">Microsoft Teams</option>
-              <option value="email">Email</option>
+              <option value="webhook">Webhook - Generic HTTP endpoint</option>
+              <option value="email">Email - SMTP server</option>
+              <option value="slack">Slack - Slack channel</option>
+              <option value="teams">Microsoft Teams - Teams webhook</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              {channelType === 'webhook' ? 'Webhook URL' : 'Webhook/SMTP URL'}
+              {getUrlLabel()}
             </label>
             <input
               type="url"
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder={getUrlPlaceholder()}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
               required
             />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {getChannelHint()}
+            </p>
           </div>
           <div className="flex justify-end space-x-3">
             <button
