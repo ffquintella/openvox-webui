@@ -962,9 +962,7 @@ function RuleModal({
                           <option value="ConsecutiveChanges">Consecutive Changes</option>
                           <option value="ClassChangeFrequency">Class Change Frequency</option>
                         </select>
-                        <input
-                          type="text"
-                          placeholder="Operator"
+                        <select
                           value={condition.operator || ''}
                           onChange={(e) => {
                             const newConditions = [...conditions];
@@ -972,7 +970,21 @@ function RuleModal({
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                        />
+                        >
+                          <option value="">Select Operator...</option>
+                          <option value="eq">equals</option>
+                          <option value="ne">not equals</option>
+                          <option value="gt">greater than</option>
+                          <option value="gte">greater or equal</option>
+                          <option value="lt">less than</option>
+                          <option value="lte">less or equal</option>
+                          <option value="contains">contains</option>
+                          <option value="regex">regex</option>
+                          <option value="in">in</option>
+                          <option value="not_in">not in</option>
+                          <option value="exists">exists</option>
+                          <option value="not_exists">not exists</option>
+                        </select>
                         <textarea
                           placeholder="Config (JSON)"
                           value={JSON.stringify(condition.config || {})}
@@ -991,9 +1003,7 @@ function RuleModal({
                       </>
                     ) : (
                       <>
-                        <input
-                          type="text"
-                          placeholder="Field (e.g., node.status)"
+                        <select
                           value={condition.field || ''}
                           onChange={(e) => {
                             const newConditions = [...conditions];
@@ -1001,7 +1011,18 @@ function RuleModal({
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                        />
+                        >
+                          <option value="">Select Field...</option>
+                          <option value="node.status">node.status</option>
+                          <option value="node.name">node.name</option>
+                          <option value="node.environment">node.environment</option>
+                          <option value="node.group">node.group</option>
+                          <option value="node.last_report">node.last_report</option>
+                          <option value="report.status">report.status</option>
+                          <option value="report.changed">report.changed</option>
+                          <option value="report.failed">report.failed</option>
+                          <option value="facts">facts</option>
+                        </select>
                         <select
                           value={condition.operator || ''}
                           onChange={(e) => {
