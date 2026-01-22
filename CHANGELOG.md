@@ -8,9 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Alert Rules Conditions System:** Comprehensive condition evaluation engine for alert rules
+  - Condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter
+  - Condition operators: `=`, `!=`, `~`, `!~`, `>`, `>=`, `<`, `<=`, `in`, `not_in`, `exists`, `not_exists`, `contains`, `not_contains`
+  - Logical operators: AND, OR for combining multiple conditions
+  - Data types: String, Integer, Float, Boolean with appropriate operators
+  - RuleEvaluator implementation for background rule evaluation (5 minute intervals)
+  - Comprehensive documentation in [docs/ALERT_RULES_CONDITIONS.md](docs/ALERT_RULES_CONDITIONS.md)
+  - API endpoints: `/api/v1/alerting/rules/:id/test` for rule testing
+  - Database schema for alert rules, conditions, and triggers
+  - Frontend condition builder UI with context-sensitive value editors
 
 ### Changed
-- **Documentation Reorganization:** Migrated all detailed feature documentation to [docs/implemented-features/](docs/implemented-features/) directory
+- **Alerting Documentation:** Enhanced with complete condition structure and evaluation logic
+  - Added 8 condition types covering infrastructure monitoring scenarios
+  - Added examples of simple and complex multi-condition rules
+  - Updated API endpoints to include rule testing
+  - Added database schema documentation
+
+### Details
   - Created feature-specific documents for all 9 phases (19 feature files)
   - Added [docs/implemented-features/README.md](docs/implemented-features/README.md) with complete index and navigation
   - Compacted ROADMAP.md to provide high-level overview with links to detailed docs
