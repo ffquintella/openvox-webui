@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed condition_operator Type Mismatch:** Changed from 'AND'/'OR' to 'all'/'any' to match backend expectations (was causing 422 errors)
 - **Improved Dropdown Labels:** Alert rule type dropdown now shows descriptive text explaining each type
 - **Better Value Placeholder:** Value field now shows examples (e.g., failed, 24, 2024-01-22)
+- **Enhanced Combo Box Labels:** All dropdowns now show descriptive labels with explanations for better user understanding
+  - Field dropdown: Shows field purpose (e.g., "Node Status - Node connection state")
+  - Operator dropdown: Shows symbols and descriptions (e.g., "= (equals) - Exact match")
+  - Type dropdown: Explains each condition type (e.g., "Last Report Time - Detect stale nodes")
+- **Added Advanced Mode Help:** Comprehensive help section in advanced mode explaining how to fill config JSON with examples
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats

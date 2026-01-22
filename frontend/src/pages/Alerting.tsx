@@ -950,8 +950,24 @@ function RuleModal({
             </div>
             <div className="space-y-3 rounded-md border border-gray-300 p-4 dark:border-gray-600">
               {useAdvancedFormat ? (
-                <div className="text-sm text-blue-600 dark:text-blue-400">
-                  Advanced format: Create conditions with specific types (NodeStatus, LastReportTime, etc.)
+                <div className="space-y-2">
+                  <div className="text-sm text-blue-600 dark:text-blue-400">
+                    Advanced format: Create conditions with specific types (NodeStatus, LastReportTime, etc.)
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">
+                    <strong>How to fill:</strong>
+                    <ul className="mt-1 ml-4 space-y-1 list-disc">
+                      <li><strong>Type:</strong> Select the condition type (e.g., NodeStatus, LastReportTime)</li>
+                      <li><strong>Operator:</strong> Choose comparison operator (e.g., equals, greater than)</li>
+                      <li><strong>Config:</strong> JSON configuration specific to the condition type. Examples:
+                        <ul className="ml-4 mt-1 list-circle">
+                          <li>NodeStatus: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"status": "failed"}'}</code></li>
+                          <li>LastReportTime: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"hours": 24}'}</code></li>
+                          <li>NodeCountThreshold: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"count": 10, "threshold": 5}'}</code></li>
+                        </ul>
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               ) : (
                 <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -973,17 +989,17 @@ function RuleModal({
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
                         >
                           <option value="">Select Type...</option>
-                          <option value="NodeStatus">Node Status</option>
-                          <option value="NodeFact">Node Fact</option>
-                          <option value="ReportMetric">Report Metric</option>
-                          <option value="EnvironmentFilter">Environment Filter</option>
-                          <option value="GroupFilter">Group Filter</option>
-                          <option value="NodeCountThreshold">Node Count Threshold</option>
-                          <option value="TimeWindowFilter">Time Window Filter</option>
-                          <option value="LastReportTime">Last Report Time</option>
-                          <option value="ConsecutiveFailures">Consecutive Failures</option>
-                          <option value="ConsecutiveChanges">Consecutive Changes</option>
-                          <option value="ClassChangeFrequency">Class Change Frequency</option>
+                          <option value="NodeStatus">Node Status - Check node connection state</option>
+                          <option value="NodeFact">Node Fact - Evaluate custom fact values</option>
+                          <option value="ReportMetric">Report Metric - Monitor report metrics</option>
+                          <option value="EnvironmentFilter">Environment Filter - Filter by environment</option>
+                          <option value="GroupFilter">Group Filter - Filter by node group</option>
+                          <option value="NodeCountThreshold">Node Count Threshold - Alert on node count</option>
+                          <option value="TimeWindowFilter">Time Window Filter - Time-based conditions</option>
+                          <option value="LastReportTime">Last Report Time - Detect stale nodes</option>
+                          <option value="ConsecutiveFailures">Consecutive Failures - Detect repeated failures</option>
+                          <option value="ConsecutiveChanges">Consecutive Changes - Monitor change frequency</option>
+                          <option value="ClassChangeFrequency">Class Change Frequency - Track class changes</option>
                         </select>
                         <select
                           value={condition.operator || ''}
@@ -995,18 +1011,18 @@ function RuleModal({
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
                         >
                           <option value="">Select Operator...</option>
-                          <option value="eq">equals</option>
-                          <option value="ne">not equals</option>
-                          <option value="gt">greater than</option>
-                          <option value="gte">greater or equal</option>
-                          <option value="lt">less than</option>
-                          <option value="lte">less or equal</option>
-                          <option value="contains">contains</option>
-                          <option value="regex">regex</option>
-                          <option value="in">in</option>
-                          <option value="not_in">not in</option>
-                          <option value="exists">exists</option>
-                          <option value="not_exists">not exists</option>
+                          <option value="eq">= (equals) - Exact match</option>
+                          <option value="ne">!= (not equals) - Does not match</option>
+                          <option value="gt">&gt; (greater than) - Numeric comparison</option>
+                          <option value="gte">&gt;= (greater or equal) - Numeric comparison</option>
+                          <option value="lt">&lt; (less than) - Numeric comparison</option>
+                          <option value="lte">&lt;= (less or equal) - Numeric comparison</option>
+                          <option value="contains">contains - Text contains substring</option>
+                          <option value="regex">regex - Regular expression match</option>
+                          <option value="in">in - Value is in list</option>
+                          <option value="not_in">not in - Value is not in list</option>
+                          <option value="exists">exists - Field exists</option>
+                          <option value="not_exists">not exists - Field does not exist</option>
                         </select>
                         <textarea
                           placeholder="Config (JSON)"
@@ -1037,15 +1053,15 @@ function RuleModal({
                           required
                         >
                           <option value="">Select Field...</option>
-                          <option value="node.status">node.status</option>
-                          <option value="node.name">node.name</option>
-                          <option value="node.environment">node.environment</option>
-                          <option value="node.group">node.group</option>
-                          <option value="node.last_report">node.last_report</option>
-                          <option value="report.status">report.status</option>
-                          <option value="report.changed">report.changed</option>
-                          <option value="report.failed">report.failed</option>
-                          <option value="facts">facts</option>
+                          <option value="node.status">Node Status - Node connection state (online/offline/failed)</option>
+                          <option value="node.name">Node Name - Hostname of the node</option>
+                          <option value="node.environment">Node Environment - Puppet environment (production, development)</option>
+                          <option value="node.group">Node Group - Node group assignment</option>
+                          <option value="node.last_report">Last Report - Time of last Puppet run</option>
+                          <option value="report.status">Report Status - Status of last Puppet run (success/failed)</option>
+                          <option value="report.changed">Resources Changed - Number of resources changed</option>
+                          <option value="report.failed">Resources Failed - Number of resources failed</option>
+                          <option value="facts">Facts - Custom fact values</option>
                         </select>
                         <select
                           value={condition.operator || ''}
@@ -1058,18 +1074,18 @@ function RuleModal({
                           required
                         >
                           <option value="">Select Operator...</option>
-                          <option value="eq">equals</option>
-                          <option value="ne">not equals</option>
-                          <option value="gt">greater than</option>
-                          <option value="gte">greater or equal</option>
-                          <option value="lt">less than</option>
-                          <option value="lte">less or equal</option>
-                          <option value="contains">contains</option>
-                          <option value="regex">regex</option>
-                          <option value="in">in</option>
-                          <option value="not_in">not in</option>
-                          <option value="exists">exists</option>
-                          <option value="not_exists">not exists</option>
+                          <option value="eq">= (equals) - Exact match</option>
+                          <option value="ne">!= (not equals) - Does not match</option>
+                          <option value="gt">&gt; (greater than) - Numeric comparison</option>
+                          <option value="gte">&gt;= (greater or equal) - Numeric comparison</option>
+                          <option value="lt">&lt; (less than) - Numeric comparison</option>
+                          <option value="lte">&lt;= (less or equal) - Numeric comparison</option>
+                          <option value="contains">contains - Text contains substring</option>
+                          <option value="regex">regex - Regular expression match</option>
+                          <option value="in">in - Value is in list</option>
+                          <option value="not_in">not in - Value is not in list</option>
+                          <option value="exists">exists - Field exists</option>
+                          <option value="not_exists">not exists - Field does not exist</option>
                         </select>
                         <input
                           type="text"
