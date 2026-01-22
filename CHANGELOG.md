@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Global SMTP Configuration:** New settings table with key-value structure for flexible application settings
+- **SMTP Settings UI:** New "Email/SMTP" tab in Admin Settings for configuring SMTP server (host, port, username, password, sender, TLS)
+- **Simplified Email Channels:** Email notification channels now only require recipient email address
+- SMTP settings API endpoints (GET/PUT /api/v1/settings/smtp)
+- Settings repository for managing key-value application settings
+- Automatic SMTP configuration injection when creating email channels
+
+### Changed
+- **Email Channel Architecture:** Separated email recipient (channel-specific) from SMTP configuration (system-wide in Admin Settings)
+- Email channels config now only contains recipient list, SMTP settings loaded from global configuration
+- CreateChannelRequest now accepts partial configs to support simpler email channel creation
+
 ### Fixed
 - Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)
 - **Improved Alert Rules UX:** Added ability to add/remove multiple conditions easily with dedicated Add/Remove buttons

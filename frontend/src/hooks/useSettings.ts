@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { DashboardConfig } from '../types';
+import type { DashboardConfig, UpdateSmtpSettingsRequest } from '../types';
 
 export function useSettings() {
   return useQuery({
@@ -73,5 +73,23 @@ export function useServerInfo() {
   return useQuery({
     queryKey: ['settings', 'server'],
     queryFn: api.getServerInfo,
+  });
+}
+
+export function useSmtpSettings() {
+  return useQuery({
+    queryKey: ['settings', 'smtp'],
+    queryFn: api.getSmtpSettings,
+  });
+}
+
+export function useUpdateSmtpSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (config: UpdateSmtpSettingsRequest) => api.updateSmtpSettings(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'smtp'] });
+    },
   });
 }

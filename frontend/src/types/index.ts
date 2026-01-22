@@ -510,6 +510,25 @@ export interface NodeBootstrapSettings {
   agent_package_name: string;
 }
 
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+  from_address: string;
+  use_tls: boolean;
+  configured: boolean;
+}
+
+export interface UpdateSmtpSettingsRequest {
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+  from_address: string;
+  use_tls: boolean;
+}
+
 export interface SettingsResponse {
   server: ServerSettings;
   puppetdb?: PuppetDbSettings | null;
@@ -1050,7 +1069,7 @@ export interface NotificationChannel {
 export interface CreateChannelRequest {
   name: string;
   channel_type: ChannelType;
-  config: ChannelConfig;
+  config: ChannelConfig | Record<string, unknown>; // Allow partial configs for creation
   is_enabled?: boolean;
 }
 

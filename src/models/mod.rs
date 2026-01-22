@@ -16,6 +16,7 @@ mod notification;
 mod organization;
 mod rbac;
 mod report;
+mod settings;
 mod user;
 
 pub use alerting::*;
@@ -34,4 +35,5 @@ pub use notification::*;
 pub use organization::*;
 pub use rbac::*;
 pub use report::*;
+pub use settings::*;
 pub use user::*;

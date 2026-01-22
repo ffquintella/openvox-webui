@@ -36,6 +36,8 @@ import type {
   ValidateConfigResponse,
   ConfigHistoryEntry,
   ServerInfoResponse,
+  SmtpSettings,
+  UpdateSmtpSettingsRequest,
   CAStatus,
   CertificateRequest,
   Certificate,
@@ -499,6 +501,16 @@ export const api = {
 
   getServerInfo: async (): Promise<ServerInfoResponse> => {
     const response = await client.get('/settings/server');
+    return response.data;
+  },
+
+  getSmtpSettings: async (): Promise<SmtpSettings> => {
+    const response = await client.get('/settings/smtp');
+    return response.data;
+  },
+
+  updateSmtpSettings: async (config: UpdateSmtpSettingsRequest): Promise<SmtpSettings> => {
+    const response = await client.put('/settings/smtp', config);
     return response.data;
   },
 

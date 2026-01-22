@@ -21,6 +21,7 @@ import {
   Eye,
   EyeOff,
   Monitor,
+  Mail,
 } from 'lucide-react';
 import {
   useSettings,
@@ -31,6 +32,8 @@ import {
   useImportConfig,
   useConfigHistory,
   useServerInfo,
+  useSmtpSettings,
+  useUpdateSmtpSettings,
 } from '../hooks/useSettings';
 import { api } from '../services/api';
 import type {
@@ -41,7 +44,7 @@ import type {
   PermissionDefinition,
 } from '../types';
 
-type TabId = 'general' | 'dashboard' | 'rbac' | 'import-export' | 'server';
+type TabId = 'general' | 'dashboard' | 'rbac' | 'import-export' | 'smtp' | 'server';
 
 interface Tab {
   id: TabId;
@@ -53,6 +56,7 @@ const tabs: Tab[] = [
   { id: 'general', name: 'General', icon: SettingsIcon },
   { id: 'dashboard', name: 'Dashboard', icon: Layout },
   { id: 'rbac', name: 'RBAC', icon: Shield },
+  { id: 'smtp', name: 'Email/SMTP', icon: Mail },
   { id: 'import-export', name: 'Import/Export', icon: FileCode },
   { id: 'server', name: 'Server Info', icon: Server },
 ];
@@ -95,6 +99,7 @@ export default function Settings() {
         {activeTab === 'general' && <GeneralSettingsTab />}
         {activeTab === 'dashboard' && <DashboardSettingsTab />}
         {activeTab === 'rbac' && <RbacSettingsTab />}
+        {activeTab === 'smtp' && <SmtpSettingsTab />}
         {activeTab === 'import-export' && <ImportExportTab />}
         {activeTab === 'server' && <ServerInfoTab />}
       </div>
@@ -1055,6 +1060,211 @@ function ErrorState({ message }: { message: string }) {
     <div className="flex items-center justify-center py-12">
       <XCircle className="w-6 h-6 text-red-500 mr-3" />
       <span className="text-red-600">{message}</span>
+    </div>
+  );
+}
+
+function SmtpSettingsTab() {
+  const { data: smtp, isLoading, error } = useSmtpSettings();
+  const updateMutation = useUpdateSmtpSettings();
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [formData, setFormData] = useState({
+    host: '',
+    port: 587,
+    username: '',
+    password: '',
+    from_address: '',
+    use_tls: true,
+  });
+
+  useEffect(() => {
+    if (smtp) {
+      setFormData({
+        host: smtp.host,
+        port: smtp.port,
+        username: smtp.username || '',
+        password: smtp.password || '',
+        from_address: smtp.from_address,
+        use_tls: smtp.use_tls,
+      });
+    }
+  }, [smtp]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateMutation.mutate({
+      host: formData.host,
+      port: formData.port,
+      username: formData.username || undefined,
+      password: formData.password || undefined,
+      from_address: formData.from_address,
+      use_tls: formData.use_tls,
+    });
+  };
+
+  if (isLoading) {
+    return <LoadingState message="Loading SMTP settings..." />;
+  }
+
+  if (error) {
+    return <ErrorState message="Failed to load SMTP settings" />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <Mail className="w-5 h-5 text-primary-600 mr-2" />
+            <h2 className="text-lg font-semibold">SMTP Server Configuration</h2>
+          </div>
+          {smtp?.configured && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <CheckCircle className="w-3 h-3 mr-1" />
+              Configured
+            </span>
+          )}
+        </div>
+
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Configure the SMTP server for sending email notifications from alert rules.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                SMTP Host
+              </label>
+              <input
+                type="text"
+                value={formData.host}
+                onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+                placeholder="smtp.example.com"
+                required
+              />
+            </div>
+
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                SMTP Port
+              </label>
+              <input
+                type="number"
+                value={formData.port}
+                onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+                placeholder="587"
+                min="1"
+                max="65535"
+                required
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                From Address
+              </label>
+              <input
+                type="email"
+                value={formData.from_address}
+                onChange={(e) => setFormData({ ...formData, from_address: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+                placeholder="noreply@example.com"
+                required
+              />
+            </div>
+
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Username (optional)
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+                placeholder="smtp-user"
+              />
+            </div>
+
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Password (optional)
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700 pr-10"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="col-span-2">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.use_tls}
+                  onChange={(e) => setFormData({ ...formData, use_tls: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Use TLS encryption
+                </span>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Recommended for secure connections (port 587)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="submit"
+              disabled={updateMutation.isPending}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save SMTP Settings
+                </>
+              )}
+            </button>
+          </div>
+
+          {updateMutation.isSuccess && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md flex items-center text-green-800">
+              <CheckCircle className="w-4 h-4 mr-2" />
+              <span className="text-sm">SMTP settings saved successfully</span>
+            </div>
+          )}
+
+          {updateMutation.isError && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center text-red-800">
+              <XCircle className="w-4 h-4 mr-2" />
+              <span className="text-sm">Failed to save SMTP settings</span>
+            </div>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

@@ -707,6 +707,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [channelType, setChannelType] = useState<ChannelType>('webhook');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [isEnabled, setIsEnabled] = useState(true);
 
   const createMutation = useMutation({
     mutationFn: api.createChannel,
@@ -768,10 +769,22 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Build config based on channel type
+    let config: Record<string, unknown>;
+    if (channelType === 'webhook') {
+      config = { url: webhookUrl };
+    } else if (channelType === 'email') {
+      config = { to: [webhookUrl] }; // For email, webhookUrl contains the recipient email
+    } else {
+      config = { webhook_url: webhookUrl };
+    }
+    
     const request: CreateChannelRequest = {
       name,
       channel_type: channelType,
-      config: channelType === 'webhook' ? { url: webhookUrl } : { webhook_url: webhookUrl },
+      config,
+      is_enabled: isEnabled,
     };
     createMutation.mutate(request);
   };
@@ -825,6 +838,19 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {getChannelHint()}
             </p>
+          </div>
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={isEnabled}
+                onChange={(e) => setIsEnabled(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Enable this channel
+              </span>
+            </label>
           </div>
           <div className="flex justify-end space-x-3">
             <button

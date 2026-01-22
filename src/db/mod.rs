@@ -16,6 +16,7 @@ pub mod migrations;
 pub mod node_removal_repository;
 pub mod organization_repository;
 pub mod repository;
+pub mod settings_repository;
 
 pub use alerting_repository::{
     AlertRepository, AlertRuleRepository, AlertSilenceRepository, NotificationChannelRepository,
@@ -30,6 +31,7 @@ pub use code_deploy_repository::{
 };
 pub use node_removal_repository::NodeRemovalRepository;
 pub use organization_repository::OrganizationRepository;
+pub use settings_repository::SettingsRepository;
 
 use std::time::Duration;
 
@@ -81,6 +83,8 @@ const REQUIRED_TABLES: &[&str] = &[
     // Node removal tracking tables
     "pending_node_removals",
     "node_removal_audit",
+    // Settings table
+    "settings",
 ];
 
 /// Database connection pool type

@@ -45,6 +45,8 @@ pub fn routes() -> Router<AppState> {
         .route("/validate", post(validate_config))
         // Get configuration history
         .route("/history", get(get_config_history))
+        // SMTP settings
+        .route("/smtp", get(get_smtp_settings).put(update_smtp_settings))
         // Note: /server is in public_routes() to allow login page to check SAML config
 }
 
@@ -887,5 +889,60 @@ database:
 "#;
         let warnings = check_config_warnings(config);
         assert!(warnings.iter().any(|w| w.contains("default value")));
+    }
+}
+
+// ============================================================================
+// SMTP Settings Endpoints
+// ============================================================================
+
+/// Get SMTP settings
+///
+/// GET /api/v1/settings/smtp
+async fn get_smtp_settings(
+    State(state): State<AppState>,
+) -> Result<Json<crate::models::SmtpSettings>, (StatusCode, Json<ErrorResponse>)> {
+    use crate::db::SettingsRepository;
+
+    let repo = SettingsRepository::new(state.db.clone());
+
+    match repo.get_smtp_settings().await {
+        Ok(smtp) => Ok(Json(smtp)),
+        Err(e) => {
+            tracing::error!("Failed to get SMTP settings: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error",
+                    "Failed to retrieve SMTP settings",
+                )),
+            ))
+        }
+    }
+}
+
+/// Update SMTP settings
+///
+/// PUT /api/v1/settings/smtp
+async fn update_smtp_settings(
+    State(state): State<AppState>,
+    Json(req): Json<crate::models::UpdateSmtpSettingsRequest>,
+) -> Result<Json<crate::models::SmtpSettings>, (StatusCode, Json<ErrorResponse>)> {
+    use crate::db::SettingsRepository;
+
+    let repo = SettingsRepository::new(state.db.clone());
+
+    match repo.update_smtp_settings(&req).await {
+        Ok(smtp) => Ok(Json(smtp)),
+        Err(e) => {
+            tracing::error!("Failed to update SMTP settings: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error",
+                    "Failed to update SMTP settings",
+                )),
+            ))
+        }
     }
 }

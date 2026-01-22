@@ -73,8 +73,37 @@ impl AlertingService {
         req: &CreateChannelRequest,
         user_id: Option<Uuid>,
     ) -> Result<NotificationChannel> {
+        use crate::db::SettingsRepository;
+        
+        // If creating an email channel, merge SMTP config from settings
+        let mut req = req.clone();
+        if req.channel_type == ChannelType::Email {
+            let settings_repo = SettingsRepository::new(self.pool.clone());
+            let smtp_settings = settings_repo.get_smtp_settings().await?;
+            
+            // Extract recipient from request config
+            let to_emails: Vec<String> = if let Some(to) = req.config.get("to") {
+                serde_json::from_value(to.clone()).unwrap_or_default()
+            } else {
+                vec![]
+            };
+            
+            // Build complete EmailConfig
+            let email_config = EmailConfig {
+                smtp_host: smtp_settings.host,
+                smtp_port: smtp_settings.port,
+                smtp_username: smtp_settings.username,
+                smtp_password: smtp_settings.password,
+                from: smtp_settings.from_address,
+                to: to_emails,
+                use_tls: smtp_settings.use_tls,
+            };
+            
+            req.config = serde_json::to_value(email_config)?;
+        }
+        
         let repo = NotificationChannelRepository::new(&self.pool);
-        repo.create(req, user_id).await
+        repo.create(&req, user_id).await
     }
 
     /// Update a notification channel
