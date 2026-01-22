@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Evaluation functions for computing consecutive metrics from report history
   - Performance optimized with report caching and query batching
   - Common alert scenarios documented with real-world examples
+  - **Integration tests** for alert condition evaluation with 4 test cases covering matches and non-matches
+  - **Test factory functions** for creating test data (nodes, reports, consecutive metrics)
 
 ### Changed
 - **Alerting Documentation:** Enhanced with complete condition structure and evaluation logic

@@ -526,3 +526,273 @@ mod tests {
         assert!(facts["memory"]["system"]["total"].is_string());
     }
 }
+// Helper functions for alert rule testing
+
+use serde_json::Value;
+use chrono::Duration;
+
+/// Create an alert rule for testing
+pub async fn create_alert_rule(app: &crate::common::test_app::TestApp, config: Value) -> AlertRule {
+    let response = app
+        .client
+        .post(format!("{}/api/v1/alerting/rules", app.address))
+        .json(&config)
+        .send()
+        .await
+        .expect("Failed to create alert rule");
+    
+    assert_eq!(response.status(), 201);
+    response.json().await.expect("Failed to parse alert rule")
+}
+
+/// Create a node for testing
+pub async fn create_node(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    environment: &str,
+    status: &str,
+) -> Node {
+    create_node_with_timestamp(app, certname, environment, status, Utc::now()).await
+}
+
+/// Create a node with specific timestamp
+pub async fn create_node_with_timestamp(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    environment: &str,
+    status: &str,
+    report_timestamp: chrono::DateTime<Utc>,
+) -> Node {
+    let node = Node {
+        certname: certname.to_string(),
+        environment: environment.to_string(),
+        status: status.to_string(),
+        report_timestamp,
+        catalog_timestamp: report_timestamp,
+        facts_timestamp: report_timestamp,
+        cached_catalog_status: None,
+        latest_report_noop: false,
+        latest_report_noop_pending: false,
+        latest_report_hash: None,
+    };
+    
+    // Insert node into test database
+    app.insert_node(node.clone()).await;
+    node
+}
+
+/// Create a node with specific facts
+pub async fn create_node_with_facts(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    environment: &str,
+    status: &str,
+    facts: Value,
+) -> Node {
+    let node = create_node(app, certname, environment, status).await;
+    app.insert_node_facts(certname, facts).await;
+    node
+}
+
+/// Create consecutive failed reports for a node
+pub async fn create_consecutive_failed_reports(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    count: usize,
+    within_hours: i64,
+) {
+    let base_time = Utc::now() - Duration::hours(within_hours);
+    let interval = Duration::hours(within_hours) / count as i32;
+    
+    for i in 0..count {
+        let timestamp = base_time + (interval * i as i32);
+        create_report_with_status(app, certname, "failed", timestamp).await;
+    }
+}
+
+/// Create consecutive changed reports for a node
+pub async fn create_consecutive_changed_reports(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    count: usize,
+    within_hours: i64,
+) {
+    let base_time = Utc::now() - Duration::hours(within_hours);
+    let interval = Duration::hours(within_hours) / count as i32;
+    
+    for i in 0..count {
+        let timestamp = base_time + (interval * i as i32);
+        create_report_with_changes(app, certname, 5, timestamp).await;
+    }
+}
+
+/// Create mixed status reports for a node
+pub async fn create_mixed_reports(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    statuses: Vec<&str>,
+) {
+    let base_time = Utc::now() - Duration::hours(12);
+    let interval = Duration::hours(12) / statuses.len() as i32;
+    
+    for (i, status) in statuses.iter().enumerate() {
+        let timestamp = base_time + (interval * i as i32);
+        create_report_with_status(app, certname, status, timestamp).await;
+    }
+}
+
+/// Create reports with specific class changes
+pub async fn create_class_change_reports(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    class_name: &str,
+    count: usize,
+    within_hours: i64,
+) {
+    let base_time = Utc::now() - Duration::hours(within_hours);
+    let interval = Duration::hours(within_hours) / count as i32;
+    
+    for i in 0..count {
+        let timestamp = base_time + (interval * i as i32);
+        create_report_with_class_change(app, certname, class_name, timestamp).await;
+    }
+}
+
+/// Create a report with specific status
+async fn create_report_with_status(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    status: &str,
+    timestamp: chrono::DateTime<Utc>,
+) {
+    let report = Report {
+        hash: Uuid::new_v4().to_string(),
+        certname: certname.to_string(),
+        environment: "production".to_string(),
+        status: status.to_string(),
+        timestamp,
+        configuration_version: "1".to_string(),
+        transaction_uuid: Uuid::new_v4().to_string(),
+        report_format: 10,
+        puppet_version: "7.0.0".to_string(),
+        start_time: timestamp,
+        end_time: timestamp + Duration::minutes(5),
+        producer_timestamp: timestamp,
+        noop: false,
+        noop_pending: false,
+        corrective_change: false,
+        catalog_uuid: None,
+        cached_catalog_status: None,
+        code_id: None,
+        job_id: None,
+        metrics: serde_json::json!({
+            "resources": {
+                "total": 100,
+                "changed": 0,
+                "failed": if status == "failed" { 5 } else { 0 }
+            }
+        }),
+        logs: vec![],
+        resource_events: vec![],
+    };
+    
+    app.insert_report(report).await;
+}
+
+/// Create a report with resource changes
+async fn create_report_with_changes(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    change_count: i32,
+    timestamp: chrono::DateTime<Utc>,
+) {
+    let report = Report {
+        hash: Uuid::new_v4().to_string(),
+        certname: certname.to_string(),
+        environment: "production".to_string(),
+        status: "changed".to_string(),
+        timestamp,
+        configuration_version: "1".to_string(),
+        transaction_uuid: Uuid::new_v4().to_string(),
+        report_format: 10,
+        puppet_version: "7.0.0".to_string(),
+        start_time: timestamp,
+        end_time: timestamp + Duration::minutes(5),
+        producer_timestamp: timestamp,
+        noop: false,
+        noop_pending: false,
+        corrective_change: false,
+        catalog_uuid: None,
+        cached_catalog_status: None,
+        code_id: None,
+        job_id: None,
+        metrics: serde_json::json!({
+            "resources": {
+                "total": 100,
+                "changed": change_count,
+                "failed": 0
+            }
+        }),
+        logs: vec![],
+        resource_events: vec![],
+    };
+    
+    app.insert_report(report).await;
+}
+
+/// Create a report with specific class change
+async fn create_report_with_class_change(
+    app: &crate::common::test_app::TestApp,
+    certname: &str,
+    class_name: &str,
+    timestamp: chrono::DateTime<Utc>,
+) {
+    let report = Report {
+        hash: Uuid::new_v4().to_string(),
+        certname: certname.to_string(),
+        environment: "production".to_string(),
+        status: "changed".to_string(),
+        timestamp,
+        configuration_version: "1".to_string(),
+        transaction_uuid: Uuid::new_v4().to_string(),
+        report_format: 10,
+        puppet_version: "7.0.0".to_string(),
+        start_time: timestamp,
+        end_time: timestamp + Duration::minutes(5),
+        producer_timestamp: timestamp,
+        noop: false,
+        noop_pending: false,
+        corrective_change: false,
+        catalog_uuid: None,
+        cached_catalog_status: None,
+        code_id: None,
+        job_id: None,
+        metrics: serde_json::json!({
+            "resources": {
+                "total": 100,
+                "changed": 1,
+                "failed": 0
+            }
+        }),
+        logs: vec![],
+        resource_events: vec![{
+            "resource_type": format!("Class[{}]", class_name),
+            "status": "changed",
+            "timestamp": timestamp.to_rfc3339(),
+        }],
+    };
+    
+    app.insert_report(report).await;
+}
+
+// Placeholder models for alert rules
+#[derive(Debug, serde::Deserialize)]
+pub struct AlertRule {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct AlertMatch {
+    pub certname: String,
+}
