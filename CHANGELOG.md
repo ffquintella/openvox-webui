@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Improved Alert Rules UX:** Added ability to add/remove multiple conditions easily with dedicated Add/Remove buttons
 - **Fixed Notification Channel Selection:** Channels can now be selected independently without affecting other channels (added unique IDs and stopPropagation)
 - **Standardized Condition Inputs:** Both simple and advanced modes now use select boxes for type/field and operator selections for better consistency and usability
+- **Added Condition Validation:** Required fields validation with detailed error messages showing which fields are missing in each condition
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats

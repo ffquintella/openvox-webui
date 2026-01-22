@@ -852,6 +852,29 @@ function RuleModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate conditions
+    const invalidConditions = conditions.map((c, idx) => {
+      const errors: string[] = [];
+      if (useAdvancedFormat) {
+        if (!c.type) errors.push('type');
+        if (!c.operator) errors.push('operator');
+      } else {
+        if (!c.field) errors.push('field');
+        if (!c.operator) errors.push('operator');
+        if (c.value === undefined || c.value === '') errors.push('value');
+      }
+      return errors.length > 0 ? { index: idx + 1, errors } : null;
+    }).filter(Boolean);
+    
+    if (invalidConditions.length > 0) {
+      const errorMsg = invalidConditions.map(item => 
+        `Condition ${item!.index}: missing ${item!.errors.join(', ')}`
+      ).join('\n');
+      alert('Please complete all required fields:\n\n' + errorMsg);
+      return;
+    }
+    
     console.log('Form submitted', { name, description, ruleType, severity, selectedChannels, conditions, conditionOperator });
     if (isEditing) {
       const request: UpdateAlertRuleRequest = {
@@ -1011,6 +1034,7 @@ function RuleModal({
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                          required
                         >
                           <option value="">Select Field...</option>
                           <option value="node.status">node.status</option>
@@ -1031,6 +1055,7 @@ function RuleModal({
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                          required
                         >
                           <option value="">Select Operator...</option>
                           <option value="eq">equals</option>
@@ -1056,6 +1081,7 @@ function RuleModal({
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                          required
                         />
                       </>
                     )}
