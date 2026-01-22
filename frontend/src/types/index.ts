@@ -1097,7 +1097,7 @@ export interface AlertRule {
   description?: string;
   rule_type: AlertRuleType;
   conditions: AlertCondition[];
-  condition_operator: 'AND' | 'OR';
+  condition_operator: ConditionOperator;
   severity: AlertSeverity;
   cooldown_minutes: number;
   is_enabled: boolean;
@@ -1112,7 +1112,7 @@ export interface CreateAlertRuleRequest {
   description?: string;
   rule_type: AlertRuleType;
   conditions: AlertCondition[];
-  condition_operator?: 'AND' | 'OR';
+  condition_operator?: ConditionOperator;
   severity?: AlertSeverity;
   cooldown_minutes?: number;
   is_enabled?: boolean;
@@ -1123,7 +1123,7 @@ export interface UpdateAlertRuleRequest {
   name?: string;
   description?: string;
   conditions?: AlertCondition[];
-  condition_operator?: 'AND' | 'OR';
+  condition_operator?: ConditionOperator;
   severity?: AlertSeverity;
   cooldown_minutes?: number;
   is_enabled?: boolean;

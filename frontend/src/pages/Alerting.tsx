@@ -818,8 +818,8 @@ function RuleModal({
       { field: 'node.status', operator: 'eq', value: 'failed' },
     ]
   );
-  const [conditionOperator, setConditionOperator] = useState<'AND' | 'OR'>(
-    rule?.condition_operator || 'AND'
+  const [conditionOperator, setConditionOperator] = useState<'all' | 'any'>(
+    rule?.condition_operator || 'all'
   );
 
   const createMutation = useMutation({
@@ -1073,7 +1073,7 @@ function RuleModal({
                         </select>
                         <input
                           type="text"
-                          placeholder="Value"
+                          placeholder="Value (e.g., failed, 24, 2024-01-22)"
                           value={String(condition.value || '')}
                           onChange={(e) => {
                             const newConditions = [...conditions];
@@ -1112,11 +1112,11 @@ function RuleModal({
               <div className="flex items-center gap-2">
                 <select
                   value={conditionOperator}
-                  onChange={(e) => setConditionOperator(e.target.value as 'AND' | 'OR')}
+                  onChange={(e) => setConditionOperator(e.target.value as 'all' | 'any')}
                   className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
                 >
-                  <option value="AND">AND</option>
-                  <option value="OR">OR</option>
+                  <option value="all">ALL (AND) - All conditions must match</option>
+                  <option value="any">ANY (OR) - Any condition can match</option>
                 </select>
                 <span className="text-sm text-gray-600 dark:text-gray-400">between conditions</span>
               </div>
@@ -1133,11 +1133,11 @@ function RuleModal({
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
                 disabled={isEditing}
               >
-                <option value="node_status">Node Status</option>
-                <option value="compliance">Compliance</option>
-                <option value="drift">Drift Detection</option>
-                <option value="report_failure">Report Failure</option>
-                <option value="custom">Custom</option>
+                <option value="node_status">Node Status - Monitor node availability and health</option>
+                <option value="compliance">Compliance - Track configuration compliance</option>
+                <option value="drift">Drift Detection - Detect configuration drift</option>
+                <option value="report_failure">Report Failure - Alert on failed Puppet runs</option>
+                <option value="custom">Custom - Custom alert conditions</option>
               </select>
             </div>
             <div>

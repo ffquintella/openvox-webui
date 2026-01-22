@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed Notification Channel Selection:** Channels can now be selected independently without affecting other channels (added unique IDs and stopPropagation)
 - **Standardized Condition Inputs:** Both simple and advanced modes now use select boxes for type/field and operator selections for better consistency and usability
 - **Added Condition Validation:** Required fields validation with detailed error messages showing which fields are missing in each condition
+- **Fixed condition_operator Type Mismatch:** Changed from 'AND'/'OR' to 'all'/'any' to match backend expectations (was causing 422 errors)
+- **Improved Dropdown Labels:** Alert rule type dropdown now shows descriptive text explaining each type
+- **Better Value Placeholder:** Value field now shows examples (e.g., failed, 24, 2024-01-22)
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats
