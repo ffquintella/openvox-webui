@@ -8,13 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Fixed TypeScript compilation errors in ConditionBuilder component
-- Deprecated ConditionBuilder component - all condition editing now handled in Alerting.tsx
-- Fixed syntax error in Alerting.tsx where textarea element was not properly closed
-- Added error handling and debugging logs to alert rule form submission
-- Fixed alert rule creation API - corrected conditions payload structure to match backend expectations (conditions as array, condition_operator as separate field)
-- Fixed notification channels not selecting correctly
-- Added detailed error messages from backend to alert dialog
+- Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats

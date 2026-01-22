@@ -500,44 +500,55 @@ impl AlertingService {
 
     /// Evaluate a single condition
     fn evaluate_condition(&self, condition: &AlertCondition, context: &serde_json::Value) -> bool {
+        // Get field and value, handling both old and new formats
+        let field = match &condition.field {
+            Some(f) => f.as_str(),
+            None => return false, // Can't evaluate without field in legacy format
+        };
+        
+        let value = match &condition.value {
+            Some(v) => v,
+            None => return false, // Can't evaluate without value in legacy format
+        };
+
         // Get the field value from context using dot notation
-        let field_value = self.get_field_value(context, &condition.field);
+        let field_value = self.get_field_value(context, field);
 
         match condition.operator.as_str() {
-            "eq" | "=" | "==" => field_value == Some(&condition.value),
-            "ne" | "!=" => field_value != Some(&condition.value),
-            "gt" | ">" => match (field_value, &condition.value) {
+            "eq" | "=" | "==" => field_value == Some(value),
+            "ne" | "!=" => field_value != Some(value),
+            "gt" | ">" => match (field_value, value) {
                 (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
                     a.as_f64().unwrap_or(0.0) > b.as_f64().unwrap_or(0.0)
                 }
                 _ => false,
             },
-            "gte" | ">=" => match (field_value, &condition.value) {
+            "gte" | ">=" => match (field_value, value) {
                 (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
                     a.as_f64().unwrap_or(0.0) >= b.as_f64().unwrap_or(0.0)
                 }
                 _ => false,
             },
-            "lt" | "<" => match (field_value, &condition.value) {
+            "lt" | "<" => match (field_value, value) {
                 (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
                     a.as_f64().unwrap_or(0.0) < b.as_f64().unwrap_or(0.0)
                 }
                 _ => false,
             },
-            "lte" | "<=" => match (field_value, &condition.value) {
+            "lte" | "<=" => match (field_value, value) {
                 (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
                     a.as_f64().unwrap_or(0.0) <= b.as_f64().unwrap_or(0.0)
                 }
                 _ => false,
             },
-            "contains" => match (field_value, &condition.value) {
+            "contains" => match (field_value, value) {
                 (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
                     haystack.contains(needle)
                 }
                 (Some(serde_json::Value::Array(arr)), val) => arr.contains(val),
                 _ => false,
             },
-            "regex" | "~" => match (field_value, &condition.value) {
+            "regex" | "~" => match (field_value, value) {
                 (Some(serde_json::Value::String(s)), serde_json::Value::String(pattern)) => {
                     regex::Regex::new(pattern)
                         .map(|re| re.is_match(s))
@@ -545,7 +556,7 @@ impl AlertingService {
                 }
                 _ => false,
             },
-            "in" => match (&condition.value, field_value) {
+            "in" => match (value, field_value) {
                 (serde_json::Value::Array(arr), Some(val)) => arr.contains(val),
                 _ => false,
             },
