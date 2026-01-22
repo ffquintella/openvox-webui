@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Specific placeholder examples for each channel type
   - Error handling with user-friendly messages
   - Type dropdown now shows channel descriptions
+  - **Email Channel:** Now accepts recipient email address instead of SMTP URL (SMTP server configured in Admin Settings)
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats

@@ -726,7 +726,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
       case 'webhook':
         return 'URL of your webhook endpoint (e.g., https://example.com/webhook)';
       case 'email':
-        return 'SMTP server URL (e.g., smtp://user:password@mail.example.com:587)';
+        return 'Recipient email address (SMTP server is configured in Admin Settings)';
       case 'slack':
         return 'Slack webhook URL (e.g., https://hooks.slack.com/services/...)';
       case 'teams':
@@ -741,7 +741,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
       case 'webhook':
         return 'https://example.com/webhook';
       case 'email':
-        return 'smtp://user:password@mail.example.com:587';
+        return 'admin@example.com';
       case 'slack':
         return 'https://hooks.slack.com/services/XXX/YYY/ZZZ';
       case 'teams':
@@ -756,7 +756,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
       case 'webhook':
         return 'Webhook URL';
       case 'email':
-        return 'SMTP URL';
+        return 'Recipient Email';
       case 'slack':
         return 'Slack Webhook URL';
       case 'teams':
@@ -815,7 +815,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
               {getUrlLabel()}
             </label>
             <input
-              type="url"
+              type={channelType === 'email' ? 'email' : 'url'}
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
               placeholder={getUrlPlaceholder()}
