@@ -936,109 +936,132 @@ function RuleModal({
                 </div>
               )}
               {conditions.map((condition, index) => (
-                <div key={index} className="grid grid-cols-3 gap-2">
-                  {useAdvancedFormat ? (
-                    <>
-                      <select
-                        value={condition.type || ''}
-                        onChange={(e) => {
-                          const newConditions = [...conditions];
-                          newConditions[index] = { ...condition, type: e.target.value as any };
-                          setConditions(newConditions);
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                      >
-                        <option value="">Select Type...</option>
-                        <option value="NodeStatus">Node Status</option>
-                        <option value="NodeFact">Node Fact</option>
-                        <option value="ReportMetric">Report Metric</option>
-                        <option value="EnvironmentFilter">Environment Filter</option>
-                        <option value="GroupFilter">Group Filter</option>
-                        <option value="NodeCountThreshold">Node Count Threshold</option>
-                        <option value="TimeWindowFilter">Time Window Filter</option>
-                        <option value="LastReportTime">Last Report Time</option>
-                        <option value="ConsecutiveFailures">Consecutive Failures</option>
-                        <option value="ConsecutiveChanges">Consecutive Changes</option>
-                        <option value="ClassChangeFrequency">Class Change Frequency</option>
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Operator"
-                        value={condition.operator || ''}
-                        onChange={(e) => {
-                          const newConditions = [...conditions];
-                          newConditions[index] = { ...condition, operator: e.target.value };
-                          setConditions(newConditions);
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                      />
-                      <textarea
-                        placeholder="Config (JSON)"
-                        value={JSON.stringify(condition.config || {})}
-                        onChange={(e) => {
-                          try {
+                <div key={index} className="flex gap-2">
+                  <div className="flex-1 grid grid-cols-3 gap-2">
+                    {useAdvancedFormat ? (
+                      <>
+                        <select
+                          value={condition.type || ''}
+                          onChange={(e) => {
                             const newConditions = [...conditions];
-                            newConditions[index] = { ...condition, config: JSON.parse(e.target.value) };
+                            newConditions[index] = { ...condition, type: e.target.value as any };
                             setConditions(newConditions);
-                          } catch {
-                            // Ignore JSON parse errors while typing
-                          }
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                        rows={2}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <input
-                        type="text"
-                        placeholder="Field (e.g., node.status)"
-                        value={condition.field || ''}
-                        onChange={(e) => {
-                          const newConditions = [...conditions];
-                          newConditions[index] = { ...condition, field: e.target.value };
-                          setConditions(newConditions);
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                      />
-                      <select
-                        value={condition.operator || ''}
-                        onChange={(e) => {
-                          const newConditions = [...conditions];
-                          newConditions[index] = { ...condition, operator: e.target.value };
-                          setConditions(newConditions);
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                      >
-                        <option value="">Select Operator...</option>
-                        <option value="eq">equals</option>
-                        <option value="ne">not equals</option>
-                        <option value="gt">greater than</option>
-                        <option value="gte">greater or equal</option>
-                        <option value="lt">less than</option>
-                        <option value="lte">less or equal</option>
-                        <option value="contains">contains</option>
-                        <option value="regex">regex</option>
-                        <option value="in">in</option>
-                        <option value="not_in">not in</option>
-                        <option value="exists">exists</option>
-                        <option value="not_exists">not exists</option>
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Value"
-                        value={String(condition.value || '')}
-                        onChange={(e) => {
-                          const newConditions = [...conditions];
-                          newConditions[index] = { ...condition, value: e.target.value };
-                          setConditions(newConditions);
-                        }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                      />
-                    </>
-                  )}
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        >
+                          <option value="">Select Type...</option>
+                          <option value="NodeStatus">Node Status</option>
+                          <option value="NodeFact">Node Fact</option>
+                          <option value="ReportMetric">Report Metric</option>
+                          <option value="EnvironmentFilter">Environment Filter</option>
+                          <option value="GroupFilter">Group Filter</option>
+                          <option value="NodeCountThreshold">Node Count Threshold</option>
+                          <option value="TimeWindowFilter">Time Window Filter</option>
+                          <option value="LastReportTime">Last Report Time</option>
+                          <option value="ConsecutiveFailures">Consecutive Failures</option>
+                          <option value="ConsecutiveChanges">Consecutive Changes</option>
+                          <option value="ClassChangeFrequency">Class Change Frequency</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Operator"
+                          value={condition.operator || ''}
+                          onChange={(e) => {
+                            const newConditions = [...conditions];
+                            newConditions[index] = { ...condition, operator: e.target.value };
+                            setConditions(newConditions);
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        />
+                        <textarea
+                          placeholder="Config (JSON)"
+                          value={JSON.stringify(condition.config || {})}
+                          onChange={(e) => {
+                            try {
+                              const newConditions = [...conditions];
+                              newConditions[index] = { ...condition, config: JSON.parse(e.target.value) };
+                              setConditions(newConditions);
+                            } catch {
+                              // Ignore JSON parse errors while typing
+                            }
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                          rows={2}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Field (e.g., node.status)"
+                          value={condition.field || ''}
+                          onChange={(e) => {
+                            const newConditions = [...conditions];
+                            newConditions[index] = { ...condition, field: e.target.value };
+                            setConditions(newConditions);
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        />
+                        <select
+                          value={condition.operator || ''}
+                          onChange={(e) => {
+                            const newConditions = [...conditions];
+                            newConditions[index] = { ...condition, operator: e.target.value };
+                            setConditions(newConditions);
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        >
+                          <option value="">Select Operator...</option>
+                          <option value="eq">equals</option>
+                          <option value="ne">not equals</option>
+                          <option value="gt">greater than</option>
+                          <option value="gte">greater or equal</option>
+                          <option value="lt">less than</option>
+                          <option value="lte">less or equal</option>
+                          <option value="contains">contains</option>
+                          <option value="regex">regex</option>
+                          <option value="in">in</option>
+                          <option value="not_in">not in</option>
+                          <option value="exists">exists</option>
+                          <option value="not_exists">not exists</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Value"
+                          value={String(condition.value || '')}
+                          onChange={(e) => {
+                            const newConditions = [...conditions];
+                            newConditions[index] = { ...condition, value: e.target.value };
+                            setConditions(newConditions);
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        />
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newConditions = conditions.filter((_, i) => i !== index);
+                      setConditions(newConditions.length > 0 ? newConditions : [{ field: '', operator: 'eq', value: '' }]);
+                    }}
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900 dark:text-red-300"
+                    title="Remove condition"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setConditions([...conditions, { field: '', operator: 'eq', value: '' }]);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-md border-2 border-dashed border-gray-300 py-2 text-sm font-medium text-gray-600 hover:border-gray-400 hover:text-gray-700 dark:border-gray-600 dark:text-gray-400"
+              >
+                <Plus className="h-4 w-4" />
+                Add Condition
+              </button>
               <div className="flex items-center gap-2">
                 <select
                   value={conditionOperator}
@@ -1106,28 +1129,33 @@ function RuleModal({
                 Notification Channels
               </label>
               <div className="mt-2 space-y-2">
-                {channels.map((channel) => (
-                  <label key={channel.id} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedChannels.includes(channel.id)}
-                      onChange={(e) => {
-                        console.log('Checkbox changed:', { channelId: channel.id, channelName: channel.name, checked: e.target.checked, currentSelected: selectedChannels });
-                        if (e.target.checked) {
-                          const newSelected = [...selectedChannels, channel.id];
-                          console.log('Adding channel, new selection:', newSelected);
-                          setSelectedChannels(newSelected);
-                        } else {
-                          const newSelected = selectedChannels.filter((id) => id !== channel.id);
-                          console.log('Removing channel, new selection:', newSelected);
-                          setSelectedChannels(newSelected);
-                        }
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{channel.name}</span>
-                  </label>
-                ))}
+                {channels.map((channel) => {
+                  const isChecked = selectedChannels.includes(channel.id);
+                  return (
+                    <label key={channel.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id={`channel-${channel.id}`}
+                        checked={isChecked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          console.log('Checkbox changed:', { channelId: channel.id, channelName: channel.name, checked: e.target.checked, currentSelected: selectedChannels });
+                          if (e.target.checked) {
+                            const newSelected = [...selectedChannels, channel.id];
+                            console.log('Adding channel, new selection:', newSelected);
+                            setSelectedChannels(newSelected);
+                          } else {
+                            const newSelected = selectedChannels.filter((id) => id !== channel.id);
+                            console.log('Removing channel, new selection:', newSelected);
+                            setSelectedChannels(newSelected);
+                          }
+                        }}
+                        className="rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{channel.name}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}

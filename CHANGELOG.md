@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)
+- **Improved Alert Rules UX:** Added ability to add/remove multiple conditions easily with dedicated Add/Remove buttons
+- **Fixed Notification Channel Selection:** Channels can now be selected independently without affecting other channels (added unique IDs and stopPropagation)
 
 ### Added
 - **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats
