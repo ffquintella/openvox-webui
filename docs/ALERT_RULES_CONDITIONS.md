@@ -82,6 +82,22 @@ pub enum ConditionType {
     TimeWindowFilter {
         minutes: u32,           // Only check in last X minutes
     },
+    LastReportTime {
+        hours: u32,             // Node hasn't reported in N hours
+    },
+    ConsecutiveFailures {
+        count: u32,             // N consecutive failed reports
+        within_hours: u32,      // Within last N hours
+    },
+    ConsecutiveChanges {
+        count: u32,             // N consecutive reports with changes
+        within_hours: u32,
+    },
+    ClassChangeFrequency {
+        class_name: String,     // Puppet class name
+        change_count: u32,      // More than N changes
+        within_hours: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -260,6 +276,66 @@ Only check for alerts in last 30 minutes.
 }
 ```
 
+### 9. Last Report Time
+Alert when a node hasn't reported in N hours.
+
+```json
+{
+  "condition_type": "LastReportTime",
+  "operator": ">",
+  "value": {
+    "hours": 24
+  },
+  "enabled": true
+}
+```
+
+### 10. Consecutive Failures
+Alert when a node has N consecutive failed reports within last X hours.
+
+```json
+{
+  "condition_type": "ConsecutiveFailures",
+  "operator": ">=",
+  "value": {
+    "count": 5,
+    "within_hours": 12
+  },
+  "enabled": true
+}
+```
+
+### 11. Consecutive Changes
+Alert when a node has N consecutive reports with resource changes.
+
+```json
+{
+  "condition_type": "ConsecutiveChanges",
+  "operator": ">=",
+  "value": {
+    "count": 10,
+    "within_hours": 24
+  },
+  "enabled": true
+}
+```
+
+### 12. Class Change Frequency
+Alert when a specific Puppet class has more than N changes in last X hours.
+
+```json
+{
+  "condition_type": "ClassChangeFrequency",
+  "operator": ">",
+  "value": {
+    "class_name": "apache::server",
+    "change_count": 20,
+    "within_hours": 6
+  },
+  "enabled": true
+}
+```
+
 ## Complex Rule Examples
 
 ### Example 1: Critical Infrastructure Alert
@@ -359,6 +435,122 @@ Alert when many nodes have failing resources in production.
       "operator": ">",
       "value": {
         "threshold": 10
+      }
+    }
+  ]
+}
+```
+
+### Example 4: Stale Node Detection
+Alert when nodes stop reporting for 24 hours.
+
+```json
+{
+  "name": "Stale Nodes - No Reports",
+  "rule_type": "NodeStatus",
+  "severity": "Warning",
+  "logical_operator": "AND",
+  "conditions": [
+    {
+      "condition_type": "LastReportTime",
+      "operator": ">",
+      "value": {
+        "hours": 24
+      }
+    },
+    {
+      "condition_type": "EnvironmentFilter",
+      "operator": "=",
+      "value": {
+        "environments": ["production", "staging"]
+      }
+    }
+  ]
+}
+```
+
+### Example 5: Node Instability Alert
+Alert when a node has 5+ consecutive failures in 12 hours.
+
+```json
+{
+  "name": "Unstable Node - Consecutive Failures",
+  "rule_type": "NodeStatus",
+  "severity": "Critical",
+  "logical_operator": "AND",
+  "conditions": [
+    {
+      "condition_type": "ConsecutiveFailures",
+      "operator": ">=",
+      "value": {
+        "count": 5,
+        "within_hours": 12
+      }
+    },
+    {
+      "condition_type": "EnvironmentFilter",
+      "operator": "in",
+      "value": {
+        "environments": ["production"]
+      }
+    }
+  ]
+}
+```
+
+### Example 6: Excessive Changes Alert
+Alert when node has 10+ consecutive reports with changes in 24 hours (indicating possible misconfiguration).
+
+```json
+{
+  "name": "Excessive Resource Changes",
+  "rule_type": "Reports",
+  "severity": "Warning",
+  "logical_operator": "AND",
+  "conditions": [
+    {
+      "condition_type": "ConsecutiveChanges",
+      "operator": ">=",
+      "value": {
+        "count": 10,
+        "within_hours": 24
+      }
+    },
+    {
+      "condition_type": "GroupFilter",
+      "operator": "in",
+      "value": {
+        "group_ids": ["web-servers-id"]
+      }
+    }
+  ]
+}
+```
+
+### Example 7: Class Churn Alert
+Alert when apache::server class changes 20+ times in 6 hours (possible deployment issue).
+
+```json
+{
+  "name": "High Churn - Apache Class Changes",
+  "rule_type": "Custom",
+  "severity": "Warning",
+  "logical_operator": "AND",
+  "conditions": [
+    {
+      "condition_type": "ClassChangeFrequency",
+      "operator": ">",
+      "value": {
+        "class_name": "apache::server",
+        "change_count": 20,
+        "within_hours": 6
+      }
+    },
+    {
+      "condition_type": "EnvironmentFilter",
+      "operator": "=",
+      "value": {
+        "environments": ["production"]
       }
     }
   ]
@@ -498,7 +690,143 @@ impl RuleEvaluator {
                 let cutoff = Utc::now() - Duration::minutes(*minutes as i64);
                 Ok(node.report_timestamp > cutoff)
             }
+            
+            ConditionType::LastReportTime { hours } => {
+                let cutoff = Utc::now() - Duration::hours(*hours as i64);
+                Ok(node.report_timestamp < cutoff)
+            }
+            
+            ConditionType::ConsecutiveFailures { count, within_hours } => {
+                let reports = puppetdb_service
+                    .get_node_reports(&node.certname, *within_hours as i32)
+                    .await?;
+                
+                Self::evaluate_consecutive_failures(&reports, condition.operator, *count)
+            }
+            
+            ConditionType::ConsecutiveChanges { count, within_hours } => {
+                let reports = puppetdb_service
+                    .get_node_reports(&node.certname, *within_hours as i32)
+                    .await?;
+                
+                Self::evaluate_consecutive_changes(&reports, condition.operator, *count)
+            }
+            
+            ConditionType::ClassChangeFrequency { class_name, change_count, within_hours } => {
+                let reports = puppetdb_service
+                    .get_node_reports(&node.certname, *within_hours as i32)
+                    .await?;
+                
+                Self::evaluate_class_changes(&reports, class_name, condition.operator, *change_count)
+            }
         }
+    }
+    
+    /// Evaluates consecutive failure conditions
+    fn evaluate_consecutive_failures(
+        reports: &[Report],
+        operator: ConditionOperator,
+        threshold: u32,
+    ) -> Result<bool, Error> {
+        if reports.is_empty() {
+            return Ok(false);
+        }
+        
+        // Sort by timestamp descending (newest first)
+        let mut sorted_reports = reports.to_vec();
+        sorted_reports.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        
+        // Count consecutive failures from most recent
+        let mut consecutive_failures = 0;
+        for report in sorted_reports {
+            if report.status == "failed" {
+                consecutive_failures += 1;
+            } else {
+                break; // Break on first non-failure
+            }
+        }
+        
+        Ok(match operator {
+            ConditionOperator::GreaterThan => consecutive_failures > threshold as i32,
+            ConditionOperator::GreaterThanOrEqual => consecutive_failures >= threshold as i32,
+            ConditionOperator::Equals => consecutive_failures == threshold as i32,
+            ConditionOperator::NotEquals => consecutive_failures != threshold as i32,
+            ConditionOperator::LessThan => consecutive_failures < threshold as i32,
+            ConditionOperator::LessThanOrEqual => consecutive_failures <= threshold as i32,
+            _ => return Err(Error::InvalidOperator),
+        })
+    }
+    
+    /// Evaluates consecutive changes conditions
+    fn evaluate_consecutive_changes(
+        reports: &[Report],
+        operator: ConditionOperator,
+        threshold: u32,
+    ) -> Result<bool, Error> {
+        if reports.is_empty() {
+            return Ok(false);
+        }
+        
+        // Sort by timestamp descending (newest first)
+        let mut sorted_reports = reports.to_vec();
+        sorted_reports.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        
+        // Count consecutive reports with changes from most recent
+        let mut consecutive_changes = 0;
+        for report in sorted_reports {
+            let resources_changed = report.metrics.get("resources.changed").unwrap_or(&0);
+            if *resources_changed > 0 {
+                consecutive_changes += 1;
+            } else {
+                break; // Break on first report with no changes
+            }
+        }
+        
+        Ok(match operator {
+            ConditionOperator::GreaterThan => consecutive_changes > threshold as i32,
+            ConditionOperator::GreaterThanOrEqual => consecutive_changes >= threshold as i32,
+            ConditionOperator::Equals => consecutive_changes == threshold as i32,
+            ConditionOperator::NotEquals => consecutive_changes != threshold as i32,
+            ConditionOperator::LessThan => consecutive_changes < threshold as i32,
+            ConditionOperator::LessThanOrEqual => consecutive_changes <= threshold as i32,
+            _ => return Err(Error::InvalidOperator),
+        })
+    }
+    
+    /// Evaluates class change frequency conditions
+    fn evaluate_class_changes(
+        reports: &[Report],
+        class_name: &str,
+        operator: ConditionOperator,
+        threshold: u32,
+    ) -> Result<bool, Error> {
+        if reports.is_empty() {
+            return Ok(false);
+        }
+        
+        // Count how many reports have changes in the specified class
+        let mut class_change_count = 0;
+        
+        for report in reports {
+            // Parse resource changes to find class-specific changes
+            for change in &report.resource_changes {
+                // resource_type might be like "Class[Apache::Server]"
+                if change.resource_type.contains(class_name) {
+                    class_change_count += 1;
+                    break; // Count once per report
+                }
+            }
+        }
+        
+        Ok(match operator {
+            ConditionOperator::GreaterThan => class_change_count > threshold as i32,
+            ConditionOperator::GreaterThanOrEqual => class_change_count >= threshold as i32,
+            ConditionOperator::Equals => class_change_count == threshold as i32,
+            ConditionOperator::NotEquals => class_change_count != threshold as i32,
+            ConditionOperator::LessThan => class_change_count < threshold as i32,
+            ConditionOperator::LessThanOrEqual => class_change_count <= threshold as i32,
+            _ => return Err(Error::InvalidOperator),
+        })
     }
     
     /// Evaluates fact-based conditions
@@ -862,6 +1190,22 @@ CREATE TABLE alert_triggers (
 );
 ```
 
+## Condition Types Reference
+
+| Condition Type | Purpose | Parameters | Operators |
+|---|---|---|---|
+| **NodeStatus** | Detect node status | statuses (array) | `in`, `not_in` |
+| **NodeFact** | Match fact values with threshold | fact_path, data_type, threshold | `=`, `!=`, `>`, `>=`, `<`, `<=`, `~`, `!~` |
+| **ReportMetric** | Monitor report metrics | metric, threshold | `=`, `!=`, `>`, `>=`, `<`, `<=` |
+| **EnvironmentFilter** | Scope to environments | environments (array) | `=`, `in`, `not_in` |
+| **GroupFilter** | Scope to node groups | group_ids (array) | `in`, `not_in` |
+| **NodeCountThreshold** | Alert when N+ nodes match | threshold | `>`, `>=`, `<`, `<=`, `=` |
+| **TimeWindowFilter** | Only check recent events | minutes | `exists` |
+| **LastReportTime** | Detect stale nodes | hours | `>`, `>=`, `<`, `<=` |
+| **ConsecutiveFailures** | Detect node instability | count, within_hours | `>`, `>=`, `<`, `<=`, `=` |
+| **ConsecutiveChanges** | Excessive resource changes | count, within_hours | `>`, `>=`, `<`, `<=`, `=` |
+| **ClassChangeFrequency** | Detect class churn | class_name, change_count, within_hours | `>`, `>=`, `<`, `<=`, `=` |
+
 ## Condition Operators Reference
 
 | Data Type | Operators |
@@ -870,22 +1214,57 @@ CREATE TABLE alert_triggers (
 | Integer | `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not_in` |
 | Float | `=`, `!=`, `>`, `>=`, `<`, `<=` |
 | Boolean | `=`, `!=` |
-| Array | `contains`, `not_contains`, `in`, `not_in` |
+| Threshold-based | `=`, `!=`, `>`, `>=`, `<`, `<=` |
 
 ## Performance Considerations
 
 - **Rule Evaluation Frequency:** Default 5 minutes, configurable
 - **Caching:** Cache node facts for 10 minutes to reduce PuppetDB load
+- **Report History:** Cache recent reports (last 24-48 hours) for consecutive condition checks
 - **Batch Processing:** Evaluate rules in background job
 - **Debouncing:** Wait 2 consecutive failures before alerting
+- **Query Optimization:** Use database indexes on timestamps for time-window queries
 - **Metrics:** Track evaluation time, matched nodes, alert frequency
+
+## Query Performance Tips
+
+1. **Consecutive Conditions:** Limit time windows to reduce report queries (use 12-24 hours max)
+2. **Class Frequency:** Use specific class names rather than wildcards
+3. **Fact Lookups:** Cache fact paths to avoid repeated parsing
+4. **Batch Aggregation:** Group similar rules to reuse query results
+5. **Alert Deduplication:** Use report timestamp to avoid duplicate triggers within same run
 
 ## Best Practices
 
 1. **Use Filters First:** Add EnvironmentFilter or GroupFilter to reduce scope
 2. **Combine Conditions Wisely:** Use AND for stricter, OR for broader alerts
-3. **Time Windows:** Add TimeWindowFilter for recent events
-4. **Node Counts:** Use NodeCountThreshold to avoid alerting on single failures
-5. **Testing:** Use the test endpoint before enabling rules
-6. **Documentation:** Add descriptions to all alert rules
-7. **Review Regularly:** Periodically review alert rules for relevance
+3. **Time Windows:** Add TimeWindowFilter for recent events or LastReportTime for stale detection
+4. **Node Counts:** Use NodeCountThreshold to avoid alerting on single node failures
+5. **Consecutive Thresholds:** Set reasonable counts for ConsecutiveFailures/Changes (typically 3-5 minimum)
+6. **Class Monitoring:** Use ClassChangeFrequency to detect deployment issues early
+7. **Testing:** Use the test endpoint before enabling rules
+8. **Documentation:** Add descriptions to all alert rules for maintainability
+9. **Review Regularly:** Audit alert rules quarterly for relevance and accuracy
+10. **Gradual Rollout:** Start with Warning severity, escalate to Critical only after tuning
+
+## Common Alert Scenarios
+
+### Infrastructure Monitoring
+- Detect stale nodes: `LastReportTime > 24 hours`
+- Alert on node crashes: `ConsecutiveFailures >= 3 in 6 hours`
+- Monitor instability: `ConsecutiveFailures >= 5 in 12 hours + EnvironmentFilter=production`
+
+### Configuration Management
+- Excessive changes: `ConsecutiveChanges >= 10 in 24 hours`
+- Class churn detection: `ClassChangeFrequency > 20 in 6 hours`
+- Problematic deployments: `ConsecutiveChanges >= 8 AND ReportMetric.FailurePercentage > 5`
+
+### Resource Compliance
+- Low memory nodes: `NodeFact(memory.system_mb) < 2048 AND EnvironmentFilter=production`
+- High CPU count: `NodeFact(processors.count) > 64 AND GroupFilter=database-servers`
+- OS version tracking: `NodeFact(os.release) ~= "^8\." AND EnvironmentFilter=production`
+
+### Operational Health
+- Multi-node failures: `ReportMetric.FailurePercentage > 15 AND NodeCountThreshold > 10`
+- Change rate monitoring: `ConsecutiveChanges >= 5 in 4 hours`
+- Report quality: `ReportMetric.ResourcesFailed > 100 AND TimeWindowFilter=last 1 hour`

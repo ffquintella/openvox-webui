@@ -84,6 +84,10 @@ Send to: webhook, email, slack
 - Group Filter - Scope to specific node groups
 - Node Count Threshold - Trigger when N+ nodes match
 - Time Window Filter - Only check recent events (last X minutes)
+- Last Report Time - Alert on stale nodes (no reports in N hours)
+- Consecutive Failures - Detect unstable nodes (N failures in X hours)
+- Consecutive Changes - Alert on excessive changes (N changes in X hours)
+- Class Change Frequency - Monitor class churn (class changed N+ times in X hours)
 
 **Condition Operators:**
 - String: `=`, `!=`, `~` (regex), `!~`, `in`, `not_in`, `exists`, `not_exists`

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Alert Rules Conditions System:** Comprehensive condition evaluation engine for alert rules
-  - Condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter
+  - Condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter, LastReportTime, ConsecutiveFailures, ConsecutiveChanges, ClassChangeFrequency
   - Condition operators: `=`, `!=`, `~`, `!~`, `>`, `>=`, `<`, `<=`, `in`, `not_in`, `exists`, `not_exists`, `contains`, `not_contains`
   - Logical operators: AND, OR for combining multiple conditions
   - Data types: String, Integer, Float, Boolean with appropriate operators
@@ -18,13 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - API endpoints: `/api/v1/alerting/rules/:id/test` for rule testing
   - Database schema for alert rules, conditions, and triggers
   - Frontend condition builder UI with context-sensitive value editors
+  
+- **Advanced Alerting Conditions:** Extended conditions for infrastructure health monitoring
+  - **LastReportTime:** Detect stale nodes (haven't reported in N hours)
+  - **ConsecutiveFailures:** Identify unstable nodes (N failures in X hours)
+  - **ConsecutiveChanges:** Alert on excessive resource changes (N changes in X hours)
+  - **ClassChangeFrequency:** Monitor class churn (class changed N+ times in X hours)
+  - Evaluation functions for computing consecutive metrics from report history
+  - Performance optimized with report caching and query batching
+  - Common alert scenarios documented with real-world examples
 
 ### Changed
 - **Alerting Documentation:** Enhanced with complete condition structure and evaluation logic
-  - Added 8 condition types covering infrastructure monitoring scenarios
-  - Added examples of simple and complex multi-condition rules
-  - Updated API endpoints to include rule testing
+  - Added 11 condition types covering infrastructure monitoring scenarios
+  - Added 7 examples from simple to complex multi-condition rules
+  - Updated API endpoints to include rule testing and manual evaluation
   - Added database schema documentation
+  - Added comprehensive best practices and common scenarios guide
 
 ### Details
   - Created feature-specific documents for all 9 phases (19 feature files)
