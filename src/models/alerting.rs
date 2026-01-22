@@ -281,15 +281,108 @@ pub enum ChannelConfig {
 // Alert Condition Types
 // ============================================================================
 
+/// Condition type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ConditionType {
+    /// Alert based on node status
+    #[serde(rename = "NodeStatus")]
+    NodeStatus {
+        /// Statuses to match (failed, success, noop, unknown)
+        statuses: Vec<String>,
+    },
+    /// Alert based on node facts
+    #[serde(rename = "NodeFact")]
+    NodeFact {
+        /// Path to the fact (e.g., "os.family", "processors.count")
+        fact_path: String,
+    },
+    /// Alert based on report metrics
+    #[serde(rename = "ReportMetric")]
+    ReportMetric {
+        /// Metric type (ResourcesChanged, ResourcesFailed, etc)
+        metric: String,
+    },
+    /// Filter by environment
+    #[serde(rename = "EnvironmentFilter")]
+    EnvironmentFilter {
+        /// Environment names to filter
+        environments: Vec<String>,
+    },
+    /// Filter by group
+    #[serde(rename = "GroupFilter")]
+    GroupFilter {
+        /// Group IDs to filter
+        group_ids: Vec<String>,
+    },
+    /// Alert when N nodes fail
+    #[serde(rename = "NodeCountThreshold")]
+    NodeCountThreshold {
+        /// Threshold count
+        threshold: i32,
+    },
+    /// Only check within time window
+    #[serde(rename = "TimeWindowFilter")]
+    TimeWindowFilter {
+        /// Minutes to look back
+        minutes: i32,
+    },
+    /// Alert when node hasn't reported
+    #[serde(rename = "LastReportTime")]
+    LastReportTime {
+        /// Hours since last report
+        hours: i32,
+    },
+    /// Alert on consecutive failures
+    #[serde(rename = "ConsecutiveFailures")]
+    ConsecutiveFailures {
+        /// Number of failures
+        count: i32,
+        /// Within hours
+        within_hours: i32,
+    },
+    /// Alert on consecutive changes
+    #[serde(rename = "ConsecutiveChanges")]
+    ConsecutiveChanges {
+        /// Number of changes
+        count: i32,
+        /// Within hours
+        within_hours: i32,
+    },
+    /// Alert on class change frequency
+    #[serde(rename = "ClassChangeFrequency")]
+    ClassChangeFrequency {
+        /// Puppet class name
+        class_name: String,
+        /// Change count threshold
+        change_count: i32,
+        /// Within hours
+        within_hours: i32,
+    },
+}
+
 /// A single condition in an alert rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlertCondition {
-    /// Field to evaluate (e.g., "node.status", "compliance.rate", "drift.count")
-    pub field: String,
+    /// Condition type (new format)
+    #[serde(flatten)]
+    pub condition_type: Option<ConditionType>,
+    
     /// Comparison operator
-    pub operator: String, // eq, ne, gt, gte, lt, lte, contains, regex
+    pub operator: String, // eq, ne, gt, gte, lt, lte, contains, regex, in, not_in, exists, not_exists
     /// Value to compare against
-    pub value: serde_json::Value,
+    pub value: Option<serde_json::Value>,
+    /// Whether condition is enabled
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    
+    // Legacy simple format support
+    /// Field to evaluate (e.g., "node.status", "compliance.rate", "drift.count")
+    pub field: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ============================================================================

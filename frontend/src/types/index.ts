@@ -1060,10 +1060,17 @@ export interface UpdateChannelRequest {
   is_enabled?: boolean;
 }
 
+// Enhanced AlertCondition supporting both simple and complex formats
 export interface AlertCondition {
-  type: AlertConditionType;
-  enabled: boolean;
-  config: AlertConditionConfig;
+  // New complex format
+  type?: AlertConditionType;
+  enabled?: boolean;
+  config?: AlertConditionConfig;
+  
+  // Legacy simple format (backwards compatibility)
+  field?: string;
+  operator: string;
+  value?: unknown;
 }
 
 export interface AlertConditionConfig {

@@ -34,7 +34,6 @@ import type {
   CreateSilenceRequest,
   AlertCondition,
 } from '../types';
-import ConditionBuilder from '../components/ConditionBuilder';
 
 type TabId = 'alerts' | 'rules' | 'channels' | 'silences';
 
@@ -813,9 +812,10 @@ function RuleModal({
   const [severity, setSeverity] = useState<AlertSeverity>(rule?.severity || 'warning');
   const [isEnabled, setIsEnabled] = useState(rule?.is_enabled ?? true);
   const [selectedChannels, setSelectedChannels] = useState<string[]>(rule?.channels || []);
+  const [useAdvancedFormat, setUseAdvancedFormat] = useState(false);
   const [conditions, setConditions] = useState<AlertCondition[]>(
     rule?.conditions || [
-      { type: 'NodeStatus', enabled: true, config: { operator: '=', value: 'failed' } },
+      { field: 'node.status', operator: 'eq', value: 'failed' },
     ]
   );
   const [conditionOperator, setConditionOperator] = useState<'AND' | 'OR'>(
@@ -828,9 +828,11 @@ function RuleModal({
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Failed to create alert rule:', error);
-      alert(`Failed to create alert rule: ${error.message || 'Unknown error'}`);
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to create alert rule: ${errorMsg}`);
     },
   });
 
@@ -840,9 +842,11 @@ function RuleModal({
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Failed to update alert rule:', error);
-      alert(`Failed to update alert rule: ${error.message || 'Unknown error'}`);
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to update alert rule: ${errorMsg}`);
     },
   });
 
@@ -909,17 +913,144 @@ function RuleModal({
             />
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Conditions
-            </label>
-            <ConditionBuilder
-              conditions={conditions}
-              operator={conditionOperator}
-              onChange={(newConditions, newOperator) => {
-                setConditions(newConditions);
-                setConditionOperator(newOperator);
-              }}
-            />
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Conditions
+              </label>
+              <button
+                type="button"
+                onClick={() => setUseAdvancedFormat(!useAdvancedFormat)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                {useAdvancedFormat ? 'Switch to Simple' : 'Switch to Advanced'}
+              </button>
+            </div>
+            <div className="space-y-3 rounded-md border border-gray-300 p-4 dark:border-gray-600">
+              {useAdvancedFormat ? (
+                <div className="text-sm text-blue-600 dark:text-blue-400">
+                  Advanced format: Create conditions with specific types (NodeStatus, LastReportTime, etc.)
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Simple format: Define conditions with field, operator, and value
+                </div>
+              )}
+              {conditions.map((condition, index) => (
+                <div key={index} className="grid grid-cols-3 gap-2">
+                  {useAdvancedFormat ? (
+                    <>
+                      <select
+                        value={condition.type || ''}
+                        onChange={(e) => {
+                          const newConditions = [...conditions];
+                          newConditions[index] = { ...condition, type: e.target.value as any };
+                          setConditions(newConditions);
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                      >
+                        <option value="">Select Type...</option>
+                        <option value="NodeStatus">Node Status</option>
+                        <option value="NodeFact">Node Fact</option>
+                        <option value="ReportMetric">Report Metric</option>
+                        <option value="EnvironmentFilter">Environment Filter</option>
+                        <option value="GroupFilter">Group Filter</option>
+                        <option value="NodeCountThreshold">Node Count Threshold</option>
+                        <option value="TimeWindowFilter">Time Window Filter</option>
+                        <option value="LastReportTime">Last Report Time</option>
+                        <option value="ConsecutiveFailures">Consecutive Failures</option>
+                        <option value="ConsecutiveChanges">Consecutive Changes</option>
+                        <option value="ClassChangeFrequency">Class Change Frequency</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Operator"
+                        value={condition.operator || ''}
+                        onChange={(e) => {
+                          const newConditions = [...conditions];
+                          newConditions[index] = { ...condition, operator: e.target.value };
+                          setConditions(newConditions);
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                      />
+                      <textarea
+                        placeholder="Config (JSON)"
+                        value={JSON.stringify(condition.config || {})}
+                        onChange={(e) => {
+                          try {
+                            const newConditions = [...conditions];
+                            newConditions[index] = { ...condition, config: JSON.parse(e.target.value) };
+                            setConditions(newConditions);
+                          } catch {
+                            // Ignore JSON parse errors while typing
+                          }
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                        rows={2}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Field (e.g., node.status)"
+                        value={condition.field || ''}
+                        onChange={(e) => {
+                          const newConditions = [...conditions];
+                          newConditions[index] = { ...condition, field: e.target.value };
+                          setConditions(newConditions);
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                      />
+                      <select
+                        value={condition.operator || ''}
+                        onChange={(e) => {
+                          const newConditions = [...conditions];
+                          newConditions[index] = { ...condition, operator: e.target.value };
+                          setConditions(newConditions);
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                      >
+                        <option value="">Select Operator...</option>
+                        <option value="eq">equals</option>
+                        <option value="ne">not equals</option>
+                        <option value="gt">greater than</option>
+                        <option value="gte">greater or equal</option>
+                        <option value="lt">less than</option>
+                        <option value="lte">less or equal</option>
+                        <option value="contains">contains</option>
+                        <option value="regex">regex</option>
+                        <option value="in">in</option>
+                        <option value="not_in">not in</option>
+                        <option value="exists">exists</option>
+                        <option value="not_exists">not exists</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Value"
+                        value={String(condition.value || '')}
+                        onChange={(e) => {
+                          const newConditions = [...conditions];
+                          newConditions[index] = { ...condition, value: e.target.value };
+                          setConditions(newConditions);
+                        }}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                      />
+                    </>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <select
+                  value={conditionOperator}
+                  onChange={(e) => setConditionOperator(e.target.value as 'AND' | 'OR')}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                >
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+                <span className="text-sm text-gray-600 dark:text-gray-400">between conditions</span>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -981,10 +1112,15 @@ function RuleModal({
                       type="checkbox"
                       checked={selectedChannels.includes(channel.id)}
                       onChange={(e) => {
+                        console.log('Checkbox changed:', { channelId: channel.id, channelName: channel.name, checked: e.target.checked, currentSelected: selectedChannels });
                         if (e.target.checked) {
-                          setSelectedChannels([...selectedChannels, channel.id]);
+                          const newSelected = [...selectedChannels, channel.id];
+                          console.log('Adding channel, new selection:', newSelected);
+                          setSelectedChannels(newSelected);
                         } else {
-                          setSelectedChannels(selectedChannels.filter((id) => id !== channel.id));
+                          const newSelected = selectedChannels.filter((id) => id !== channel.id);
+                          console.log('Removing channel, new selection:', newSelected);
+                          setSelectedChannels(newSelected);
                         }
                       }}
                       className="rounded border-gray-300"
