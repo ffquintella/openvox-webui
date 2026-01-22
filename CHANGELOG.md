@@ -8,26 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project structure
-- ROADMAP.md with development phases
-- CONTRIBUTING.md with contribution guidelines
-- BDD test infrastructure with Cucumber
-- Rust backend skeleton with Axum
-- React frontend skeleton with TypeScript
-- YAML configuration system design
-- Documentation framework
-- Architecture overview and user guide (docs/architecture, docs/user-guide)
-- Development guide (docs/DEVELOPMENT.md) covering build/test/package steps
-- Puppet CA client and management API (status, CSR list, sign, reject, revoke, renew)
-- Puppet CA configuration block (`puppet_ca`) and RBAC permissions for certificates
-- Classification engine (Phase 4.1): rule evaluation, operators coverage, hierarchical inheritance
-- Enabled BDD `node_classification.feature` scenarios
-- Cucumber scenarios for Puppet CA operations (status, requests, sign/reject/revoke, renew)
-- Multi-tenancy foundations: `organizations` table and per-tenant `organization_id` columns across core tables
-- `super_admin` system role for cross-tenant administration
-- API key management (`/api/v1/api-keys`) with role-scoped keys and API key authentication
-- Audit logging improvements with `/api/v1/audit-logs` endpoint
-- User-selectable theme: light/dark toggle with persistence (localStorage) and early application to avoid FOUC
+
+### Changed
+- **Documentation Reorganization:** Migrated all detailed feature documentation to [docs/implemented-features/](docs/implemented-features/) directory
+  - Created feature-specific documents for all 9 phases (19 feature files)
+  - Added [docs/implemented-features/README.md](docs/implemented-features/README.md) with complete index and navigation
+  - Compacted ROADMAP.md to provide high-level overview with links to detailed docs
+  - Features are now organized by phase with quick reference summary
+
+### Details
+The ROADMAP.md file has been reorganized for better maintainability:
+- **Old structure:** Single 1100+ line document with extensive implementation details
+- **New structure:** Quick reference guide (300+ lines) with links to 19 detailed feature documents
+- Each feature document includes: completed tasks, detailed implementation, API endpoints, key files
+- Detailed documentation is maintained separately in `docs/implemented-features/` directory
+- This allows for easier navigation, faster documentation loading, and better organization of content
 - Tailwind dark mode enabled (`darkMode: 'class'`) and ThemeToggle component added to sidebar
 - Database batch loading methods to eliminate N+1 query patterns in GroupRepository and RBAC services
 - Selective permission cache invalidation using role-to-users reverse lookup mapping

@@ -68,6 +68,38 @@ docker-compose logs -f
 docker-compose down
 ```
 
+## Common Commands
+
+### Development & Building
+```bash
+make build              # Build both backend and frontend
+make dev                # Run development server
+make test               # Run all tests
+make lint               # Run linters
+make format             # Format code
+```
+
+### Testing
+```bash
+make test-unit          # Rust unit tests
+make test-bdd           # Cucumber BDD tests
+make test-frontend      # Frontend tests
+```
+
+### Version Management
+```bash
+make version            # Show current version
+make version-patch      # Bump patch version
+make version-minor      # Bump minor version
+make version-major      # Bump major version
+```
+
+### Deployment
+```bash
+./scripts/build-packages.sh             # Build RPM/DEB packages
+docker build -t openvox-webui:latest .  # Build Docker image
+```
+
 ## Project Structure
 
 ```text

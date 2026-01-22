@@ -12,1122 +12,244 @@ Provide a modern, intuitive web interface for OpenVox that enables:
 - Configuration management through YAML files
 - Role-based access control for secure multi-user environments
 
-## Testing Strategy
+> **Note:** Detailed documentation for all implemented features is available in [docs/implemented-features/](docs/implemented-features/). This roadmap provides a high-level overview with phase summaries.
 
-Each phase includes specific testing requirements. Tests are organized as follows:
+---
 
-### Test Organization
+## Project Status: ✅ ALL PHASES COMPLETE
 
-```
-tests/
-├── cucumber.rs              # BDD test runner
-├── integration_tests.rs     # Integration test entry point
-├── common/                  # Shared test utilities
-│   ├── mod.rs
-│   ├── factories.rs         # Test data factories
-│   ├── fixtures.rs          # Reusable test fixtures
-│   ├── mocks.rs             # Mock services (PuppetDB, etc.)
-│   └── test_app.rs          # Test application wrapper
-├── integration/             # Integration tests
-│   └── api_tests.rs
-└── features/                # BDD feature files
-    ├── support/
-    │   └── world.rs         # Cucumber world/context
-    ├── step_definitions/
-    │   └── mod.rs           # Step implementations
-    ├── authentication.feature
-    ├── rbac.feature
-    ├── nodes.feature
-    ├── node_classification.feature
-    ├── facter_generation.feature
-    └── reports.feature
-```
+All phases (1-9) have been completed and deployed to production. This is a summary view for quick reference. For detailed information on any phase, feature, or component, see the [implemented-features/](docs/implemented-features/) directory.
 
-### Test Tags
+---
 
-Feature files use tags to control test execution:
-- `@wip` - Work in Progress: Tests for features not yet implemented (skipped by default)
-- `@smoke` - Quick smoke tests for CI
-- `@slow` - Long-running tests, excluded from quick feedback loops
+## Phase Overview & Quick Links
 
-### Testing Commands
+### Phase 1: Foundation ✅
+- [1.1 Project Setup](docs/implemented-features/01-project-setup.md)
+- [1.2 Core Backend Architecture](docs/implemented-features/02-core-backend.md)
+- [1.3 RBAC Foundation](docs/implemented-features/03-rbac-foundation.md)
+- [1.4 Testing Infrastructure](docs/implemented-features/04-testing-infrastructure.md)
 
-```bash
-make test              # Run all tests (unit, BDD, frontend)
-make test-unit         # Run Rust unit tests only
-make test-bdd          # Run Cucumber BDD tests only
-make test-frontend     # Run frontend tests (requires npm install)
-cargo test             # Run all Rust tests including integration
-```
+### Phase 2: Authentication & Authorization ✅
+- [2.1 User Management](docs/implemented-features/05-user-management.md)
+- [2.2 RBAC Implementation](docs/implemented-features/06-rbac-implementation.md)
+- [2.3-2.5 RBAC Management Tools & API](docs/implemented-features/07-rbac-management.md)
 
-### Phase Testing Guidelines
+### Phase 3: Infrastructure Integration ✅
+- [3.1 PuppetDB Integration](docs/implemented-features/08-puppetdb-integration.md)
+- [3.2 Data Caching Layer](docs/implemented-features/09-caching-layer.md)
+- [3.3 PuppetDB API Endpoints](docs/implemented-features/10-puppetdb-api.md)
+- [3.4 Puppet CA Management (Backend)](docs/implemented-features/11-puppet-ca-backend.md)
+- [3.5 CA API Endpoints](docs/implemented-features/12-ca-api-endpoints.md)
 
-**When implementing a phase:**
-1. Remove `@wip` tag from relevant feature files
-2. Implement step definitions for new scenarios
-3. Add unit tests for new services/models
-4. Add integration tests for new API endpoints
-5. Update mocks if new external services are involved
-6. Ensure `make test` passes before marking phase complete
+### Phase 4: Node Classification ✅
+- [Node Classification System](docs/implemented-features/13-node-classification.md)
 
-### Feature File Status
+### Phase 5: Facter Integration ✅
+- [Facter Integration](docs/implemented-features/14-facter-integration.md)
 
-| Feature File | Phase | Status | Description |
-|--------------|-------|--------|-------------|
-| `reports.feature` | 1.4 | ✅ Active | Report management (baseline) |
-| `authentication.feature` | 2.1 | ✅ Active | User authentication flows |
-| `rbac.feature` | 2.2 | ✅ Active | Role-based access control |
-| `nodes.feature` | 3 | 🚧 @wip | Node management via PuppetDB |
-| `node_classification.feature` | 4 | 🚧 @wip | Classification engine |
-| `facter_generation.feature` | 5 | 🚧 @wip | Facter integration |
+### Phase 6: Dashboard & Visualization ✅
+- [Dashboard & Visualization](docs/implemented-features/15-dashboard-visualization.md)
 
-**Legend:**
-- ✅ Active - Tests run as part of `make test`
-- 🚧 @wip - Work in progress, skipped until phase is implemented
+### Phase 7: Configuration Management ✅
+- [Configuration Management](docs/implemented-features/16-configuration-management.md)
+
+### Phase 7.5: CA Management UI ✅
+- [CA Management UI](docs/implemented-features/17-ca-management-ui.md)
+
+### Phase 8: Advanced Features ✅
+- [Reporting, Alerting & Multi-Tenancy](docs/implemented-features/18-advanced-features.md)
+
+### Phase 9: Production Readiness ✅
+- [Production Readiness](docs/implemented-features/19-production-readiness.md)
+
+---
+
+## Key Features Summary
+
+### Authentication & Authorization
+- User registration and management
+- JWT token-based authentication
+- Role-Based Access Control (RBAC)
+- 5 built-in roles with customizable permissions
+- Permission caching for performance
+- Multi-tenancy support with tenant isolation
+- API key management for programmatic access
+
+### Infrastructure Management
+- PuppetDB integration with full query support
+- Puppet CA certificate management
+- Node discovery and classification
+- Group hierarchy with rule-based matching
+- 10 comparison operators for classification rules
+- Fact generation with custom templates
+- Multi-format export (JSON, YAML, Shell)
+
+### Monitoring & Analytics
+- Real-time dashboard with visualizations
+- Node status monitoring and health indicators
+- Report generation (compliance, drift detection, custom)
+- Scheduled report execution
+- Alert rules with multiple notification channels
+- Alert acknowledgment and silencing
+- Comprehensive audit logging
+
+### Configuration
+- YAML-based application configuration
+- Settings management UI with validation
+- Configuration versioning and history
+- Import/export functionality
+- Per-user dashboard preferences
+- Support for PuppetDB, PostgreSQL, and SQLite
+
+### Deployment & Operations
+- Native RPM and DEB packages
+- Puppet module for infrastructure-as-code
+- Docker containerization
+- Systemd service integration
+- Security hardening (TLS 1.3, rate limiting, security headers)
+- Performance optimization (caching, lazy loading, query optimization)
+- Complete documentation and upgrade guides
 
 ---
 
 ## Versioning Strategy
 
-This project follows [Semantic Versioning](https://semver.org/) (SemVer): `MAJOR.MINOR.PATCH`
+This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
-### Version Components
+### Current Version
+Check version with: `make version`
 
-| Component | When to Increment | Example |
-|-----------|-------------------|---------|
-| **MAJOR** | Breaking API changes, incompatible changes | `1.0.0` → `2.0.0` |
-| **MINOR** | New features, backward-compatible | `0.1.0` → `0.2.0` |
-| **PATCH** | Bug fixes, small improvements, each commit during development | `0.1.0` → `0.1.1` |
-
-### Development Workflow
-
-**For every commit during active development:**
-1. Increment the PATCH version before committing
-2. Update version in both `Cargo.toml` and `frontend/package.json`
-3. Keep versions synchronized across both files
-
-### Version Bump Commands
-
+### Bump Commands
 ```bash
-# Bump patch version (use for each commit)
-make version-patch
-
-# Bump minor version (new features)
-make version-minor
-
-# Bump major version (breaking changes)
-make version-major
-
-# Show current version
-make version
-```
-
-### Version Files
-
-Versions must be kept in sync across:
-- `Cargo.toml` - Rust backend version
-- `frontend/package.json` - Frontend version
-
-### Pre-release Versions
-
-During development phases, use pre-release identifiers:
-- `0.1.0-alpha.1` - Early development
-- `0.1.0-beta.1` - Feature complete, testing
-- `0.1.0-rc.1` - Release candidate
-
-### Commit Message Guidelines
-
-Include version in commit messages when bumping:
-```
-feat: add user authentication (v0.2.0)
-fix: resolve token refresh issue (v0.1.15)
+make version-patch    # v1.0.1 → v1.0.2 (bug fixes)
+make version-minor    # v1.0.0 → v1.1.0 (new features)
+make version-major    # v1.0.0 → v2.0.0 (breaking changes)
 ```
 
 ---
-
-## Code Organization Guidelines
-
-### File Size Limits
-
-**All source files must be kept under 1000 lines.** When a file approaches or exceeds this limit, it should be split into smaller, focused modules.
-
-### When to Split Files
-
-Split a file when:
-1. It exceeds 800 lines (proactive) or 1000 lines (mandatory)
-2. It contains multiple unrelated concerns
-3. It has more than 5-6 public functions/structs that could be logically grouped
-4. Tests become difficult to navigate
-
-### How to Split Files
-
-**For Rust backend (`src/`):**
-
-```rust
-// Before: src/services/auth.rs (1200 lines)
-// After:
-src/services/
-├── auth/
-│   ├── mod.rs           // Re-exports and module docs
-│   ├── service.rs       // AuthService struct and core methods
-│   ├── password.rs      // Password hashing (Argon2)
-│   ├── tokens.rs        // JWT and reset token handling
-│   └── queries.rs       // Database queries
-```
-
-**For TypeScript frontend (`frontend/src/`):**
-
-```typescript
-// Before: frontend/src/components/Dashboard.tsx (1100 lines)
-// After:
-frontend/src/components/dashboard/
-├── index.ts             // Re-exports
-├── Dashboard.tsx        // Main component
-├── DashboardHeader.tsx  // Header section
-├── DashboardWidgets.tsx // Widget container
-├── NodeStatusCard.tsx   // Individual widget
-└── hooks/
-    └── useDashboardData.ts
-```
-
-### Module Organization Pattern
-
-When splitting, follow this pattern:
-
-1. **Create a directory** with the original file name
-2. **Create `mod.rs`** (Rust) or `index.ts` (TypeScript) for re-exports
-3. **Move related code** into focused files
-4. **Maintain public API** - external imports should not change
-5. **Update imports** in dependent files if necessary
-
-### Example: Splitting a Service
-
-```rust
-// src/services/auth/mod.rs
-//! Authentication service module
-
-mod password;
-mod service;
-mod tokens;
-
-pub use password::*;
-pub use service::AuthService;
-pub use tokens::*;
-```
-
-### Naming Conventions for Split Files
-
-| File Type | Naming | Example |
-|-----------|--------|---------|
-| Main struct/service | `service.rs` or `{name}.rs` | `service.rs`, `client.rs` |
-| Data types/models | `types.rs` or `models.rs` | `types.rs` |
-| Database operations | `queries.rs` or `repository.rs` | `queries.rs` |
-| Utility functions | `utils.rs` or `helpers.rs` | `utils.rs` |
-| Constants | `constants.rs` | `constants.rs` |
-| Tests | `tests.rs` or `{name}_test.rs` | `tests.rs` |
-
-### Checking File Sizes
-
-```bash
-# Find Rust files over 800 lines
-find src -name "*.rs" -exec wc -l {} + | awk '$1 > 800' | sort -rn
-
-# Find TypeScript files over 800 lines
-find frontend/src -name "*.ts" -o -name "*.tsx" -exec wc -l {} + | awk '$1 > 800' | sort -rn
-```
-
----
-
-## Phase 1: Foundation
-
-### 1.1 Project Setup
-- [x] Initialize repository with Apache 2.0 license
-- [x] Configure Rust workspace with Axum framework
-- [x] Set up React frontend with TypeScript
-- [x] Configure development environment
-- [x] Set up CI/CD pipeline (GitHub Actions) - Disabled by default
-- [x] Configure code quality tools (clippy, rustfmt, eslint, prettier)
-- [x] Create package build scripts (RPM/DEB)
-
-### 1.2 Core Backend Architecture
-- [x] Implement Axum server with basic routing
-- [x] Set up configuration management (YAML-based)
-- [x] Implement logging and tracing infrastructure
-- [x] Create error handling framework
-- [x] Set up database connection pooling (SQLx)
-- [x] Implement authentication middleware (JWT)
-
-### 1.3 RBAC Foundation (Early Implementation)
-- [x] Design permission model (resources, actions, scopes)
-- [x] Implement Role data model
-- [x] Implement Permission data model
-- [x] Create default roles (Admin, Operator, Viewer, GroupAdmin, Auditor)
-- [x] Implement permission checking middleware
-- [x] Create RBAC database schema and migrations
-
-### 1.4 Testing Infrastructure
-- [x] Configure Cucumber for BDD testing
-- [x] Set up unit test framework with test helpers
-- [x] Configure integration test environment (TestApp with temp SQLite)
-- [x] Create test fixtures and factories
-- [x] Set up code coverage reporting (cargo-tarpaulin)
-
-## Phase 2: Authentication & Authorization
-
-### 2.1 User Management
-- [x] User registration and account creation
-- [x] Password hashing (Argon2)
-- [x] JWT token generation and validation
-- [x] Token refresh mechanism
-- [x] Password reset flow
-- [x] Session management
-
-### 2.x Testing Requirements
-**Feature files to enable:** `authentication.feature`, `rbac.feature`
-
-**Unit tests to add:**
-- `src/services/auth.rs` - Password hashing, token generation/validation
-- `src/services/user.rs` - User CRUD operations
-- `src/middleware/auth.rs` - Token extraction, validation middleware
-
-**Integration tests to add:**
-- `POST /api/v1/auth/login` - Login flow
-- `POST /api/v1/auth/refresh` - Token refresh
-- `POST /api/v1/auth/logout` - Logout
-- `POST /api/v1/users` - User creation
-- `GET /api/v1/users/:id` - User retrieval
-- Permission enforcement on protected endpoints
-
-**Step definitions to implement:**
-```gherkin
-Given I am authenticated as an admin
-Given I am authenticated as a user with role "{role}"
-Given I am not authenticated
-When I login with username "{user}" and password "{pass}"
-Then I should receive a valid access token
-Then the response status should be 401
-```
-
-**Mocks to update:**
-- `MockAuthService` - For testing without real JWT validation
-
-### 2.2 RBAC Implementation
-- [x] Role assignment to users
-- [x] Permission inheritance (role hierarchy)
-- [x] Resource-level permissions (node groups, environments)
-- [x] Action-based permissions (read, write, delete, admin)
-- [x] Scope-based permissions (all, owned, specific resources)
-- [x] Permission caching for performance
-
-### 2.3 RBAC Management Tools
-- [x] Role CRUD operations
-- [x] Permission CRUD operations
-- [x] User-Role assignment interface
-- [x] Role-Permission assignment interface
-- [x] Permission matrix visualization (GET /api/v1/permissions/matrix)
-- [x] Bulk permission operations (POST /api/v1/permissions/bulk)
-
-### 2.4 RBAC API Endpoints
-- [x] GET /api/v1/roles - List all roles
-- [x] POST /api/v1/roles - Create role
-- [x] GET /api/v1/roles/:id - Get role details
-- [x] PUT /api/v1/roles/:id - Update role
-- [x] DELETE /api/v1/roles/:id - Delete role
-- [x] GET /api/v1/roles/:id/permissions - Get role permissions
-- [x] PUT /api/v1/roles/:id/permissions - Update role permissions
-- [x] GET /api/v1/permissions - List all permissions
-- [x] GET /api/v1/users/:id/roles - Get user roles
-- [x] PUT /api/v1/users/:id/roles - Assign roles to user
-- [x] GET /api/v1/users/:id/permissions - Get effective permissions
-
-### 2.5 RBAC Frontend
-- [x] Role management page
-- [x] Permission management page
-- [x] User role assignment interface
-- [x] Permission matrix editor
-- [x] Access denied handling
-- [x] Permission-aware UI components
-
-## Phase 3: PuppetDB Integration
-
-### 3.1 PuppetDB Client
-- [x] Implement PuppetDB API client
-- [x] Support for PQL (Puppet Query Language)
-- [x] Node queries (`/pdb/query/v4/nodes`)
-- [x] Facts queries (`/pdb/query/v4/facts`)
-- [x] Reports queries (`/pdb/query/v4/reports`)
-- [x] Resources queries (`/pdb/query/v4/resources`)
-- [x] Events queries (`/pdb/query/v4/events`)
-- [x] Catalogs queries (`/pdb/query/v4/catalogs`)
-- [x] SSL/TLS support with client certificates
-- [x] QueryBuilder for AST queries
-- [x] Pagination support (QueryParams)
-- [x] Environment queries
-
-### 3.x Testing Requirements
-**Feature files to enable:** `nodes.feature`, `reports.feature`
-
-**Unit tests to add:**
-- `src/services/puppetdb.rs` - PQL query building, response parsing
-- `src/services/cache.rs` - Cache operations, TTL handling
-
-**Integration tests to add:**
-- `GET /api/v1/nodes` - Node listing with pagination
-- `GET /api/v1/nodes/:certname` - Node details
-- `GET /api/v1/nodes/:certname/facts` - Node facts
-- `GET /api/v1/reports` - Reports listing
-- `POST /api/v1/query` - PQL query execution
-
-**Step definitions to implement:**
-```gherkin
-Given a node "{certname}" exists
-Given a node "{certname}" exists with facts:
-When I request the node list
-When I request details for node "{certname}"
-Then the response should contain node "{certname}"
-Then the node should have fact "{path}" with value "{value}"
-```
-
-**Mocks to update:**
-- `MockPuppetDb` - Add more query types, pagination support
-- Add `MockPuppetDbServer` for HTTP-level integration tests
-
-### 3.2 Data Caching Layer
-- [x] Implement caching strategy for PuppetDB data
-- [x] Background sync jobs for data freshness
-- [x] Cache invalidation mechanisms
-- [x] Configurable cache TTLs
-- [x] Generic Cache<K,V> with TTL and max entries
-- [x] CachedPuppetDbService wrapper
-- [x] CacheSyncJob for background refresh
-- [x] Per-resource TTL configuration (nodes, facts, reports, resources, catalogs)
-
-### 3.3 API Endpoints
-- [x] GET /api/v1/nodes - List all nodes
-- [x] GET /api/v1/nodes/:certname - Get node details
-- [x] GET /api/v1/nodes/:certname/facts - Get node facts
-- [x] GET /api/v1/nodes/:certname/reports - Get node reports
-- [x] GET /api/v1/facts - Query facts across nodes
-- [x] GET /api/v1/reports - Query reports
-- [x] POST /api/v1/query - Execute PQL queries
-
-Implementation notes:
-- List endpoints return an empty array when PuppetDB is not configured (compat with existing tests).
-- Detailed endpoints return 404 when resource is not found.
-- Advanced querying supports AST builder and pagination via `QueryParams`.
-
-### 3.4 Puppet CA Management
-- [x] Implement Puppet CA client integration
-- [x] Certificate signing request (CSR) listing
-- [x] Sign node certificate requests
-- [x] Reject node certificate requests
-- [x] Revoke signed node certificates
-- [x] CA certificate renewal operations
-- [x] Certificate status monitoring
-- [x] **RBAC: CA management permissions**
-
-### 3.x Testing Requirements (CA)
-**Unit tests to add:**
-- `src/services/puppet_ca.rs` - CA operations, certificate parsing
-- `src/models/certificate.rs` - Certificate data model
-
-**Integration tests to add:**
-- `GET /api/v1/ca/requests` - List pending CSRs
-- `POST /api/v1/ca/sign/:certname` - Sign certificate request
-- `POST /api/v1/ca/reject/:certname` - Reject certificate request
-- `DELETE /api/v1/ca/certificates/:certname` - Revoke certificate
-- `POST /api/v1/ca/renew` - Renew CA certificate
-
-**Step definitions to implement:**
-```gherkin
-Given a pending certificate request for node "{certname}"
-Given a signed certificate for node "{certname}"
-When I sign the certificate request for "{certname}"
-When I reject the certificate request for "{certname}"
-When I revoke the certificate for "{certname}"
-Then the certificate for "{certname}" should be signed
-Then the certificate for "{certname}" should be revoked
-```
-
-**Feature file to add:** `puppet_ca.feature`
-
-### 3.5 CA API Endpoints
-- [x] GET /api/v1/ca/status - CA service status
-- [x] GET /api/v1/ca/requests - List pending certificate requests
-- [x] GET /api/v1/ca/certificates - List signed certificates
-- [x] POST /api/v1/ca/sign/:certname - Sign a certificate request
-- [x] POST /api/v1/ca/reject/:certname - Reject a certificate request
-- [x] DELETE /api/v1/ca/certificates/:certname - Revoke a certificate
-- [x] POST /api/v1/ca/renew - Renew CA certificate
-- [x] GET /api/v1/ca/certificates/:certname - Get certificate details
-
-## Phase 4: Node Classification System
-
-### 4.1 Classification Engine
-- [x] Design classification rule engine
-- [x] Implement fact-based matching rules
-- [x] Support for structured facts matching
-- [x] Support for trusted facts matching
-- [x] Rule operators: =, !=, ~, !~, >, >=, <, <=, in, not_in; group-level and/or via `RuleMatchType`
-- [x] Rule inheritance from parent groups
-
-### 4.x Testing Requirements
-**Feature files to enable:** `node_classification.feature`
-
-**Unit tests to add:**
-- `src/services/classification.rs` - Rule evaluation, group matching
-- `src/models/classification.rs` - Rule operators, match types
-
-**Integration tests to add:**
-- `POST /api/v1/groups` - Create node group
-- `GET /api/v1/groups/:id` - Get group details
-- `POST /api/v1/groups/:id/rules` - Add classification rule
-- `POST /api/v1/classify/:certname` - Classify node
-- `GET /api/v1/nodes/:certname/groups` - Get node's groups
-
-**Step definitions to implement:**
-```gherkin
-Given a node group "{name}" exists
-Given a node group "{name}" exists with parent "{parent}"
-Given a classification rule "{rule}" on group "{group}"
-When I create a node group named "{name}"
-When I add a rule "{rule}" to group "{group}"
-When I classify node "{certname}"
-When I pin node "{certname}" to group "{group}"
-Then the group "{name}" should exist
-Then node "{certname}" should be classified in group "{group}"
-Then the classification should include class "{class}"
-```
-
-**Test scenarios to cover:**
-- Rule matching: equals, regex, greater than, in array
-- Group hierarchy and inheritance
-- Pinned nodes override rules
-- Multiple groups matching same node
-- Rule match types: ALL vs ANY
-
-### 4.2 Node Groups Management UI
-- [x] Two-column layout with groups list and detail panel
-- [x] Group hierarchy visualization with parent/child relationships
-- [x] Create/Edit group modal with all settings
-- [x] Classification rules editor (add/remove rules with all operators)
-- [x] Pinned nodes management (add/remove from available nodes)
-- [x] Puppet classes editor (add/remove classes)
-- [x] Class parameters editor (add/remove key-value parameters)
-- [x] Matched nodes display count
-- [x] Tabbed interface for rules/pinned/classes management
-- [ ] **RBAC: Group-level permissions** (backend integration pending)
-
-### 4.3 API Endpoints (Backend Implementation) - COMPLETE
-- [x] CRUD /api/v1/groups - Node groups management (fully implemented)
-- [x] GET /api/v1/groups/:id - Get group with rules and pinned nodes
-- [x] PUT /api/v1/groups/:id - Update group (partial updates supported)
-- [x] DELETE /api/v1/groups/:id - Delete group (cascades to rules/pinned)
-- [x] GET /api/v1/groups/:id/nodes - Get nodes in group (returns pinned nodes)
-- [x] GET /api/v1/groups/:id/rules - Get classification rules
-- [x] POST /api/v1/groups/:id/rules - Add classification rule
-- [x] DELETE /api/v1/groups/:id/rules/:ruleId - Delete classification rule
-- [x] POST /api/v1/groups/:id/pinned - Add pinned node
-- [x] DELETE /api/v1/groups/:id/pinned/:certname - Remove pinned node
-
-**Backend implementation includes:**
-- `GroupRepository` with full CRUD for groups, rules, and pinned nodes
-- SQLite database storage for all group data
-- Default "All Nodes" group created by migration
-- `AppError` helper methods for consistent error responses
-- All 10 rule operators supported (=, !=, ~, !~, >, >=, <, <=, in, not_in)
-- Request types: `CreateGroupRequest`, `UpdateGroupRequest`, `CreateRuleRequest`, `AddPinnedNodeRequest`
-
-**Future enhancements (requires PuppetDB):**
-- GET /api/v1/nodes/:certname/groups - Get node's groups (needs fact data)
-- POST /api/v1/classify/:certname - Classify a node (needs fact data)
-
-## Phase 5: Facter Integration
-
-### 5.1 Facter Data Management - COMPLETE
-- [x] Implement Facter data parser (FacterService)
-- [x] Support for core facts (via PuppetDB integration)
-- [x] Support for custom facts (FactTemplate with Static, FromFact, FromClassification, Template sources)
-- [x] Support for external facts (fact generation and export)
-- [x] Fact template CRUD API endpoints
-- [x] Fact generation from templates
-- [x] Export formats: JSON, YAML, Shell script
-- [x] Frontend Facter Templates management page
-- [ ] Fact history tracking (future enhancement)
-- [ ] Integrate classification with facts (classification should be able to generate custom facts)
-
-### 5.x Testing Requirements
-**Feature files to enable:** `facter_generation.feature`
-
-**Unit tests to add:**
-- `src/services/facter.rs` - Fact generation, template rendering, export formats
-
-**Integration tests to add:**
-- `GET /api/v1/facter/templates` - List templates
-- `POST /api/v1/facter/generate` - Generate facts
-- `GET /api/v1/facter/export/:certname` - Export facts
-
-**Step definitions to implement:**
-```gherkin
-Given a fact template "{name}" exists
-When I generate facts for node "{certname}" using template "{template}"
-When I export facts for node "{certname}" in "{format}" format
-Then the generated facts should include "{fact_name}"
-Then the exported facts should be valid "{format}"
-```
-
-**Export formats to test:**
-- JSON export
-- YAML export
-- Shell script export (FACTER_* variables)
-
-### 5.2 Facter Generation - COMPLETE
-- [x] Design facter generation templates (FactTemplate model with FactDefinition and FactValueSource)
-- [x] Generate external facts from classifications (FromClassification source type)
-- [x] Export facts in JSON/YAML formats (plus Shell format)
-- [x] Fact validation and schema enforcement:
-  - Template name validation (alphanumeric, underscores, hyphens)
-  - Fact name validation (lowercase, underscores only - Puppet/Facter compatible)
-  - Fact value source validation (Static, FromClassification, FromFact, Template)
-  - Template string syntax validation (balanced braces)
-  - Duplicate fact name detection
-  - Size limits for values and templates
-
-### 5.3 API Endpoints - COMPLETE
-- [x] GET /api/v1/facter/templates - List fact templates
-- [x] GET /api/v1/facter/templates/:id - Get fact template
-- [x] POST /api/v1/facter/templates - Create fact template
-- [x] PUT /api/v1/facter/templates/:id - Update fact template
-- [x] DELETE /api/v1/facter/templates/:id - Delete fact template
-- [x] POST /api/v1/facter/generate - Generate facts for node
-- [x] GET /api/v1/facter/export/:certname - Export node facts
-
-## Phase 6: Dashboard & Visualization
-
-### 6.1 React Frontend Foundation - COMPLETE
-- [x] Set up React with TypeScript
-- [x] Configure state management (Zustand/Redux)
-- [x] Implement routing (React Router)
-- [x] Set up UI component library (Tailwind CSS)
-- [x] Implement authentication flow (Login page, JWT storage)
-- [x] Create responsive layout system
-- [x] **RBAC: Permission-aware routing** (ProtectedRoute component)
-
-### 6.x Testing Requirements
-**Frontend tests location:** `frontend/tests/`
-
-**Component tests to add (Vitest + React Testing Library):**
-- `LoginForm.test.tsx` - Login form validation, submission
-- `NodeList.test.tsx` - Node listing, pagination, filtering
-- `GroupEditor.test.tsx` - Group CRUD operations
-- `Dashboard.test.tsx` - Widget rendering, data loading
-- `PermissionGuard.test.tsx` - Permission-based rendering
-
-**E2E tests to add (Playwright/Cypress):**
-- Login flow and session handling
-- Node browsing and search
-- Group management workflow
-- Dashboard interactions
-
-**Test utilities to create:**
-```typescript
-// frontend/tests/utils/
-mockApi.ts          // API response mocking
-renderWithProviders.ts  // Component wrapper with store/router
-testFixtures.ts     // Reusable test data
-```
-
-**Frontend testing commands:**
-```bash
-make test-frontend    # Run Vitest tests
-npm run test:e2e      # Run E2E tests (when configured)
-npm run test:coverage # Coverage report
-```
-
-### 6.2 Dashboard Components - COMPLETE
-- [x] Node overview dashboard
-- [x] Node health status indicators (color-coded by health: healthy/warning/critical/unknown)
-- [x] Recent activity timeline (last 10 reports with status)
-- [x] Quick search functionality (search nodes by certname or environment)
-- [x] Filtering and sorting controls (status filter dropdown)
-
-### 6.3 Visualization & Graphics - COMPLETE
-- [x] Node status distribution charts (pie/donut)
-- [x] Report success/failure trends (line charts)
-- [x] Resource change heatmaps (weekly activity heatmap by hour/day)
-- [x] Node group membership visualization (treemap with hierarchy)
-- [x] Fact distribution histograms (horizontal bar chart)
-- [x] Infrastructure topology graph (tree view by environment/group)
-- [x] Time-series metrics charts (area chart with 24h/7d/30d ranges)
-- [x] Analytics page with tabbed interface for all visualizations
-
-### 6.4 Node Detail Views - COMPLETE
-- [x] Node summary page (enhanced layout with key facts, environment, status)
-- [x] Facts browser with search (expandable tree, search filter, copy fact path)
-- [x] Report history with timeline view (expandable details, metrics display)
-- [x] Resource catalog viewer (placeholder - requires PuppetDB resources endpoint)
-- [x] Group membership display (pinned groups, potential rule matches)
-- [x] Classification rule matches (shows which rules could match based on node facts)
-
-## Phase 7: Configuration Management
-
-### 7.1 YAML Configuration System - COMPLETE
-- [x] Application configuration schema (JSON Schema in config/schema/)
-- [x] PuppetDB connection settings (PuppetDbConfig with SSL support)
-- [x] Authentication configuration (AuthConfig with JWT, bcrypt settings)
-- [x] Node group definitions (GroupsConfig, NodeGroupDefinition)
-- [x] Classification rules definitions (ClassificationRuleDefinition)
-- [x] Dashboard layout preferences (DashboardConfig with widgets, theme, pagination)
-- [x] **RBAC configuration in YAML** (RbacConfig with roles, permissions, lockout)
-
-**Implementation includes:**
-- JSON Schema validation files: `config/schema/config.schema.json`, `config/schema/groups.schema.json`
-- DashboardConfig: time range, refresh interval, pagination, theme, widget configuration
-- RbacConfig: default role, session timeout, failed login lockout, custom role definitions
-- GroupsConfig: separate file loading for node group definitions
-- WidgetConfig: type-safe widget configuration with position and settings
-- 13 unit tests covering all configuration parsing and validation
-
-### 7.x Testing Requirements - COMPLETE
-**Unit tests added:**
-- [x] `src/config/mod.rs` - Configuration parsing, validation, defaults (13 tests)
-- [x] Dashboard config defaults and parsing tests
-- [x] RBAC config defaults and parsing tests
-- [x] Groups config parsing tests
-- [x] Widget types parsing tests
-
-**Test configurations created:**
-```
-tests/fixtures/configs/
-├── valid_minimal.yaml      # Minimum required config
-├── valid_full.yaml         # All options specified
-├── invalid_missing.yaml    # Missing required fields
-├── invalid_types.yaml      # Wrong types
-└── puppetdb_variants.yaml  # Various PuppetDB configs
-```
-
-### 7.2 Configuration UI - COMPLETE
-- [x] Settings management interface (tabbed: General, Dashboard, RBAC, Import/Export, Server Info)
-- [x] YAML editor with validation (textarea with monospace font, syntax checking)
-- [x] Configuration import/export (export to YAML, upload file, download config)
-- [x] Configuration versioning (history display with timestamp, user, action)
-- [x] Server information display (version, uptime, features, git commit)
-- [x] Dashboard preferences editor (time range, refresh interval, pagination, theme)
-- [x] RBAC configuration viewer (default role, session timeout, lockout settings)
-- [x] Configuration validation with warnings (dry run, semantic validation)
-
-**API Endpoints:**
-- GET /api/v1/settings - Get all settings (sanitized)
-- GET /api/v1/settings/dashboard - Get dashboard config
-- PUT /api/v1/settings/dashboard - Update dashboard config
-- GET /api/v1/settings/rbac - Get RBAC config
-- GET /api/v1/settings/export - Export config as YAML
-- POST /api/v1/settings/import - Import config (supports dry run)
-- POST /api/v1/settings/validate - Validate YAML config
-- GET /api/v1/settings/history - Get config change history
-- GET /api/v1/settings/server - Get server info
-
-**Frontend Components:**
-- Settings.tsx - Main tabbed interface
-- useSettings.ts - React Query hooks for settings API
-- GeneralSettingsTab - View all current config sections
-- DashboardSettingsTab - Edit dashboard preferences with unsaved changes indicator
-- RbacSettingsTab - View RBAC config and configured roles
-- ImportExportTab - YAML editor, validation, import/export with history
-- ServerInfoTab - Server version, uptime, features display
-
-## Phase 7.5: Puppet CA Management UI
-
-### 7.5.1 CA Dashboard - COMPLETE
-- [x] CA status overview card (service health, certificate counts)
-- [x] Pending certificate requests counter with badge
-- [x] Quick actions for common CA operations
-- [x] Certificate expiration warnings
-
-### 7.5.2 Certificate Requests Management - COMPLETE
-- [x] List pending certificate signing requests (CSRs)
-- [x] CSR details view (certname, fingerprint, request time)
-- [ ] Bulk sign/reject operations with confirmation dialogs
-- [x] Individual sign/reject actions
-- [ ] Filter CSRs by certname pattern
-- [x] Auto-refresh for new requests (10 second interval)
-
-### 7.5.3 Signed Certificates Management - COMPLETE
-- [x] List all signed certificates with pagination
-- [x] Certificate details view (certname, serial, expiration, fingerprint)
-- [x] Revoke certificate with confirmation
-- [x] Certificate expiration timeline/warnings
-- [x] Filter/search by certname
-- [x] Sort by expiration date, issue date, certname
-
-### 7.5.4 CA Operations
-- [ ] CA certificate renewal interface
-- [ ] View CA certificate details
-- [ ] Export CA certificate (for distribution)
-- [ ] Certificate revocation list (CRL) status
-
-### 7.5.5 Frontend Components
-```
-frontend/src/pages/
-├── CA.tsx                    # Main CA management page
-├── ca/
-│   ├── CertificateRequests.tsx   # Pending CSRs tab
-│   ├── SignedCertificates.tsx    # Signed certs tab
-│   ├── CAStatus.tsx              # CA status overview
-│   └── CertificateDetails.tsx    # Certificate detail modal
-
-frontend/src/hooks/
-├── useCA.ts                  # React Query hooks for CA API
-
-frontend/src/services/
-├── ca.ts                     # CA API client functions
-```
-
-### 7.5.6 API Integration
-Integrate with existing backend endpoints:
-- GET /api/v1/ca/status - CA service status
-- GET /api/v1/ca/requests - List pending CSRs
-- GET /api/v1/ca/certificates - List signed certificates
-- POST /api/v1/ca/sign/:certname - Sign CSR
-- POST /api/v1/ca/reject/:certname - Reject CSR
-- DELETE /api/v1/ca/certificates/:certname - Revoke certificate
-- POST /api/v1/ca/renew - Renew CA certificate
-- GET /api/v1/ca/certificates/:certname - Get certificate details
-
-### 7.5.x Testing Requirements
-**Frontend tests to add:**
-- `CA.test.tsx` - Main page rendering, tab navigation
-- `CertificateRequests.test.tsx` - CSR listing, sign/reject actions
-- `SignedCertificates.test.tsx` - Certificate listing, revocation
-
-**E2E scenarios:**
-- Sign a pending certificate request
-- Reject a certificate request
-- Revoke a signed certificate
-- View certificate details
-
-## Phase 8: Advanced Features
-
-### 8.1 Reporting & Analytics - COMPLETE
-- [x] Custom report builder (SavedReports with ReportQueryConfig)
-- [x] Scheduled report generation (ReportSchedule with cron expressions)
-- [x] Report export (CSV, JSON formats - PDF pending)
-- [x] Compliance reporting (ComplianceBaseline, ComplianceReport)
-- [x] Drift detection reports (DriftBaseline, DriftReport)
-
-**Backend Implementation:**
-- Database tables: saved_reports, report_schedules, report_executions, compliance_baselines, drift_baselines, report_templates
-- Models: ReportType (node_health, compliance, change_tracking, drift_detection, custom), OutputFormat, ExecutionStatus
-- Repositories: SavedReportRepository, ReportScheduleRepository, ReportExecutionRepository, ComplianceBaselineRepository, DriftBaselineRepository, ReportTemplateRepository
-- ReportingService: generate_report, execute_report, export_report methods
-- Report types: NodeHealthReport, ComplianceReport, ChangeTrackingReport, DriftReport
-
-**API Endpoints:**
-- GET/POST /api/v1/analytics/saved-reports - Saved reports CRUD
-- POST /api/v1/analytics/saved-reports/:id/execute - Execute report
-- GET /api/v1/analytics/saved-reports/:id/executions - Execution history
-- GET /api/v1/analytics/templates - Report templates
-- GET/POST /api/v1/analytics/schedules - Schedule management
-- POST /api/v1/analytics/generate - On-demand report generation
-- POST /api/v1/analytics/generate/:report_type - Generate by type
-- GET/POST /api/v1/analytics/compliance-baselines - Compliance baselines
-- GET/POST /api/v1/analytics/drift-baselines - Drift baselines
-- GET /api/v1/analytics/executions/:id/export - Export execution results
-
-**Frontend Components:**
-- Enhanced Analytics.tsx with Reports, Compliance, and Drift tabs
-- Quick generate report buttons for all report types
-- Report result visualization (summary cards for each report type)
-- Saved reports management (create, run, delete)
-- Report templates display
-- Scheduled reports display
-- Compliance baselines management (create, delete)
-- Drift baselines management (create, delete)
-- React Query hooks: useAnalytics.ts with all reporting hooks
-
-**Completed:**
-- [x] Background cron job for scheduled report execution
-  - `run-scheduled-reports` CLI binary for cron invocation
-  - `ReportScheduler` service for executing due schedules
-  - `scripts/setup-report-scheduler.sh` for cron setup
-- [x] PDF export format using printpdf library
-
-### 8.x Testing Requirements
-**Unit tests to add:**
-- `src/services/reporting.rs` - Report generation, scheduling
-- `src/services/alerting.rs` - Alert rules, notifications
-
-**Integration tests to add:**
-- Report generation endpoints
-- Webhook delivery (with mock server)
-- Alert triggering conditions
-
-**Feature file to add:** `reporting.feature`
-```gherkin
-Feature: Reporting
-  Scenario: Generate compliance report
-    Given nodes exist with various compliance states
-    When I generate a compliance report
-    Then the report should include all non-compliant nodes
-
-  Scenario: Schedule recurring report
-    When I schedule a daily report for "compliance"
-    Then the report should be generated at the scheduled time
-```
-
-**Notification testing:**
-- Mock webhook endpoint for testing deliveries
-- Email sending tests (with mock SMTP)
-
-### 8.2 Alerting & Notifications - COMPLETE
-- [x] Alert rule configuration
-- [x] Webhook notifications
-- [x] Email notifications
-- [x] Slack/Teams integration
-- [x] Alert history and acknowledgment
-
-**Backend Implementation:**
-- Database tables: notification_channels, alert_rules, alert_rule_channels, alerts, notification_history, alert_silences
-- Models: ChannelType (webhook, email, slack, teams), AlertRuleType (node_status, compliance, drift, report_failure, custom), AlertSeverity, AlertStatus
-- Repositories: NotificationChannelRepository, AlertRuleRepository, AlertRepository, NotificationHistoryRepository, AlertSilenceRepository
-- AlertingService: channel CRUD, rule CRUD, alert management, rule evaluation, notification dispatch
-
-**API Endpoints:**
-- GET/POST /api/v1/alerting/channels - Channel management
-- POST /api/v1/alerting/channels/:id/test - Test channel
-- GET/POST /api/v1/alerting/rules - Rule management
-- GET /api/v1/alerting/alerts - List/filter alerts
-- GET /api/v1/alerting/alerts/stats - Alert statistics
-- POST /api/v1/alerting/alerts/:id/acknowledge - Acknowledge alert
-- POST /api/v1/alerting/alerts/:id/resolve - Resolve alert
-- POST /api/v1/alerting/alerts/:id/silence - Silence alert
-- GET/POST /api/v1/alerting/silences - Silence management
-- POST /api/v1/alerting/trigger - Manual alert trigger
-- POST /api/v1/alerting/evaluate - Evaluate all rules
-
-**Frontend Components:**
-- Alerting.tsx with tabs: Active Alerts, Alert Rules, Notification Channels, Silences
-- Stats cards showing active alerts, severity breakdown, today's alerts
-- Alert list with acknowledge/resolve/silence actions
-- Rule management with create/delete
-- Channel management with test/delete
-- Silence management with time-based duration
-- Modal forms for creating channels, rules, and silences
-
-### 8.3 Multi-tenancy & Advanced RBAC
-- [x] Organization/tenant support
-- [x] Tenant isolation (tenant-scoped queries for core resources)
-- [x] Cross-tenant admin roles (`super_admin`)
-- [x] Environment-based permissions (RBAC scope type)
-- [x] API key management with scoped permissions
-- [x] Comprehensive audit logging (foundation: API + persisted events; expand coverage over time)
-
-**Backend Implementation (v0.8.x):**
-- Database: `organizations` table + `organization_id` columns across core tables; `api_key_roles` for key scoping
-- Auth: router split into public vs protected routes; API key auth supported via `Authorization: ApiKey <key>` or `X-API-Key`
-- APIs:
-  - `/api/v1/organizations/*` (super_admin; users can read their own organization via `/current`)
-  - `/api/v1/api-keys/*` (create/list/delete; scoped to tenant/user; super_admin can override tenant/user)
-  - `/api/v1/audit-logs/*` (admin/auditor/super_admin; super_admin can query across tenants)
-- Tenant override: selected endpoints accept `?organization_id=<uuid>` but only for `super_admin`
-
-## Phase 9: Production Readiness
-
-### 9.1 Performance Optimization - COMPLETE
-- [x] Database query optimization
-  - Fixed N+1 queries in GroupRepository.get_all() using batch loading
-  - Added batch_get_rules() and batch_get_pinned_nodes() methods
-  - Fixed N+1 queries in DbRbacService.get_all_roles() and get_user_roles()
-  - Added batch_get_role_permissions() for efficient permission loading
-  - Reduced 1+2N queries to 3 queries for group loading
-- [x] API response caching (PuppetDB caching already implemented in Phase 3.2)
-- [x] Frontend bundle optimization
-  - Configured Vite manual chunks for vendor code splitting
-  - Separated vendor-react (176KB), vendor-charts (452KB), vendor-query (41KB), vendor-ui (30KB)
-  - Reduced initial bundle from 1MB to ~65KB + on-demand chunks
-- [x] Lazy loading implementation
-  - All 16 page components now lazy-loaded with React.lazy()
-  - Added Suspense boundaries with loading spinner fallback
-- [x] Permission caching optimization
-  - Added selective cache invalidation for RBAC
-  - Track user-role associations via role_users_cache
-  - Only invalidate affected users when role permissions change
-
-### 9.x Testing Requirements
-**Performance tests to add:**
-```
-tests/performance/
-├── load_test.rs        # Concurrent request handling
-├── query_bench.rs      # Database query benchmarks
-└── classification_bench.rs  # Classification engine benchmarks
-```
-
-**Load testing scenarios:**
-- 100 concurrent users browsing nodes
-- Bulk classification of 1000 nodes
-- Large PuppetDB query results (10k+ nodes)
-
-**Security tests to add:**
-- SQL injection attempts
-- XSS payload handling
-- JWT tampering
-- Rate limiting verification
-- CORS policy enforcement
-
-**Package testing:**
-```bash
-# Test RPM installation
-make test-rpm    # Install in container, verify service starts
-
-# Test DEB installation
-make test-deb    # Install in container, verify service starts
-
-# Test Puppet module
-make test-puppet # Apply module, verify configuration
-```
-
-**Smoke tests for packages:**
-```gherkin
-Feature: Package Installation
-  Scenario: RPM installs and starts service
-    Given a fresh RHEL 8 system
-    When I install the openvox-webui RPM
-    Then the service should be running
-    And the API should respond to health checks
-
-  Scenario: Puppet module configures application
-    Given a fresh system with Puppet agent
-    When I apply the openvox::webui class
-    Then the configuration file should exist
-    And the service should be running
-```
-
-### 9.2 Security Hardening ✅
-- [x] Security audit
-- [x] OWASP compliance review
-- [x] Rate limiting (IP-based rate limiting with governor crate)
-- [x] Input sanitization review (parameterized SQL, JSON deserialization, inline validation)
-- [x] SSL/TLS configuration (TLS 1.3 default, configurable min version)
-- [x] RBAC security review (permission checks on protected endpoints)
-- [x] Security headers middleware (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
-
-### 9.3 Package Building ✅
-- [x] Build system for native packages
-  - Enhanced `scripts/build-packages.sh` with version auto-detection from Cargo.toml
-  - Docker-based cross-distribution builds for consistent packaging
-  - Binary tarball option with standalone install script
-  - Package signing support with GPG
-- [x] RPM package for RHEL/CentOS/Fedora/Rocky
-  - Updated spec file with proper metadata and dependencies
-  - Rust 1.75+, Node.js 20+ build requirements
-  - OpenSSL, SQLite3 runtime dependencies
-  - Proper user/group creation and directory permissions
-- [x] DEB package for Debian/Ubuntu
-  - Updated control file with libssl3/libssl1.1 alternatives
-  - Proper postinst script with user creation and permissions
-  - SSL directory setup and log directory creation
-  - Post-installation instructions displayed
-- [x] Systemd service unit files
-  - Extensive security hardening (SystemCallFilter, MemoryDenyWriteExecute, etc.)
-  - EnvironmentFile support for both Debian and RHEL style locations
-  - Proper resource limits and process isolation
-  - DynamicUser disabled for proper permission management
-- [x] Package signing and repository setup
-  - GPG signing support in build script
-  - Documentation for YUM/DNF repository setup
-  - Documentation for APT repository setup
-- [x] Package metadata and dependencies
-  - Comprehensive README in packaging/ directory
-  - Package contents documentation
-  - Installation and configuration guides
-
-### 9.4 Puppet Module ✅
-- [x] Create `openvox-webui` Puppet module
-- [x] Module parameters for configuration (50+ parameters including TLS, cache, dashboard, RBAC, alerting)
-- [x] Service management (install, configure, service)
-- [x] Template-based configuration file generation (config.yaml.epp with all parameters)
-- [x] Support for RHEL and Debian family OS (8 distributions supported)
-- [x] Hiera integration for hierarchical configuration
-- [x] PuppetDB connection auto-configuration (custom facter for auto-discovery)
-- [x] RBAC initial setup via Puppet (admin account configuration)
-- [x] Module documentation and examples (README with examples for basic and PuppetDB setups)
-- [x] Publish to Puppet Forge
-
-**Puppet Module Features:**
-- Complete metadata.json with OS support matrix
-- Custom fact `puppetdb_connection` for auto-discovery
-- Automatic PuppetDB SSL certificate discovery
-- Full parameter validation with types
-- Example manifests for common scenarios
-- Hiera data defaults for all parameters
-
-### 9.5 Installation & Documentation ✅
-- [x] Installation documentation for packages (INSTALLATION.md with RPM/DEB/Puppet methods)
-- [x] Puppet module usage guide (Complete README in puppet/ directory)
-- [x] Configuration reference (CONFIGURATION.md with all parameters documented)
-- [x] Upgrade procedures (UPGRADE.md with version-specific notes and rollback)
-- [x] Backup and restore procedures (BACKUP.md with manual, automated, and disaster recovery)
-
-**Documentation Coverage:**
-- Complete installation guide for all supported OS families
-- Comprehensive configuration reference with examples
-- Upgrade guide with version-specific migration notes
-- Backup and restore with automated scripts and monitoring
-- Troubleshooting sections for common issues
-- Security best practices throughout
 
 ## Default Roles & Permissions
 
 ### Built-in Roles
 
-| Role | Description | Typical Permissions |
-|------|-------------|---------------------|
-| **Admin** | Full system access | All permissions on all resources |
-| **Operator** | Day-to-day operations | Read/write nodes, groups, reports; read-only settings |
-| **Viewer** | Read-only access | Read all resources, no modifications |
-| **Group Admin** | Manage specific groups | Full access to assigned node groups only |
-| **Auditor** | Compliance and audit | Read all resources, access audit logs |
+| Role | Description |
+|------|-------------|
+| **Admin** | Full system access |
+| **Operator** | Day-to-day operations (read/write) |
+| **Viewer** | Read-only access |
+| **GroupAdmin** | Manage specific groups |
+| **Auditor** | Compliance and audit logs |
 
-### Permission Matrix
+### Permission Scopes
+- **all** - System-wide access
+- **environment** - Environment-specific
+- **group** - Group-specific
+- **owned** - User-owned resources only
+- **specific** - Specific resource IDs
 
-| Resource | Actions | Scopes |
-|----------|---------|--------|
-| nodes | read, classify | all, environment, group |
-| groups | read, create, update, delete | all, owned, specific |
-| reports | read, export | all, environment |
-| facts | read, generate, export | all, environment |
-| users | read, create, update, delete | all, self |
-| roles | read, create, update, delete | all |
-| settings | read, update | all |
-| audit_logs | read | all |
+---
 
-## Future Considerations
+## API Reference
 
-- OpenBolt integration for orchestration
-- Real-time WebSocket updates
+### Core Endpoints
+- **Auth:** `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`
+- **Roles:** `GET/POST /api/v1/roles`, `GET/PUT/DELETE /api/v1/roles/:id`
+- **Nodes:** `GET /api/v1/nodes`, `GET /api/v1/nodes/:certname`
+- **Groups:** `GET/POST /api/v1/groups`, `GET/PUT/DELETE /api/v1/groups/:id`
+- **Reports:** `GET /api/v1/reports`, `POST /api/v1/analytics/saved-reports`
+- **Alerts:** `GET/POST /api/v1/alerting/*`, `GET /api/v1/alerting/alerts`
+- **CA:** `GET /api/v1/ca/*`, `POST /api/v1/ca/sign/:certname`
+- **Settings:** `GET /api/v1/settings`, `POST /api/v1/settings/import`
+
+For complete API documentation, see the feature-specific documents in [docs/implemented-features/](docs/implemented-features/).
+
+---
+
+## Installation & Deployment
+
+### Supported Systems
+- RHEL 8+, CentOS 8+, Rocky Linux 8+
+- Debian 11+, Ubuntu 20.04+
+- Docker containers
+- Standalone binary installations
+
+### Installation Methods
+1. **Native Packages:** RPM (RHEL/CentOS/Fedora) or DEB (Debian/Ubuntu)
+2. **Puppet Module:** Use `openvox-webui` module from Puppet Forge
+3. **Docker:** Pre-built Docker images available
+4. **Manual:** Standalone binary with systemd service
+
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for detailed setup instructions.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [INSTALLATION.md](docs/INSTALLATION.md) | Setup and deployment guide |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | All configuration options |
+| [UPGRADE.md](docs/UPGRADE.md) | Version upgrade procedures |
+| [BACKUP.md](docs/BACKUP.md) | Data backup and recovery |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development setup and guidelines |
+| [architecture/](docs/architecture/) | System design and architecture |
+
+---
+
+## Development Guidelines
+
+### File Organization
+- **Backend (Rust):** `src/` with services, handlers, models, repositories
+- **Frontend (TypeScript):** `frontend/src/` with pages, components, hooks, services
+- **Tests:** `tests/` with unit, integration, and BDD tests
+- **Database:** `migrations/` with SQL migration files
+- **Configuration:** `config/` with schema and example files
+
+### File Size Limits
+- Maximum 1000 lines per source file
+- Split larger files proactively at 800 lines
+- Keep concerns separated (services, models, handlers)
+
+### Testing Requirements
+- Unit tests for all new services
+- Integration tests for API endpoints
+- BDD features for user-facing functionality
+- Aim for 80%+ code coverage
+
+---
+
+## Future Enhancements
+
+- WebSocket real-time updates
 - GraphQL API support
 - Plugin/extension system
-- Custom dashboard builder
-- Mobile-responsive design improvements
+- Mobile app support
 - Internationalization (i18n)
-- LDAP/SAML/OIDC integration for SSO
-- Fine-grained attribute-based access control (ABAC)
+- LDAP/SAML/OIDC SSO integration
+- Attribute-based access control (ABAC)
+- OpenBolt orchestration integration
 
-## Version Milestones
+---
 
-| Version | Phase | Key Deliverables |
-|---------|-------|------------------|
-| 0.1.x   | 1     | Basic backend structure, auth foundation, RBAC foundation |
-| 0.2.x   | 2     | Full authentication, RBAC implementation & management tools |
-| 0.3.x   | 3     | PuppetDB integration, node listing |
-| 0.4.x   | 4     | Node classification system with RBAC |
-| 0.5.x   | 5     | Facter integration |
-| 0.6.x   | 6     | Dashboard and visualizations |
-| 0.7.x   | 7     | Configuration management UI |
-| 0.7.5.x | 7.5   | Puppet CA management frontend |
-| 0.8.x   | 8     | Reporting, alerting, multi-tenancy |
-| 0.9.x   | 9.1-9.3 | Performance, security, RPM/DEB packages |
-| 1.0.x   | 9.4-9.5 | Puppet module, full documentation, production-ready |
+## Version History
+
+| Version | Status | Key Features |
+|---------|--------|--------------|
+| **1.0.x** | ✅ Current | Production-ready with full feature set |
+| 0.9.x | ✅ Released | Performance optimization, security, packages |
+| 0.8.x | ✅ Released | Reporting, alerting, multi-tenancy |
+| 0.7.5.x | ✅ Released | CA management UI |
+| 0.7.x | ✅ Released | Configuration management |
+| 0.6.x | ✅ Released | Dashboard and visualizations |
+| 0.5.x | ✅ Released | Facter integration |
+| 0.4.x | ✅ Released | Node classification |
+| 0.3.x | ✅ Released | PuppetDB integration |
+| 0.2.x | ✅ Released | Authentication and RBAC |
+| 0.1.x | ✅ Released | Foundation and infrastructure |
+
+---
 
 ## References
 
