@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Test factory functions** for creating test data (nodes, reports, consecutive metrics)
 
 ### Changed
+- Build scripts: use `docker buildx --load` for RPM/DEB builders to avoid container-driver EOF issues on Docker Desktop
 - **Alerting Documentation:** Enhanced with complete condition structure and evaluation logic
   - Added 11 condition types covering infrastructure monitoring scenarios
   - Added 7 examples from simple to complex multi-condition rules

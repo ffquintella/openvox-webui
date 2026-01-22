@@ -452,7 +452,7 @@ DOCKERFILE_EOF
 
     # Build image with platform specification
     log_info "Building Docker image for RPM (this may take a while on first run)..."
-    docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
+    docker buildx build --platform "${DOCKER_PLATFORM}" --load -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
 
     # Run build and packaging in Docker container with cached volumes
     log_info "Running RPM build in Docker container (with incremental build cache)..."
@@ -585,7 +585,7 @@ DOCKERFILE_EOF
 
     # Build image with platform specification
     log_info "Building Docker image for DEB (this may take a while on first run)..."
-    docker build --platform "${DOCKER_PLATFORM}" -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
+    docker buildx build --platform "${DOCKER_PLATFORM}" --load -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
 
     # Run build and packaging in Docker container with cached volumes
     log_info "Running DEB build in Docker container (with incremental build cache)..."
