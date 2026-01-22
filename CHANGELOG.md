@@ -7,18 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats
-  - Advanced format with condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter, LastReportTime, ConsecutiveFailures, ConsecutiveChanges, ClassChangeFrequency
-  - Frontend toggle to switch between simple (field/operator/value) and advanced format
-  - Backend automatically handles both formats during deserialization
-
 ### Fixed
+- Fixed TypeScript compilation errors in ConditionBuilder component
+- Deprecated ConditionBuilder component - all condition editing now handled in Alerting.tsx
 - Fixed syntax error in Alerting.tsx where textarea element was not properly closed
 - Added error handling and debugging logs to alert rule form submission
 - Fixed alert rule creation API - corrected conditions payload structure to match backend expectations (conditions as array, condition_operator as separate field)
 - Fixed notification channels not selecting correctly
 - Added detailed error messages from backend to alert dialog
+
+### Added
+- **Enhanced Alert Rules Conditions System:** Backend now supports both simple and advanced condition formats
+  - Advanced format with condition types: NodeStatus, NodeFact, ReportMetric, EnvironmentFilter, GroupFilter, NodeCountThreshold, TimeWindowFilter, LastReportTime, ConsecutiveFailures, ConsecutiveChanges, ClassChangeFrequency
+  - Frontend toggle to switch between simple (field/operator/value) and advanced format
+  - Backend automatically handles both formats during deserialization
 
 ### Changed
 - **Alert Rules Conditions System:** Comprehensive condition evaluation engine for alert rules
