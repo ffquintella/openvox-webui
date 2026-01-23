@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Email Channel Architecture:** Separated email recipient (channel-specific) from SMTP configuration (system-wide in Admin Settings)
 - Email channels config now only contains recipient list, SMTP settings loaded from global configuration
 - CreateChannelRequest now accepts partial configs to support simpler email channel creation
-- **Removed default notification channels** - system now starts without any pre-configured channels to avoid broken configurations
+
+### Removed
+- **Default notification channels** via new migration - system removes pre-configured system-email and system-webhook channels that were non-functional
 
 ### Fixed
 - Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)
