@@ -176,21 +176,31 @@ class openvox_webui::enc (
     }
   }
 
+  # Ensure openvox-webui group exists and contains puppet user
+  group { 'openvox-webui':
+    ensure => present,n  }
+
+  user { 'puppet':
+    groups  => ['openvox-webui'],
+    require => Group['openvox-webui'],
+  }
+
   # Ensure Puppet code environments directory exists
   # This prevents Puppet Server from failing to start if environments don't exist
   file { '/etc/puppetlabs/code/environments':
-    ensure => directory,
-    owner  => 'puppet',
-    group  => 'puppet',
-    mode   => '0755',
+    ensure  => directory,
+    owner   => 'puppet',
+    group   => 'openvox-webui',
+    mode    => '0775',
+    require => [Group['openvox-webui'], User['puppet']],
   }
 
   # Ensure production environment exists (minimum requirement)
   file { '/etc/puppetlabs/code/environments/production':
     ensure  => directory,
     owner   => 'puppet',
-    group   => 'puppet',
-    mode    => '0755',
+    group   => 'openvox-webui',
+    mode    => '0775',
     require => File['/etc/puppetlabs/code/environments'],
   }
 
@@ -198,8 +208,8 @@ class openvox_webui::enc (
   file { '/etc/puppetlabs/code/environments/production/manifests':
     ensure  => directory,
     owner   => 'puppet',
-    group   => 'puppet',
-    mode    => '0755',
+    group   => 'openvox-webui',
+    mode    => '0775',
     require => File['/etc/puppetlabs/code/environments/production'],
   }
 
@@ -207,8 +217,8 @@ class openvox_webui::enc (
   file { '/etc/puppetlabs/code/environments/production/modules':
     ensure  => directory,
     owner   => 'puppet',
-    group   => 'puppet',
-    mode    => '0755',
+    group   => 'openvox-webui',
+    mode    => '0775',
     require => File['/etc/puppetlabs/code/environments/production'],
   }
 
