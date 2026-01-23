@@ -436,12 +436,14 @@ impl<'a> AlertRuleRepository<'a> {
 
     /// Add a channel to a rule
     pub async fn add_channel(&self, rule_id: Uuid, channel_id: Uuid) -> Result<()> {
+        let id = Uuid::new_v4();
         sqlx::query(
             r#"
-            INSERT OR IGNORE INTO alert_rule_channels (rule_id, channel_id)
-            VALUES (?, ?)
+            INSERT OR IGNORE INTO alert_rule_channels (id, rule_id, channel_id)
+            VALUES (?, ?, ?)
             "#,
         )
+        .bind(id.to_string())
         .bind(rule_id.to_string())
         .bind(channel_id.to_string())
         .execute(self.pool)
