@@ -178,7 +178,8 @@ class openvox_webui::enc (
 
   # Ensure openvox-webui group exists and contains puppet user
   group { 'openvox-webui':
-    ensure => present,n  }
+    ensure => present,
+  }
 
   user { 'puppet':
     groups  => ['openvox-webui'],
