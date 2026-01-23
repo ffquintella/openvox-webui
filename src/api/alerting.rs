@@ -109,7 +109,7 @@ async fn list_channels(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Vec<NotificationChannel>>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_channels().await {
         Ok(channels) => Ok(Json(AlertingResponse { data: channels })),
@@ -126,7 +126,7 @@ async fn get_channel(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<NotificationChannel>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_channel(id).await {
         Ok(Some(channel)) => Ok(Json(AlertingResponse { data: channel })),
@@ -144,7 +144,7 @@ async fn create_channel(
     user: AuthUser,
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<(StatusCode, Json<AlertingResponse<NotificationChannel>>), StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.create_channel(&req, Some(user.user_id())).await {
         Ok(channel) => Ok((
@@ -165,7 +165,7 @@ async fn update_channel(
     _user: AuthUser,
     Json(req): Json<UpdateChannelRequest>,
 ) -> Result<Json<AlertingResponse<NotificationChannel>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.update_channel(id, &req).await {
         Ok(Some(channel)) => Ok(Json(AlertingResponse { data: channel })),
@@ -183,7 +183,7 @@ async fn delete_channel(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.delete_channel(id).await {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
@@ -202,7 +202,7 @@ async fn test_channel(
     _user: AuthUser,
     Json(req): Json<TestChannelRequest>,
 ) -> Result<Json<AlertingResponse<TestChannelResponse>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.test_channel(id, &req).await {
         Ok(response) => Ok(Json(AlertingResponse { data: response })),
@@ -223,7 +223,7 @@ async fn list_rules(
     Query(query): Query<RulesQuery>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Vec<AlertRule>>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     let rules = if let Some(type_str) = query.rule_type {
         if let Some(rule_type) = AlertRuleType::from_str(&type_str) {
@@ -252,7 +252,7 @@ async fn get_rule(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<AlertRule>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_rule(id).await {
         Ok(Some(rule)) => Ok(Json(AlertingResponse { data: rule })),
@@ -270,7 +270,7 @@ async fn create_rule(
     user: AuthUser,
     Json(req): Json<CreateAlertRuleRequest>,
 ) -> Result<(StatusCode, Json<AlertingResponse<AlertRule>>), StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.create_rule(&req, Some(user.user_id())).await {
         Ok(rule) => Ok((StatusCode::CREATED, Json(AlertingResponse { data: rule }))),
@@ -288,7 +288,7 @@ async fn update_rule(
     _user: AuthUser,
     Json(req): Json<UpdateAlertRuleRequest>,
 ) -> Result<Json<AlertingResponse<AlertRule>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.update_rule(id, &req).await {
         Ok(Some(rule)) => Ok(Json(AlertingResponse { data: rule })),
@@ -306,7 +306,7 @@ async fn delete_rule(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.delete_rule(id).await {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
@@ -328,7 +328,7 @@ async fn list_alerts(
     Query(query): Query<AlertsQuery>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Vec<Alert>>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     let status = query.status.and_then(|s| AlertStatus::from_str(&s));
     let severity = query.severity.and_then(|s| AlertSeverity::from_str(&s));
@@ -350,7 +350,7 @@ async fn get_alert_stats(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<AlertStats>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_alert_stats().await {
         Ok(stats) => Ok(Json(AlertingResponse { data: stats })),
@@ -367,7 +367,7 @@ async fn get_alert(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Alert>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_alert(id).await {
         Ok(Some(alert)) => Ok(Json(AlertingResponse { data: alert })),
@@ -385,7 +385,7 @@ async fn acknowledge_alert(
     Path(id): Path<Uuid>,
     user: AuthUser,
 ) -> Result<Json<AlertingResponse<Alert>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.acknowledge_alert(id, user.user_id()).await {
         Ok(Some(alert)) => Ok(Json(AlertingResponse { data: alert })),
@@ -403,7 +403,7 @@ async fn resolve_alert(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Alert>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.resolve_alert(id).await {
         Ok(Some(alert)) => Ok(Json(AlertingResponse { data: alert })),
@@ -421,7 +421,7 @@ async fn silence_alert(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Alert>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.silence_alert(id).await {
         Ok(Some(alert)) => Ok(Json(AlertingResponse { data: alert })),
@@ -442,7 +442,7 @@ async fn list_silences(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<Vec<AlertSilence>>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.get_silences().await {
         Ok(silences) => Ok(Json(AlertingResponse { data: silences })),
@@ -459,7 +459,7 @@ async fn create_silence(
     user: AuthUser,
     Json(req): Json<CreateSilenceRequest>,
 ) -> Result<(StatusCode, Json<AlertingResponse<AlertSilence>>), StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.create_silence(&req, Some(user.user_id())).await {
         Ok(silence) => Ok((
@@ -479,7 +479,7 @@ async fn delete_silence(
     Path(id): Path<Uuid>,
     _user: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.delete_silence(id).await {
         Ok(true) => Ok(StatusCode::NO_CONTENT),
@@ -501,7 +501,7 @@ async fn trigger_alert(
     _user: AuthUser,
     Json(req): Json<TriggerAlertRequest>,
 ) -> Result<(StatusCode, Json<AlertingResponse<Alert>>), StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service
         .trigger_manual_alert(req.rule_id, &req.title, &req.message, req.context)
@@ -520,7 +520,7 @@ async fn evaluate_rules(
     State(state): State<AppState>,
     _user: AuthUser,
 ) -> Result<Json<AlertingResponse<EvaluateResponse>>, StatusCode> {
-    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone());
+    let service = AlertingService::new(state.db.clone(), state.puppetdb.clone(), Some(state.notification_service.clone()));
 
     match service.evaluate_rules().await {
         Ok(alerts) => Ok(Json(AlertingResponse {

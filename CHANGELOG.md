@@ -20,11 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Email display in channel card** - shows recipient email addresses in notification channel cards
 - **Test button feedback** - visual feedback (loading spinner, success/error messages) when testing channels
 - Beautiful HTML email templates for alert notifications with severity-based styling
+- **System Notifications for Alerts:** Alerts now automatically create system notifications in the Notifications panel
+- **Detailed Alert Rule Evaluation Logging:** Enhanced logging to debug rule evaluation process (enabled rules count, PuppetDB status, evaluation results)
 
 ### Changed
 - **Email Channel Architecture:** Separated email recipient (channel-specific) from SMTP configuration (system-wide in Admin Settings)
 - Email channels config now only contains recipient list, SMTP settings loaded from global configuration
 - CreateChannelRequest now accepts partial configs to support simpler email channel creation
+- **AlertingService Architecture:** Now accepts NotificationService to create system notifications when alerts trigger
 
 ### Removed
 - **Default notification channels** via new migration - system removes pre-configured system-email and system-webhook channels that were non-functional
@@ -48,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Label changes based on channel type (e.g., "SMTP URL" for Email, "Slack Webhook URL" for Slack)
   - Specific placeholder examples for each channel type
   - Error handling with user-friendly messages
+- **Alert Evaluation Debugging:** Better logging to identify why rules aren't triggering (empty rules list, silenced rules, cooldown status, evaluation errors)
   - Type dropdown now shows channel descriptions
   - **Email Channel:** Now accepts recipient email address instead of SMTP URL (SMTP server configured in Admin Settings)
 

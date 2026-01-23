@@ -28,17 +28,24 @@ use crate::models::{
     WebhookConfig, WebhookPayload,
 };
 use crate::services::PuppetDbClient;
+use crate::services::notification::NotificationService;
+use crate::models::{CreateNotificationRequest, NotificationType};
 
 /// Alerting service for managing alerts and notifications
 pub struct AlertingService {
     pool: SqlitePool,
     http_client: Client,
     puppetdb: Option<Arc<PuppetDbClient>>,
+    notification_service: Option<Arc<NotificationService>>,
 }
 
 impl AlertingService {
     /// Create a new alerting service
-    pub fn new(pool: SqlitePool, puppetdb: Option<Arc<PuppetDbClient>>) -> Self {
+    pub fn new(
+        pool: SqlitePool,
+        puppetdb: Option<Arc<PuppetDbClient>>,
+        notification_service: Option<Arc<NotificationService>>,
+    ) -> Self {
         let http_client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -48,6 +55,7 @@ impl AlertingService {
             pool,
             http_client,
             puppetdb,
+            notification_service,
         }
     }
 
@@ -307,10 +315,25 @@ impl AlertingService {
 
     /// Evaluate all enabled rules and trigger alerts as needed
     pub async fn evaluate_rules(&self) -> Result<Vec<Alert>> {
+        info!("Starting rule evaluation");
+        
         let rules = self.get_enabled_rules().await?;
+        info!("Found {} enabled rules to evaluate", rules.len());
+        
+        if rules.is_empty() {
+            warn!("No enabled rules found - nothing to evaluate");
+            return Ok(Vec::new());
+        }
+        
+        if self.puppetdb.is_none() {
+            warn!("PuppetDB not configured - node status rules will be skipped");
+        }
+        
         let mut triggered_alerts = Vec::new();
 
         for rule in rules {
+            info!("Evaluating rule: {} (type: {:?})", rule.name, rule.rule_type);
+            
             // Check if rule is silenced
             let silence_repo = AlertSilenceRepository::new(&self.pool);
             if silence_repo.is_rule_silenced(rule.id).await? {
@@ -329,11 +352,21 @@ impl AlertingService {
             }
 
             // Evaluate the rule based on its type
-            if let Some(alert) = self.evaluate_rule(&rule).await? {
-                triggered_alerts.push(alert);
+            match self.evaluate_rule(&rule).await {
+                Ok(Some(alert)) => {
+                    info!("Rule {} triggered alert: {}", rule.name, alert.title);
+                    triggered_alerts.push(alert);
+                }
+                Ok(None) => {
+                    debug!("Rule {} did not trigger", rule.name);
+                }
+                Err(e) => {
+                    error!("Error evaluating rule {}: {}", rule.name, e);
+                }
             }
         }
 
+        info!("Rule evaluation complete: {} alerts triggered", triggered_alerts.len());
         Ok(triggered_alerts)
     }
 
@@ -639,6 +672,45 @@ impl AlertingService {
 
         // Send notifications to all associated channels
         self.send_alert_notifications(&alert, rule).await?;
+
+        // Create a system notification for the alert
+        if let Some(notification_service) = &self.notification_service {
+            let notification_type = match rule.severity {
+                AlertSeverity::Critical => NotificationType::Error,
+                AlertSeverity::Warning => NotificationType::Warning,
+                AlertSeverity::Info => NotificationType::Info,
+            };
+
+            // Get the rule creator or use default user
+            let user_id = rule.created_by
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "system".to_string());
+
+            let metadata = json!({
+                "alert_id": alert.id.to_string(),
+                "rule_id": rule.id.to_string(),
+                "rule_name": rule.name.clone(),
+                "severity": rule.severity.as_str(),
+            });
+
+            let notification_req = CreateNotificationRequest {
+                user_id,
+                organization_id: None,
+                title: format!("Alert: {}", title),
+                message: message.to_string(),
+                r#type: notification_type,
+                category: Some("alert".to_string()),
+                link: Some(format!("/alerting?alert_id={}", alert.id)),
+                expires_at: None,
+                metadata: Some(metadata),
+            };
+
+            if let Err(e) = notification_service.create_notification(notification_req).await {
+                error!("Failed to create system notification for alert {}: {}", alert.id, e);
+            } else {
+                info!("Created system notification for alert {}", alert.id);
+            }
+        }
 
         Ok(alert)
     }
