@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.27.1"
+version = "0.27.2"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -105,6 +105,9 @@ tar = "0.4"
 # For production with signature verification, install libxml2, xmlsec1 and enable xmlsec feature
 samael = { version = "0.0.19", default-features = false }
 flate2 = "1.1"
+
+# Email sending
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
 
 [dev-dependencies]
 # Testing

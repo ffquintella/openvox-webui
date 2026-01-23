@@ -180,6 +180,9 @@ export default function Alerting() {
 
   const testChannelMutation = useMutation({
     mutationFn: (id: string) => api.testChannel(id),
+    onSuccess: () => {
+      // Success feedback will be shown in the UI
+    },
   });
 
   const evaluateMutation = useMutation({
@@ -574,22 +577,33 @@ export default function Alerting() {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {channels.map((channel) => (
+                {channels.map((channel) => {
+                  // Extract email recipients for email channels
+                  const emailRecipients = channel.channel_type === 'email' && channel.config && typeof channel.config === 'object' && 'to' in channel.config
+                    ? (channel.config.to as string[]).join(', ')
+                    : null;
+
+                  return (
                   <div
                     key={channel.id}
                     className="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
                   >
                     <div className="flex items-start justify-between">
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-gray-900 dark:text-gray-100">
                           {channel.name}
                         </h4>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                           {CHANNEL_TYPE_LABELS[channel.channel_type]}
                         </p>
+                        {emailRecipients && (
+                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate" title={emailRecipients}>
+                            {emailRecipients}
+                          </p>
+                        )}
                       </div>
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 ${
                           channel.is_enabled
                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                             : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
@@ -602,9 +616,13 @@ export default function Alerting() {
                       <button
                         onClick={() => testChannelMutation.mutate(channel.id)}
                         disabled={testChannelMutation.isPending}
-                        className="flex items-center space-x-1 rounded-md bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                        className="flex items-center space-x-1 rounded-md bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300"
                       >
-                        <Volume2 className="h-3 w-3" />
+                        {testChannelMutation.isPending ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Volume2 className="h-3 w-3" />
+                        )}
                         <span>Test</span>
                       </button>
                       <button
@@ -615,8 +633,19 @@ export default function Alerting() {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    {testChannelMutation.isSuccess && testChannelMutation.variables === channel.id && (
+                      <div className="mt-3 rounded-md bg-green-50 p-2 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-200">
+                        Test notification sent successfully
+                      </div>
+                    )}
+                    {testChannelMutation.isError && testChannelMutation.variables === channel.id && (
+                      <div className="mt-3 rounded-md bg-red-50 p-2 text-xs text-red-800 dark:bg-red-900/20 dark:text-red-200">
+                        Failed to send test notification
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

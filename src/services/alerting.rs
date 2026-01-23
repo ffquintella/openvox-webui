@@ -791,30 +791,133 @@ impl AlertingService {
         channel: &NotificationChannel,
         payload: &WebhookPayload,
     ) -> Result<i32> {
+        use lettre::message::{header, Message, MultiPart, SinglePart};
+        use lettre::transport::smtp::authentication::Credentials;
+        use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
+
         let config: EmailConfig =
             serde_json::from_value(channel.config.clone()).context("Invalid email config")?;
 
-        // Note: Full email implementation would require an SMTP library like lettre
-        // For now, we'll log the attempt and return success for testing
-        info!(
-            "Email notification would be sent to {:?} via {}:{}: {}",
-            config.to, config.smtp_host, config.smtp_port, payload.alert.title
+        // Check if SMTP is configured
+        if config.smtp_host.is_empty() || config.from.is_empty() || config.to.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Email channel not fully configured. Please configure SMTP settings in Admin Settings."
+            ));
+        }
+
+        // Build email content
+        let html_body = format!(
+            r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background-color: #007bff; color: white; padding: 20px; border-radius: 5px 5px 0 0; }}
+                    .content {{ background-color: #f9f9f9; padding: 20px; border-radius: 0 0 5px 5px; }}
+                    .alert-info {{ background-color: #d1ecf1; border-left: 4px solid #0c5460; padding: 10px; margin: 15px 0; }}
+                    .alert-warning {{ background-color: #fff3cd; border-left: 4px solid #856404; padding: 10px; margin: 15px 0; }}
+                    .alert-critical {{ background-color: #f8d7da; border-left: 4px solid #721c24; padding: 10px; margin: 15px 0; }}
+                    .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>🔔 OpenVox Alert</h1>
+                    </div>
+                    <div class="content">
+                        <h2>{}</h2>
+                        <div class="alert-{}">
+                            <strong>Severity:</strong> {}
+                        </div>
+                        <p>{}</p>
+                        <p><strong>Triggered at:</strong> {}</p>
+                        <p><strong>Status:</strong> {}</p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated notification from OpenVox WebUI</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            "#,
+            payload.alert.title,
+            payload.alert.severity,
+            payload.alert.severity.to_uppercase(),
+            payload.alert.message,
+            payload.alert.triggered_at.format("%Y-%m-%d %H:%M:%S UTC"),
+            payload.alert.status.to_uppercase()
         );
 
-        // In a real implementation, you would use lettre or similar:
-        // let mailer = SmtpTransport::relay(&config.smtp_host)?
-        //     .credentials(Credentials::new(config.smtp_username, config.smtp_password))
-        //     .build();
-        //
-        // let email = Message::builder()
-        //     .from(config.from.parse()?)
-        //     .to(config.to.join(",").parse()?)
-        //     .subject(payload.alert.title.clone())
-        //     .body(payload.alert.message.clone())?;
-        //
-        // mailer.send(&email)?;
+        let text_body = format!(
+            "OpenVox Alert\n\n{}\n\nSeverity: {}\nMessage: {}\nTriggered at: {}\nStatus: {}\n\n---\nThis is an automated notification from OpenVox WebUI",
+            payload.alert.title,
+            payload.alert.severity.to_uppercase(),
+            payload.alert.message,
+            payload.alert.triggered_at.format("%Y-%m-%d %H:%M:%S UTC"),
+            payload.alert.status.to_uppercase()
+        );
 
-        warn!("Email notifications require SMTP configuration - notification logged but not sent");
+        // Build email
+        let mut email_builder = Message::builder()
+            .from(config.from.parse().context("Invalid from address")?);
+
+        for to_addr in &config.to {
+            email_builder = email_builder.to(to_addr.parse().context("Invalid to address")?);
+        }
+
+        let email = email_builder
+            .subject(format!("[{}] {}", payload.alert.severity.to_uppercase(), payload.alert.title))
+            .multipart(
+                MultiPart::alternative()
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_PLAIN)
+                            .body(text_body),
+                    )
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_HTML)
+                            .body(html_body),
+                    ),
+            )
+            .context("Failed to build email")?;
+
+        // Build SMTP transport
+        let mut mailer_builder = if config.use_tls {
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.smtp_host)
+                .context("Failed to create SMTP transport")?
+        } else {
+            AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&config.smtp_host)
+        };
+
+        mailer_builder = mailer_builder.port(config.smtp_port);
+
+        // Add credentials if provided
+        if let (Some(username), Some(password)) = (&config.smtp_username, &config.smtp_password) {
+            if !username.is_empty() && !password.is_empty() {
+                mailer_builder = mailer_builder.credentials(Credentials::new(
+                    username.clone(),
+                    password.clone(),
+                ));
+            }
+        }
+
+        let mailer = mailer_builder.build();
+
+        // Send email
+        mailer
+            .send(email)
+            .await
+            .context("Failed to send email")?;
+
+        info!(
+            "Email notification sent successfully to {:?} via {}:{}",
+            config.to, config.smtp_host, config.smtp_port
+        );
+
         Ok(200)
     }
 

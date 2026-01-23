@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic SMTP configuration injection when creating email channels
 - **Warning alerts** in Alerting page when no notification channels are configured
 - Disabled "New Rule" button when no channels are configured (with warning tooltip)
+- **Real email sending** with lettre library - test notifications and alerts now send actual emails
+- **Email display in channel card** - shows recipient email addresses in notification channel cards
+- **Test button feedback** - visual feedback (loading spinner, success/error messages) when testing channels
+- Beautiful HTML email templates for alert notifications with severity-based styling
 
 ### Changed
 - **Email Channel Architecture:** Separated email recipient (channel-specific) from SMTP configuration (system-wide in Admin Settings)
