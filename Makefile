@@ -1,7 +1,7 @@
 # OpenVox WebUI Makefile
 # Development convenience targets
 
-.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache
+.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache publish-puppet-module
 
 # Default target
 help:
@@ -44,6 +44,9 @@ help:
 	@echo "  make version-patch  - Bump patch version (0.1.0 -> 0.1.1)"
 	@echo "  make version-minor  - Bump minor version, commit, and tag (0.1.0 -> 0.2.0)"
 	@echo "  make version-major  - Bump major version, commit, and tag (0.1.0 -> 1.0.0)"
+	@echo ""
+	@echo "Puppet Module:"
+	@echo "  make publish-puppet-module - Publish Puppet module to Puppet Forge"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean          - Remove build artifacts"
@@ -233,3 +236,10 @@ version-major:
 	echo ""; \
 	echo "Created git tag: v$$NEW_VERSION"; \
 	echo "Don't forget to push: git push && git push --tags"
+
+# =============================================================================
+# Puppet Module
+# =============================================================================
+
+publish-puppet-module:
+	@./scripts/publish-puppet-module.sh
