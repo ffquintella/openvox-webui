@@ -141,9 +141,3 @@ CREATE INDEX IF NOT EXISTS idx_notification_history_status ON notification_histo
 
 CREATE INDEX IF NOT EXISTS idx_alert_silences_rule_id ON alert_silences(rule_id);
 CREATE INDEX IF NOT EXISTS idx_alert_silences_ends_at ON alert_silences(ends_at);
-
--- Insert default notification channel templates
-INSERT OR IGNORE INTO notification_channels (id, name, channel_type, config, is_enabled, created_at, updated_at)
-VALUES
-    ('system-webhook', 'Default Webhook', 'webhook', '{"url": "", "method": "POST", "headers": {}}', 0, datetime('now'), datetime('now')),
-    ('system-email', 'Default Email', 'email', '{"smtp_host": "", "smtp_port": 587, "from": "", "to": []}', 0, datetime('now'), datetime('now'));

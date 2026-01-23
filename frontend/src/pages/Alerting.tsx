@@ -400,11 +400,27 @@ export default function Alerting() {
         {/* Rules Tab */}
         {activeTab === 'rules' && (
           <div className="p-6">
+            {channels.length === 0 && (
+              <div className="mb-6 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-900 dark:bg-orange-900/20">
+                <div className="flex items-start space-x-3">
+                  <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-medium text-orange-900 dark:text-orange-100">
+                      No notification channels configured
+                    </h4>
+                    <p className="mt-1 text-sm text-orange-800 dark:text-orange-200">
+                      Alert rules will not send notifications until you configure at least one notification channel.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Alert Rules</h3>
               <button
                 onClick={() => setShowNewRuleModal(true)}
-                className="flex items-center space-x-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                disabled={channels.length === 0}
+                className="flex items-center space-x-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="h-4 w-4" />
                 <span>New Rule</span>
@@ -536,14 +552,25 @@ export default function Alerting() {
                 <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
               </div>
             ) : channels.length === 0 ? (
-              <div className="py-12 text-center">
-                <Send className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                  No notification channels
-                </h3>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Create a channel to receive alert notifications.
-                </p>
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-6 dark:border-orange-900 dark:bg-orange-900/20">
+                <div className="flex items-start space-x-4">
+                  <AlertTriangle className="h-6 w-6 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-medium text-orange-900 dark:text-orange-100">
+                      No notification channels configured
+                    </h3>
+                    <p className="mt-2 text-sm text-orange-800 dark:text-orange-200">
+                      Alert rules won't send notifications until you create at least one notification channel. Create a channel to receive alert notifications.
+                    </p>
+                    <button
+                      onClick={() => setShowNewChannelModal(true)}
+                      className="mt-3 inline-flex items-center space-x-2 rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Create Channel Now</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
