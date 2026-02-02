@@ -119,7 +119,7 @@ jobs:
 
       - name: Build binary tarball
         run: |
-          VERSION=${{ steps.version.outputs.version }} ./scripts/build-packages.sh binary
+          VERSION=${{ steps.version.outputs.version }} OPENVOX_SERVE_FRONTEND=true ./scripts/build-packages.sh binary
 
       - name: Upload binary tarball
         uses: actions/upload-artifact@v4
