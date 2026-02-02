@@ -16,6 +16,7 @@ interface TreemapNode {
   size: number;
   children?: TreemapNode[];
   fill?: string;
+  [key: string]: string | number | TreemapNode[] | undefined;
 }
 
 const COLORS = [
