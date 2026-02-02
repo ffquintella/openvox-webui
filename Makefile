@@ -1,7 +1,7 @@
 # OpenVox WebUI Makefile
 # Development convenience targets
 
-.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache publish-puppet-module
+.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache publish-puppet-module release release-dry-run
 
 # Default target
 help:
@@ -44,6 +44,10 @@ help:
 	@echo "  make version-patch  - Bump patch version (0.1.0 -> 0.1.1)"
 	@echo "  make version-minor  - Bump minor version, commit, and tag (0.1.0 -> 0.2.0)"
 	@echo "  make version-major  - Bump major version, commit, and tag (0.1.0 -> 1.0.0)"
+	@echo ""
+	@echo "Releasing:"
+	@echo "  make release        - Create and push release tag (triggers GitHub Actions build)"
+	@echo "  make release-dry-run - Show what release would be created (no changes)"
 	@echo ""
 	@echo "Puppet Module:"
 	@echo "  make publish-puppet-module - Publish Puppet module to Puppet Forge"
@@ -236,6 +240,72 @@ version-major:
 	echo ""; \
 	echo "Created git tag: v$$NEW_VERSION"; \
 	echo "Don't forget to push: git push && git push --tags"
+
+# =============================================================================
+# Releasing
+# =============================================================================
+
+# Create a release tag that triggers GitHub Actions to build packages
+# This creates a tag under Releases/v<version> which triggers the release workflow
+release:
+	@CURRENT_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
+	RELEASE_TAG="Releases/v$$CURRENT_VERSION"; \
+	echo ""; \
+	echo "Creating release for version $$CURRENT_VERSION"; \
+	echo "========================================"; \
+	echo ""; \
+	if git rev-parse "$$RELEASE_TAG" >/dev/null 2>&1; then \
+		echo "ERROR: Release tag $$RELEASE_TAG already exists!"; \
+		echo ""; \
+		echo "If you want to re-release this version:"; \
+		echo "  git tag -d $$RELEASE_TAG"; \
+		echo "  git push origin :refs/tags/$$RELEASE_TAG"; \
+		echo ""; \
+		echo "Or bump the version first:"; \
+		echo "  make version-patch  # for bug fixes"; \
+		echo "  make version-minor  # for new features"; \
+		exit 1; \
+	fi; \
+	echo "Creating tag: $$RELEASE_TAG"; \
+	git tag -a "$$RELEASE_TAG" -m "Release v$$CURRENT_VERSION"; \
+	echo "Pushing tag to origin..."; \
+	git push origin "$$RELEASE_TAG"; \
+	echo ""; \
+	echo "========================================"; \
+	echo "Release tag created and pushed!"; \
+	echo ""; \
+	echo "GitHub Actions will now build packages for v$$CURRENT_VERSION"; \
+	echo "Monitor progress at: https://github.com/$$(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/.*github.com[:/]\(.*\)/\1/')/actions"; \
+	echo ""; \
+	echo "Once complete, packages will be available at:"; \
+	echo "https://github.com/$$(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\.git/\1/' | sed 's/.*github.com[:/]\(.*\)/\1/')/releases/tag/v$$CURRENT_VERSION"
+
+# Show what release would be created without making any changes
+release-dry-run:
+	@CURRENT_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
+	RELEASE_TAG="Releases/v$$CURRENT_VERSION"; \
+	echo ""; \
+	echo "DRY RUN - No changes will be made"; \
+	echo "========================================"; \
+	echo ""; \
+	echo "Current version: $$CURRENT_VERSION"; \
+	echo "Release tag:     $$RELEASE_TAG"; \
+	echo ""; \
+	if git rev-parse "$$RELEASE_TAG" >/dev/null 2>&1; then \
+		echo "WARNING: Tag $$RELEASE_TAG already exists!"; \
+		echo "         You would need to delete it first or bump the version."; \
+	else \
+		echo "Tag $$RELEASE_TAG does not exist yet (ready to create)"; \
+	fi; \
+	echo ""; \
+	echo "This would:"; \
+	echo "  1. Create annotated tag: $$RELEASE_TAG"; \
+	echo "  2. Push tag to origin"; \
+	echo "  3. Trigger GitHub Actions release workflow"; \
+	echo "  4. Build RPM, DEB, and binary packages"; \
+	echo "  5. Create GitHub Release with all artifacts"; \
+	echo ""; \
+	echo "To proceed, run: make release"
 
 # =============================================================================
 # Puppet Module

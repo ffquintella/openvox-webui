@@ -9,9 +9,14 @@ This guide covers installation of OpenVox WebUI using various methods.
    - [Package Installation (RPM)](#rpm-installation)
    - [Package Installation (DEB)](#deb-installation)
    - [Puppet Module Installation](#puppet-module-installation)
-3. [Initial Configuration](#initial-configuration)
-4. [Post-Installation](#post-installation)
-5. [Troubleshooting](#troubleshooting)
+3. [Building Packages from Source](#building-packages-from-source)
+   - [Prerequisites](#build-prerequisites)
+   - [Building RPM Packages](#building-rpm-packages)
+   - [Building DEB Packages](#building-deb-packages)
+   - [Setting Up a Local Repository](#setting-up-a-local-repository)
+4. [Initial Configuration](#initial-configuration)
+5. [Post-Installation](#post-installation)
+6. [Troubleshooting](#troubleshooting)
 
 ## System Requirements
 
@@ -46,100 +51,68 @@ This guide covers installation of OpenVox WebUI using various methods.
 
 ## Installation Methods
 
+OpenVox WebUI is currently distributed via GitHub releases or by building from source. You can either download pre-built packages (when available) or build your own packages and host them in a local repository.
+
 ### RPM Installation
 
-#### 1. Add OpenVox Repository (Recommended)
+#### Download RPM from GitHub Releases
 
-Create `/etc/yum.repos.d/openvox.repo`:
-
-```ini
-[openvox]
-name=OpenVox Repository
-baseurl=https://packages.openvoxproject.org/rpm/el/$releasever/$basearch/
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.openvoxproject.org/RPM-GPG-KEY-openvox
-```
-
-Install the package:
+Check the [GitHub Releases page](https://github.com/ffquintella/openvox-webui/releases) for pre-built RPM packages.
 
 ```bash
-sudo dnf install openvox-webui
-# or
-sudo yum install openvox-webui
-```
+# Download the package for your OS version (example for RHEL 9)
+wget https://github.com/ffquintella/openvox-webui/releases/download/v0.27.0/openvox-webui-0.27.0-1.el9.x86_64.rpm
 
-#### 2. Direct RPM Installation
-
-Download the RPM package:
-
-```bash
-# For RHEL 9 / Rocky 9 / AlmaLinux 9
-wget https://github.com/openvoxproject/openvox-webui/releases/download/v0.9.0/openvox-webui-0.9.0-1.el9.x86_64.rpm
-
-# For RHEL 8 / Rocky 8 / AlmaLinux 8
-wget https://github.com/openvoxproject/openvox-webui/releases/download/v0.9.0/openvox-webui-0.9.0-1.el8.x86_64.rpm
-
-# For Fedora 40
-wget https://github.com/openvoxproject/openvox-webui/releases/download/v0.9.0/openvox-webui-0.9.0-1.fc40.x86_64.rpm
-```
-
-Install:
-
-```bash
+# Install the package
 sudo dnf install ./openvox-webui-*.rpm
 # or
 sudo yum localinstall ./openvox-webui-*.rpm
 ```
 
+#### Build RPM from Source
+
+If pre-built packages are not available for your platform, or you prefer to build your own, see the [Building Packages from Source](#building-packages-from-source) section below.
+
+#### Use a Local YUM/DNF Repository
+
+For enterprise deployments, you can build packages and host them in your own repository. See [Setting Up a Local Repository](#setting-up-a-local-repository) for instructions.
+
 ### DEB Installation
 
-#### 1. Add OpenVox Repository (Recommended)
+#### Download DEB from GitHub Releases
+
+Check the [GitHub Releases page](https://github.com/ffquintella/openvox-webui/releases) for pre-built DEB packages.
 
 ```bash
-# Add GPG key
-curl -fsSL https://packages.openvoxproject.org/DEB-GPG-KEY-openvox | sudo gpg --dearmor -o /usr/share/keyrings/openvox-archive-keyring.gpg
+# Download the package (example)
+wget https://github.com/ffquintella/openvox-webui/releases/download/v0.27.0/openvox-webui_0.27.0-1_amd64.deb
 
-# Add repository (Debian 12)
-echo "deb [signed-by=/usr/share/keyrings/openvox-archive-keyring.gpg] https://packages.openvoxproject.org/deb bookworm main" | sudo tee /etc/apt/sources.list.d/openvox.list
-
-# Add repository (Ubuntu 24.04)
-echo "deb [signed-by=/usr/share/keyrings/openvox-archive-keyring.gpg] https://packages.openvoxproject.org/deb noble main" | sudo tee /etc/apt/sources.list.d/openvox.list
-
-# Update and install
-sudo apt update
-sudo apt install openvox-webui
-```
-
-#### 2. Direct DEB Installation
-
-Download the DEB package:
-
-```bash
-# For Debian 12 / Ubuntu 24.04
-wget https://github.com/openvoxproject/openvox-webui/releases/download/v0.9.0/openvox-webui_0.9.0-1_amd64.deb
-```
-
-Install:
-
-```bash
-sudo dpkg -i openvox-webui_0.9.0-1_amd64.deb
+# Install the package
+sudo dpkg -i openvox-webui_*.deb
 sudo apt-get install -f  # Install dependencies if needed
 ```
 
+#### Build DEB from Source
+
+If pre-built packages are not available, see the [Building Packages from Source](#building-packages-from-source) section below.
+
+#### Use a Local APT Repository
+
+For enterprise deployments, you can build packages and host them in your own repository. See [Setting Up a Local Repository](#setting-up-a-local-repository) for instructions.
+
 ### Puppet Module Installation
 
-#### From Puppet Forge
-
-```bash
-puppet module install openvox-webui
-```
+The Puppet module can install and configure OpenVox WebUI. It requires the package to be available either from a local repository or by placing the package file on the target system.
 
 #### From Git Repository
 
 ```bash
 cd /etc/puppetlabs/code/environments/production/modules
-git clone https://github.com/openvoxproject/openvox-webui.git openvox_webui
+git clone https://github.com/ffquintella/openvox-webui.git openvox_webui
+cd openvox_webui
+# The Puppet module is in the puppet/ subdirectory
+mv puppet ../openvox_webui_module
+cd .. && rm -rf openvox_webui && mv openvox_webui_module openvox_webui
 ```
 
 #### Puppetfile
@@ -147,9 +120,269 @@ git clone https://github.com/openvoxproject/openvox-webui.git openvox_webui
 Add to your `Puppetfile`:
 
 ```ruby
-mod 'openvox-webui',
-  :git => 'https://github.com/openvoxproject/openvox-webui.git',
-  :tag => 'v0.9.0'
+mod 'openvox_webui',
+  :git    => 'https://github.com/ffquintella/openvox-webui.git',
+  :tag    => 'v0.27.0',
+  :install_path => './openvox_webui_tmp'
+
+# Note: The module is located in the puppet/ subdirectory of the repository
+```
+
+**Important:** When using the Puppet module, ensure the openvox-webui package is available. You can either:
+
+1. Set up a local package repository (see [Setting Up a Local Repository](#setting-up-a-local-repository))
+2. Use the `package_source` parameter to specify a local package file path
+
+## Building Packages from Source
+
+If you prefer to build packages yourself instead of using the official repositories, you can build RPM and DEB packages from source and host them in your own local repository.
+
+### Build Prerequisites
+
+Before building packages, ensure you have the following installed:
+
+**Common Requirements:**
+
+- Git
+- Rust toolchain (1.70+)
+- Node.js 20+
+- npm
+
+**For RPM builds (RHEL/Rocky/AlmaLinux/Fedora):**
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install Node.js 20
+sudo dnf module enable nodejs:20 -y
+sudo dnf install nodejs -y
+
+# Install build tools
+sudo dnf install rpm-build rpmdevtools gcc openssl-devel sqlite-devel make -y
+```
+
+**For DEB builds (Debian/Ubuntu):**
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install build tools
+sudo apt-get install -y build-essential debhelper devscripts libssl-dev libsqlite3-dev
+```
+
+### Building RPM Packages
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/ffquintella/openvox-webui.git
+cd openvox-webui
+```
+
+2. Build the RPM package:
+
+```bash
+# Build RPM using the build script
+./scripts/build-packages.sh rpm
+
+# Or build with a specific version
+./scripts/build-packages.sh -v 1.0.0 rpm
+
+# Or use make
+make package-rpm
+```
+
+3. The built packages will be in `build/output/`:
+
+```bash
+ls build/output/*.rpm
+# openvox-webui-<version>-1.el9.x86_64.rpm
+# openvox-webui-<version>-1.el9.src.rpm
+```
+
+### Building DEB Packages
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/ffquintella/openvox-webui.git
+cd openvox-webui
+```
+
+2. Build the DEB package:
+
+```bash
+# Build DEB using the build script
+./scripts/build-packages.sh deb
+
+# Or build with a specific version
+./scripts/build-packages.sh -v 1.0.0 deb
+
+# Or use make
+make package-deb
+```
+
+3. The built packages will be in `build/output/`:
+
+```bash
+ls build/output/*.deb
+# openvox-webui_<version>-1_amd64.deb
+```
+
+### Setting Up a Local Repository
+
+After building your packages, you can host them in a local repository for easy distribution across your infrastructure.
+
+#### Setting Up a YUM/DNF Repository (RPM)
+
+1. Install repository tools:
+
+```bash
+sudo dnf install createrepo_c httpd -y
+```
+
+2. Create the repository structure:
+
+```bash
+# Create directories for each OS version you support
+sudo mkdir -p /var/www/html/repos/openvox-webui/{el8,el9}/x86_64
+```
+
+3. Copy your built packages:
+
+```bash
+# Copy to the appropriate directory based on target OS
+sudo cp build/output/*.el9.x86_64.rpm /var/www/html/repos/openvox-webui/el9/x86_64/
+sudo cp build/output/*.el8.x86_64.rpm /var/www/html/repos/openvox-webui/el8/x86_64/
+```
+
+4. Generate repository metadata:
+
+```bash
+sudo createrepo /var/www/html/repos/openvox-webui/el9/x86_64/
+sudo createrepo /var/www/html/repos/openvox-webui/el8/x86_64/
+```
+
+5. Configure the web server and start it:
+
+```bash
+sudo systemctl enable httpd
+sudo systemctl start httpd
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --reload
+```
+
+6. On client machines, create `/etc/yum.repos.d/openvox-webui-local.repo`:
+
+```ini
+[openvox-webui-local]
+name=OpenVox WebUI Local Repository
+baseurl=http://your-repo-server/repos/openvox-webui/el$releasever/$basearch
+enabled=1
+gpgcheck=0
+```
+
+7. Install from your local repository:
+
+```bash
+sudo dnf install openvox-webui
+```
+
+#### Setting Up an APT Repository (DEB)
+
+1. Install repository tools:
+
+```bash
+sudo apt-get install -y dpkg-dev apt-utils apache2
+```
+
+2. Create the repository structure:
+
+```bash
+sudo mkdir -p /var/www/html/repos/openvox-webui/pool/main
+sudo mkdir -p /var/www/html/repos/openvox-webui/dists/stable/main/binary-amd64
+```
+
+3. Copy your built packages:
+
+```bash
+sudo cp build/output/*.deb /var/www/html/repos/openvox-webui/pool/main/
+```
+
+4. Generate package indices:
+
+```bash
+cd /var/www/html/repos/openvox-webui
+
+# Generate Packages file
+sudo apt-ftparchive packages pool/main > dists/stable/main/binary-amd64/Packages
+sudo gzip -k dists/stable/main/binary-amd64/Packages
+
+# Generate Release file
+sudo apt-ftparchive release dists/stable > dists/stable/Release
+```
+
+5. Start the web server:
+
+```bash
+sudo systemctl enable apache2
+sudo systemctl start apache2
+```
+
+6. On client machines, add the repository:
+
+```bash
+# Add the repository (without GPG signing for local use)
+echo "deb [trusted=yes] http://your-repo-server/repos/openvox-webui stable main" | sudo tee /etc/apt/sources.list.d/openvox-webui-local.list
+
+# Update and install
+sudo apt-get update
+sudo apt-get install openvox-webui
+```
+
+#### Optional: Signing Packages for Production Use
+
+For production environments, it's recommended to sign your packages:
+
+1. Generate a GPG key:
+
+```bash
+gpg --full-generate-key
+gpg --list-keys  # Note your key ID
+```
+
+2. Build signed packages:
+
+```bash
+export GPG_KEY_ID="YOUR_KEY_ID"
+./scripts/build-packages.sh --sign all
+```
+
+3. For APT repositories, sign the Release file:
+
+```bash
+cd /var/www/html/repos/openvox-webui
+gpg --armor --detach-sign -o dists/stable/Release.gpg dists/stable/Release
+gpg --armor --clearsign -o dists/stable/InRelease dists/stable/Release
+
+# Export public key for clients
+gpg --armor --export YOUR_KEY_ID | sudo tee /var/www/html/repos/openvox-webui/openvox-webui.gpg
+```
+
+4. On client machines, import the key and update the sources list:
+
+```bash
+curl -fsSL http://your-repo-server/repos/openvox-webui/openvox-webui.gpg | sudo gpg --dearmor -o /usr/share/keyrings/openvox-webui-local.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/openvox-webui-local.gpg] http://your-repo-server/repos/openvox-webui stable main" | sudo tee /etc/apt/sources.list.d/openvox-webui-local.list
 ```
 
 ## Initial Configuration
@@ -449,6 +682,6 @@ sudo semodule -i openvox-webui.pp
 
 ## Support
 
-- GitHub Issues: https://github.com/openvoxproject/openvox-webui/issues
+- GitHub Issues: https://github.com/ffquintella/openvox-webui/issues
 - Documentation: https://docs.openvoxproject.org
 - Community: https://community.openvoxproject.org

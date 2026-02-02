@@ -1,0 +1,253 @@
+# OpenVox WebUI Release Pipeline
+# Triggered when a tag is created under Releases/ (e.g., Releases/v0.27.0)
+#
+# To create a release:
+#   make release           # Creates tag Releases/v<current-version> and pushes it
+#   make release-dry-run   # Shows what would be created without doing it
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'Releases/v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-rpm:
+    name: Build RPM Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Tag is Releases/v0.27.0, extract 0.27.0
+          VERSION="${GITHUB_REF#refs/tags/Releases/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      - name: Create build directory
+        run: mkdir -p build/output
+
+      - name: Build RPM package
+        run: |
+          VERSION=${{ steps.version.outputs.version }} ./scripts/build-packages.sh rpm
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages
+          path: build/output/*.rpm
+          retention-days: 5
+
+      - name: Upload RPM checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-checksums
+          path: build/output/*.rpm.sha256
+          retention-days: 5
+
+  build-deb:
+    name: Build DEB Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/Releases/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      - name: Create build directory
+        run: mkdir -p build/output
+
+      - name: Build DEB package
+        run: |
+          VERSION=${{ steps.version.outputs.version }} ./scripts/build-packages.sh deb
+
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: build/output/*.deb
+          retention-days: 5
+
+      - name: Upload DEB checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-checksums
+          path: build/output/*.deb.sha256
+          retention-days: 5
+
+  build-binary:
+    name: Build Binary Tarball
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/Releases/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      - name: Build binary tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }} ./scripts/build-packages.sh binary
+
+      - name: Upload binary tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-tarball
+          path: build/output/*.tar.gz
+          retention-days: 5
+
+      - name: Upload binary checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-checksums
+          path: build/output/*.tar.gz.sha256
+          retention-days: 5
+
+  build-source:
+    name: Build Source Tarball
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/Releases/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      - name: Build source tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }} ./scripts/build-packages.sh source
+
+      - name: Upload source tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-tarball
+          path: build/source/*.tar.gz
+          retention-days: 5
+
+      - name: Upload source checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-checksums
+          path: build/source/*.tar.gz.sha256
+          retention-days: 5
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-rpm, build-deb, build-binary, build-source]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/Releases/v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sha256" \) -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cat > release-notes.md << 'EOF'
+          ## OpenVox WebUI v${VERSION}
+
+          ### Installation
+
+          #### RPM (RHEL/Rocky/AlmaLinux 9)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/openvox-webui-${VERSION}-1.el9.x86_64.rpm
+          sudo dnf install ./openvox-webui-${VERSION}-1.el9.x86_64.rpm
+          ```
+
+          #### DEB (Debian 12/Ubuntu 24.04)
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/openvox-webui_${VERSION}-1_amd64.deb
+          sudo dpkg -i openvox-webui_${VERSION}-1_amd64.deb
+          sudo apt-get install -f
+          ```
+
+          #### Binary Tarball
+          ```bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/openvox-webui-${VERSION}-linux-x86_64.tar.gz
+          tar xzf openvox-webui-${VERSION}-linux-x86_64.tar.gz
+          cd openvox-webui-${VERSION}-linux-x86_64
+          sudo ./install.sh
+          ```
+
+          ### Checksums
+          SHA256 checksums are provided for all packages. Verify downloads with:
+          ```bash
+          sha256sum -c <package>.sha256
+          ```
+
+          ### Documentation
+          - [Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)
+          - [Configuration Guide](https://github.com/${{ github.repository }}/blob/main/docs/CONFIGURATION.md)
+          - [Puppet Module](https://github.com/${{ github.repository }}/blob/main/puppet/README.md)
+          EOF
+
+          # Substitute VERSION in the release notes
+          sed -i "s/\${VERSION}/${VERSION}/g" release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: OpenVox WebUI v${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: release-files/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          append_body: true
