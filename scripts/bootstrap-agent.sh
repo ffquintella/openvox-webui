@@ -224,6 +224,10 @@ setup_zypper_repo() {
 setup_apt_repo() {
     log_step "Setting up APT repository..."
 
+    # Clean up any existing broken openvox repository configurations
+    log_info "Cleaning up any existing openvox repository configurations..."
+    rm -f /etc/apt/sources.list.d/openvox*.list /etc/apt/sources.list.d/openvox*.sources 2>/dev/null || true
+
     # Install prerequisites
     log_info "Installing prerequisites..."
     apt-get update -qq
@@ -300,6 +304,9 @@ setup_apt_repo() {
         # Manual configuration fallback
         if [ "$use_manual_config" = true ]; then
             log_info "Configuring Vox Pupuli APT repository manually"
+
+            # Clean up broken configurations from release package
+            rm -f /etc/apt/sources.list.d/openvox*.list 2>/dev/null || true
 
             # Download and add GPG key
             curl -sSL "${DEFAULT_APT_REPO}/openvox-keyring.gpg" -o /usr/share/keyrings/openvox-keyring.gpg || {
