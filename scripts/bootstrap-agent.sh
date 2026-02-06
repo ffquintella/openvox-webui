@@ -271,27 +271,53 @@ setup_apt_repo() {
         log_info "Using custom APT repository"
     else
         # Use default Vox Pupuli OpenVox repository
-        # Vox Pupuli provides release packages that configure the repository
+        # Try using release package first, fall back to manual configuration if needed
         local release_package="openvox8-release-${dist_id}.deb"
         local release_url="${DEFAULT_APT_REPO}/${release_package}"
+        local use_manual_config=false
 
         log_info "Downloading Vox Pupuli release package: ${release_package}"
 
         # Download and install the release package
         local temp_deb="/tmp/${release_package}"
-        curl -sSL -o "${temp_deb}" "${release_url}" || {
-            log_error "Failed to download release package from ${release_url}"
-            log_error "Please check if the distribution ${dist_id} is supported"
-            exit 1
-        }
+        if curl -sSL -o "${temp_deb}" "${release_url}" 2>/dev/null && dpkg -i "${temp_deb}" 2>/dev/null; then
+            rm -f "${temp_deb}"
+            log_info "Vox Pupuli repository configured via release package"
 
-        dpkg -i "${temp_deb}" || {
-            log_error "Failed to install release package"
-            exit 1
-        }
+            # Test if the repository configuration works
+            if ! apt-get update -qq 2>&1 | grep -q "apt.voxpupuli.org.*404"; then
+                log_info "Repository configuration verified"
+            else
+                log_warn "Release package created invalid repository configuration, using manual configuration"
+                use_manual_config=true
+            fi
+        else
+            log_warn "Failed to install release package, using manual configuration"
+            rm -f "${temp_deb}"
+            use_manual_config=true
+        fi
 
-        rm -f "${temp_deb}"
-        log_info "Vox Pupuli repository configured via release package"
+        # Manual configuration fallback
+        if [ "$use_manual_config" = true ]; then
+            log_info "Configuring Vox Pupuli APT repository manually"
+
+            # Download and add GPG key
+            curl -sSL "${DEFAULT_APT_REPO}/openvox-keyring.gpg" -o /usr/share/keyrings/openvox-keyring.gpg || {
+                log_error "Failed to download GPG key"
+                exit 1
+            }
+
+            # Create APT source configuration using DEB822 format (modern format)
+            cat > /etc/apt/sources.list.d/openvox8.sources << EOF
+Types: deb
+URIs: ${DEFAULT_APT_REPO}
+Suites: ${dist_id}
+Components: openvox8
+Signed-By: /usr/share/keyrings/openvox-keyring.gpg
+EOF
+
+            log_info "Manual APT repository configuration completed"
+        fi
     fi
 
     # Update package lists
