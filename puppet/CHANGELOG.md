@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Pinned nodes now correctly match their group even when parent groups don't match via rules
 - Child groups now only match nodes that also match their parent group (for non-pinned nodes)
+- Bootstrap script now correctly uses Vox Pupuli release packages from api.voxpupuli.org instead of invalid APT repository URL
 
 ## [0.22.0] - 2025-01-15
 

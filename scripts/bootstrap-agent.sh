@@ -35,9 +35,9 @@ OPENVOX_SERVER="{{OPENVOX_SERVER}}"
 REPO_BASE_URL="{{REPO_BASE_URL}}"
 PACKAGE_NAME="{{PACKAGE_NAME}}"
 
-# Default Vox Pupuli repository base URLs
+# Default Vox Pupuli repository configuration
 DEFAULT_YUM_REPO="https://yum.voxpupuli.org/openvox8"
-DEFAULT_APT_REPO="https://apt.voxpupuli.org/openvox8"
+DEFAULT_APT_REPO="https://api.voxpupuli.org"  # APT uses release packages from api.voxpupuli.org
 
 # Colors for output
 RED='\033[0;31m'
@@ -271,12 +271,27 @@ setup_apt_repo() {
         log_info "Using custom APT repository"
     else
         # Use default Vox Pupuli OpenVox repository
-        # Vox Pupuli uses distribution identifiers like debian12, ubuntu22.04 as the "suite"
-        # and "openvox8" as the component
-        base_url="${DEFAULT_APT_REPO}"
-        # Add with trusted=yes since we don't have GPG key verification set up
-        echo "deb [trusted=yes] ${base_url} ${dist_id} openvox8" > /etc/apt/sources.list.d/openvox.list
-        log_info "Using Vox Pupuli APT repository: ${base_url} ${dist_id} openvox8"
+        # Vox Pupuli provides release packages that configure the repository
+        local release_package="openvox8-release-${dist_id}.deb"
+        local release_url="https://api.voxpupuli.org/${release_package}"
+
+        log_info "Downloading Vox Pupuli release package: ${release_package}"
+
+        # Download and install the release package
+        local temp_deb="/tmp/${release_package}"
+        curl -sSL -o "${temp_deb}" "${release_url}" || {
+            log_error "Failed to download release package from ${release_url}"
+            log_error "Please check if the distribution ${dist_id} is supported"
+            exit 1
+        }
+
+        dpkg -i "${temp_deb}" || {
+            log_error "Failed to install release package"
+            exit 1
+        }
+
+        rm -f "${temp_deb}"
+        log_info "Vox Pupuli repository configured via release package"
     fi
 
     # Update package lists
