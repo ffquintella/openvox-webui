@@ -230,6 +230,11 @@ setup_apt_repo() {
 
     # Install prerequisites
     log_info "Installing prerequisites..."
+    # Disable automatic service restarts during package operations
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=l
+    export NEEDRESTART_SUSPEND=1
+
     apt-get update -qq
     apt-get install -y -qq curl gnupg ca-certificates lsb-release
 
@@ -350,6 +355,7 @@ install_agent() {
             fi
             ;;
         debian)
+            # Environment variables already set in setup_apt_repo()
             apt-get install -y "$PACKAGE_NAME" || {
                 log_error "Failed to install package with apt"
                 exit 1
