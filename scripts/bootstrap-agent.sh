@@ -37,7 +37,7 @@ PACKAGE_NAME="{{PACKAGE_NAME}}"
 
 # Default Vox Pupuli repository configuration
 DEFAULT_YUM_REPO="https://yum.voxpupuli.org/openvox8"
-DEFAULT_APT_REPO="https://api.voxpupuli.org"  # APT uses release packages from api.voxpupuli.org
+DEFAULT_APT_REPO="https://apt.voxpupuli.org"  # APT uses release packages from apt.voxpupuli.org
 
 # Colors for output
 RED='\033[0;31m'
@@ -273,7 +273,7 @@ setup_apt_repo() {
         # Use default Vox Pupuli OpenVox repository
         # Vox Pupuli provides release packages that configure the repository
         local release_package="openvox8-release-${dist_id}.deb"
-        local release_url="https://api.voxpupuli.org/${release_package}"
+        local release_url="${DEFAULT_APT_REPO}/${release_package}"
 
         log_info "Downloading Vox Pupuli release package: ${release_package}"
 
