@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     db::repository::GroupRepository,
-    middleware::{rbac::check_permission, AuthUser},
+    middleware::AuthUser,
     models::{
         Action, AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest, CreateRuleRequest,
         NodeGroup, Resource, UpdateGroupRequest,
@@ -53,21 +53,27 @@ fn resolve_org(auth_user: &AuthUser, requested: Option<Uuid>) -> Result<Uuid, Ap
 /// Check if user has permission to perform an action on a specific group
 /// This supports group-scoped permissions where users can have edit access
 /// to specific groups without having global group permissions.
-fn check_group_permission(
+async fn check_group_permission(
     state: &AppState,
     auth_user: &AuthUser,
     action: Action,
     group_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    check_permission(
-        &state.rbac,
-        auth_user,
-        Resource::Groups,
-        action,
-        group_id,
-        None,
-    )
-    .map_err(|e| AppError::forbidden(&e.to_string()))
+    let check = state
+        .rbac_db
+        .check_permission(&auth_user.user_id(), Resource::Groups, action, group_id, None)
+        .await
+        .map_err(|e| AppError::internal(format!("Permission check failed: {}", e)))?;
+
+    if check.allowed {
+        Ok(())
+    } else {
+        Err(AppError::forbidden(
+            &check
+                .reason
+                .unwrap_or_else(|| "No matching permission found".to_string()),
+        ))
+    }
 }
 
 /// List all node groups
@@ -92,8 +98,10 @@ async fn create_group(
     Query(query): Query<OrgQuery>,
     Json(payload): Json<CreateGroupRequest>,
 ) -> Result<(StatusCode, Json<NodeGroup>), AppError> {
-    // Check create permission (no specific group ID for new groups)
-    check_group_permission(&state, &auth_user, Action::Create, None)?;
+    // Check create permission. If a parent group is provided, use it to satisfy
+    // group-scoped permissions; otherwise require a global create permission.
+    let permission_scope = payload.parent_id;
+    check_group_permission(&state, &auth_user, Action::Create, permission_scope).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
     let repo = GroupRepository::new(&state.db);
@@ -141,7 +149,7 @@ async fn update_group(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     // Check update permission for this specific group
-    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -171,7 +179,7 @@ async fn delete_group(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     // Check delete permission for this specific group
-    check_group_permission(&state, &auth_user, Action::Delete, Some(uuid))?;
+    check_group_permission(&state, &auth_user, Action::Delete, Some(uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -321,7 +329,7 @@ async fn add_rule(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     // Check update permission for this specific group (adding rules is an update operation)
-    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -358,7 +366,7 @@ async fn delete_rule(
         Uuid::parse_str(&rule_id).map_err(|_| AppError::bad_request("Invalid rule ID"))?;
 
     // Check update permission for this specific group (deleting rules is an update operation)
-    check_group_permission(&state, &auth_user, Action::Update, Some(group_uuid))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(group_uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -394,7 +402,7 @@ async fn add_pinned_node(
     let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     // Check update permission for this specific group (adding pinned nodes is an update operation)
-    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -430,7 +438,7 @@ async fn remove_pinned_node(
     let uuid = Uuid::parse_str(&group_id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
 
     // Check update permission for this specific group (removing pinned nodes is an update operation)
-    check_group_permission(&state, &auth_user, Action::Update, Some(uuid))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 

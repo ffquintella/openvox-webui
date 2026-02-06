@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `openvox_environment` fact now uses dedicated `/environment` endpoint (no authentication required)
+- Group permission checks now use async database queries for better performance and consistency
 
 ### Security
 - Classification endpoint (`/api/v1/nodes/:certname/classify`) now requires client certificate authentication (mTLS)
