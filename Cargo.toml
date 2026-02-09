@@ -80,7 +80,7 @@ libc = "0.2"
 validator = { version = "0.20", features = ["derive"] }
 
 # PDF generation
-printpdf = "0.8"
+printpdf = "0.9"
 
 # Cron scheduling
 cron = "0.15"
