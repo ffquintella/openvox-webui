@@ -61,6 +61,9 @@ export default function Groups() {
   const [newRuleFactPath, setNewRuleFactPath] = useState('');
   const [newRuleOperator, setNewRuleOperator] = useState<RuleOperator>('=');
   const [newRuleValue, setNewRuleValue] = useState('');
+  const [editingRuleFactPath, setEditingRuleFactPath] = useState('');
+  const [editingRuleOperator, setEditingRuleOperator] = useState<RuleOperator>('=');
+  const [editingRuleValue, setEditingRuleValue] = useState('');
 
   // Pinned node form state
   const [isAddPinnedOpen, setIsAddPinnedOpen] = useState(false);
@@ -79,6 +82,9 @@ export default function Groups() {
   const [isAddVarOpen, setIsAddVarOpen] = useState(false);
   const [newVarKey, setNewVarKey] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
+  const [editingVariableKey, setEditingVariableKey] = useState<string | null>(null);
+  const [editingVarKey, setEditingVarKey] = useState('');
+  const [editingVarValue, setEditingVarValue] = useState('');
 
   // Collapsed state for group tree (store IDs of collapsed groups)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -235,6 +241,68 @@ export default function Groups() {
     setNewRuleValue('');
   };
 
+  const resetEditingRuleForm = () => {
+    setEditingRuleId(null);
+    setEditingRuleFactPath('');
+    setEditingRuleOperator('=');
+    setEditingRuleValue('');
+  };
+
+  const resetVariableForm = () => {
+    setNewVarKey('');
+    setNewVarValue('');
+  };
+
+  const resetEditingVariableForm = () => {
+    setEditingVariableKey(null);
+    setEditingVarKey('');
+    setEditingVarValue('');
+  };
+
+  const serializeValueForInput = (value: unknown): string => {
+    if (Array.isArray(value)) return value.join(', ');
+    if (value !== null && typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  };
+
+  const parseRuleValue = (value: string, operator: RuleOperator): unknown => {
+    if (operator === 'in' || operator === 'not_in') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value.split(',').map((s) => s.trim());
+      }
+    }
+
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    if (!isNaN(Number(value)) && value !== '') return Number(value);
+    return value;
+  };
+
+  const parseVariableValue = (value: string): unknown => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const startEditingRule = (rule: ClassificationRule) => {
+    setIsAddRuleOpen(false);
+    setEditingRuleId(rule.id);
+    setEditingRuleFactPath(rule.fact_path);
+    setEditingRuleOperator(rule.operator);
+    setEditingRuleValue(serializeValueForInput(rule.value));
+  };
+
+  const startEditingVariable = (key: string, value: unknown) => {
+    setIsAddVarOpen(false);
+    setEditingVariableKey(key);
+    setEditingVarKey(key);
+    setEditingVarValue(serializeValueForInput(value));
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     createMutation.mutate({
@@ -269,29 +337,12 @@ export default function Groups() {
     e.preventDefault();
     if (!selectedGroup) return;
 
-    let parsedValue: unknown = newRuleValue;
-
-    // Parse value based on operator
-    if (newRuleOperator === 'in' || newRuleOperator === 'not_in') {
-      try {
-        parsedValue = JSON.parse(newRuleValue);
-      } catch {
-        // Try to split by comma if not valid JSON
-        parsedValue = newRuleValue.split(',').map(s => s.trim());
-      }
-    } else {
-      // Try to parse as number or boolean
-      if (newRuleValue === 'true') parsedValue = true;
-      else if (newRuleValue === 'false') parsedValue = false;
-      else if (!isNaN(Number(newRuleValue)) && newRuleValue !== '') parsedValue = Number(newRuleValue);
-    }
-
     addRuleMutation.mutate({
       groupId: selectedGroup.id,
       rule: {
         fact_path: newRuleFactPath,
         operator: newRuleOperator,
-        value: parsedValue,
+        value: parseRuleValue(newRuleValue, newRuleOperator),
       },
     });
   };
@@ -367,24 +418,16 @@ export default function Groups() {
     e.preventDefault();
     if (!selectedGroup || !newVarKey.trim()) return;
 
-    let parsedValue: unknown = newVarValue;
-    try {
-      parsedValue = JSON.parse(newVarValue);
-    } catch {
-      // Keep as string if not valid JSON
-    }
-
     const updatedVars = {
       ...(selectedGroup.variables as Record<string, unknown>),
-      [newVarKey.trim()]: parsedValue,
+      [newVarKey.trim()]: parseVariableValue(newVarValue),
     };
     updateMutation.mutate({
       id: selectedGroup.id,
       data: { variables: updatedVars },
     });
     setIsAddVarOpen(false);
-    setNewVarKey('');
-    setNewVarValue('');
+    resetVariableForm();
   };
 
   const handleRemoveVariable = (key: string) => {
@@ -395,6 +438,41 @@ export default function Groups() {
       id: selectedGroup.id,
       data: { variables: vars },
     });
+  };
+
+  const handleSaveEditedRule = (ruleId: string) => {
+    if (!selectedGroup || !editingRuleFactPath.trim()) return;
+
+    deleteRuleMutation.mutate(
+      { groupId: selectedGroup.id, ruleId },
+      {
+        onSuccess: () => {
+          addRuleMutation.mutate({
+            groupId: selectedGroup.id,
+            rule: {
+              fact_path: editingRuleFactPath.trim(),
+              operator: editingRuleOperator,
+              value: parseRuleValue(editingRuleValue, editingRuleOperator),
+            },
+          });
+          resetEditingRuleForm();
+        },
+      }
+    );
+  };
+
+  const handleSaveEditedVariable = () => {
+    if (!selectedGroup || !editingVariableKey || !editingVarKey.trim()) return;
+
+    const currentVars = { ...(selectedGroup.variables as Record<string, unknown>) };
+    delete currentVars[editingVariableKey];
+    currentVars[editingVarKey.trim()] = parseVariableValue(editingVarValue);
+
+    updateMutation.mutate({
+      id: selectedGroup.id,
+      data: { variables: currentVars },
+    });
+    resetEditingVariableForm();
   };
 
   const openEditModal = () => {
@@ -826,7 +904,7 @@ export default function Groups() {
                     <button
                       onClick={() => {
                         setIsAddRuleOpen(true);
-                        setEditingRuleId(null);
+                        resetEditingRuleForm();
                       }}
                       className="btn btn-secondary text-sm flex items-center"
                     >
@@ -915,14 +993,14 @@ export default function Groups() {
                             <div className="flex-1 flex items-center gap-2">
                               <input
                                 type="text"
-                                value={newRuleFactPath}
-                                onChange={(e) => setNewRuleFactPath(e.target.value)}
+                                value={editingRuleFactPath}
+                                onChange={(e) => setEditingRuleFactPath(e.target.value)}
                                 className="input flex-1 text-sm font-mono"
                                 placeholder="Fact path (e.g., os.family)"
                               />
                               <select
-                                value={newRuleOperator}
-                                onChange={(e) => setNewRuleOperator(e.target.value as RuleOperator)}
+                                value={editingRuleOperator}
+                                onChange={(e) => setEditingRuleOperator(e.target.value as RuleOperator)}
                                 className="input text-sm"
                               >
                                 {RULE_OPERATORS.map((op) => (
@@ -933,49 +1011,20 @@ export default function Groups() {
                               </select>
                               <input
                                 type="text"
-                                value={newRuleValue}
-                                onChange={(e) => setNewRuleValue(e.target.value)}
+                                value={editingRuleValue}
+                                onChange={(e) => setEditingRuleValue(e.target.value)}
                                 className="input flex-1 text-sm"
                                 placeholder="Value"
                               />
                               <button
-                                onClick={() => {
-                                  // Save edited rule (delete old, add new)
-                                  deleteRuleMutation.mutate(
-                                    { groupId: selectedGroup.id, ruleId: rule.id },
-                                    {
-                                      onSuccess: () => {
-                                        let parsedValue: string | number | boolean | string[] = newRuleValue;
-                                        if (newRuleOperator === 'in' || newRuleOperator === 'not_in') {
-                                          parsedValue = newRuleValue.split(',').map((s) => s.trim());
-                                        } else {
-                                          if (newRuleValue === 'true') parsedValue = true;
-                                          else if (newRuleValue === 'false') parsedValue = false;
-                                          else if (!isNaN(Number(newRuleValue)) && newRuleValue !== '')
-                                            parsedValue = Number(newRuleValue);
-                                        }
-                                        addRuleMutation.mutate({
-                                          groupId: selectedGroup.id,
-                                          rule: {
-                                            fact_path: newRuleFactPath,
-                                            operator: newRuleOperator,
-                                            value: parsedValue,
-                                          },
-                                        });
-                                        setEditingRuleId(null);
-                                        resetRuleForm();
-                                      },
-                                    }
-                                  );
-                                }}
+                                onClick={() => handleSaveEditedRule(rule.id)}
                                 className="btn btn-primary text-sm"
                               >
                                 Save
                               </button>
                               <button
                                 onClick={() => {
-                                  setEditingRuleId(null);
-                                  resetRuleForm();
+                                  resetEditingRuleForm();
                                 }}
                                 className="btn btn-secondary text-sm"
                               >
@@ -1000,23 +1049,7 @@ export default function Groups() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => {
-                                    setIsAddRuleOpen(false);
-                                    setEditingRuleId(rule.id);
-                                    setNewRuleFactPath(rule.fact_path);
-                                    setNewRuleOperator(rule.operator);
-                                    // Convert value to string for editing
-                                    let valueStr: string;
-                                    if (Array.isArray(rule.value)) {
-                                      // For array values (in/not_in operators), join with commas
-                                      valueStr = rule.value.join(', ');
-                                    } else if (typeof rule.value === 'object') {
-                                      valueStr = JSON.stringify(rule.value);
-                                    } else {
-                                      valueStr = String(rule.value);
-                                    }
-                                    setNewRuleValue(valueStr);
-                                  }}
+                                  onClick={() => startEditingRule(rule)}
                                   className="text-gray-400 hover:text-blue-600 transition-colors"
                                   title="Edit rule"
                                 >
@@ -1344,7 +1377,10 @@ export default function Groups() {
                       </p>
                     </div>
                     <button
-                      onClick={() => setIsAddVarOpen(true)}
+                      onClick={() => {
+                        setIsAddVarOpen(true);
+                        resetEditingVariableForm();
+                      }}
                       className="btn btn-secondary text-sm flex items-center"
                     >
                       <Plus className="w-4 h-4 mr-1" />
@@ -1384,8 +1420,7 @@ export default function Groups() {
                             type="button"
                             onClick={() => {
                               setIsAddVarOpen(false);
-                              setNewVarKey('');
-                              setNewVarValue('');
+                              resetVariableForm();
                             }}
                             className="btn btn-secondary text-sm"
                           >
@@ -1406,20 +1441,64 @@ export default function Groups() {
                           key={key}
                           className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
                         >
-                          <div className="flex items-center gap-3 font-mono text-sm">
-                            <Variable className="w-4 h-4 text-green-500" />
-                            <span className="font-medium text-gray-900">{key}</span>
-                            <span className="text-gray-400">=&gt;</span>
-                            <span className="text-green-600">
-                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveVariable(key)}
-                            className="text-gray-400 hover:text-red-600 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          {editingVariableKey === key ? (
+                            <div className="flex-1 flex items-center gap-2">
+                              <Variable className="w-4 h-4 text-green-500 flex-shrink-0" />
+                              <input
+                                type="text"
+                                value={editingVarKey}
+                                onChange={(e) => setEditingVarKey(e.target.value)}
+                                className="input flex-1 text-sm font-mono"
+                                placeholder="Variable key"
+                              />
+                              <input
+                                type="text"
+                                value={editingVarValue}
+                                onChange={(e) => setEditingVarValue(e.target.value)}
+                                className="input flex-1 text-sm font-mono"
+                                placeholder="Variable value"
+                              />
+                              <button
+                                onClick={handleSaveEditedVariable}
+                                className="btn btn-primary text-sm"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => resetEditingVariableForm()}
+                                className="btn btn-secondary text-sm"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-3 font-mono text-sm">
+                                <Variable className="w-4 h-4 text-green-500" />
+                                <span className="font-medium text-gray-900">{key}</span>
+                                <span className="text-gray-400">=&gt;</span>
+                                <span className="text-green-600">
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => startEditingVariable(key, value)}
+                                  className="text-gray-400 hover:text-blue-600 transition-colors"
+                                  title="Edit variable"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveVariable(key)}
+                                  className="text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete variable"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ))
                     ) : (
