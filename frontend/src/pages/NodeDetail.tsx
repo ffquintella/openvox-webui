@@ -1529,9 +1529,6 @@ export default function NodeDetail() {
   }
 
   const StatusIcon = getStatusIcon(node.latest_report_status);
-  const matchedGroupsCount = groups.filter((g) =>
-    g.pinned_nodes.includes(certname!)
-  ).length;
 
   return (
     <div>
