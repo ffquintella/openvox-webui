@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Inventory client now polls for and executes pending update jobs (system patch, security patch, package operations)
+- Version catalog and update statuses now refresh automatically after inventory submission
+
+### Fixed
+- Inventory now collects all packages instead of capping at 500 items per category (default raised to 10,000)
+- Removed frontend display cap of 250 items for packages and applications; now uses progressive loading
+- Update jobs no longer stay stuck in "queued" status — client executes them on next Puppet run
+- Version catalog now populates without requiring `inventory.enabled: true` in server config
+
+### Changed
+- `inventory_max_items` parameter default raised from 500 to 10,000 (upper bound from 5,000 to 50,000)
+
 ### Fixed
 - r10k deployments now default to `pool_size: 1` to work around Ruby 3.2 segfault in `File.chown` under multithreaded execution
   - New `r10k_pool_size` config option and `code_deploy_r10k_pool_size` Puppet parameter
