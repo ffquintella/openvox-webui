@@ -656,6 +656,24 @@ async fn ingest_node_inventory(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to ingest node inventory: {}", e)))?;
 
+    // Trigger background catalog and status refresh after ingestion
+    let db = state.db.clone();
+    let stale_hours = state
+        .config
+        .inventory
+        .as_ref()
+        .map(|i| i.stale_after_hours)
+        .unwrap_or(48);
+    tokio::spawn(async move {
+        let repo = InventoryRepository::new(db);
+        if let Err(e) = repo.refresh_version_catalog().await {
+            tracing::warn!("Post-ingestion catalog refresh failed: {}", e);
+        }
+        if let Err(e) = repo.refresh_host_update_statuses(stale_hours).await {
+            tracing::warn!("Post-ingestion status refresh failed: {}", e);
+        }
+    });
+
     Ok((StatusCode::CREATED, Json(inventory)))
 }
 

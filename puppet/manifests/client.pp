@@ -105,7 +105,7 @@ class openvox_webui::client (
   Optional[String[1]]                 $classification_key = undef,
   Boolean                             $inventory_enabled  = false,
   Boolean                             $inventory_submit   = true,
-  Integer[10, 5000]                   $inventory_max_items = 500,
+  Integer[10, 50000]                  $inventory_max_items = 10000,
 ) {
   # Validate that we have some form of authentication
   if !$use_puppet_certs and !$api_token and !$api_key and !$classification_key {

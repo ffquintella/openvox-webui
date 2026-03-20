@@ -6,6 +6,7 @@ require 'net/http'
 require 'openssl'
 require 'time'
 require 'uri'
+require 'shellwords'
 require 'yaml'
 
 module OpenVoxInventory
@@ -630,8 +631,172 @@ module OpenVoxInventory
     request['X-Classification-Key'] = classification_key if classification_key
   end
 
+  def fetch_pending_update_jobs(config, certname)
+    api_url = config['api_url'] || config['url']
+    return [] if api_url.nil? || certname.nil?
+
+    uri = URI.parse("#{api_url.chomp('/')}/api/v1/nodes/#{certname}/update-jobs")
+    http = build_http(uri, config, certname)
+
+    request = Net::HTTP::Get.new(uri.request_uri)
+    request['Accept'] = 'application/json'
+    request['User-Agent'] = 'OpenVox-InventoryCollector/1.0'
+    add_auth_headers(request, config)
+
+    response = http.request(request)
+    return [] unless response.code.to_i >= 200 && response.code.to_i < 300
+
+    JSON.parse(response.body)
+  rescue StandardError => e
+    Facter.warn("openvox_inventory: Failed to fetch pending update jobs: #{e.message}")
+    []
+  end
+
+  def execute_update_job(job, config)
+    os_fact = Facter.value(:os) || {}
+    family = os_fact.dig('family') || Facter.value(:kernel)
+    operation = job['operation_type']
+    packages = job['package_names'] || []
+
+    case operation
+    when 'system_patch', 'SystemPatch'
+      execute_system_patch(family, config)
+    when 'security_patch', 'SecurityPatch'
+      execute_security_patch(family, config)
+    when 'package_update', 'PackageUpdate'
+      execute_package_update(family, packages, config)
+    when 'package_install', 'PackageInstall'
+      execute_package_install(family, packages, config)
+    when 'package_remove', 'PackageRemove'
+      execute_package_remove(family, packages, config)
+    else
+      { 'status' => 'failed', 'summary' => "Unknown operation type: #{operation}", 'output' => '' }
+    end
+  end
+
+  def execute_system_patch(family, _config)
+    cmd = case family
+          when 'RedHat', 'Suse'
+            'dnf update -y 2>&1 || yum update -y 2>&1'
+          when 'Debian'
+            'apt-get update -q && apt-get upgrade -y 2>&1'
+          else
+            return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
+          end
+
+    run_update_command(cmd)
+  end
+
+  def execute_security_patch(family, _config)
+    cmd = case family
+          when 'RedHat', 'Suse'
+            'dnf update --security -y 2>&1 || yum update --security -y 2>&1'
+          when 'Debian'
+            'apt-get update -q && apt-get upgrade -y --only-upgrade 2>&1'
+          else
+            return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
+          end
+
+    run_update_command(cmd)
+  end
+
+  def sanitize_package_names(packages)
+    packages.select { |p| p.is_a?(String) && p.match?(/\A[a-zA-Z0-9._+\-:]+\z/) }
+  end
+
+  def execute_package_update(family, packages, _config)
+    safe_packages = sanitize_package_names(packages)
+    return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
+
+    pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
+    cmd = case family
+          when 'RedHat', 'Suse'
+            "dnf update -y #{pkg_list} 2>&1 || yum update -y #{pkg_list} 2>&1"
+          when 'Debian'
+            "apt-get update -q && apt-get install --only-upgrade -y #{pkg_list} 2>&1"
+          else
+            return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
+          end
+
+    run_update_command(cmd)
+  end
+
+  def execute_package_install(family, packages, _config)
+    safe_packages = sanitize_package_names(packages)
+    return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
+
+    pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
+    cmd = case family
+          when 'RedHat', 'Suse'
+            "dnf install -y #{pkg_list} 2>&1 || yum install -y #{pkg_list} 2>&1"
+          when 'Debian'
+            "apt-get update -q && apt-get install -y #{pkg_list} 2>&1"
+          else
+            return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
+          end
+
+    run_update_command(cmd)
+  end
+
+  def execute_package_remove(family, packages, _config)
+    safe_packages = sanitize_package_names(packages)
+    return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
+
+    pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
+    cmd = case family
+          when 'RedHat', 'Suse'
+            "dnf remove -y #{pkg_list} 2>&1 || yum remove -y #{pkg_list} 2>&1"
+          when 'Debian'
+            "apt-get remove -y #{pkg_list} 2>&1"
+          else
+            return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
+          end
+
+    run_update_command(cmd)
+  end
+
+  def run_update_command(cmd)
+    output = `#{cmd}`
+    exit_code = $CHILD_STATUS.exitstatus
+    {
+      'status' => exit_code == 0 ? 'succeeded' : 'failed',
+      'summary' => exit_code == 0 ? 'Update completed successfully' : "Update failed with exit code #{exit_code}",
+      'output' => output.to_s.slice(0, 10_000)
+    }
+  rescue StandardError => e
+    { 'status' => 'failed', 'summary' => "Execution error: #{e.message}", 'output' => '' }
+  end
+
+  def submit_update_job_result(config, certname, job_id, target_id, result, started_at, finished_at)
+    api_url = config['api_url'] || config['url']
+    return unless api_url
+
+    uri = URI.parse("#{api_url.chomp('/')}/api/v1/nodes/#{certname}/update-jobs/#{job_id}/targets/#{target_id}/results")
+    http = build_http(uri, config, certname)
+
+    request = Net::HTTP::Post.new(uri.request_uri)
+    request['Accept'] = 'application/json'
+    request['Content-Type'] = 'application/json'
+    request['User-Agent'] = 'OpenVox-InventoryCollector/1.0'
+    add_auth_headers(request, config)
+
+    payload = {
+      'status' => result['status'],
+      'summary' => result['summary'],
+      'output' => result['output'],
+      'started_at' => started_at,
+      'finished_at' => finished_at
+    }
+    request.body = JSON.generate(payload)
+
+    response = http.request(request)
+    Facter.warn("openvox_inventory: Update job result submission returned #{response.code}") unless response.code.to_i < 300
+  rescue StandardError => e
+    Facter.warn("openvox_inventory: Failed to submit update job result: #{e.message}")
+  end
+
   def trim(items, config)
-    max_items = (config['inventory_max_items'] || 500).to_i
+    max_items = (config['inventory_max_items'] || 10000).to_i
     items.first(max_items)
   end
 
@@ -764,6 +929,21 @@ Facter.add(:openvox_inventory_status) do
       submitted, status_code = OpenVoxInventory.submit_inventory(config, certname, payload)
     end
 
+    # Poll for and execute pending update jobs
+    update_jobs_executed = 0
+    if submitted && config['inventory_updates'] != false
+      pending_jobs = OpenVoxInventory.fetch_pending_update_jobs(config, certname)
+      pending_jobs.each do |job|
+        started_at = Time.now.utc.iso8601
+        result = OpenVoxInventory.execute_update_job(job, config)
+        finished_at = Time.now.utc.iso8601
+        OpenVoxInventory.submit_update_job_result(
+          config, certname, job['job_id'], job['target_id'], result, started_at, finished_at
+        )
+        update_jobs_executed += 1
+      end
+    end
+
     {
       'certname' => certname,
       'collector_version' => payload['collector_version'],
@@ -776,7 +956,8 @@ Facter.add(:openvox_inventory_status) do
       'website_count' => payload['websites'].size,
       'runtime_count' => payload['runtimes'].size,
       'submitted' => submitted,
-      'status_code' => status_code
+      'status_code' => status_code,
+      'update_jobs_executed' => update_jobs_executed
     }
   end
 end

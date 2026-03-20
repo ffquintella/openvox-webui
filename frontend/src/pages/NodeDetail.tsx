@@ -936,6 +936,8 @@ function InventorySection({
   const [applicationTypeFilter, setApplicationTypeFilter] = useState<string>('all');
   const [websiteTypeFilter, setWebsiteTypeFilter] = useState<string>('all');
   const [runtimeTypeFilter, setRuntimeTypeFilter] = useState<string>('all');
+  const [packageDisplayCount, setPackageDisplayCount] = useState(100);
+  const [applicationDisplayCount, setApplicationDisplayCount] = useState(100);
 
   const packageRepos = useMemo(
     () => ['all', ...new Set(inventory.packages.map((pkg) => pkg.repository_source).filter(Boolean) as string[])],
@@ -1013,6 +1015,11 @@ function InventorySection({
       }),
     [inventory.runtimes, runtimeTypeFilter, searchQuery],
   );
+
+  useEffect(() => {
+    setPackageDisplayCount(100);
+    setApplicationDisplayCount(100);
+  }, [searchQuery, packageRepoFilter, applicationTypeFilter]);
 
   const filteredHistory = useMemo(
     () =>
@@ -1240,29 +1247,39 @@ function InventorySection({
               {filteredPackages.length === 0 ? (
                 <div className="p-6 text-sm text-gray-500 text-center">No packages reported.</div>
               ) : (
-                filteredPackages.slice(0, 250).map((pkg) => (
-                  <div key={`${pkg.name}-${pkg.version}-${pkg.release ?? 'na'}`} className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{pkg.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {renderInventoryVersion(pkg.version, pkg.release)}
-                          {pkg.architecture ? ` • ${pkg.architecture}` : ''}
-                        </p>
-                        {pkg.install_time && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            Installed {new Date(pkg.install_time).toLocaleString()}
+                <>
+                  {filteredPackages.slice(0, packageDisplayCount).map((pkg) => (
+                    <div key={`${pkg.name}-${pkg.version}-${pkg.release ?? 'na'}`} className="p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{pkg.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {renderInventoryVersion(pkg.version, pkg.release)}
+                            {pkg.architecture ? ` • ${pkg.architecture}` : ''}
                           </p>
+                          {pkg.install_time && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Installed {new Date(pkg.install_time).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                        {pkg.repository_source && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                            {pkg.repository_source}
+                          </span>
                         )}
                       </div>
-                      {pkg.repository_source && (
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                          {pkg.repository_source}
-                        </span>
-                      )}
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {filteredPackages.length > packageDisplayCount && (
+                    <button
+                      onClick={() => setPackageDisplayCount(prev => prev + 100)}
+                      className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
+                    >
+                      Show more ({filteredPackages.length - packageDisplayCount} remaining)
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1278,32 +1295,42 @@ function InventorySection({
               {filteredApplications.length === 0 ? (
                 <div className="p-6 text-sm text-gray-500 text-center">No applications reported.</div>
               ) : (
-                filteredApplications.slice(0, 250).map((app) => (
-                  <div key={`${app.name}-${app.version}-${app.install_path ?? 'na'}`} className="p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{app.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {app.version}
-                          {app.publisher ? ` • ${app.publisher}` : ''}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {[app.install_scope, app.architecture].filter(Boolean).join(' • ') || 'Scope unknown'}
-                        </p>
-                        {app.install_path && (
-                          <p className="text-xs text-gray-400 mt-1 font-mono break-all">
-                            {app.install_path}
+                <>
+                  {filteredApplications.slice(0, applicationDisplayCount).map((app) => (
+                    <div key={`${app.name}-${app.version}-${app.install_path ?? 'na'}`} className="p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{app.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {app.version}
+                            {app.publisher ? ` • ${app.publisher}` : ''}
                           </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {[app.install_scope, app.architecture].filter(Boolean).join(' • ') || 'Scope unknown'}
+                          </p>
+                          {app.install_path && (
+                            <p className="text-xs text-gray-400 mt-1 font-mono break-all">
+                              {app.install_path}
+                            </p>
+                          )}
+                        </div>
+                        {app.application_type && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-primary-50 text-primary-700">
+                            {app.application_type}
+                          </span>
                         )}
                       </div>
-                      {app.application_type && (
-                        <span className="text-xs px-2 py-1 rounded-full bg-primary-50 text-primary-700">
-                          {app.application_type}
-                        </span>
-                      )}
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {filteredApplications.length > applicationDisplayCount && (
+                    <button
+                      onClick={() => setApplicationDisplayCount(prev => prev + 100)}
+                      className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
+                    >
+                      Show more ({filteredApplications.length - applicationDisplayCount} remaining)
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
