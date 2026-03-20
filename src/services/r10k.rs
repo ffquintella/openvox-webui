@@ -382,7 +382,8 @@ impl R10kService {
         let mut cmd = Command::new(&self.config.binary_path);
         cmd.args(args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            .current_dir("/tmp"); // Use stable CWD that won't be purged during r10k deployment
 
         let mut child = cmd.spawn().context("Failed to spawn r10k process")?;
 
@@ -462,21 +463,16 @@ impl R10kService {
                 let success = if exit_status.success() {
                     true
                 } else if signal.is_some() {
-                    // Process was killed by a signal - check if it actually completed successfully
-                    // by looking for successful deployment indicators in the output
-                    let output_indicates_success = stderr_str.contains("Deploying module to")
-                        || stderr_str.contains("Environment")
-                        || stdout_str.contains("Deploying module to");
-
-                    if output_indicates_success {
-                        warn!(
-                            "r10k was terminated by signal {:?} but output indicates successful completion",
-                            signal
-                        );
-                        true
-                    } else {
-                        false
-                    }
+                    // Signal-terminated r10k is NEVER considered successful.
+                    // Previous logic checked for "Deploying module to" in output, but that
+                    // string appears early in deployment before files are fully written.
+                    // Marking a killed deployment as "successful" causes corruption to persist
+                    // because no retry is triggered and partial files are left on disk.
+                    warn!(
+                        "r10k was terminated by signal {:?} - marking as FAILED (partial deployment may have occurred)",
+                        signal
+                    );
+                    false
                 } else {
                     false
                 };
@@ -521,12 +517,54 @@ impl R10kService {
             }
             Err(_) => {
                 cleanup().await;
-                // Timeout - kill the process
+                // Timeout - gracefully terminate the process with SIGTERM first,
+                // then escalate to SIGKILL if it doesn't exit within 30 seconds.
+                // Using SIGKILL immediately can corrupt module directories by killing
+                // r10k mid-file-write, leaving partial modules (e.g., only CHANGELOG.md).
                 error!(
                     "r10k command TIMEOUT after {}s: command='{}'",
                     self.config.timeout_seconds, command_str
                 );
-                let _ = child.kill().await;
+
+                #[cfg(unix)]
+                {
+                    if let Some(pid) = child.id() {
+                        info!("Sending SIGTERM to r10k process (pid={})", pid);
+                        let term_result = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                        if term_result == 0 {
+                            // Wait up to 30 seconds for graceful exit
+                            match timeout(Duration::from_secs(30), child.wait()).await {
+                                Ok(Ok(status)) => {
+                                    info!(
+                                        "r10k exited gracefully after SIGTERM (status={:?})",
+                                        status.code()
+                                    );
+                                }
+                                Ok(Err(e)) => {
+                                    warn!("Error waiting for r10k after SIGTERM: {}", e);
+                                    let _ = child.kill().await;
+                                }
+                                Err(_) => {
+                                    warn!("r10k did not exit within 30s after SIGTERM, sending SIGKILL");
+                                    let _ = child.kill().await;
+                                }
+                            }
+                        } else {
+                            warn!(
+                                "Failed to send SIGTERM to r10k (pid={}), sending SIGKILL",
+                                pid
+                            );
+                            let _ = child.kill().await;
+                        }
+                    } else {
+                        let _ = child.kill().await;
+                    }
+                }
+
+                #[cfg(not(unix))]
+                {
+                    let _ = child.kill().await;
+                }
 
                 Ok(DeploymentResult {
                     success: false,
@@ -556,7 +594,9 @@ impl R10kService {
             pool_size: Some(self.config.pool_size),
             deploy: Some(R10kDeploySettings {
                 purge_levels: Some(vec!["deployment".to_string()]),
-                purge_allowlist: None,
+                purge_allowlist: Some(vec![
+                    ".r10k-deploy.json".to_string(),
+                ]),
             }),
         };
 

@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `r10k_pool_size` config option and `code_deploy_r10k_pool_size` Puppet parameter
   - Includes `pool_size` in generated `r10k.yaml`
 - Removed invalid `--pool-size` CLI argument from r10k invocations (not a valid r10k CLI option)
+- Fixed intermittent r10k deployment corruption leaving partial modules (e.g., only CHANGELOG.md)
+  - Timeout now sends SIGTERM (graceful) before escalating to SIGKILL after 30s, preventing mid-file-write kills
+  - Signal-terminated r10k processes are no longer falsely marked as "successful"
+  - Set explicit working directory (`/tmp`) for spawned r10k process to prevent Ruby `getcwd` errors
+  - Added `purge_allowlist` to generated `r10k.yaml` to protect deployment marker files
 
 ### Added
 - Phase 10.2 Puppet-side inventory collectors for Linux, Windows, and macOS with package/application, website, and runtime discovery
