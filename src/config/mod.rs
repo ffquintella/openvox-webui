@@ -719,6 +719,9 @@ pub struct CodeDeployYamlConfig {
     /// r10k cache directory
     #[serde(default = "default_r10k_cachedir")]
     pub r10k_cachedir: PathBuf,
+    /// r10k thread pool size (default: 1 to avoid Ruby 3.2 threading segfault)
+    #[serde(default = "default_r10k_pool_size")]
+    pub r10k_pool_size: u32,
     /// Encryption key for SSH private keys (should come from secure storage)
     #[serde(default)]
     pub encryption_key: String,
@@ -754,6 +757,10 @@ fn default_r10k_cachedir() -> PathBuf {
     PathBuf::from("/opt/puppetlabs/puppet/cache/r10k")
 }
 
+fn default_r10k_pool_size() -> u32 {
+    1
+}
+
 fn default_retain_history_days() -> u32 {
     90
 }
@@ -768,6 +775,7 @@ impl Default for CodeDeployYamlConfig {
             r10k_config_path: default_r10k_config_path(),
             environments_basedir: default_environments_basedir(),
             r10k_cachedir: default_r10k_cachedir(),
+            r10k_pool_size: default_r10k_pool_size(),
             encryption_key: String::new(),
             webhook_base_url: None,
             retain_history_days: default_retain_history_days(),
@@ -1651,6 +1659,13 @@ impl AppConfig {
         if let Ok(dir) = std::env::var("CODE_DEPLOY_R10K_CACHEDIR") {
             if let Some(ref mut code_deploy) = self.code_deploy {
                 code_deploy.r10k_cachedir = PathBuf::from(dir);
+            }
+        }
+        if let Ok(val) = std::env::var("CODE_DEPLOY_R10K_POOL_SIZE") {
+            if let Ok(n) = val.parse() {
+                if let Some(ref mut code_deploy) = self.code_deploy {
+                    code_deploy.r10k_pool_size = n;
+                }
             }
         }
         if let Ok(days) = std::env::var("CODE_DEPLOY_RETAIN_HISTORY_DAYS") {

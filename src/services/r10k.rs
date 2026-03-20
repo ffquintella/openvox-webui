@@ -49,6 +49,14 @@ pub struct R10kConfig {
     /// Extra arguments to pass to r10k
     #[serde(default)]
     pub extra_args: Vec<String>,
+    /// r10k thread pool size for module installations (default: 1)
+    /// Set to 1 to work around Ruby 3.2 segfault in File.chown under multithreading
+    #[serde(default = "default_pool_size")]
+    pub pool_size: u32,
+}
+
+fn default_pool_size() -> u32 {
+    1
 }
 
 fn default_binary_path() -> PathBuf {
@@ -86,6 +94,7 @@ impl Default for R10kConfig {
             deploy_puppetfile: default_deploy_puppetfile(),
             generate_types: false,
             extra_args: vec![],
+            pool_size: default_pool_size(),
         }
     }
 }
@@ -220,6 +229,11 @@ impl R10kService {
         // Add verbose output for logging
         args.push("-v");
 
+        // Add pool size to avoid Ruby threading segfault
+        let pool_size_str = self.config.pool_size.to_string();
+        args.push("--pool-size");
+        args.push(&pool_size_str);
+
         // Add extra args
         for arg in &self.config.extra_args {
             args.push(arg);
@@ -283,6 +297,11 @@ impl R10kService {
         args.push("-c");
         args.push(self.config.config_path.to_str().unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"));
         args.push("-v");
+
+        // Add pool size to avoid Ruby threading segfault
+        let pool_size_str = self.config.pool_size.to_string();
+        args.push("--pool-size");
+        args.push(&pool_size_str);
 
         for arg in &self.config.extra_args {
             args.push(arg);
@@ -544,6 +563,7 @@ impl R10kService {
                 .iter()
                 .map(|s| (s.name.clone(), s.clone()))
                 .collect(),
+            pool_size: Some(self.config.pool_size),
             deploy: Some(R10kDeploySettings {
                 purge_levels: Some(vec!["deployment".to_string()]),
                 purge_allowlist: None,
@@ -624,6 +644,8 @@ pub struct R10kSource {
 struct R10kYamlConfig {
     cachedir: String,
     sources: std::collections::HashMap<String, R10kSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pool_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     deploy: Option<R10kDeploySettings>,
 }

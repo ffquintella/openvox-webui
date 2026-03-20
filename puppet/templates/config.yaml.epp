@@ -58,6 +58,7 @@
   Stdlib::Absolutepath $code_deploy_repos_base_dir,
   Stdlib::Absolutepath $code_deploy_ssh_keys_dir,
   Stdlib::Absolutepath $code_deploy_r10k_path,
+  Integer $code_deploy_r10k_pool_size,
   String $code_deploy_encryption_key,
   # Backup parameters
   Boolean $backup_enabled,
@@ -270,6 +271,7 @@ code_deploy:
   repos_base_dir: "<%= $code_deploy_repos_base_dir %>"
   ssh_keys_dir: "<%= $code_deploy_ssh_keys_dir %>"
   r10k_path: "<%= $code_deploy_r10k_path %>"
+  r10k_pool_size: <%= $code_deploy_r10k_pool_size %>
   encryption_key: "<%= $code_deploy_encryption_key %>"
 <% } else { -%>
 # Code Deploy - Git-based environment management (disabled)

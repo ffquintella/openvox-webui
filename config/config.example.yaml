@@ -176,6 +176,7 @@ rbac:
 #   r10k_binary_path: "/opt/puppetlabs/puppet/bin/r10k"
 #   r10k_config_path: "/etc/puppetlabs/r10k/r10k.yaml"
 #   r10k_cachedir: "/opt/puppetlabs/puppet/cache/r10k"
+#   r10k_pool_size: 1  # Thread pool size for r10k module installs (1 = workaround for Ruby 3.2 chown segfault)
 #   environments_basedir: "/etc/puppetlabs/code/environments"
 
 # SAML 2.0 Single Sign-On configuration

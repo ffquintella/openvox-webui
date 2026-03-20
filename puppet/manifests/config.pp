@@ -143,6 +143,7 @@ class openvox_webui::config {
         code_deploy_repos_base_dir     => $openvox_webui::code_deploy_repos_base_dir,
         code_deploy_ssh_keys_dir       => $openvox_webui::code_deploy_ssh_keys_dir,
         code_deploy_r10k_path          => $openvox_webui::code_deploy_r10k_path,
+        code_deploy_r10k_pool_size     => $openvox_webui::code_deploy_r10k_pool_size,
         code_deploy_encryption_key     => $openvox_webui::code_deploy_encryption_key,
         # Backup settings
         backup_enabled                 => $openvox_webui::backup_enabled,

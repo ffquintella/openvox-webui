@@ -121,6 +121,7 @@ async fn main() -> Result<()> {
                     config_path: cd.r10k_config_path.clone(),
                     basedir: cd.environments_basedir.clone(),
                     cachedir: cd.r10k_cachedir.clone(),
+                    pool_size: cd.r10k_pool_size,
                     ..Default::default()
                 },
                 enabled: true,

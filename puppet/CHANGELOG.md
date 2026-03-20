@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- r10k deployments now default to `pool_size: 1` to work around Ruby 3.2 segfault in `File.chown` under multithreaded execution
+  - New `r10k_pool_size` config option and `code_deploy_r10k_pool_size` Puppet parameter
+  - Also passes `--pool-size` on the r10k CLI and includes `pool_size` in generated `r10k.yaml`
+
 ### Added
 - Phase 10.2 Puppet-side inventory collectors for Linux, Windows, and macOS with package/application, website, and runtime discovery
 - `openvox_inventory_status` fact for inventory collection status and submission summary
