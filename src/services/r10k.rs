@@ -229,11 +229,6 @@ impl R10kService {
         // Add verbose output for logging
         args.push("-v");
 
-        // Add pool size to avoid Ruby threading segfault
-        let pool_size_str = self.config.pool_size.to_string();
-        args.push("--pool-size");
-        args.push(&pool_size_str);
-
         // Add extra args
         for arg in &self.config.extra_args {
             args.push(arg);
@@ -297,11 +292,6 @@ impl R10kService {
         args.push("-c");
         args.push(self.config.config_path.to_str().unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"));
         args.push("-v");
-
-        // Add pool size to avoid Ruby threading segfault
-        let pool_size_str = self.config.pool_size.to_string();
-        args.push("--pool-size");
-        args.push(&pool_size_str);
 
         for arg in &self.config.extra_args {
             args.push(arg);
