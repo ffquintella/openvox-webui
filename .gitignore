@@ -109,3 +109,5 @@ logs/
 *.sqlite3
 
 puppet/pkg/
+
+.claude/plans/
