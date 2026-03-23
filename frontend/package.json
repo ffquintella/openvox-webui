@@ -41,7 +41,7 @@
     "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.24",
     "eslint": "^10.0.3",
-    "eslint-plugin-react-hooks": "7.1.0-canary-3f0b9e61-20260317",
+    "eslint-plugin-react-hooks": "7.1.0-canary-52684925-20251110",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "jsdom": "^29.0.1",
