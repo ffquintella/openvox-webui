@@ -103,7 +103,7 @@ tar = "0.4"
 # SAML 2.0 authentication
 # Without xmlsec feature, no signature verification (development mode)
 # For production with signature verification, install libxml2, xmlsec1 and enable xmlsec feature
-samael = { version = "0.0.19", default-features = false }
+samael = { version = "0.0.20", default-features = false }
 flate2 = "1.1"
 
 # Email sending
