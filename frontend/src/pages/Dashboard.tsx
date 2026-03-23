@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useOutdatedSoftwareNodes, useComplianceCategoryNodes } from '../hooks/useUpdates';
 import {
   PieChart,
   Pie,
@@ -28,6 +29,9 @@ import {
   Activity,
   ArrowRight,
   ShieldAlert,
+  X,
+  Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useVulnerabilityDashboard } from '../hooks/useCve';
@@ -98,6 +102,10 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  // Drill-down state for inventory compliance
+  const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
+  const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
+
   const { data: nodes = [], isLoading: nodesLoading, refetch: refetchNodes } = useQuery({
     queryKey: ['nodes'],
     queryFn: api.getNodes,
@@ -119,6 +127,12 @@ export default function Dashboard() {
   });
 
   const { data: vulnDashboard } = useVulnerabilityDashboard();
+
+  // Drill-down queries
+  const { data: complianceNodes = [], isLoading: complianceNodesLoading } =
+    useComplianceCategoryNodes(selectedCompliance);
+  const { data: softwareNodes = [], isLoading: softwareNodesLoading } =
+    useOutdatedSoftwareNodes(selectedSoftware?.name ?? null, selectedSoftware?.softwareType);
 
   // Calculate stats from real node data
   const stats = useMemo(() => {
@@ -237,8 +251,15 @@ export default function Dashboard() {
       bg: 'bg-danger-50',
     },
     {
+      name: 'Warning',
+      value: stats.healthCounts.warning + stats.healthCounts.critical,
+      icon: Clock,
+      color: 'text-orange-500',
+      bg: 'bg-orange-50',
+    },
+    {
       name: 'Unreported',
-      value: stats.statusCounts.unreported,
+      value: stats.healthCounts.unknown,
       icon: AlertCircle,
       color: 'text-warning-500',
       bg: 'bg-warning-50',
@@ -260,6 +281,7 @@ export default function Dashboard() {
       icon: Server,
       color: 'text-primary-600',
       bg: 'bg-primary-50',
+      drilldown: null as string | null,
     },
     {
       name: 'Outdated Nodes',
@@ -268,6 +290,7 @@ export default function Dashboard() {
       icon: AlertCircle,
       color: 'text-warning-500',
       bg: 'bg-warning-50',
+      drilldown: 'outdated' as string | null,
     },
     {
       name: 'Stale Inventory',
@@ -276,6 +299,7 @@ export default function Dashboard() {
       icon: Clock,
       color: 'text-danger-500',
       bg: 'bg-danger-50',
+      drilldown: 'stale' as string | null,
     },
     {
       name: 'Up To Date',
@@ -285,6 +309,7 @@ export default function Dashboard() {
       icon: CheckCircle,
       color: 'text-success-500',
       bg: 'bg-success-50',
+      drilldown: 'compliant' as string | null,
     },
   ];
 
@@ -442,16 +467,23 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
           {inventoryStatsCards.map((stat) => (
-            <div key={stat.name} className="card">
+            <div
+              key={stat.name}
+              className={`card transition-all ${stat.drilldown ? 'cursor-pointer hover:shadow-md hover:ring-1 hover:ring-primary-200' : ''}`}
+              onClick={() => stat.drilldown && stat.value > 0 && setSelectedCompliance(stat.drilldown)}
+            >
               <div className="flex items-center">
                 <div className={`p-3 rounded-lg ${stat.bg}`}>
                   <stat.icon className={`w-6 h-6 ${stat.color}`} />
                 </div>
-                <div className="ml-4">
+                <div className="ml-4 flex-1">
                   <p className="text-sm font-medium text-gray-500">{stat.name}</p>
                   <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
                   <p className="text-xs text-gray-500 mt-1">{stat.subtitle}</p>
                 </div>
+                {stat.drilldown && stat.value > 0 && (
+                  <ExternalLink className="w-4 h-4 text-gray-400" />
+                )}
               </div>
             </div>
           ))}
@@ -471,6 +503,14 @@ export default function Dashboard() {
                     outerRadius={80}
                     paddingAngle={5}
                     dataKey="value"
+                    className="cursor-pointer"
+                    onClick={(_data) => {
+                      const data = _data as unknown as { label?: string; value?: number };
+                      const category = data?.label?.toLowerCase();
+                      if (category && (data?.value ?? 0) > 0) {
+                        setSelectedCompliance(category === 'compliant' ? 'compliant' : category === 'outdated' ? 'outdated' : 'stale');
+                      }
+                    }}
                   >
                     {inventoryComplianceData.map((entry, index) => (
                       <Cell
@@ -482,6 +522,7 @@ export default function Dashboard() {
                             ? '#f59e0b'
                             : '#ef4444'
                         }
+                        className="cursor-pointer"
                       />
                     ))}
                   </Pie>
@@ -558,14 +599,18 @@ export default function Dashboard() {
                 <p className="text-sm text-gray-500">No outdated software detected.</p>
               ) : (
                 topOutdatedSoftware.map((item) => (
-                  <div key={`${item.software_type}-${item.name}`} className="flex items-center justify-between gap-4">
+                  <div
+                    key={`${item.software_type}-${item.name}`}
+                    className="flex items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors"
+                    onClick={() => setSelectedSoftware({ name: item.name, softwareType: item.software_type })}
+                  >
                     <div>
                       <p className="text-sm font-medium text-gray-900">{item.name}</p>
                       <p className="text-xs uppercase tracking-wide text-gray-400">
                         {item.software_type}
                       </p>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className="text-sm font-medium text-primary-600 hover:underline">
                       {item.affected_nodes} nodes
                     </span>
                   </div>
@@ -757,6 +802,147 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      {/* Compliance Category Drill-Down Modal */}
+      {selectedCompliance && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelectedCompliance(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {selectedCompliance.charAt(0).toUpperCase() + selectedCompliance.slice(1)} Nodes
+              </h3>
+              <button
+                onClick={() => setSelectedCompliance(null)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6">
+              {complianceNodesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+                </div>
+              ) : complianceNodes.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No nodes in this category</p>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Pkgs</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Apps</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Checked</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {complianceNodes.map((node) => (
+                      <tr key={node.certname} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <Link
+                            to={`/nodes/${encodeURIComponent(node.certname)}`}
+                            className="text-primary-600 hover:underline font-mono text-sm"
+                            onClick={() => setSelectedCompliance(null)}
+                          >
+                            {node.certname}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right">
+                          {node.outdated_packages > 0 ? (
+                            <span className="text-orange-600 font-semibold">{node.outdated_packages}</span>
+                          ) : (
+                            <span className="text-green-600">0</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right">
+                          {node.outdated_applications > 0 ? (
+                            <span className="text-orange-600 font-semibold">{node.outdated_applications}</span>
+                          ) : (
+                            <span className="text-green-600">0</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {formatTimeAgo(node.checked_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Outdated Software Drill-Down Modal */}
+      {selectedSoftware && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelectedSoftware(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Nodes with outdated &ldquo;{selectedSoftware.name}&rdquo;
+              </h3>
+              <button
+                onClick={() => setSelectedSoftware(null)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6">
+              {softwareNodesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+                </div>
+              ) : softwareNodes.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No affected nodes found</p>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Installed</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {softwareNodes.map((node) => (
+                      <tr key={node.certname} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <Link
+                            to={`/nodes/${encodeURIComponent(node.certname)}`}
+                            className="text-primary-600 hover:underline font-mono text-sm"
+                            onClick={() => setSelectedSoftware(null)}
+                          >
+                            {node.certname}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-red-600">
+                          {node.installed_version}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-green-600">
+                          {node.latest_version}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

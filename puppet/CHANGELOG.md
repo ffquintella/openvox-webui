@@ -16,10 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Fix outdated software "Affected Nodes" count inflated by duplicate package entries (e.g., gpg-pubkey) — now counts unique nodes per package
+- Fix dashboard stats cards not summing to Total Nodes — added Warning category for stale nodes and aligned all cards to health-based classification
 - Add openvox-webui user to puppet group in ENC manifest for r10k cache directory access
 - Fix r10k deployments incorrectly marked as failed when killed by SIGSYS/SIGPIPE signal after successful completion
 
 ### Added
+- Add Updates analytics dashboard tab under Analytics with fleet update metrics, compliance charts, patch age distribution, top outdated software, and update job history
+- Add drill-down capabilities: click outdated software to see affected nodes with version details, click compliance categories to see node lists, expand update jobs to see per-target results
+- Add backend endpoints for outdated software and compliance category drill-down queries
+- Add Windows bootstrap support: PowerShell script served from `/api/v1/bootstrap/windows-script` that auto-discovers and installs the latest OpenVox Agent MSI from downloads.voxpupuli.org
+- Add Windows bootstrap command section to Add Node page with copy-to-clipboard, non-interactive, and dry-run modes
+- Add container inventory collection: detects Docker CE, Docker Enterprise, and Podman installations; collects all containers with status, image, ports, mounts, and runtime type
+- Add user inventory collection: collects local system users with UID, groups, shell, home directory, lock status, and last login (Linux, macOS, and Windows)
+- Add containers and users tabs to node detail inventory view with filtering and search
+- Add drill-down modals to Dashboard Inventory Compliance cards and pie chart — click any stat to see affected nodes
+- Add drill-down to Dashboard Top Outdated Software — click any package to see affected nodes with version details
 - Inventory client now polls for and executes pending update jobs (system patch, security patch, package operations)
 - Version catalog and update statuses now refresh automatically after inventory submission
 

@@ -22,6 +22,7 @@ pub fn public_routes() -> Router<AppState> {
     Router::new()
         .route("/config", get(get_bootstrap_config))
         .route("/script", get(get_bootstrap_script))
+        .route("/windows-script", get(get_windows_bootstrap_script))
 }
 
 /// Response containing bootstrap configuration
@@ -101,6 +102,37 @@ pub async fn get_bootstrap_script(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
+/// GET /api/v1/bootstrap/windows-script
+///
+/// Returns a dynamically generated PowerShell bootstrap script for Windows.
+/// The script downloads and installs the OpenVox agent MSI package.
+pub async fn get_windows_bootstrap_script(State(state): State<AppState>) -> Response {
+    let config = state.config.node_bootstrap.as_ref();
+
+    let openvox_server = config
+        .and_then(|c| c.openvox_server_url.clone())
+        .unwrap_or_default();
+
+    let package_name = config
+        .map(|c| c.agent_package_name.clone())
+        .unwrap_or_else(|| "openvox-agent".to_string());
+
+    let script = generate_windows_bootstrap_script(&openvox_server, &package_name);
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"bootstrap-openvox-agent.ps1\"",
+            ),
+        ],
+        script,
+    )
+        .into_response()
+}
+
 /// Generate the bootstrap script with configuration values injected
 fn generate_bootstrap_script(openvox_server: &str, repo_url: &str, package_name: &str) -> String {
     let script_template = include_str!("../../scripts/bootstrap-agent.sh");
@@ -108,6 +140,15 @@ fn generate_bootstrap_script(openvox_server: &str, repo_url: &str, package_name:
     script_template
         .replace("{{OPENVOX_SERVER}}", openvox_server)
         .replace("{{REPO_BASE_URL}}", repo_url)
+        .replace("{{PACKAGE_NAME}}", package_name)
+}
+
+/// Generate the Windows PowerShell bootstrap script with configuration values injected
+fn generate_windows_bootstrap_script(openvox_server: &str, package_name: &str) -> String {
+    let script_template = include_str!("../../scripts/bootstrap-agent.ps1");
+
+    script_template
+        .replace("{{OPENVOX_SERVER}}", openvox_server)
         .replace("{{PACKAGE_NAME}}", package_name)
 }
 
@@ -128,6 +169,16 @@ mod tests {
         assert!(script.contains("openvox-agent"));
         assert!(!script.contains("{{OPENVOX_SERVER}}"));
         assert!(!script.contains("{{REPO_BASE_URL}}"));
+        assert!(!script.contains("{{PACKAGE_NAME}}"));
+    }
+
+    #[test]
+    fn test_generate_windows_bootstrap_script_replaces_placeholders() {
+        let script = generate_windows_bootstrap_script("openvox.example.com", "openvox-agent");
+
+        assert!(script.contains("openvox.example.com"));
+        assert!(script.contains("openvox-agent"));
+        assert!(!script.contains("{{OPENVOX_SERVER}}"));
         assert!(!script.contains("{{PACKAGE_NAME}}"));
     }
 }

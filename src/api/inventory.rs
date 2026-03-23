@@ -13,9 +13,10 @@ use crate::{
     db::{repository::GroupRepository, CveRepository, InventoryRepository},
     middleware::AuthUser,
     models::{
-        ApproveUpdateJobRequest, CreateUpdateJobRequest, InventoryDashboardReport,
-        InventoryFleetStatusSummary, RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType,
-        UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
+        ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
+        InventoryDashboardReport, InventoryFleetStatusSummary, OutdatedSoftwareNodeDetail,
+        RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType, UpdatePreviewPackage,
+        UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -28,6 +29,14 @@ pub fn routes() -> Router<AppState> {
         .route("/updates/{job_id}", get(get_update_job))
         .route("/updates/{job_id}/approve", post(approve_update_job))
         .route("/dashboard", get(get_inventory_dashboard))
+        .route(
+            "/dashboard/outdated-software/{name}",
+            get(get_outdated_software_nodes),
+        )
+        .route(
+            "/dashboard/compliance/{category}",
+            get(get_compliance_category_nodes),
+        )
         .route("/summary", get(get_inventory_summary))
         .route("/catalog", get(list_version_catalog))
 }
@@ -96,6 +105,44 @@ async fn get_inventory_dashboard(
         .map_err(|e| AppError::Internal(format!("Failed to fetch inventory dashboard: {}", e)))?;
 
     Ok(Json(report))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OutdatedSoftwareQuery {
+    pub software_type: Option<String>,
+}
+
+async fn get_outdated_software_nodes(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(name): Path<String>,
+    Query(query): Query<OutdatedSoftwareQuery>,
+) -> AppResult<Json<Vec<OutdatedSoftwareNodeDetail>>> {
+    require_inventory_update_read(&auth_user)?;
+    let repo = InventoryRepository::new(state.db.clone());
+    let nodes = repo
+        .get_nodes_for_outdated_software(&name, query.software_type.as_deref())
+        .await
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to fetch outdated software nodes: {}", e))
+        })?;
+    Ok(Json(nodes))
+}
+
+async fn get_compliance_category_nodes(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(category): Path<String>,
+) -> AppResult<Json<Vec<ComplianceCategoryNode>>> {
+    require_inventory_update_read(&auth_user)?;
+    let repo = InventoryRepository::new(state.db.clone());
+    let nodes = repo
+        .get_nodes_for_compliance_category(&category)
+        .await
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to fetch compliance category nodes: {}", e))
+        })?;
+    Ok(Json(nodes))
 }
 
 async fn list_version_catalog(

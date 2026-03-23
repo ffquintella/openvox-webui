@@ -27,6 +27,8 @@ import {
   Globe,
   AppWindow,
   Layers3,
+  Container,
+  Users,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useNodeVulnerabilities } from '../hooks/useCve';
@@ -41,7 +43,7 @@ import type {
 } from '../types';
 
 type TabId = 'overview' | 'inventory' | 'facts' | 'reports' | 'groups';
-type InventoryView = 'all' | 'packages' | 'applications' | 'websites' | 'runtimes' | 'history';
+type InventoryView = 'all' | 'packages' | 'applications' | 'websites' | 'runtimes' | 'containers' | 'users' | 'history';
 
 interface Tab {
   id: TabId;
@@ -936,6 +938,8 @@ function InventorySection({
   const [applicationTypeFilter, setApplicationTypeFilter] = useState<string>('all');
   const [websiteTypeFilter, setWebsiteTypeFilter] = useState<string>('all');
   const [runtimeTypeFilter, setRuntimeTypeFilter] = useState<string>('all');
+  const [containerRuntimeFilter, setContainerRuntimeFilter] = useState<string>('all');
+  const [userTypeFilter, setUserTypeFilter] = useState<string>('all');
   const [packageDisplayCount, setPackageDisplayCount] = useState(100);
   const [applicationDisplayCount, setApplicationDisplayCount] = useState(100);
 
@@ -954,6 +958,14 @@ function InventorySection({
   const runtimeTypes = useMemo(
     () => ['all', ...new Set(inventory.runtimes.map((runtime) => runtime.runtime_type).filter(Boolean))],
     [inventory.runtimes],
+  );
+  const containerRuntimeTypes = useMemo(
+    () => ['all', ...new Set((inventory?.containers ?? []).map((c) => c.runtime_type).filter(Boolean))],
+    [inventory?.containers],
+  );
+  const userTypes = useMemo(
+    () => ['all', ...new Set((inventory?.users ?? []).map((u) => u.user_type).filter(Boolean) as string[])],
+    [inventory?.users],
   );
 
   const filteredPackages = useMemo(
@@ -1016,6 +1028,34 @@ function InventorySection({
     [inventory.runtimes, runtimeTypeFilter, searchQuery],
   );
 
+  const filteredContainers = useMemo(
+    () => {
+      const items = inventory?.containers ?? [];
+      return items.filter((c) => {
+        if (containerRuntimeFilter !== 'all' && c.runtime_type !== containerRuntimeFilter) return false;
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return [c.container_id, c.name, c.image, c.status, c.runtime_type, ...c.ports, ...c.mounts]
+          .some((v) => v?.toLowerCase().includes(query));
+      });
+    },
+    [inventory?.containers, containerRuntimeFilter, searchQuery],
+  );
+
+  const filteredUsers = useMemo(
+    () => {
+      const items = inventory?.users ?? [];
+      return items.filter((u) => {
+        if (userTypeFilter !== 'all' && u.user_type !== userTypeFilter) return false;
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return [u.username, u.home_directory, u.shell, u.user_type, u.gecos, ...u.groups]
+          .some((v) => v?.toLowerCase().includes(query));
+      });
+    },
+    [inventory?.users, userTypeFilter, searchQuery],
+  );
+
   useEffect(() => {
     setPackageDisplayCount(100);
     setApplicationDisplayCount(100);
@@ -1053,20 +1093,32 @@ function InventorySection({
       value: inventory.summary.runtime_count,
       icon: Layers3,
     },
+    {
+      label: 'Containers',
+      value: inventory.summary.container_count,
+      icon: Container,
+    },
+    {
+      label: 'Users',
+      value: inventory.summary.user_count,
+      icon: Users,
+    },
   ];
 
   const viewPills: Array<{ id: InventoryView; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: inventory.summary.package_count + inventory.summary.application_count + inventory.summary.website_count + inventory.summary.runtime_count },
+    { id: 'all', label: 'All', count: inventory.summary.package_count + inventory.summary.application_count + inventory.summary.website_count + inventory.summary.runtime_count + inventory.summary.container_count + inventory.summary.user_count },
     { id: 'packages', label: 'Packages', count: filteredPackages.length },
     { id: 'applications', label: 'Applications', count: filteredApplications.length },
     { id: 'websites', label: 'Websites', count: filteredWebsites.length },
     { id: 'runtimes', label: 'Runtimes', count: filteredRuntimes.length },
+    { id: 'containers', label: 'Containers', count: filteredContainers.length },
+    { id: 'users', label: 'Users', count: filteredUsers.length },
     { id: 'history', label: 'History', count: filteredHistory.length },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {summaryCards.map((card) => (
           <div key={card.label} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
             <div className="flex items-center gap-3">
@@ -1151,7 +1203,7 @@ function InventorySection({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search packages, apps, websites, runtimes, or history..."
+              placeholder="Search packages, apps, websites, runtimes, containers, users, or history..."
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -1172,7 +1224,7 @@ function InventorySection({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           <label className="text-sm">
             <span className="block text-xs text-gray-500 mb-1">Package Source</span>
             <select
@@ -1228,6 +1280,36 @@ function InventorySection({
               {runtimeTypes.map((type) => (
                 <option key={type} value={type}>
                   {type === 'all' ? 'All runtime types' : type}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <span className="block text-xs text-gray-500 mb-1">Container Runtime</span>
+            <select
+              value={containerRuntimeFilter}
+              onChange={(e) => setContainerRuntimeFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              {containerRuntimeTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type === 'all' ? 'All container runtimes' : type}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <span className="block text-xs text-gray-500 mb-1">User Type</span>
+            <select
+              value={userTypeFilter}
+              onChange={(e) => setUserTypeFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              {userTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type === 'all' ? 'All user types' : type}
                 </option>
               ))}
             </select>
@@ -1447,6 +1529,161 @@ function InventorySection({
             )}
           </div>
           </div>
+        </div>
+      )}
+
+      {(activeView === 'all' || activeView === 'containers') && (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Containers
+            <span className="ml-2 text-sm font-normal text-gray-500">{filteredContainers.length} matching</span>
+          </h3>
+          {filteredContainers.length === 0 ? (
+            <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
+              No container inventory reported.
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Name</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Image</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Runtime</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Ports</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredContainers.map((container) => (
+                      <tr key={container.container_id} className="hover:bg-gray-50">
+                        <td className="py-2 px-3">
+                          <p className="font-medium text-gray-900">{container.name}</p>
+                          <p className="text-xs text-gray-400 font-mono truncate max-w-[200px]">{container.container_id}</p>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-xs text-gray-700">{container.image}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                            container.status === 'running'
+                              ? 'bg-success-50 text-success-700'
+                              : container.status === 'exited'
+                                ? 'bg-gray-100 text-gray-600'
+                                : container.status === 'paused' || container.status === 'created'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : container.status === 'dead'
+                                    ? 'bg-danger-50 text-danger-700'
+                                    : 'bg-primary-50 text-primary-700'
+                          }`}>
+                            {container.status}
+                          </span>
+                          {container.status_detail && (
+                            <p className="text-xs text-gray-400 mt-0.5">{container.status_detail}</p>
+                          )}
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                            {container.runtime_type}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-xs text-gray-600">
+                            {container.ports.length > 0 ? container.ports.join(', ') : '-'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-gray-500">
+                          {container.created_at ? new Date(container.created_at).toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(activeView === 'all' || activeView === 'users') && (
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Users
+            <span className="ml-2 text-sm font-normal text-gray-500">{filteredUsers.length} matching</span>
+          </h3>
+          {filteredUsers.length === 0 ? (
+            <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
+              No user inventory reported.
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Username</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">UID/SID</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Home Directory</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Shell</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Groups</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredUsers.map((user) => (
+                      <tr key={user.username} className="hover:bg-gray-50">
+                        <td className="py-2 px-3">
+                          <span className="font-medium font-mono text-gray-900">{user.username}</span>
+                          {user.gecos && (
+                            <p className="text-xs text-gray-400">{user.gecos}</p>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-xs text-gray-600">
+                          {user.uid != null ? user.uid : user.sid ?? '-'}
+                        </td>
+                        <td className="py-2 px-3">
+                          {user.user_type && (
+                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                              user.user_type === 'regular'
+                                ? 'bg-primary-50 text-primary-700'
+                                : user.user_type === 'system'
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : user.user_type === 'service'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {user.user_type}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-xs text-gray-600">{user.home_directory ?? '-'}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-xs text-gray-600">{user.shell ?? '-'}</span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span className="text-xs text-gray-500">
+                            {user.groups.length > 0 ? user.groups.join(', ') : '-'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          {user.locked && (
+                            <span className="inline-block text-xs px-2 py-0.5 rounded-full font-medium bg-danger-50 text-danger-700">
+                              Locked
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

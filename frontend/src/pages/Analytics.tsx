@@ -19,6 +19,7 @@ import {
   InfrastructureTopology,
   TimeSeriesMetrics,
 } from '../components/charts';
+import UpdatesTab from '../components/analytics/UpdatesTab';
 import {
   useSavedReports,
   useReportTemplates,
@@ -47,7 +48,7 @@ import type {
   DriftReport,
 } from '../types';
 
-type TabId = 'overview' | 'heatmap' | 'groups' | 'facts' | 'topology' | 'reports' | 'compliance' | 'drift';
+type TabId = 'overview' | 'heatmap' | 'groups' | 'facts' | 'topology' | 'reports' | 'compliance' | 'drift' | 'updates';
 
 interface Tab {
   id: TabId;
@@ -64,6 +65,7 @@ const TABS: Tab[] = [
   { id: 'reports', label: 'Reports', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
   { id: 'drift', label: 'Drift Detection', icon: GitCompare },
+  { id: 'updates', label: 'Updates', icon: RefreshCw },
 ];
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -722,6 +724,8 @@ export default function Analytics() {
           </div>
         </div>
       )}
+
+      {activeTab === 'updates' && <UpdatesTab />}
 
       {/* New Report Modal */}
       {showNewReportModal && (

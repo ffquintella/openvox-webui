@@ -9,6 +9,8 @@ import type {
   InventoryDashboardReport,
   InventoryFleetStatusSummary,
   RepositoryVersionCatalogEntry,
+  OutdatedSoftwareNodeDetail,
+  ComplianceCategoryNode,
 } from '../types';
 
 export function useUpdateJobs(limit?: number) {
@@ -72,5 +74,24 @@ export function useApproveUpdateJob() {
 export function usePreviewUpdateJob() {
   return useMutation<UpdatePreviewResponse, Error, UpdatePreviewRequest>({
     mutationFn: (request: UpdatePreviewRequest) => cveApi.previewUpdateJob(request),
+  });
+}
+
+export function useOutdatedSoftwareNodes(
+  name: string | null,
+  softwareType?: string
+) {
+  return useQuery<OutdatedSoftwareNodeDetail[]>({
+    queryKey: ['outdated-software-nodes', name, softwareType],
+    queryFn: () => api.getOutdatedSoftwareNodes(name!, softwareType),
+    enabled: !!name,
+  });
+}
+
+export function useComplianceCategoryNodes(category: string | null) {
+  return useQuery<ComplianceCategoryNode[]>({
+    queryKey: ['compliance-category-nodes', category],
+    queryFn: () => api.getComplianceCategoryNodes(category!),
+    enabled: !!category,
   });
 }

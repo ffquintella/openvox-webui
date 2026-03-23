@@ -7,6 +7,7 @@ import type { BootstrapConfigResponse } from '../types';
 export default function AddNode() {
   const [config, setConfig] = useState<BootstrapConfigResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedWindows, setCopiedWindows] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,10 +32,18 @@ export default function AddNode() {
   const serverHost = config?.openvox_server_url || window.location.host;
   const curlCommand = `curl -sSL ${protocol}//${serverHost}/api/v1/bootstrap/script | sudo bash`;
 
+  const windowsCommand = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content`;
+
   const handleCopy = () => {
     navigator.clipboard.writeText(curlCommand);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyWindows = () => {
+    navigator.clipboard.writeText(windowsCommand);
+    setCopiedWindows(true);
+    setTimeout(() => setCopiedWindows(false), 2000);
   };
 
   if (loading) {
@@ -185,6 +194,60 @@ export default function AddNode() {
         </div>
       </div>
 
+      {/* Windows Bootstrap */}
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Terminal className="w-5 h-5 text-blue-600" />
+          Windows Bootstrap
+        </h2>
+        <p className="text-gray-600 mb-4">
+          Run this command in an <strong>elevated PowerShell</strong> (Run as Administrator) on the Windows node:
+        </p>
+        <div className="relative">
+          <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto font-mono text-sm">
+            {windowsCommand}
+          </pre>
+          <button
+            onClick={handleCopyWindows}
+            disabled={!isConfigured}
+            className="absolute top-2 right-2 p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isConfigured ? "Copy to clipboard" : "Configure Puppet Server URL first"}
+          >
+            {copiedWindows ? (
+              <Check className="w-4 h-4 text-green-400" />
+            ) : (
+              <Copy className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+        </div>
+        {!isConfigured && (
+          <p className="text-sm text-amber-600 mt-2">
+            Configure the Puppet Server URL before using this command.
+          </p>
+        )}
+
+        <div className="mt-4 space-y-4">
+          <div>
+            <h3 className="font-medium text-gray-700 mb-2">Non-Interactive Mode</h3>
+            <p className="text-gray-600 text-sm mb-2">
+              For automated deployments:
+            </p>
+            <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
+              {`$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
+            </pre>
+          </div>
+          <div>
+            <h3 className="font-medium text-gray-700 mb-2">Dry Run Mode</h3>
+            <p className="text-gray-600 text-sm mb-2">
+              To see what the script will do without making changes:
+            </p>
+            <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
+              {`$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -DryRun`}
+            </pre>
+          </div>
+        </div>
+      </div>
+
       {/* Instructions */}
       <div className="card">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -213,14 +276,25 @@ export default function AddNode() {
 
         <div className="mt-4 p-4 bg-gray-50 rounded-lg">
           <h3 className="font-medium text-gray-700 mb-2">Supported Operating Systems</h3>
-          <ul className="grid grid-cols-2 gap-2 text-sm text-gray-600">
-            <li>RHEL 7, 8, 9</li>
-            <li>CentOS 7, 8, 9</li>
-            <li>Rocky Linux 8, 9</li>
-            <li>AlmaLinux 8, 9</li>
-            <li>Ubuntu 18.04, 20.04, 22.04</li>
-            <li>Debian 10, 11, 12</li>
-          </ul>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-600 mb-1">Linux</h4>
+              <ul className="grid grid-cols-1 gap-1 text-sm text-gray-600">
+                <li>RHEL / CentOS / Rocky / AlmaLinux 7, 8, 9</li>
+                <li>Ubuntu 18.04, 20.04, 22.04, 24.04</li>
+                <li>Debian 10, 11, 12, 13</li>
+                <li>SLES / openSUSE 12, 15</li>
+                <li>Amazon Linux 2, 2023</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-gray-600 mb-1">Windows</h4>
+              <ul className="grid grid-cols-1 gap-1 text-sm text-gray-600">
+                <li>Windows Server 2016, 2019, 2022, 2025</li>
+                <li>Windows 10, 11</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </div>

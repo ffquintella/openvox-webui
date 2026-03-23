@@ -18,6 +18,10 @@ pub struct InventoryPayload {
     pub websites: Vec<HostWebInventoryItem>,
     #[serde(default)]
     pub runtimes: Vec<HostRuntimeInventoryItem>,
+    #[serde(default)]
+    pub containers: Vec<HostContainerInventoryItem>,
+    #[serde(default)]
+    pub users: Vec<HostUserInventoryItem>,
 }
 
 fn default_full_snapshot() -> bool {
@@ -89,6 +93,36 @@ pub struct HostRuntimeInventoryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostContainerInventoryItem {
+    pub container_id: String,
+    pub name: String,
+    pub image: String,
+    pub status: String,
+    pub status_detail: Option<String>,
+    pub created_at: Option<String>,
+    pub ports: Vec<String>,
+    pub mounts: Vec<String>,
+    pub runtime_type: String,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostUserInventoryItem {
+    pub username: String,
+    pub uid: Option<i64>,
+    pub sid: Option<String>,
+    pub gid: Option<i64>,
+    pub home_directory: Option<String>,
+    pub shell: Option<String>,
+    pub user_type: Option<String>,
+    pub groups: Vec<String>,
+    pub last_login: Option<String>,
+    pub locked: Option<bool>,
+    pub gecos: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventorySnapshotSummary {
     pub id: String,
     pub certname: String,
@@ -102,6 +136,8 @@ pub struct InventorySnapshotSummary {
     pub application_count: usize,
     pub website_count: usize,
     pub runtime_count: usize,
+    pub container_count: usize,
+    pub user_count: usize,
     pub created_at: DateTime<Utc>,
 }
 
@@ -121,6 +157,8 @@ pub struct InventorySummary {
     pub application_count: usize,
     pub website_count: usize,
     pub runtime_count: usize,
+    pub container_count: usize,
+    pub user_count: usize,
     pub collected_at: DateTime<Utc>,
     pub collector_version: String,
     pub is_stale: bool,
@@ -211,6 +249,22 @@ pub struct InventoryDashboardReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutdatedSoftwareNodeDetail {
+    pub certname: String,
+    pub installed_version: String,
+    pub latest_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComplianceCategoryNode {
+    pub certname: String,
+    pub is_stale: bool,
+    pub outdated_packages: i64,
+    pub outdated_applications: i64,
+    pub checked_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeInventory {
     pub snapshot: InventorySnapshotSummary,
     pub summary: InventorySummary,
@@ -220,6 +274,8 @@ pub struct NodeInventory {
     pub applications: Vec<HostApplicationInventoryItem>,
     pub websites: Vec<HostWebInventoryItem>,
     pub runtimes: Vec<HostRuntimeInventoryItem>,
+    pub containers: Vec<HostContainerInventoryItem>,
+    pub users: Vec<HostUserInventoryItem>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

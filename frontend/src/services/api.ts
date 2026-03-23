@@ -128,6 +128,8 @@ import type {
   UpdateJob,
   CreateUpdateJobRequest,
   ApproveUpdateJobRequest,
+  OutdatedSoftwareNodeDetail,
+  ComplianceCategoryNode,
   // CVE types
   CveFeedSource,
   CreateCveFeedSourceRequest,
@@ -252,6 +254,27 @@ export const api = {
 
   getInventoryDashboard: async (): Promise<InventoryDashboardReport> => {
     const response = await client.get('/inventory/dashboard');
+    return response.data;
+  },
+
+  getOutdatedSoftwareNodes: async (
+    name: string,
+    softwareType?: string
+  ): Promise<OutdatedSoftwareNodeDetail[]> => {
+    const params = softwareType ? { software_type: softwareType } : {};
+    const response = await client.get(
+      `/inventory/dashboard/outdated-software/${encodeURIComponent(name)}`,
+      { params }
+    );
+    return response.data;
+  },
+
+  getComplianceCategoryNodes: async (
+    category: string
+  ): Promise<ComplianceCategoryNode[]> => {
+    const response = await client.get(
+      `/inventory/dashboard/compliance/${encodeURIComponent(category)}`
+    );
     return response.data;
   },
 

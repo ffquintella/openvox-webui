@@ -34,7 +34,7 @@ async fn list_audit_logs(
     }
 
     let org_id = match query.organization_id {
-        Some(org_id) if !auth_user.is_super_admin() => {
+        Some(_) if !auth_user.is_super_admin() => {
             return Err(AppError::forbidden(
                 "organization_id can only be specified by super_admin",
             ));

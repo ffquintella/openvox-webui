@@ -3,20 +3,17 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
-use uuid::Uuid;
 
 use crate::{
-    db::{CveRepository, InventoryRepository},
+    db::CveRepository,
     middleware::AuthUser,
     models::{
         CreateCveFeedSourceRequest, CveDetailResponse, CveEntry, CveFeedSource, CveSearchQuery,
         FeedSyncResult, HostVulnerabilityMatch, NodeVulnerabilitySummary,
-        UpdateCveFeedSourceRequest, UpdateOperationType, UpdatePreviewPackage,
-        UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
-        VulnerabilityDashboardReport, VulnerableNodesQuery,
+        UpdateCveFeedSourceRequest, VulnerabilityDashboardReport, VulnerableNodesQuery,
     },
     services::cve_feed::CveFeedService,
     utils::error::{AppError, AppResult},

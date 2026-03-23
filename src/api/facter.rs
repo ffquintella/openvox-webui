@@ -57,7 +57,7 @@ struct OrgQuery {
 
 fn resolve_org(auth_user: &AuthUser, requested: Option<Uuid>) -> Result<Uuid, AppError> {
     match requested {
-        Some(org_id) if !auth_user.is_super_admin() => Err(AppError::forbidden(
+        Some(_) if !auth_user.is_super_admin() => Err(AppError::forbidden(
             "organization_id can only be specified by super_admin",
         )),
         Some(org_id) => Ok(org_id),

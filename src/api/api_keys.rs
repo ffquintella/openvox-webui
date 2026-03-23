@@ -35,7 +35,7 @@ struct ApiKeyListQuery {
 
 fn resolve_org(auth_user: &AuthUser, requested: Option<Uuid>) -> Result<Uuid, AppError> {
     match requested {
-        Some(org_id) if !auth_user.is_super_admin() => Err(AppError::forbidden(
+        Some(_) if !auth_user.is_super_admin() => Err(AppError::forbidden(
             "organization_id can only be specified by super_admin",
         )),
         Some(org_id) => Ok(org_id),
@@ -54,7 +54,7 @@ async fn list_api_keys(
 ) -> Result<Json<Vec<crate::models::ApiKey>>, AppError> {
     let org_id = resolve_org(&auth_user, query.organization_id)?;
     let user_id = match query.user_id {
-        Some(u) if !auth_user.is_super_admin() => {
+        Some(_) if !auth_user.is_super_admin() => {
             return Err(AppError::forbidden(
                 "user_id can only be specified by super_admin",
             ));

@@ -6,13 +6,15 @@ use sqlx::{FromRow, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    HostApplicationInventoryItem, HostOsInventory, HostPackageInventoryItem,
-    HostRuntimeInventoryItem, HostUpdateStatus, HostWebInventoryItem, InventoryDashboardReport,
+    ComplianceCategoryNode, HostApplicationInventoryItem, HostContainerInventoryItem,
+    HostOsInventory, HostPackageInventoryItem, HostRuntimeInventoryItem, HostUpdateStatus,
+    HostUserInventoryItem, HostWebInventoryItem, InventoryDashboardReport,
     InventoryDistributionPoint, InventoryFleetStatusSummary, InventoryPayload,
     InventorySnapshotSummary, InventorySummary, NodeInventory, NodePendingUpdateJob,
-    OutdatedInventoryItem, PatchAgeBucket, RepositoryVersionCatalogEntry,
-    SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem, UpdateJob, UpdateJobResult,
-    UpdateJobStatus, UpdateJobTarget, UpdateOperationType, UpdateTargetStatus,
+    OutdatedInventoryItem, OutdatedSoftwareNodeDetail, PatchAgeBucket,
+    RepositoryVersionCatalogEntry, SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem,
+    UpdateJob, UpdateJobResult, UpdateJobStatus, UpdateJobTarget, UpdateOperationType,
+    UpdateTargetStatus,
 };
 
 pub struct InventoryRepository {
@@ -46,8 +48,8 @@ impl InventoryRepository {
             INSERT INTO host_inventory_snapshots (
                 id, certname, collector_version, collected_at, is_full_snapshot,
                 os_family, distribution, os_version, package_count, application_count,
-                website_count, runtime_count, raw_payload, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                website_count, runtime_count, container_count, user_count, raw_payload, created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             "#,
         )
         .bind(&snapshot_id)
@@ -62,6 +64,8 @@ impl InventoryRepository {
         .bind(payload.applications.len() as i64)
         .bind(payload.websites.len() as i64)
         .bind(payload.runtimes.len() as i64)
+        .bind(payload.containers.len() as i64)
+        .bind(payload.users.len() as i64)
         .bind(raw_payload)
         .bind(now.to_rfc3339())
         .execute(&mut *tx)
@@ -128,6 +132,10 @@ impl InventoryRepository {
         self.replace_websites(&mut tx, certname, &snapshot_id, &payload.websites, now)
             .await?;
         self.replace_runtimes(&mut tx, certname, &snapshot_id, &payload.runtimes, now)
+            .await?;
+        self.replace_containers(&mut tx, certname, &snapshot_id, &payload.containers, now)
+            .await?;
+        self.replace_users(&mut tx, certname, &snapshot_id, &payload.users, now)
             .await?;
 
         tx.commit()
@@ -217,6 +225,30 @@ impl InventoryRepository {
         .map(Into::into)
         .collect();
 
+        let containers: Vec<HostContainerInventoryItem> =
+            sqlx::query_as::<_, HostContainerInventoryRow>(
+            "SELECT container_id, name, image, status, status_detail, created_at, ports_json, mounts_json, runtime_type, metadata_json FROM host_container_inventory WHERE certname = ?1 ORDER BY runtime_type ASC, name ASC",
+        )
+        .bind(certname)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch container inventory")?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
+        let users: Vec<HostUserInventoryItem> =
+            sqlx::query_as::<_, HostUserInventoryRow>(
+            "SELECT username, uid, sid, gid, home_directory, shell, user_type, groups_json, last_login, locked, gecos, metadata_json FROM host_user_inventory WHERE certname = ?1 ORDER BY user_type ASC, username ASC",
+        )
+        .bind(certname)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch user inventory")?
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
         let snapshot: InventorySnapshotSummary = snapshot_row.into();
         let os: HostOsInventory = os_row.into();
         let update_status = self.get_host_update_status(certname).await?;
@@ -235,6 +267,8 @@ impl InventoryRepository {
             application_count: applications.len(),
             website_count: websites.len(),
             runtime_count: runtimes.len(),
+            container_count: containers.len(),
+            user_count: users.len(),
             collected_at: snapshot.collected_at,
             collector_version: snapshot.collector_version.clone(),
             is_stale: snapshot.collected_at < Utc::now() - Duration::days(2),
@@ -249,6 +283,8 @@ impl InventoryRepository {
             applications,
             websites,
             runtimes,
+            containers,
+            users,
         }))
     }
 
@@ -508,7 +544,7 @@ impl InventoryRepository {
     }
 
     pub async fn get_dashboard_report(&self) -> Result<InventoryDashboardReport> {
-        use std::collections::HashMap;
+        use std::collections::{HashMap, HashSet};
 
         let summary = self.get_fleet_status_summary().await?;
         let platform_distribution = sqlx::query_as::<_, DashboardDistributionRow>(
@@ -558,30 +594,34 @@ impl InventoryRepository {
         .await
         .context("Failed to load patch age data")?;
         let outdated_rows = sqlx::query_as::<_, DashboardOutdatedItemsRow>(
-            "SELECT outdated_items_json FROM host_update_status WHERE outdated_items_json IS NOT NULL",
+            "SELECT certname, outdated_items_json FROM host_update_status WHERE outdated_items_json IS NOT NULL",
         )
         .fetch_all(&self.pool)
         .await
         .context("Failed to load outdated item rollups")?;
 
-        let mut outdated_counts: HashMap<(String, String), usize> = HashMap::new();
+        let mut outdated_nodes_per_software: HashMap<(String, String), HashSet<String>> =
+            HashMap::new();
         for row in outdated_rows {
             let items: Vec<OutdatedInventoryItem> =
                 serde_json::from_str(row.outdated_items_json.as_deref().unwrap_or("[]"))
                     .unwrap_or_default();
             for item in items {
                 let key = (item.software_type, item.name);
-                *outdated_counts.entry(key).or_insert(0) += 1;
+                outdated_nodes_per_software
+                    .entry(key)
+                    .or_default()
+                    .insert(row.certname.clone());
             }
         }
 
-        let mut top_outdated_software: Vec<TopOutdatedSoftwareItem> = outdated_counts
+        let mut top_outdated_software: Vec<TopOutdatedSoftwareItem> = outdated_nodes_per_software
             .into_iter()
             .map(
-                |((software_type, name), affected_nodes)| TopOutdatedSoftwareItem {
+                |((software_type, name), nodes)| TopOutdatedSoftwareItem {
                     software_type,
                     name,
-                    affected_nodes,
+                    affected_nodes: nodes.len(),
                 },
             )
             .collect();
@@ -615,6 +655,76 @@ impl InventoryRepository {
             patch_age_buckets: map_buckets(patch_rows),
             top_outdated_software,
         })
+    }
+
+    pub async fn get_nodes_for_outdated_software(
+        &self,
+        software_name: &str,
+        software_type: Option<&str>,
+    ) -> Result<Vec<OutdatedSoftwareNodeDetail>> {
+        let rows = sqlx::query_as::<_, DashboardOutdatedItemsRow>(
+            "SELECT certname, outdated_items_json FROM host_update_status WHERE outdated_items_json IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to load outdated items for drill-down")?;
+
+        let mut results: Vec<OutdatedSoftwareNodeDetail> = Vec::new();
+        let mut seen_certnames = std::collections::HashSet::new();
+
+        for row in rows {
+            let items: Vec<OutdatedInventoryItem> =
+                serde_json::from_str(row.outdated_items_json.as_deref().unwrap_or("[]"))
+                    .unwrap_or_default();
+            for item in items {
+                if item.name == software_name
+                    && software_type.map_or(true, |st| item.software_type == st)
+                    && seen_certnames.insert(row.certname.clone())
+                {
+                    results.push(OutdatedSoftwareNodeDetail {
+                        certname: row.certname.clone(),
+                        installed_version: item.installed_version,
+                        latest_version: item.latest_version,
+                    });
+                }
+            }
+        }
+
+        results.sort_by(|a, b| a.certname.cmp(&b.certname));
+        Ok(results)
+    }
+
+    pub async fn get_nodes_for_compliance_category(
+        &self,
+        category: &str,
+    ) -> Result<Vec<ComplianceCategoryNode>> {
+        let condition = match category {
+            "stale" => "WHERE is_stale = 1",
+            "outdated" => "WHERE is_stale = 0 AND (outdated_packages > 0 OR outdated_applications > 0)",
+            "compliant" => "WHERE is_stale = 0 AND outdated_packages = 0 AND outdated_applications = 0",
+            _ => return Err(anyhow::anyhow!("Invalid compliance category: {}", category)),
+        };
+
+        let query = format!(
+            "SELECT certname, is_stale, outdated_packages, outdated_applications, checked_at FROM host_update_status {}",
+            condition
+        );
+
+        let rows = sqlx::query_as::<_, ComplianceCategoryRow>(&query)
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to load compliance category nodes")?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| ComplianceCategoryNode {
+                certname: r.certname,
+                is_stale: r.is_stale != 0,
+                outdated_packages: r.outdated_packages,
+                outdated_applications: r.outdated_applications,
+                checked_at: r.checked_at,
+            })
+            .collect())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1252,6 +1362,107 @@ impl InventoryRepository {
         Ok(())
     }
 
+    async fn replace_containers(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        certname: &str,
+        snapshot_id: &str,
+        containers: &[HostContainerInventoryItem],
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query("DELETE FROM host_container_inventory WHERE certname = ?1")
+            .bind(certname)
+            .execute(&mut **tx)
+            .await
+            .context("Failed to clear container inventory")?;
+
+        for container in containers {
+            sqlx::query(
+                r#"
+                INSERT INTO host_container_inventory (
+                    id, certname, snapshot_id, container_id, name, image, status, status_detail,
+                    created_at, ports_json, mounts_json, runtime_type, metadata_json, row_created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(certname)
+            .bind(snapshot_id)
+            .bind(&container.container_id)
+            .bind(&container.name)
+            .bind(&container.image)
+            .bind(&container.status)
+            .bind(&container.status_detail)
+            .bind(&container.created_at)
+            .bind(
+                serde_json::to_string(&container.ports)
+                    .context("Failed to serialize container ports")?,
+            )
+            .bind(
+                serde_json::to_string(&container.mounts)
+                    .context("Failed to serialize container mounts")?,
+            )
+            .bind(&container.runtime_type)
+            .bind(container.metadata.as_ref().map(|value| value.to_string()))
+            .bind(now.to_rfc3339())
+            .execute(&mut **tx)
+            .await
+            .with_context(|| format!("Failed to insert container inventory item '{}'", container.name))?;
+        }
+
+        Ok(())
+    }
+
+    async fn replace_users(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        certname: &str,
+        snapshot_id: &str,
+        users: &[HostUserInventoryItem],
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query("DELETE FROM host_user_inventory WHERE certname = ?1")
+            .bind(certname)
+            .execute(&mut **tx)
+            .await
+            .context("Failed to clear user inventory")?;
+
+        for user in users {
+            sqlx::query(
+                r#"
+                INSERT INTO host_user_inventory (
+                    id, certname, snapshot_id, username, uid, sid, gid, home_directory, shell,
+                    user_type, groups_json, last_login, locked, gecos, metadata_json, row_created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(certname)
+            .bind(snapshot_id)
+            .bind(&user.username)
+            .bind(user.uid)
+            .bind(&user.sid)
+            .bind(user.gid)
+            .bind(&user.home_directory)
+            .bind(&user.shell)
+            .bind(&user.user_type)
+            .bind(
+                serde_json::to_string(&user.groups)
+                    .context("Failed to serialize user groups")?,
+            )
+            .bind(&user.last_login)
+            .bind(user.locked.map(|b| b as i64))
+            .bind(&user.gecos)
+            .bind(user.metadata.as_ref().map(|value| value.to_string()))
+            .bind(now.to_rfc3339())
+            .execute(&mut **tx)
+            .await
+            .with_context(|| format!("Failed to insert user inventory item '{}'", user.username))?;
+        }
+
+        Ok(())
+    }
+
     async fn insert_catalog_entry(
         &self,
         entry: &RepositoryVersionCatalogEntry,
@@ -1302,6 +1513,8 @@ struct InventorySnapshotRow {
     application_count: i64,
     website_count: i64,
     runtime_count: i64,
+    container_count: i64,
+    user_count: i64,
     created_at: String,
 }
 
@@ -1320,6 +1533,8 @@ impl From<InventorySnapshotRow> for InventorySnapshotSummary {
             application_count: row.application_count.max(0) as usize,
             website_count: row.website_count.max(0) as usize,
             runtime_count: row.runtime_count.max(0) as usize,
+            container_count: row.container_count.max(0) as usize,
+            user_count: row.user_count.max(0) as usize,
             created_at: parse_timestamp_required(&row.created_at),
         }
     }
@@ -1473,6 +1688,72 @@ impl From<HostRuntimeInventoryRow> for HostRuntimeInventoryItem {
             metadata: row
                 .metadata_json
                 .and_then(|value| serde_json::from_str(&value).ok()),
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct HostContainerInventoryRow {
+    container_id: String,
+    name: String,
+    image: String,
+    status: String,
+    status_detail: Option<String>,
+    created_at: Option<String>,
+    ports_json: String,
+    mounts_json: String,
+    runtime_type: String,
+    metadata_json: Option<String>,
+}
+
+impl From<HostContainerInventoryRow> for HostContainerInventoryItem {
+    fn from(row: HostContainerInventoryRow) -> Self {
+        Self {
+            container_id: row.container_id,
+            name: row.name,
+            image: row.image,
+            status: row.status,
+            status_detail: row.status_detail,
+            created_at: row.created_at,
+            ports: serde_json::from_str(&row.ports_json).unwrap_or_default(),
+            mounts: serde_json::from_str(&row.mounts_json).unwrap_or_default(),
+            runtime_type: row.runtime_type,
+            metadata: row.metadata_json.and_then(|v| serde_json::from_str(&v).ok()),
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct HostUserInventoryRow {
+    username: String,
+    uid: Option<i64>,
+    sid: Option<String>,
+    gid: Option<i64>,
+    home_directory: Option<String>,
+    shell: Option<String>,
+    user_type: Option<String>,
+    groups_json: String,
+    last_login: Option<String>,
+    locked: Option<bool>,
+    gecos: Option<String>,
+    metadata_json: Option<String>,
+}
+
+impl From<HostUserInventoryRow> for HostUserInventoryItem {
+    fn from(row: HostUserInventoryRow) -> Self {
+        Self {
+            username: row.username,
+            uid: row.uid,
+            sid: row.sid,
+            gid: row.gid,
+            home_directory: row.home_directory,
+            shell: row.shell,
+            user_type: row.user_type,
+            groups: serde_json::from_str(&row.groups_json).unwrap_or_default(),
+            last_login: row.last_login,
+            locked: row.locked,
+            gecos: row.gecos,
+            metadata: row.metadata_json.and_then(|v| serde_json::from_str(&v).ok()),
         }
     }
 }
@@ -1655,7 +1936,17 @@ struct PatchAgeSourceRow {
 
 #[derive(Debug, FromRow)]
 struct DashboardOutdatedItemsRow {
+    certname: String,
     outdated_items_json: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct ComplianceCategoryRow {
+    certname: String,
+    is_stale: i64,
+    outdated_packages: i64,
+    outdated_applications: i64,
+    checked_at: String,
 }
 
 #[derive(Debug, FromRow)]

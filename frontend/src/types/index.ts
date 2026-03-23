@@ -38,6 +38,8 @@ export interface InventorySnapshotSummary {
   application_count: number;
   website_count: number;
   runtime_count: number;
+  container_count: number;
+  user_count: number;
   created_at: string;
 }
 
@@ -100,6 +102,34 @@ export interface HostRuntimeInventoryItem {
   metadata?: unknown;
 }
 
+export interface HostContainerInventoryItem {
+  container_id: string;
+  name: string;
+  image: string;
+  status: string;
+  status_detail?: string | null;
+  created_at?: string | null;
+  ports: string[];
+  mounts: string[];
+  runtime_type: string;
+  metadata?: unknown;
+}
+
+export interface HostUserInventoryItem {
+  username: string;
+  uid?: number | null;
+  sid?: string | null;
+  gid?: number | null;
+  home_directory?: string | null;
+  shell?: string | null;
+  user_type?: string | null;
+  groups: string[];
+  last_login?: string | null;
+  locked?: boolean | null;
+  gecos?: string | null;
+  metadata?: unknown;
+}
+
 export interface InventorySummary {
   certname: string;
   os_family: string;
@@ -115,6 +145,8 @@ export interface InventorySummary {
   application_count: number;
   website_count: number;
   runtime_count: number;
+  container_count: number;
+  user_count: number;
   collected_at: string;
   collector_version: string;
   is_stale: boolean;
@@ -194,6 +226,20 @@ export interface InventoryDashboardReport {
   update_compliance: InventoryDistributionPoint[];
   patch_age_buckets: PatchAgeBucket[];
   top_outdated_software: TopOutdatedSoftwareItem[];
+}
+
+export interface OutdatedSoftwareNodeDetail {
+  certname: string;
+  installed_version: string;
+  latest_version: string;
+}
+
+export interface ComplianceCategoryNode {
+  certname: string;
+  is_stale: boolean;
+  outdated_packages: number;
+  outdated_applications: number;
+  checked_at: string;
 }
 
 export type UpdateJobStatus =
@@ -287,6 +333,8 @@ export interface NodeInventory {
   applications: HostApplicationInventoryItem[];
   websites: HostWebInventoryItem[];
   runtimes: HostRuntimeInventoryItem[];
+  containers: HostContainerInventoryItem[];
+  users: HostUserInventoryItem[];
 }
 
 // Group types

@@ -104,15 +104,30 @@ module OpenVoxInventory
         []
       end
 
+    containers = collect_containers(config)
+
+    users = case family
+            when 'RedHat', 'Suse', 'Debian'
+              collect_linux_users(config)
+            when 'Darwin'
+              collect_macos_users(config)
+            when 'windows', 'Windows'
+              collect_windows_users(config)
+            else
+              []
+            end
+
     payload = {
-      'collector_version' => 'phase10.2-puppet',
+      'collector_version' => 'phase10.3-puppet',
       'collected_at' => collected_at,
       'is_full_snapshot' => true,
       'os' => collect_os_inventory(os_fact, collected_at),
       'packages' => trim(normalize_packages(packages), config),
       'applications' => trim(normalize_applications(applications), config),
       'websites' => trim(normalize_websites(websites), config),
-      'runtimes' => trim(normalize_runtimes(runtimes), config)
+      'runtimes' => trim(normalize_runtimes(runtimes), config),
+      'containers' => trim(normalize_containers(containers), config),
+      'users' => trim(normalize_users(users), config)
     }
 
     payload['os']['update_channel'] ||= infer_update_channel(payload)
@@ -556,6 +571,258 @@ module OpenVoxInventory
     trim(runtimes, config)
   end
 
+  def collect_containers(config)
+    containers = []
+
+    # Docker
+    if command_available?('docker')
+      begin
+        output = run_command('docker ps -a --no-trunc --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.CreatedAt}}\t{{.Ports}}\t{{.Mounts}}"')
+        if output
+          output.each_line do |line|
+            parts = line.strip.split("\t", 7)
+            next if parts.length < 4
+            containers << {
+              'container_id' => parts[0].to_s.strip,
+              'name' => parts[1].to_s.strip,
+              'image' => parts[2].to_s.strip,
+              'status' => parse_container_status(parts[3].to_s.strip),
+              'status_detail' => parts[3].to_s.strip,
+              'created_at' => parts[4].to_s.strip.empty? ? nil : parts[4].to_s.strip,
+              'ports' => parts[5].to_s.strip.split(',').map(&:strip).reject(&:empty?),
+              'mounts' => parts[6].to_s.strip.split(',').map(&:strip).reject(&:empty?),
+              'runtime_type' => 'docker'
+            }
+          end
+        end
+
+        # Docker runtime info
+        version = run_command('docker version --format "{{.Server.Version}}"')&.strip
+        if version && !version.empty?
+          containers << {
+            'container_id' => '_runtime_docker',
+            'name' => 'docker-engine',
+            'image' => '',
+            'status' => 'runtime',
+            'status_detail' => "Docker Engine #{version}",
+            'ports' => [],
+            'mounts' => [],
+            'runtime_type' => 'docker'
+          }
+        end
+      rescue => e
+        # Docker not accessible, skip silently
+      end
+    end
+
+    # Podman
+    if command_available?('podman')
+      begin
+        output = run_command('podman ps -a --no-trunc --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.CreatedAt}}\t{{.Ports}}\t{{.Mounts}}"')
+        if output
+          output.each_line do |line|
+            parts = line.strip.split("\t", 7)
+            next if parts.length < 4
+            containers << {
+              'container_id' => parts[0].to_s.strip,
+              'name' => parts[1].to_s.strip,
+              'image' => parts[2].to_s.strip,
+              'status' => parse_container_status(parts[3].to_s.strip),
+              'status_detail' => parts[3].to_s.strip,
+              'created_at' => parts[4].to_s.strip.empty? ? nil : parts[4].to_s.strip,
+              'ports' => parts[5].to_s.strip.split(',').map(&:strip).reject(&:empty?),
+              'mounts' => parts[6].to_s.strip.split(',').map(&:strip).reject(&:empty?),
+              'runtime_type' => 'podman'
+            }
+          end
+        end
+
+        # Podman runtime info
+        version = run_command('podman version --format "{{.Version}}"')&.strip
+        if version && !version.empty?
+          containers << {
+            'container_id' => '_runtime_podman',
+            'name' => 'podman-engine',
+            'image' => '',
+            'status' => 'runtime',
+            'status_detail' => "Podman #{version}",
+            'ports' => [],
+            'mounts' => [],
+            'runtime_type' => 'podman'
+          }
+        end
+      rescue => e
+        # Podman not accessible, skip silently
+      end
+    end
+
+    containers
+  end
+
+  def parse_container_status(raw)
+    return 'unknown' if raw.nil? || raw.empty?
+    word = raw.split(/\s+/).first.to_s.downcase
+    case word
+    when 'up' then 'running'
+    when 'exited' then 'exited'
+    when 'created' then 'created'
+    when 'paused' then 'paused'
+    when 'restarting' then 'restarting'
+    when 'removing' then 'removing'
+    when 'dead' then 'dead'
+    else 'unknown'
+    end
+  end
+
+  def collect_linux_users(config)
+    users = []
+    output = run_command('getent passwd')
+    return users unless output
+
+    output.each_line do |line|
+      parts = line.strip.split(':', 7)
+      next if parts.length < 7
+      username = parts[0]
+      uid = parts[2].to_i
+      gid = parts[3].to_i
+      gecos = parts[4]
+      home = parts[5]
+      shell = parts[6]
+
+      users << {
+        'username' => username,
+        'uid' => uid,
+        'gid' => gid,
+        'home_directory' => home,
+        'shell' => shell,
+        'user_type' => classify_user_type(uid, shell),
+        'groups' => get_user_groups(username),
+        'last_login' => get_last_login(username),
+        'locked' => user_locked?(username),
+        'gecos' => (gecos.nil? || gecos.strip.empty?) ? nil : gecos.strip,
+        'sid' => nil
+      }
+    end
+
+    users
+  end
+
+  def collect_macos_users(config)
+    users = []
+    output = run_command('dscl . list /Users UniqueID')
+    return users unless output
+
+    output.each_line do |line|
+      parts = line.strip.split(/\s+/, 2)
+      next if parts.length < 2
+      username = parts[0]
+      uid = parts[1].to_i
+      next if username.start_with?('_') # Skip system daemon accounts
+
+      # Get additional details
+      details = run_command("dscl . read '/Users/#{username}' PrimaryGroupID NFSHomeDirectory UserShell RealName 2>/dev/null")
+      gid = nil
+      home = nil
+      shell = nil
+      gecos = nil
+
+      if details
+        gid = $1.to_i if details =~ /PrimaryGroupID:\s*(\d+)/
+        home = $1.strip if details =~ /NFSHomeDirectory:\s*(.+)/
+        shell = $1.strip if details =~ /UserShell:\s*(.+)/
+        gecos = $1.strip if details =~ /RealName:\s*\n\s*(.+)/
+      end
+
+      users << {
+        'username' => username,
+        'uid' => uid,
+        'gid' => gid,
+        'home_directory' => home,
+        'shell' => shell,
+        'user_type' => classify_user_type(uid, shell),
+        'groups' => get_user_groups(username),
+        'last_login' => nil,
+        'locked' => nil,
+        'gecos' => gecos,
+        'sid' => nil
+      }
+    end
+
+    users
+  end
+
+  def collect_windows_users(config)
+    users = []
+    ps_script = 'Get-LocalUser | Select-Object Name, SID, Enabled, Description, LastLogon, PasswordRequired | ConvertTo-Json -Compress'
+    output = run_command("powershell.exe -NoProfile -Command \"#{ps_script}\"")
+    return users unless output
+
+    begin
+      parsed = JSON.parse(output)
+      parsed = [parsed] unless parsed.is_a?(Array)
+      parsed.each do |u|
+        users << {
+          'username' => u['Name'],
+          'uid' => nil,
+          'sid' => u['SID'].is_a?(Hash) ? u['SID']['Value'] : u['SID'].to_s,
+          'gid' => nil,
+          'home_directory' => nil,
+          'shell' => nil,
+          'user_type' => u['Enabled'] ? 'regular' : 'system',
+          'groups' => [],
+          'last_login' => u['LastLogon'],
+          'locked' => u['Enabled'] == false,
+          'gecos' => u['Description'],
+        }
+      end
+    rescue JSON::ParserError
+      # Skip if output can't be parsed
+    end
+
+    users
+  end
+
+  def classify_user_type(uid, shell)
+    nologin_shells = ['/sbin/nologin', '/bin/false', '/usr/sbin/nologin', '/bin/nologin', '/usr/bin/false']
+    if uid < 1000
+      nologin_shells.include?(shell.to_s) ? 'system' : 'service'
+    else
+      'regular'
+    end
+  end
+
+  def get_user_groups(username)
+    output = run_command("id -Gn #{Shellwords.escape(username)} 2>/dev/null")
+    return [] unless output
+    output.strip.split(/\s+/).reject(&:empty?)
+  rescue
+    []
+  end
+
+  def get_last_login(username)
+    output = run_command("lastlog -u #{Shellwords.escape(username)} 2>/dev/null")
+    return nil unless output
+    lines = output.strip.split("\n")
+    return nil if lines.length < 2
+    line = lines[1]
+    return nil if line.include?('**Never logged in**')
+    # Extract the timestamp portion (after username and port columns)
+    parts = line.split(/\s+/, 4)
+    parts.length >= 4 ? parts[3].strip : nil
+  rescue
+    nil
+  end
+
+  def user_locked?(username)
+    output = run_command("passwd -S #{Shellwords.escape(username)} 2>/dev/null")
+    return nil unless output
+    fields = output.strip.split(/\s+/)
+    return nil if fields.length < 2
+    ['L', 'LK'].include?(fields[1])
+  rescue
+    nil
+  end
+
   def submit_inventory(config, certname, payload)
     api_url = config['api_url'] || config['url']
     return [false, nil] if api_url.nil? || certname.nil?
@@ -830,6 +1097,23 @@ module OpenVoxInventory
     end.compact.uniq { |item| [item['runtime_type'], item['runtime_name'], item['install_path']] }
   end
 
+  def normalize_containers(items)
+    items.map do |item|
+      next unless present?(item['container_id']) && present?(item['name'])
+      item['ports'] = Array(item['ports']).map(&:to_s).reject(&:empty?).uniq
+      item['mounts'] = Array(item['mounts']).map(&:to_s).reject(&:empty?).uniq
+      compact_hash(item)
+    end.compact.uniq { |item| [item['runtime_type'], item['container_id']] }
+  end
+
+  def normalize_users(items)
+    items.map do |item|
+      next unless present?(item['username'])
+      item['groups'] = Array(item['groups']).map(&:to_s).reject(&:empty?).uniq.sort
+      compact_hash(item)
+    end.compact.uniq { |item| [item['username'], item['uid']] }
+  end
+
   def compact_hash(value)
     return value unless value.is_a?(Hash)
 
@@ -955,6 +1239,8 @@ Facter.add(:openvox_inventory_status) do
       'application_count' => payload['applications'].size,
       'website_count' => payload['websites'].size,
       'runtime_count' => payload['runtimes'].size,
+      'container_count' => payload['containers'].size,
+      'user_count' => payload['users'].size,
       'submitted' => submitted,
       'status_code' => status_code,
       'update_jobs_executed' => update_jobs_executed

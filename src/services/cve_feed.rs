@@ -139,7 +139,7 @@ struct CisaKevEntry {
     #[serde(default)]
     product: String,
     #[serde(default, rename = "vulnerabilityName")]
-    vulnerability_name: String,
+    _vulnerability_name: String,
     #[serde(default, rename = "shortDescription")]
     short_description: String,
     #[serde(default, rename = "dateAdded")]
