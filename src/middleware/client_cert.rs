@@ -73,8 +73,12 @@ impl std::fmt::Display for ClientCertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientCertError::NoCertificate => write!(f, "No client certificate provided"),
-            ClientCertError::VerificationFailed => write!(f, "Client certificate verification failed"),
-            ClientCertError::ParseError(msg) => write!(f, "Failed to parse client certificate: {}", msg),
+            ClientCertError::VerificationFailed => {
+                write!(f, "Client certificate verification failed")
+            }
+            ClientCertError::ParseError(msg) => {
+                write!(f, "Failed to parse client certificate: {}", msg)
+            }
         }
     }
 }
@@ -92,10 +96,9 @@ impl axum::response::IntoResponse for ClientCertError {
                 StatusCode::FORBIDDEN,
                 "Client certificate verification failed",
             ),
-            ClientCertError::ParseError(_) => (
-                StatusCode::BAD_REQUEST,
-                "Invalid client certificate format",
-            ),
+            ClientCertError::ParseError(_) => {
+                (StatusCode::BAD_REQUEST, "Invalid client certificate format")
+            }
         };
 
         let body = serde_json::json!({

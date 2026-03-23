@@ -412,8 +412,17 @@ mod tests {
 
     #[test]
     fn test_backup_status_from_string() {
-        assert_eq!(BackupStatus::from("pending".to_string()), BackupStatus::Pending);
-        assert_eq!(BackupStatus::from("IN_PROGRESS".to_string()), BackupStatus::InProgress);
-        assert_eq!(BackupStatus::from("unknown".to_string()), BackupStatus::Pending);
+        assert_eq!(
+            BackupStatus::from("pending".to_string()),
+            BackupStatus::Pending
+        );
+        assert_eq!(
+            BackupStatus::from("IN_PROGRESS".to_string()),
+            BackupStatus::InProgress
+        );
+        assert_eq!(
+            BackupStatus::from("unknown".to_string()),
+            BackupStatus::Pending
+        );
     }
 }

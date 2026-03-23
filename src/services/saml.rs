@@ -63,14 +63,8 @@ impl SamlService {
         }
 
         tracing::info!("=== SAML Service Provider Initialization ===");
-        tracing::info!(
-            "SP Entity ID: {}",
-            self.config.sp.entity_id
-        );
-        tracing::info!(
-            "SP ACS URL: {}",
-            self.config.sp.acs_url
-        );
+        tracing::info!("SP Entity ID: {}", self.config.sp.entity_id);
+        tracing::info!("SP ACS URL: {}", self.config.sp.acs_url);
         tracing::debug!(
             "SP options: sign_requests={}, require_signed_assertions={}",
             self.config.sp.sign_requests,
@@ -105,7 +99,11 @@ impl SamlService {
             idp_metadata.entity_id,
             idp_metadata.sso_url.as_ref().map(|u| {
                 // Truncate long URLs for log readability
-                if u.len() > 60 { format!("{}...", &u[..60]) } else { u.clone() }
+                if u.len() > 60 {
+                    format!("{}...", &u[..60])
+                } else {
+                    u.clone()
+                }
             })
         );
 
@@ -136,22 +134,12 @@ impl SamlService {
             tracing::debug!("IdP metadata response status: {}", status);
 
             if !status.is_success() {
-                tracing::error!(
-                    "IdP metadata fetch failed: HTTP {} from {}",
-                    status,
-                    url
-                );
-                anyhow::bail!(
-                    "IdP metadata fetch failed with status: {}",
-                    status
-                );
+                tracing::error!("IdP metadata fetch failed: HTTP {} from {}", status, url);
+                anyhow::bail!("IdP metadata fetch failed with status: {}", status);
             }
 
             let body = response.text().await?;
-            tracing::debug!(
-                "IdP metadata received: {} bytes",
-                body.len()
-            );
+            tracing::debug!("IdP metadata received: {} bytes", body.len());
             Some(body)
         } else if let Some(ref path) = self.config.idp.metadata_file {
             tracing::info!("Loading IdP metadata from file: {:?}", path);
@@ -193,10 +181,7 @@ impl SamlService {
                         .idp_sso_descriptors
                         .as_ref()
                         .and_then(|descriptors| {
-                            tracing::debug!(
-                                "Found {} IdP SSO descriptor(s)",
-                                descriptors.len()
-                            );
+                            tracing::debug!("Found {} IdP SSO descriptor(s)", descriptors.len());
                             descriptors.first()
                         })
                         .and_then(|desc| {
@@ -234,7 +219,10 @@ impl SamlService {
                         "Failed to parse IdP metadata XML: {}. Falling back to manual configuration",
                         e
                     );
-                    (self.config.idp.entity_id.clone(), self.config.idp.sso_url.clone())
+                    (
+                        self.config.idp.entity_id.clone(),
+                        self.config.idp.sso_url.clone(),
+                    )
                 }
             }
         } else {
@@ -245,7 +233,10 @@ impl SamlService {
                 self.config.idp.entity_id,
                 self.config.idp.sso_url
             );
-            (self.config.idp.entity_id.clone(), self.config.idp.sso_url.clone())
+            (
+                self.config.idp.entity_id.clone(),
+                self.config.idp.sso_url.clone(),
+            )
         };
 
         if sso_url.is_none() {
@@ -315,11 +306,7 @@ impl SamlService {
             r#"<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="{}" Version="2.0" IssueInstant="{}" Destination="{}" AssertionConsumerServiceURL="{}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">
   <saml:Issuer>{}</saml:Issuer>
 </samlp:AuthnRequest>"#,
-            request_id,
-            issue_instant,
-            sso_url,
-            self.config.sp.acs_url,
-            self.config.sp.entity_id
+            request_id, issue_instant, sso_url, self.config.sp.acs_url, self.config.sp.entity_id
         );
 
         // Compress and base64 encode (for Redirect binding)
@@ -366,10 +353,7 @@ impl SamlService {
         // Get InResponseTo for verification
         let in_response_to = response.in_response_to.clone();
 
-        tracing::debug!(
-            "SAML Response InResponseTo: {:?}",
-            in_response_to
-        );
+        tracing::debug!("SAML Response InResponseTo: {:?}", in_response_to);
 
         // Verify this is a response to our request (if not IdP-initiated)
         let relay_state = if let Some(ref irt) = in_response_to {
@@ -442,11 +426,8 @@ impl SamlService {
             for stmt in attr_statements {
                 for attr in &stmt.attributes {
                     if let Some(ref name) = attr.name {
-                        let values: Vec<String> = attr
-                            .values
-                            .iter()
-                            .filter_map(|v| v.value.clone())
-                            .collect();
+                        let values: Vec<String> =
+                            attr.values.iter().filter_map(|v| v.value.clone()).collect();
                         attributes.insert(name.clone(), values);
                     }
                 }
@@ -546,7 +527,9 @@ impl SamlService {
     /// Verify a request ID and get the associated relay state
     pub async fn verify_request_id(&self, request_id: &str) -> Result<Option<String>> {
         // Use consistent timestamp format for SQLite string comparison
-        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S+00:00")
+            .to_string();
 
         tracing::debug!(
             "Verifying SAML request_id='{}', current_time='{}'",
@@ -573,10 +556,7 @@ impl SamlService {
                 );
             }
             Ok(None) => {
-                tracing::warn!(
-                    "SAML request_id='{}' NOT FOUND in database",
-                    request_id
-                );
+                tracing::warn!("SAML request_id='{}' NOT FOUND in database", request_id);
             }
             Err(e) => {
                 tracing::error!("Database error checking SAML request: {}", e);
@@ -610,7 +590,9 @@ impl SamlService {
     /// Clean up expired auth requests
     pub async fn cleanup_expired_requests(&self) -> Result<u64> {
         // Use consistent timestamp format for SQLite string comparison
-        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S+00:00")
+            .to_string();
 
         let result = sqlx::query("DELETE FROM saml_auth_requests WHERE expires_at <= ?")
             .bind(&now)

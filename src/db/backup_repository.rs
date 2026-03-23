@@ -7,9 +7,7 @@ use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::models::{
-    BackupRestore, BackupSchedule, BackupStatus, BackupTrigger, ServerBackup,
-};
+use crate::models::{BackupRestore, BackupSchedule, BackupStatus, BackupTrigger, ServerBackup};
 
 /// Repository for backup-related database operations
 pub struct BackupRepository {
@@ -168,9 +166,7 @@ impl BackupRepository {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<ServerBackup>> {
-        let mut query = String::from(
-            "SELECT * FROM server_backups WHERE 1=1",
-        );
+        let mut query = String::from("SELECT * FROM server_backups WHERE 1=1");
 
         if status.is_some() {
             query.push_str(" AND status = ?1");
@@ -195,12 +191,11 @@ impl BackupRepository {
 
     /// Get all backups ordered by creation date
     pub async fn get_all_backups(&self) -> Result<Vec<ServerBackup>> {
-        let rows = sqlx::query_as::<_, BackupRow>(
-            "SELECT * FROM server_backups ORDER BY created_at DESC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to fetch all backups")?;
+        let rows =
+            sqlx::query_as::<_, BackupRow>("SELECT * FROM server_backups ORDER BY created_at DESC")
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch all backups")?;
 
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
@@ -252,7 +247,10 @@ impl BackupRepository {
     }
 
     /// Get old backups that exceed retention count
-    pub async fn get_backups_exceeding_retention(&self, retention_count: u32) -> Result<Vec<ServerBackup>> {
+    pub async fn get_backups_exceeding_retention(
+        &self,
+        retention_count: u32,
+    ) -> Result<Vec<ServerBackup>> {
         let rows = sqlx::query_as::<_, BackupRow>(
             r#"
             SELECT * FROM server_backups
@@ -313,7 +311,12 @@ impl BackupRepository {
     }
 
     /// Update schedule last run time
-    pub async fn update_schedule_last_run(&self, id: Uuid, last_run: DateTime<Utc>, next_run: Option<DateTime<Utc>>) -> Result<()> {
+    pub async fn update_schedule_last_run(
+        &self,
+        id: Uuid,
+        last_run: DateTime<Utc>,
+        next_run: Option<DateTime<Utc>>,
+    ) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE backup_schedules
@@ -411,13 +414,11 @@ impl BackupRepository {
 
     /// Get a restore by ID
     pub async fn get_restore(&self, id: Uuid) -> Result<Option<BackupRestore>> {
-        let row = sqlx::query_as::<_, RestoreRow>(
-            "SELECT * FROM backup_restores WHERE id = ?1",
-        )
-        .bind(id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .context("Failed to fetch restore")?;
+        let row = sqlx::query_as::<_, RestoreRow>("SELECT * FROM backup_restores WHERE id = ?1")
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .context("Failed to fetch restore")?;
 
         Ok(row.map(|r| r.into()))
     }
@@ -467,8 +468,16 @@ impl From<BackupRow> for ServerBackup {
             trigger_type: BackupTrigger::from(row.trigger_type),
             status: BackupStatus::from(row.status),
             error_message: row.error_message,
-            started_at: row.started_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-            completed_at: row.completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+            started_at: row.started_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
+            completed_at: row.completed_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
             created_by: row.created_by.and_then(|s| Uuid::parse_str(&s).ok()),
             includes_database: row.includes_database != 0,
             includes_config: row.includes_config != 0,
@@ -511,8 +520,16 @@ impl From<ScheduleRow> for BackupSchedule {
             time_of_day: row.time_of_day,
             day_of_week: row.day_of_week,
             retention_count: row.retention_count,
-            last_run_at: row.last_run_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-            next_run_at: row.next_run_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+            last_run_at: row.last_run_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
+            next_run_at: row.next_run_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
             created_at: DateTime::parse_from_rfc3339(&row.created_at)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now()),
@@ -542,8 +559,16 @@ impl From<RestoreRow> for BackupRestore {
             backup_id: Uuid::parse_str(&row.backup_id).unwrap_or_default(),
             status: BackupStatus::from(row.status),
             error_message: row.error_message,
-            started_at: row.started_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
-            completed_at: row.completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+            started_at: row.started_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
+            completed_at: row.completed_at.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            }),
             restored_by: row.restored_by.and_then(|s| Uuid::parse_str(&s).ok()),
             created_at: DateTime::parse_from_rfc3339(&row.created_at)
                 .map(|dt| dt.with_timezone(&Utc))

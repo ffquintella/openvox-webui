@@ -414,9 +414,7 @@ async fn add_permission_to_role(
 
     // Check if permission already exists
     let already_exists = new_permissions.iter().any(|p| {
-        p.resource == payload.resource
-            && p.action == payload.action
-            && p.scope == payload.scope
+        p.resource == payload.resource && p.action == payload.action && p.scope == payload.scope
     });
 
     if already_exists {
@@ -844,17 +842,21 @@ async fn remove_group_permission(
 
     // Remove all matching permissions
     for perm_id in permissions_to_remove {
-        state.rbac_db.remove_permission(&perm_id).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "internal_error".to_string(),
-                    message: format!("Failed to remove permission: {}", e),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?;
+        state
+            .rbac_db
+            .remove_permission(&perm_id)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "internal_error".to_string(),
+                        message: format!("Failed to remove permission: {}", e),
+                        details: None,
+                        code: None,
+                    }),
+                )
+            })?;
     }
 
     Ok(StatusCode::NO_CONTENT)

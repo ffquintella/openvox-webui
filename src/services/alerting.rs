@@ -27,9 +27,9 @@ use crate::models::{
     TestChannelRequest, TestChannelResponse, UpdateAlertRuleRequest, UpdateChannelRequest,
     WebhookConfig, WebhookPayload,
 };
-use crate::services::PuppetDbClient;
-use crate::services::notification::NotificationService;
 use crate::models::{CreateNotificationRequest, NotificationType};
+use crate::services::notification::NotificationService;
+use crate::services::PuppetDbClient;
 
 /// Alerting service for managing alerts and notifications
 pub struct AlertingService {
@@ -82,20 +82,20 @@ impl AlertingService {
         user_id: Option<Uuid>,
     ) -> Result<NotificationChannel> {
         use crate::db::SettingsRepository;
-        
+
         // If creating an email channel, merge SMTP config from settings
         let mut req = req.clone();
         if req.channel_type == ChannelType::Email {
             let settings_repo = SettingsRepository::new(self.pool.clone());
             let smtp_settings = settings_repo.get_smtp_settings().await?;
-            
+
             // Extract recipient from request config
             let to_emails: Vec<String> = if let Some(to) = req.config.get("to") {
                 serde_json::from_value(to.clone()).unwrap_or_default()
             } else {
                 vec![]
             };
-            
+
             // Build complete EmailConfig
             let email_config = EmailConfig {
                 smtp_host: smtp_settings.host,
@@ -106,10 +106,10 @@ impl AlertingService {
                 to: to_emails,
                 use_tls: smtp_settings.use_tls,
             };
-            
+
             req.config = serde_json::to_value(email_config)?;
         }
-        
+
         let repo = NotificationChannelRepository::new(&self.pool);
         repo.create(&req, user_id).await
     }
@@ -316,24 +316,27 @@ impl AlertingService {
     /// Evaluate all enabled rules and trigger alerts as needed
     pub async fn evaluate_rules(&self) -> Result<Vec<Alert>> {
         info!("Starting rule evaluation");
-        
+
         let rules = self.get_enabled_rules().await?;
         info!("Found {} enabled rules to evaluate", rules.len());
-        
+
         if rules.is_empty() {
             warn!("No enabled rules found - nothing to evaluate");
             return Ok(Vec::new());
         }
-        
+
         if self.puppetdb.is_none() {
             warn!("PuppetDB not configured - node status rules will be skipped");
         }
-        
+
         let mut triggered_alerts = Vec::new();
 
         for rule in rules {
-            info!("Evaluating rule: {} (type: {:?})", rule.name, rule.rule_type);
-            
+            info!(
+                "Evaluating rule: {} (type: {:?})",
+                rule.name, rule.rule_type
+            );
+
             // Check if rule is silenced
             let silence_repo = AlertSilenceRepository::new(&self.pool);
             if silence_repo.is_rule_silenced(rule.id).await? {
@@ -366,7 +369,10 @@ impl AlertingService {
             }
         }
 
-        info!("Rule evaluation complete: {} alerts triggered", triggered_alerts.len());
+        info!(
+            "Rule evaluation complete: {} alerts triggered",
+            triggered_alerts.len()
+        );
         Ok(triggered_alerts)
     }
 
@@ -571,7 +577,7 @@ impl AlertingService {
             Some(f) => f.as_str(),
             None => return false, // Can't evaluate without field in legacy format
         };
-        
+
         let value = match &condition.value {
             Some(v) => v,
             None => return false, // Can't evaluate without value in legacy format
@@ -686,7 +692,8 @@ impl AlertingService {
             };
 
             // Get the rule creator or use default user
-            let user_id = rule.created_by
+            let user_id = rule
+                .created_by
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "system".to_string());
 
@@ -709,8 +716,14 @@ impl AlertingService {
                 metadata: Some(metadata),
             };
 
-            if let Err(e) = notification_service.create_notification(notification_req).await {
-                error!("Failed to create system notification for alert {}: {}", alert.id, e);
+            if let Err(e) = notification_service
+                .create_notification(notification_req)
+                .await
+            {
+                error!(
+                    "Failed to create system notification for alert {}: {}",
+                    alert.id, e
+                );
             } else {
                 info!("Created system notification for alert {}", alert.id);
             }
@@ -937,15 +950,19 @@ impl AlertingService {
         );
 
         // Build email
-        let mut email_builder = Message::builder()
-            .from(config.from.parse().context("Invalid from address")?);
+        let mut email_builder =
+            Message::builder().from(config.from.parse().context("Invalid from address")?);
 
         for to_addr in &config.to {
             email_builder = email_builder.to(to_addr.parse().context("Invalid to address")?);
         }
 
         let email = email_builder
-            .subject(format!("[{}] {}", payload.alert.severity.to_uppercase(), payload.alert.title))
+            .subject(format!(
+                "[{}] {}",
+                payload.alert.severity.to_uppercase(),
+                payload.alert.title
+            ))
             .multipart(
                 MultiPart::alternative()
                     .singlepart(
@@ -974,20 +991,15 @@ impl AlertingService {
         // Add credentials if provided
         if let (Some(username), Some(password)) = (&config.smtp_username, &config.smtp_password) {
             if !username.is_empty() && !password.is_empty() {
-                mailer_builder = mailer_builder.credentials(Credentials::new(
-                    username.clone(),
-                    password.clone(),
-                ));
+                mailer_builder = mailer_builder
+                    .credentials(Credentials::new(username.clone(), password.clone()));
             }
         }
 
         let mailer = mailer_builder.build();
 
         // Send email
-        mailer
-            .send(email)
-            .await
-            .context("Failed to send email")?;
+        mailer.send(email).await.context("Failed to send email")?;
 
         info!(
             "Email notification sent successfully to {:?} via {}:{}",
@@ -1248,9 +1260,10 @@ mod tests {
             "eq" | "=" | "==" => field_value == expected_value,
             "ne" | "!=" => field_value != expected_value,
             "contains" => match (field_value, expected_value) {
-                (Some(serde_json::Value::String(haystack)), Some(serde_json::Value::String(needle))) => {
-                    haystack.contains(needle)
-                }
+                (
+                    Some(serde_json::Value::String(haystack)),
+                    Some(serde_json::Value::String(needle)),
+                ) => haystack.contains(needle),
                 (Some(serde_json::Value::Array(arr)), Some(val)) => arr.contains(val),
                 _ => false,
             },

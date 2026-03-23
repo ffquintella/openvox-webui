@@ -86,7 +86,12 @@ impl<'a> CodeSshKeyRepository<'a> {
     }
 
     /// Create a new SSH key
-    pub async fn create(&self, req: &CreateSshKeyRequest, encrypted_key: &str, public_key: &str) -> Result<CodeSshKey> {
+    pub async fn create(
+        &self,
+        req: &CreateSshKeyRequest,
+        encrypted_key: &str,
+        public_key: &str,
+    ) -> Result<CodeSshKey> {
         let id = Uuid::new_v4();
 
         sqlx::query(
@@ -333,7 +338,10 @@ impl<'a> CodePatTokenRepository<'a> {
     }
 
     /// Get tokens that are expired or expiring soon (within 30 days)
-    pub async fn get_expiring_tokens(&self, days_threshold: i64) -> Result<Vec<crate::models::CodePatToken>> {
+    pub async fn get_expiring_tokens(
+        &self,
+        days_threshold: i64,
+    ) -> Result<Vec<crate::models::CodePatToken>> {
         let now = Utc::now();
         let threshold_date = now + chrono::Duration::days(days_threshold);
         let threshold_str = threshold_date.to_rfc3339();
@@ -478,7 +486,11 @@ impl<'a> CodeRepositoryRepository<'a> {
     }
 
     /// Create a new repository
-    pub async fn create(&self, req: &CreateRepositoryRequest, github_pat_encrypted: Option<&str>) -> Result<CodeRepository> {
+    pub async fn create(
+        &self,
+        req: &CreateRepositoryRequest,
+        github_pat_encrypted: Option<&str>,
+    ) -> Result<CodeRepository> {
         let id = Uuid::new_v4();
         let webhook_secret = generate_webhook_secret();
 
@@ -510,7 +522,12 @@ impl<'a> CodeRepositoryRepository<'a> {
     }
 
     /// Update a repository
-    pub async fn update(&self, id: Uuid, req: &UpdateRepositoryRequest, github_pat_encrypted: Option<&str>) -> Result<Option<CodeRepository>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        req: &UpdateRepositoryRequest,
+        github_pat_encrypted: Option<&str>,
+    ) -> Result<Option<CodeRepository>> {
         let existing = self.get_by_id(id).await?;
         if existing.is_none() {
             return Ok(None);
@@ -519,7 +536,10 @@ impl<'a> CodeRepositoryRepository<'a> {
 
         let name = req.name.as_ref().unwrap_or(&existing.name);
         let url = req.url.as_ref().unwrap_or(&existing.url);
-        let branch_pattern = req.branch_pattern.as_ref().unwrap_or(&existing.branch_pattern);
+        let branch_pattern = req
+            .branch_pattern
+            .as_ref()
+            .unwrap_or(&existing.branch_pattern);
         let auth_type = req.auth_type.unwrap_or(existing.auth_type);
         let ssh_key_id = if req.clear_ssh_key {
             None
@@ -538,7 +558,9 @@ impl<'a> CodeRepositoryRepository<'a> {
         } else {
             existing.github_pat_encrypted
         };
-        let poll_interval = req.poll_interval_seconds.unwrap_or(existing.poll_interval_seconds);
+        let poll_interval = req
+            .poll_interval_seconds
+            .unwrap_or(existing.poll_interval_seconds);
         let is_control_repo = req.is_control_repo.unwrap_or(existing.is_control_repo);
         let webhook_secret = if req.regenerate_webhook_secret {
             Some(generate_webhook_secret())
@@ -617,13 +639,12 @@ impl<'a> CodeRepositoryRepository<'a> {
 
     /// Get environment count for a repository
     pub async fn get_environment_count(&self, id: Uuid) -> Result<i64> {
-        let row: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM code_environments WHERE repository_id = ?",
-        )
-        .bind(id.to_string())
-        .fetch_one(self.pool)
-        .await
-        .context("Failed to count environments")?;
+        let row: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM code_environments WHERE repository_id = ?")
+                .bind(id.to_string())
+                .fetch_one(self.pool)
+                .await
+                .context("Failed to count environments")?;
 
         Ok(row.0)
     }
@@ -632,7 +653,8 @@ impl<'a> CodeRepositoryRepository<'a> {
 fn row_to_repository(row: RepositoryRow) -> CodeRepository {
     use crate::models::AuthType;
 
-    let auth_type = row.auth_type
+    let auth_type = row
+        .auth_type
         .as_deref()
         .and_then(AuthType::from_str)
         .unwrap_or_default();
@@ -906,7 +928,11 @@ impl<'a> CodeEnvironmentRepository<'a> {
     }
 
     /// Delete environments that no longer exist in the repository
-    pub async fn delete_missing(&self, repository_id: Uuid, existing_names: &[String]) -> Result<u64> {
+    pub async fn delete_missing(
+        &self,
+        repository_id: Uuid,
+        existing_names: &[String],
+    ) -> Result<u64> {
         if existing_names.is_empty() {
             // Delete all environments for this repo
             let result = sqlx::query("DELETE FROM code_environments WHERE repository_id = ?")

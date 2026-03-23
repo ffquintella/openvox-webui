@@ -62,9 +62,10 @@ impl ClassificationService {
 
             // Check if this organization had any non-inherited matches
             // (inherited matches don't count as the node being "in" that org)
-            let has_direct_matches = result.groups.iter().any(|g| {
-                g.match_type == MatchType::Rules || g.match_type == MatchType::Pinned
-            });
+            let has_direct_matches = result
+                .groups
+                .iter()
+                .any(|g| g.match_type == MatchType::Rules || g.match_type == MatchType::Pinned);
 
             if has_direct_matches {
                 org_results.push((*org_id, result));
@@ -73,10 +74,7 @@ impl ClassificationService {
 
         // Check for conflicts (node matches in multiple organizations)
         if org_results.len() > 1 {
-            let org_names: Vec<String> = org_results
-                .iter()
-                .map(|(id, _)| id.to_string())
-                .collect();
+            let org_names: Vec<String> = org_results.iter().map(|(id, _)| id.to_string()).collect();
 
             // Return the first result but with a conflict error
             let mut result = org_results.remove(0).1;
@@ -165,7 +163,8 @@ impl ClassificationService {
             .collect();
 
         // Track groups that have been processed (either through BFS or pinned processing)
-        let mut processed_groups: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+        let mut processed_groups: std::collections::HashSet<Uuid> =
+            std::collections::HashSet::new();
 
         // Process pinned groups first - they match regardless of parent chain
         for pinned_id in &pinned_group_ids {
@@ -191,7 +190,13 @@ impl ClassificationService {
                 // Handle environment - leaf (pinned) group takes precedence
                 for ancestor in ancestor_chain.iter().rev() {
                     let group_env = match &ancestor.environment {
-                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
+                        Some(env)
+                            if env == "*"
+                                || env.to_lowercase() == "all"
+                                || env.to_lowercase() == "any" =>
+                        {
+                            None
+                        }
                         other => other.clone(),
                     };
 
@@ -270,7 +275,13 @@ impl ClassificationService {
             } else {
                 match &group.environment {
                     None => true, // No environment restriction
-                    Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => true,
+                    Some(env)
+                        if env == "*"
+                            || env.to_lowercase() == "all"
+                            || env.to_lowercase() == "any" =>
+                    {
+                        true
+                    }
                     Some(env) => {
                         // Group has specific environment requirement
                         match &node_environment {
@@ -374,7 +385,13 @@ impl ClassificationService {
                 // We walk the chain from leaf to root, taking the first non-None environment
                 for ancestor in ancestor_chain.iter().rev() {
                     let group_env = match &ancestor.environment {
-                        Some(env) if env == "*" || env.to_lowercase() == "all" || env.to_lowercase() == "any" => None,
+                        Some(env)
+                            if env == "*"
+                                || env.to_lowercase() == "all"
+                                || env.to_lowercase() == "any" =>
+                        {
+                            None
+                        }
                         other => other.clone(),
                     };
 
@@ -778,7 +795,11 @@ mod tests {
 
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
-        assert!(result.classes.as_object().unwrap().contains_key("profile::webserver"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("profile::webserver"));
     }
 
     #[test]
@@ -844,12 +865,26 @@ mod tests {
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[1].match_type, MatchType::Rules); // Changed from Inherited since match_all_nodes uses Rules type
-        // Classes should be merged with deep merge
-        assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
-        assert!(result.classes.as_object().unwrap().contains_key("class_child"));
+                                                                   // Classes should be merged with deep merge
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("class_parent"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("class_child"));
         // Deep merge: child's parameters override parent's for same class
-        assert_eq!(result.classes["class_parent"]["p"], serde_json::json!("child"));
-        assert_eq!(result.classes["class_child"]["child"], serde_json::json!(true));
+        assert_eq!(
+            result.classes["class_parent"]["p"],
+            serde_json::json!("child")
+        );
+        assert_eq!(
+            result.classes["class_child"]["child"],
+            serde_json::json!(true)
+        );
     }
 
     #[test]
@@ -880,8 +915,16 @@ mod tests {
         assert_eq!(result.groups.len(), 2);
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
         assert_eq!(result.groups[1].match_type, MatchType::Rules); // Child has match_all_nodes=true, uses Rules type
-        assert!(result.classes.as_object().unwrap().contains_key("class_parent"));
-        assert!(result.classes.as_object().unwrap().contains_key("class_child"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("class_parent"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("class_child"));
     }
 
     #[test]
@@ -921,7 +964,11 @@ mod tests {
         assert_eq!(result.groups.len(), 1);
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
         assert_eq!(result.groups[0].matched_rules.len(), 1);
-        assert!(result.classes.as_object().unwrap().contains_key("class_any"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("class_any"));
     }
 
     #[test]
@@ -1138,7 +1185,7 @@ mod tests {
             id: grandchild_id,
             name: "grandchild".to_string(),
             parent_id: Some(child_id),
-            environment: None, // No environment (should inherit from child)
+            environment: None,     // No environment (should inherit from child)
             match_all_nodes: true, // Required to inherit from parent
             classes: serde_json::json!({
                 "application": {"version": "3.0"},
@@ -1178,7 +1225,10 @@ mod tests {
         let common = &classes["common"];
         assert_eq!(common["root_param"], serde_json::json!("root_value"));
         assert_eq!(common["child_param"], serde_json::json!("child_value"));
-        assert_eq!(common["grandchild_param"], serde_json::json!("grandchild_value"));
+        assert_eq!(
+            common["grandchild_param"],
+            serde_json::json!("grandchild_value")
+        );
 
         // Variables should be merged from all three groups
         let vars = result.variables.as_object().unwrap();
@@ -1299,7 +1349,8 @@ mod tests {
         };
 
         // Test scenario 1: Linux Servers processed first, then Puppet Servers
-        let service1 = ClassificationService::new(vec![linux_servers.clone(), puppet_servers.clone()]);
+        let service1 =
+            ClassificationService::new(vec![linux_servers.clone(), puppet_servers.clone()]);
         let facts = serde_json::json!({
             "kernel": "Linux",
             "catalog_environment": "pserver"  // Node is in pserver environment
@@ -1312,10 +1363,15 @@ mod tests {
         assert_eq!(result1.groups[0].name, "Puppet Servers");
         assert_eq!(result1.groups[0].match_type, MatchType::Pinned);
         assert_eq!(result1.environment, Some("pserver".to_string()));
-        assert!(result1.classes.as_object().unwrap().contains_key("puppetserver"));
+        assert!(result1
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("puppetserver"));
 
         // Test scenario 2: Puppet Servers processed first, then Linux Servers
-        let service2 = ClassificationService::new(vec![puppet_servers.clone(), linux_servers.clone()]);
+        let service2 =
+            ClassificationService::new(vec![puppet_servers.clone(), linux_servers.clone()]);
         let result2 = service2.classify("segdc1vpr0018.fgv.br", &facts);
 
         // Same result regardless of order
@@ -1355,7 +1411,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: "R - Docker Apps".to_string(),
             parent_id: Some(parent_id),
-            environment: None, // No environment - inherits from parent
+            environment: None,     // No environment - inherits from parent
             match_all_nodes: true, // Required to inherit from parent
             // No rules - should inherit from parent
             rules: vec![],
@@ -1370,7 +1426,11 @@ mod tests {
             "clientcert": "segdc1vhm0001.fgv.br"
         });
         let result_a = service.classify("segdc1vhm0001.fgv.br", &facts_a);
-        assert_eq!(result_a.groups.len(), 2, "Node with 'vhm' should match both groups");
+        assert_eq!(
+            result_a.groups.len(),
+            2,
+            "Node with 'vhm' should match both groups"
+        );
         assert_eq!(result_a.groups[0].name, "Homolog");
         assert_eq!(result_a.groups[1].name, "R - Docker Apps");
         assert_eq!(result_a.groups[1].match_type, MatchType::Rules); // match_all_nodes=true uses Rules type
@@ -1380,7 +1440,11 @@ mod tests {
             "clientcert": "apldc1vds0045.fgv.br"
         });
         let result_b = service.classify("apldc1vds0045.fgv.br", &facts_b);
-        assert_eq!(result_b.groups.len(), 0, "Node without 'vhm' should not match any group");
+        assert_eq!(
+            result_b.groups.len(),
+            0,
+            "Node without 'vhm' should not match any group"
+        );
     }
 
     #[test]
@@ -1424,7 +1488,11 @@ mod tests {
             "docker_installed": true
         });
         let result = service.classify("win-docker.example.com", &facts);
-        assert_eq!(result.groups.len(), 0, "Windows node should not match even with Docker");
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Windows node should not match even with Docker"
+        );
 
         // Node with Linux AND Docker - should match both
         let facts = serde_json::json!({
@@ -1432,7 +1500,11 @@ mod tests {
             "docker_installed": true
         });
         let result = service.classify("linux-docker.example.com", &facts);
-        assert_eq!(result.groups.len(), 2, "Linux node with Docker should match both groups");
+        assert_eq!(
+            result.groups.len(),
+            2,
+            "Linux node with Docker should match both groups"
+        );
     }
 
     #[test]
@@ -1454,7 +1526,11 @@ mod tests {
             "kernel": "Linux"
         });
         let result = service.classify("any-node.example.com", &facts);
-        assert_eq!(result.groups.len(), 1, "Node should match group with match_all_nodes=true");
+        assert_eq!(
+            result.groups.len(),
+            1,
+            "Node should match group with match_all_nodes=true"
+        );
         assert_eq!(result.groups[0].name, "All Nodes");
     }
 
@@ -1476,7 +1552,11 @@ mod tests {
             "kernel": "Linux"
         });
         let result = service.classify("any-node.example.com", &facts);
-        assert_eq!(result.groups.len(), 0, "Node should NOT match group with match_all_nodes=false and no rules");
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Node should NOT match group with match_all_nodes=false and no rules"
+        );
     }
 
     #[test]
@@ -1513,7 +1593,11 @@ mod tests {
             "kernel": "Linux"
         });
         let result = service.classify("linux-node.example.com", &linux_facts);
-        assert_eq!(result.groups.len(), 2, "Linux node should match both groups");
+        assert_eq!(
+            result.groups.len(),
+            2,
+            "Linux node should match both groups"
+        );
         assert_eq!(result.groups[0].name, "Linux");
         assert_eq!(result.groups[1].name, "All Linux Nodes");
 
@@ -1522,7 +1606,11 @@ mod tests {
             "kernel": "Windows"
         });
         let result = service.classify("windows-node.example.com", &windows_facts);
-        assert_eq!(result.groups.len(), 0, "Windows node should not match - parent doesn't match");
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Windows node should not match - parent doesn't match"
+        );
     }
 
     #[test]
@@ -1553,7 +1641,11 @@ mod tests {
             "catalog_environment": "staging"
         });
         let result = service.classify("staging-node.example.com", &staging_facts);
-        assert_eq!(result.groups.len(), 0, "Staging node should not match - wrong environment");
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Staging node should not match - wrong environment"
+        );
     }
 
     #[test]
@@ -1659,7 +1751,10 @@ mod tests {
         assert_eq!(result.groups[0].name, "Linux Servers");
 
         // Node B: Windows
-        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
+        let result = service.classify(
+            "windows.example.com",
+            &serde_json::json!({"kernel": "Windows"}),
+        );
         assert_eq!(result.groups.len(), 0, "Windows node should not match");
     }
 
@@ -1680,7 +1775,11 @@ mod tests {
         let service = ClassificationService::new(vec![group]);
 
         let result = service.classify("any.example.com", &serde_json::json!({"kernel": "Linux"}));
-        assert_eq!(result.groups.len(), 0, "No node should match group with no rules and match_all_nodes=false");
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "No node should match group with no rules and match_all_nodes=false"
+        );
     }
 
     #[test]
@@ -1700,7 +1799,11 @@ mod tests {
         let service = ClassificationService::new(vec![group]);
 
         let result = service.classify("any.example.com", &serde_json::json!({"kernel": "Linux"}));
-        assert_eq!(result.groups.len(), 1, "All nodes should match group with match_all_nodes=true");
+        assert_eq!(
+            result.groups.len(),
+            1,
+            "All nodes should match group with match_all_nodes=true"
+        );
         assert_eq!(result.groups[0].name, "All Nodes");
     }
 
@@ -1742,16 +1845,25 @@ mod tests {
         let service = ClassificationService::new(vec![parent, child]);
 
         // Node A: Linux + webserver -> both
-        let result = service.classify("web.example.com", &serde_json::json!({"kernel": "Linux", "role": "webserver"}));
+        let result = service.classify(
+            "web.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "webserver"}),
+        );
         assert_eq!(result.groups.len(), 2, "Node A should match both groups");
 
         // Node B: Linux + dbserver -> parent only
-        let result = service.classify("db.example.com", &serde_json::json!({"kernel": "Linux", "role": "dbserver"}));
+        let result = service.classify(
+            "db.example.com",
+            &serde_json::json!({"kernel": "Linux", "role": "dbserver"}),
+        );
         assert_eq!(result.groups.len(), 1, "Node B should match parent only");
         assert_eq!(result.groups[0].name, "Linux");
 
         // Node C: Windows + webserver -> neither
-        let result = service.classify("winweb.example.com", &serde_json::json!({"kernel": "Windows", "role": "webserver"}));
+        let result = service.classify(
+            "winweb.example.com",
+            &serde_json::json!({"kernel": "Windows", "role": "webserver"}),
+        );
         assert_eq!(result.groups.len(), 0, "Node C should match neither");
     }
 
@@ -1789,11 +1901,18 @@ mod tests {
 
         // Node A: Linux -> parent only
         let result = service.classify("linux.example.com", &serde_json::json!({"kernel": "Linux"}));
-        assert_eq!(result.groups.len(), 1, "Node A should match parent only, not empty child");
+        assert_eq!(
+            result.groups.len(),
+            1,
+            "Node A should match parent only, not empty child"
+        );
         assert_eq!(result.groups[0].name, "Linux");
 
         // Node B: Windows -> neither
-        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
+        let result = service.classify(
+            "windows.example.com",
+            &serde_json::json!({"kernel": "Windows"}),
+        );
         assert_eq!(result.groups.len(), 0, "Node B should match neither");
     }
 
@@ -1836,8 +1955,15 @@ mod tests {
         assert_eq!(result.groups[1].name, "All Linux");
 
         // Node B: Windows -> neither
-        let result = service.classify("windows.example.com", &serde_json::json!({"kernel": "Windows"}));
-        assert_eq!(result.groups.len(), 0, "Node B should match neither (parent didn't match)");
+        let result = service.classify(
+            "windows.example.com",
+            &serde_json::json!({"kernel": "Windows"}),
+        );
+        assert_eq!(
+            result.groups.len(),
+            0,
+            "Node B should match neither (parent didn't match)"
+        );
     }
 
     #[test]
@@ -2195,7 +2321,10 @@ mod tests {
         assert_eq!(result.groups[0].match_type, MatchType::Pinned);
 
         // Node B: not pinned but matches rule
-        let result = service.classify("special.example.com", &serde_json::json!({"role": "special"}));
+        let result = service.classify(
+            "special.example.com",
+            &serde_json::json!({"role": "special"}),
+        );
         assert_eq!(result.groups.len(), 1, "Rule-matching node should match");
         assert_eq!(result.groups[0].match_type, MatchType::Rules);
 

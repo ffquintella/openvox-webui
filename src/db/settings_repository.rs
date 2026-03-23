@@ -81,10 +81,8 @@ impl SettingsRepository {
     /// Get SMTP settings
     pub async fn get_smtp_settings(&self) -> Result<SmtpSettings, AppError> {
         let settings = self.get_settings_by_prefix("smtp.").await?;
-        let settings_vec: Vec<(String, String)> = settings
-            .into_iter()
-            .map(|s| (s.key, s.value))
-            .collect();
+        let settings_vec: Vec<(String, String)> =
+            settings.into_iter().map(|s| (s.key, s.value)).collect();
 
         Ok(SmtpSettings::from_settings(&settings_vec))
     }

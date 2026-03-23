@@ -2,8 +2,7 @@
 
 use crate::middleware::AuthUser;
 use crate::models::{
-    BulkMarkReadRequest, CreateNotificationRequest, MarkNotificationReadRequest,
-    NotificationQuery,
+    BulkMarkReadRequest, CreateNotificationRequest, MarkNotificationReadRequest, NotificationQuery,
 };
 use crate::utils::AppError;
 use crate::AppState;
@@ -203,62 +202,62 @@ async fn notification_stream(
     use futures::StreamExt as FuturesStreamExt;
 
     let stream = FuturesStreamExt::filter_map(BroadcastStream::new(receiver), move |result| {
-            let user_id = user_id.clone();
-            Box::pin(async move {
-                match result {
-                    Ok(event) => {
-                        // Filter events for this user
-                        let should_send = match &event {
+        let user_id = user_id.clone();
+        Box::pin(async move {
+            match result {
+                Ok(event) => {
+                    // Filter events for this user
+                    let should_send = match &event {
+                        crate::services::NotificationEvent::New(notification) => {
+                            notification.user_id == user_id
+                        }
+                        crate::services::NotificationEvent::Updated(notification) => {
+                            notification.user_id == user_id
+                        }
+                        crate::services::NotificationEvent::Deleted(_) => true,
+                        crate::services::NotificationEvent::BulkRead(_) => true,
+                    };
+
+                    if should_send {
+                        // Convert to SSE event
+                        let event_data = match event {
                             crate::services::NotificationEvent::New(notification) => {
-                                notification.user_id == user_id
+                                json!({
+                                    "type": "new",
+                                    "notification": notification
+                                })
                             }
                             crate::services::NotificationEvent::Updated(notification) => {
-                                notification.user_id == user_id
+                                json!({
+                                    "type": "updated",
+                                    "notification": notification
+                                })
                             }
-                            crate::services::NotificationEvent::Deleted(_) => true,
-                            crate::services::NotificationEvent::BulkRead(_) => true,
+                            crate::services::NotificationEvent::Deleted(id) => {
+                                json!({
+                                    "type": "deleted",
+                                    "notification_id": id
+                                })
+                            }
+                            crate::services::NotificationEvent::BulkRead(ids) => {
+                                json!({
+                                    "type": "bulk_read",
+                                    "notification_ids": ids
+                                })
+                            }
                         };
 
-                        if should_send {
-                            // Convert to SSE event
-                            let event_data = match event {
-                                crate::services::NotificationEvent::New(notification) => {
-                                    json!({
-                                        "type": "new",
-                                        "notification": notification
-                                    })
-                                }
-                                crate::services::NotificationEvent::Updated(notification) => {
-                                    json!({
-                                        "type": "updated",
-                                        "notification": notification
-                                    })
-                                }
-                                crate::services::NotificationEvent::Deleted(id) => {
-                                    json!({
-                                        "type": "deleted",
-                                        "notification_id": id
-                                    })
-                                }
-                                crate::services::NotificationEvent::BulkRead(ids) => {
-                                    json!({
-                                        "type": "bulk_read",
-                                        "notification_ids": ids
-                                    })
-                                }
-                            };
-
-                            Some(Ok::<_, Infallible>(
-                                Event::default().json_data(event_data).unwrap(),
-                            ))
-                        } else {
-                            None
-                        }
+                        Some(Ok::<_, Infallible>(
+                            Event::default().json_data(event_data).unwrap(),
+                        ))
+                    } else {
+                        None
                     }
-                    Err(_) => None,
                 }
-            })
-        });
+                Err(_) => None,
+            }
+        })
+    });
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }

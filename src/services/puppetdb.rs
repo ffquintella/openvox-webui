@@ -1188,7 +1188,10 @@ impl PuppetDbClient {
             .send()
             .await
             .map_err(|e| {
-                error!("PuppetDB ERROR: Failed to deactivate node '{}': {}", certname, e);
+                error!(
+                    "PuppetDB ERROR: Failed to deactivate node '{}': {}",
+                    certname, e
+                );
                 anyhow::anyhow!("Failed to send deactivate command: {}", e)
             })?;
 
@@ -1211,62 +1214,54 @@ impl PuppetDbClient {
     /// Internal GET request handler
     async fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         debug!("PuppetDB: Sending GET request to {}", url);
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| {
-                // Log detailed error information
-                error!(
-                    "PuppetDB ERROR: HTTP request failed to {}: {}",
-                    url, e
-                );
-                error!(
-                    "PuppetDB ERROR: Error flags - is_connect: {}, is_timeout: {}, is_request: {}",
-                    e.is_connect(),
-                    e.is_timeout(),
-                    e.is_request()
-                );
+        let response = self.client.get(url).send().await.map_err(|e| {
+            // Log detailed error information
+            error!("PuppetDB ERROR: HTTP request failed to {}: {}", url, e);
+            error!(
+                "PuppetDB ERROR: Error flags - is_connect: {}, is_timeout: {}, is_request: {}",
+                e.is_connect(),
+                e.is_timeout(),
+                e.is_request()
+            );
 
-                // Provide helpful messages based on error type
-                if e.is_connect() {
-                    error!("PuppetDB ERROR: Connection failed. Check:");
-                    error!("  - PuppetDB URL is correct and reachable");
-                    error!("  - Network/firewall allows connection to PuppetDB port");
-                    error!("  - SSL certificates are valid and trusted");
-                }
-                if e.is_timeout() {
-                    error!("PuppetDB ERROR: Request timed out. Check:");
-                    error!("  - PuppetDB server is responsive");
-                    error!("  - Network latency is acceptable");
-                    error!("  - Consider increasing puppetdb.timeout setting");
+            // Provide helpful messages based on error type
+            if e.is_connect() {
+                error!("PuppetDB ERROR: Connection failed. Check:");
+                error!("  - PuppetDB URL is correct and reachable");
+                error!("  - Network/firewall allows connection to PuppetDB port");
+                error!("  - SSL certificates are valid and trusted");
+            }
+            if e.is_timeout() {
+                error!("PuppetDB ERROR: Request timed out. Check:");
+                error!("  - PuppetDB server is responsive");
+                error!("  - Network latency is acceptable");
+                error!("  - Consider increasing puppetdb.timeout setting");
+            }
+
+            // Walk through error chain for root cause
+            if let Some(source) = e.source() {
+                error!("PuppetDB ERROR: Underlying cause: {}", source);
+                let mut current: &dyn StdError = source;
+                while let Some(next) = current.source() {
+                    error!("PuppetDB ERROR: Caused by: {}", next);
+                    current = next;
                 }
 
-                // Walk through error chain for root cause
-                if let Some(source) = e.source() {
-                    error!("PuppetDB ERROR: Underlying cause: {}", source);
-                    let mut current: &dyn StdError = source;
-                    while let Some(next) = current.source() {
-                        error!("PuppetDB ERROR: Caused by: {}", next);
-                        current = next;
-                    }
-
-                    // Check for common SSL errors
-                    let error_str = format!("{}", source);
-                    if error_str.contains("UnknownIssuer") {
-                        error!("PuppetDB SSL ERROR: Server certificate not trusted!");
-                        error!("  - Verify puppetdb.ssl.ca_path points to correct CA certificate");
-                        error!("  - Ensure CA certificate matches the one that signed PuppetDB's cert");
-                    } else if error_str.contains("certificate") || error_str.contains("Certificate") {
-                        error!("PuppetDB SSL ERROR: Certificate validation failed");
-                        error!("  - Check SSL certificate paths in configuration");
-                        error!("  - Verify certificates are in PEM format");
-                        error!("  - Ensure certificates are not expired");
-                    }
+                // Check for common SSL errors
+                let error_str = format!("{}", source);
+                if error_str.contains("UnknownIssuer") {
+                    error!("PuppetDB SSL ERROR: Server certificate not trusted!");
+                    error!("  - Verify puppetdb.ssl.ca_path points to correct CA certificate");
+                    error!("  - Ensure CA certificate matches the one that signed PuppetDB's cert");
+                } else if error_str.contains("certificate") || error_str.contains("Certificate") {
+                    error!("PuppetDB SSL ERROR: Certificate validation failed");
+                    error!("  - Check SSL certificate paths in configuration");
+                    error!("  - Verify certificates are in PEM format");
+                    error!("  - Ensure certificates are not expired");
                 }
-                anyhow::anyhow!("Failed to send request to {}: {}", url, e)
-            })?;
+            }
+            anyhow::anyhow!("Failed to send request to {}: {}", url, e)
+        })?;
 
         self.handle_response(response).await
     }

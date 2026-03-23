@@ -110,7 +110,9 @@ impl PuppetCAService {
 
         // Configure SSL verification (must be after identity for rustls compatibility)
         if !effective_verify {
-            tracing::warn!("Puppet CA SSL: Certificate verification is DISABLED - this is insecure!");
+            tracing::warn!(
+                "Puppet CA SSL: Certificate verification is DISABLED - this is insecure!"
+            );
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
 
@@ -118,7 +120,10 @@ impl PuppetCAService {
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 
-        tracing::info!("Puppet CA client initialized successfully for {}", config.url);
+        tracing::info!(
+            "Puppet CA client initialized successfully for {}",
+            config.url
+        );
 
         Ok(Self {
             client,
@@ -139,8 +144,13 @@ impl PuppetCAService {
 
         Ok(CAStatus {
             available: true,
-            ca_fingerprint: ca_info.as_ref().and_then(|c| c.get("fingerprint")).and_then(|v| v.as_str()).map(String::from),
-            ca_expires_at: ca_info.as_ref()
+            ca_fingerprint: ca_info
+                .as_ref()
+                .and_then(|c| c.get("fingerprint"))
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            ca_expires_at: ca_info
+                .as_ref()
                 .and_then(|c| c.get("not_after"))
                 .and_then(|v| v.as_str())
                 .and_then(parse_puppet_date),
@@ -156,7 +166,10 @@ impl PuppetCAService {
             "{}/puppet-ca/v1/certificate_statuses/all?environment=production",
             self.base_url
         );
-        tracing::debug!("Puppet CA: Fetching all certificates to find CA info from {}", url);
+        tracing::debug!(
+            "Puppet CA: Fetching all certificates to find CA info from {}",
+            url
+        );
 
         let response = self
             .client
@@ -191,9 +204,12 @@ impl PuppetCAService {
 
         // If no explicit CA found, return the first signed certificate as a fallback
         // (this gives us at least some info about the CA infrastructure)
-        certs.into_iter()
+        certs
+            .into_iter()
             .find(|c| c.get("state").and_then(|v| v.as_str()) == Some("signed"))
-            .ok_or_else(|| AppError::NotFound("CA certificate not found in certificate list".to_string()))
+            .ok_or_else(|| {
+                AppError::NotFound("CA certificate not found in certificate list".to_string())
+            })
     }
 
     /// List pending certificate requests
@@ -432,7 +448,10 @@ impl PuppetCAService {
             "{}/puppet-ca/v1/certificate/ca?environment=production",
             self.base_url
         );
-        tracing::info!("Puppet CA: Renewing CA certificate for {} days", request.days);
+        tracing::info!(
+            "Puppet CA: Renewing CA certificate for {} days",
+            request.days
+        );
 
         let body = serde_json::json!({
             "ttl": format!("{}d", request.days)

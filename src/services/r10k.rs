@@ -158,7 +158,11 @@ impl R10kService {
                     registry.remove(&deployment_id);
                     return Ok(true);
                 } else {
-                    warn!("Failed to kill process {}: errno={}", pid, std::io::Error::last_os_error());
+                    warn!(
+                        "Failed to kill process {}: errno={}",
+                        pid,
+                        std::io::Error::last_os_error()
+                    );
                 }
             }
 
@@ -197,7 +201,8 @@ impl R10kService {
 
     /// Deploy a specific environment
     pub async fn deploy_environment(&self, environment: &str) -> Result<DeploymentResult> {
-        self.deploy_environment_with_tracking(environment, None).await
+        self.deploy_environment_with_tracking(environment, None)
+            .await
     }
 
     /// Deploy a specific environment with optional deployment ID for process tracking
@@ -224,7 +229,12 @@ impl R10kService {
 
         // Add config file path
         args.push("-c");
-        args.push(self.config.config_path.to_str().unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"));
+        args.push(
+            self.config
+                .config_path
+                .to_str()
+                .unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"),
+        );
 
         // Add verbose output for logging
         args.push("-v");
@@ -236,9 +246,7 @@ impl R10kService {
 
         debug!("Executing: {:?} {:?}", self.config.binary_path, args);
 
-        let result = self
-            .execute_r10k_with_tracking(&args, deployment_id)
-            .await;
+        let result = self.execute_r10k_with_tracking(&args, deployment_id).await;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -290,7 +298,12 @@ impl R10kService {
         }
 
         args.push("-c");
-        args.push(self.config.config_path.to_str().unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"));
+        args.push(
+            self.config
+                .config_path
+                .to_str()
+                .unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"),
+        );
         args.push("-v");
 
         for arg in &self.config.extra_args {
@@ -327,7 +340,10 @@ impl R10kService {
             "-e",
             environment,
             "-c",
-            self.config.config_path.to_str().unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"),
+            self.config
+                .config_path
+                .to_str()
+                .unwrap_or("/etc/puppetlabs/r10k/r10k.yaml"),
             "-v",
         ];
 
@@ -363,11 +379,7 @@ impl R10kService {
         let timeout_duration = Duration::from_secs(self.config.timeout_seconds);
 
         // Log the exact command being executed
-        let command_str = format!(
-            "{} {}",
-            self.config.binary_path.display(),
-            args.join(" ")
-        );
+        let command_str = format!("{} {}", self.config.binary_path.display(), args.join(" "));
 
         // Get current user info for logging
         let current_uid = unsafe { libc::getuid() };
@@ -421,11 +433,8 @@ impl R10kService {
             };
 
             // Wait for process
-            let (stdout_result, stderr_result, status) = tokio::join!(
-                stdout_task,
-                stderr_task,
-                child.wait()
-            );
+            let (stdout_result, stderr_result, status) =
+                tokio::join!(stdout_task, stderr_task, child.wait());
 
             let stdout_str = stdout_result.unwrap_or_default();
             let stderr_str = stderr_result.unwrap_or_default();
@@ -601,10 +610,7 @@ impl R10kService {
     }
 
     /// Generate r10k.yaml configuration file
-    pub fn generate_config(
-        &self,
-        sources: &[R10kSource],
-    ) -> Result<String> {
+    pub fn generate_config(&self, sources: &[R10kSource]) -> Result<String> {
         let config = R10kYamlConfig {
             cachedir: self.config.cachedir.to_string_lossy().to_string(),
             sources: sources
@@ -614,9 +620,7 @@ impl R10kService {
             pool_size: Some(self.config.pool_size),
             deploy: Some(R10kDeploySettings {
                 purge_levels: Some(vec!["deployment".to_string()]),
-                purge_allowlist: Some(vec![
-                    ".r10k-deploy.json".to_string(),
-                ]),
+                purge_allowlist: Some(vec![".r10k-deploy.json".to_string()]),
             }),
         };
 
@@ -629,8 +633,7 @@ impl R10kService {
 
         // Ensure parent directory exists
         if let Some(parent) = self.config.config_path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create r10k config directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create r10k config directory")?;
         }
 
         std::fs::write(&self.config.config_path, &config_str)
@@ -846,7 +849,10 @@ mod 'custom_module',
         let modules = parse_puppetfile(content);
         assert_eq!(modules.len(), 1);
         assert_eq!(modules[0].name, "custom_module");
-        assert_eq!(modules[0].git(), Some("https://github.com/example/custom_module.git"));
+        assert_eq!(
+            modules[0].git(),
+            Some("https://github.com/example/custom_module.git")
+        );
         assert_eq!(modules[0].branch(), Some("main"));
     }
 

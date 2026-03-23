@@ -47,7 +47,11 @@ fn require_read_permission(auth_user: &AuthUser) -> Result<(), AppError> {
     }
 
     // Check if user has admin or operator role
-    if auth_user.roles.iter().any(|r| r == "admin" || r == "operator") {
+    if auth_user
+        .roles
+        .iter()
+        .any(|r| r == "admin" || r == "operator")
+    {
         return Ok(());
     }
 
@@ -117,9 +121,10 @@ async fn list_pending_removals(
     require_read_permission(&auth_user)?;
 
     let repo = NodeRemovalRepository::new(state.db.clone());
-    let pending = repo.get_all_pending().await.map_err(|e| {
-        AppError::Internal(format!("Failed to fetch pending removals: {}", e))
-    })?;
+    let pending = repo
+        .get_all_pending()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch pending removals: {}", e)))?;
 
     let responses: Vec<PendingNodeRemovalResponse> = pending.into_iter().map(Into::into).collect();
 

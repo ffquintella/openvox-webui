@@ -47,7 +47,7 @@ pub fn routes() -> Router<AppState> {
         .route("/history", get(get_config_history))
         // SMTP settings
         .route("/smtp", get(get_smtp_settings).put(update_smtp_settings))
-        // Note: /server is in public_routes() to allow login page to check SAML config
+    // Note: /server is in public_routes() to allow login page to check SAML config
 }
 
 /// Settings response - read-only configuration view
@@ -193,11 +193,14 @@ async fn get_settings(State(state): State<AppState>) -> Json<SettingsResponse> {
             lockout_duration_minutes: config.rbac.lockout_duration_minutes,
             custom_roles_count: config.rbac.roles.len(),
         },
-        node_bootstrap: config.node_bootstrap.as_ref().map(|nb| NodeBootstrapSettings {
-            openvox_server_url: nb.openvox_server_url.clone(),
-            repository_base_url: nb.repository_base_url.clone(),
-            agent_package_name: nb.agent_package_name.clone(),
-        }),
+        node_bootstrap: config
+            .node_bootstrap
+            .as_ref()
+            .map(|nb| NodeBootstrapSettings {
+                openvox_server_url: nb.openvox_server_url.clone(),
+                repository_base_url: nb.repository_base_url.clone(),
+                agent_package_name: nb.agent_package_name.clone(),
+            }),
     };
 
     Json(response)
@@ -561,10 +564,7 @@ async fn get_server_info(State(state): State<AppState>) -> Json<ServerInfoRespon
     // Check SAML configuration with detailed logging
     let saml_info = match &state.config.saml {
         Some(saml_config) => {
-            tracing::info!(
-                "SAML configuration found: enabled={}",
-                saml_config.enabled
-            );
+            tracing::info!("SAML configuration found: enabled={}", saml_config.enabled);
 
             if !saml_config.enabled {
                 tracing::info!("SAML is configured but explicitly disabled (enabled=false)");

@@ -69,7 +69,9 @@ async fn test_list_alert_rules_includes_created_rule() {
 
     let json: serde_json::Value = response.json();
     let rules = json["data"].as_array().expect("rules array");
-    assert!(rules.iter().any(|rule| rule["id"] == created.id.to_string()));
+    assert!(rules
+        .iter()
+        .any(|rule| rule["id"] == created.id.to_string()));
 }
 
 #[tokio::test]

@@ -413,7 +413,11 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
         Err(e) => {
             tracing::warn!("Error looking up user by external_id: {}", e);
             // Try by username as fallback
-            auth_service.get_user_by_username(&username).await.ok().flatten()
+            auth_service
+                .get_user_by_username(&username)
+                .await
+                .ok()
+                .flatten()
         }
     };
 
@@ -461,7 +465,9 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
                 );
                 let error = SamlErrorPage {
                     error: "Access Denied".to_string(),
-                    message: "Your account has not been provisioned. Please contact an administrator.".to_string(),
+                    message:
+                        "Your account has not been provisioned. Please contact an administrator."
+                            .to_string(),
                 };
                 return (
                     StatusCode::FORBIDDEN,
@@ -619,11 +625,7 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
 
     // Use 303 See Other to force the browser to use GET for the redirect
     // (307 Temporary Redirect preserves the POST method, which causes 405 errors)
-    (
-        StatusCode::SEE_OTHER,
-        [(header::LOCATION, callback_url)],
-    )
-        .into_response()
+    (StatusCode::SEE_OTHER, [(header::LOCATION, callback_url)]).into_response()
 }
 
 use axum::Json;

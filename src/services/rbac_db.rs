@@ -177,10 +177,7 @@ impl DbRbacService {
         }
 
         // Collect role IDs for batch loading
-        let role_ids: Vec<String> = rows
-            .iter()
-            .map(|r| r.get::<String, _>("id"))
-            .collect();
+        let role_ids: Vec<String> = rows.iter().map(|r| r.get::<String, _>("id")).collect();
 
         // Batch load all permissions for all roles in a single query
         let permissions_map = self.batch_get_role_permissions(&role_ids).await?;
@@ -188,7 +185,10 @@ impl DbRbacService {
         let mut roles = Vec::new();
         for row in rows {
             let role_id_str: String = row.get("id");
-            let permissions = permissions_map.get(&role_id_str).cloned().unwrap_or_default();
+            let permissions = permissions_map
+                .get(&role_id_str)
+                .cloned()
+                .unwrap_or_default();
             roles.push(row_to_role(&row, permissions));
         }
 
@@ -583,10 +583,7 @@ impl DbRbacService {
         }
 
         // Collect role IDs for batch loading
-        let role_ids: Vec<String> = rows
-            .iter()
-            .map(|r| r.get::<String, _>("id"))
-            .collect();
+        let role_ids: Vec<String> = rows.iter().map(|r| r.get::<String, _>("id")).collect();
 
         // Update role-user tracking for selective cache invalidation
         let role_uuids: Vec<Uuid> = role_ids
@@ -601,7 +598,10 @@ impl DbRbacService {
         let mut roles = Vec::new();
         for row in rows {
             let role_id_str: String = row.get("id");
-            let permissions = permissions_map.get(&role_id_str).cloned().unwrap_or_default();
+            let permissions = permissions_map
+                .get(&role_id_str)
+                .cloned()
+                .unwrap_or_default();
             roles.push(row_to_role(&row, permissions));
         }
 

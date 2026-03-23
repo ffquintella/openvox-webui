@@ -15,11 +15,10 @@ use crate::{
     middleware::AuthUser,
     models::{
         ApproveDeploymentRequest, CodeDeploymentResponse, CodeEnvironmentResponse,
-        CodePatTokenResponse, CodeRepositoryResponse, CodeSshKeyResponse,
-        CreatePatTokenRequest, CreateRepositoryRequest, CreateSshKeyRequest,
-        ListDeploymentsQuery, ListEnvironmentsQuery, RejectDeploymentRequest,
-        TriggerDeploymentRequest, UpdateEnvironmentRequest, UpdatePatTokenRequest,
-        UpdateRepositoryRequest,
+        CodePatTokenResponse, CodeRepositoryResponse, CodeSshKeyResponse, CreatePatTokenRequest,
+        CreateRepositoryRequest, CreateSshKeyRequest, ListDeploymentsQuery, ListEnvironmentsQuery,
+        RejectDeploymentRequest, TriggerDeploymentRequest, UpdateEnvironmentRequest,
+        UpdatePatTokenRequest, UpdateRepositoryRequest,
     },
     utils::AppError,
     AppState,
@@ -36,14 +35,21 @@ pub fn routes() -> Router<AppState> {
         .route("/pat-tokens", get(list_pat_tokens).post(create_pat_token))
         .route(
             "/pat-tokens/{id}",
-            get(get_pat_token).put(update_pat_token).delete(delete_pat_token),
+            get(get_pat_token)
+                .put(update_pat_token)
+                .delete(delete_pat_token),
         )
         .route("/pat-tokens/expiring", get(list_expiring_pat_tokens))
         // Repositories
-        .route("/repositories", get(list_repositories).post(create_repository))
+        .route(
+            "/repositories",
+            get(list_repositories).post(create_repository),
+        )
         .route(
             "/repositories/{id}",
-            get(get_repository).put(update_repository).delete(delete_repository),
+            get(get_repository)
+                .put(update_repository)
+                .delete(delete_repository),
         )
         .route("/repositories/{id}/sync", post(sync_repository))
         // Environments
@@ -52,9 +58,15 @@ pub fn routes() -> Router<AppState> {
             "/environments/{id}",
             get(get_environment).put(update_environment),
         )
-        .route("/environments/{id}/deployments", get(list_environment_deployments))
+        .route(
+            "/environments/{id}/deployments",
+            get(list_environment_deployments),
+        )
         // Deployments
-        .route("/deployments", get(list_deployments).post(trigger_deployment))
+        .route(
+            "/deployments",
+            get(list_deployments).post(trigger_deployment),
+        )
         .route("/deployments/{id}", get(get_deployment))
         .route("/deployments/{id}/approve", post(approve_deployment))
         .route("/deployments/{id}/reject", post(reject_deployment))
@@ -88,7 +100,10 @@ async fn get_feature_status(
     State(state): State<AppState>,
     _auth_user: AuthUser,
 ) -> Json<CodeDeployFeatureStatus> {
-    let enabled = state.code_deploy_config.as_ref().map_or(false, |c| c.enabled);
+    let enabled = state
+        .code_deploy_config
+        .as_ref()
+        .map_or(false, |c| c.enabled);
 
     let message = if !enabled {
         Some("Code Deploy feature is not enabled. To enable it, add the following to your config.yaml:\n\ncode_deploy:\n  enabled: true\n  repos_base_dir: /var/lib/openvox-webui/code-deploy/repos\n  ssh_keys_dir: /etc/openvox-webui/code-deploy/ssh-keys\n  r10k_path: /opt/puppetlabs/puppet/bin/r10k\n  encryption_key: <your-encryption-key>".to_string())
@@ -307,10 +322,13 @@ async fn list_expiring_pat_tokens(
     require_permission(&auth_user, "code_pat_token_view")?;
 
     let service = state.code_deploy_service()?;
-    let tokens = service.list_expiring_pat_tokens(query.days).await.map_err(|e| {
-        tracing::error!("Failed to list expiring PAT tokens: {}", e);
-        AppError::internal("Failed to list expiring PAT tokens")
-    })?;
+    let tokens = service
+        .list_expiring_pat_tokens(query.days)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list expiring PAT tokens: {}", e);
+            AppError::internal("Failed to list expiring PAT tokens")
+        })?;
 
     Ok(Json(tokens))
 }
@@ -915,7 +933,10 @@ async fn handle_bitbucket_webhook(
             .unwrap_or("");
 
         // Bitbucket signature format is different
-        let signature_256 = format!("sha256={}", signature.strip_prefix("sha256=").unwrap_or(signature));
+        let signature_256 = format!(
+            "sha256={}",
+            signature.strip_prefix("sha256=").unwrap_or(signature)
+        );
         if !service.verify_github_signature(secret, &body, &signature_256) {
             return Err(AppError::unauthorized("Invalid webhook signature"));
         }
@@ -954,7 +975,11 @@ fn require_permission(auth_user: &AuthUser, _permission: &str) -> Result<(), App
     // Check if user is admin or operator (has code deploy permissions)
     // The actual permission checking is done via RBAC in the database
     // For code deploy, we allow admin and operator roles
-    if auth_user.roles.iter().any(|r| r == "admin" || r == "operator") {
+    if auth_user
+        .roles
+        .iter()
+        .any(|r| r == "admin" || r == "operator")
+    {
         return Ok(());
     }
 

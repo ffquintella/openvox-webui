@@ -81,24 +81,22 @@ impl CveRepository {
     // -- Feed source CRUD --
 
     pub async fn list_feed_sources(&self) -> Result<Vec<CveFeedSource>> {
-        let rows = sqlx::query_as::<_, FeedSourceRow>(
-            "SELECT * FROM cve_feed_sources ORDER BY name ASC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to list CVE feed sources")?;
+        let rows =
+            sqlx::query_as::<_, FeedSourceRow>("SELECT * FROM cve_feed_sources ORDER BY name ASC")
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to list CVE feed sources")?;
 
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
     pub async fn get_feed_source(&self, id: &str) -> Result<Option<CveFeedSource>> {
-        let row = sqlx::query_as::<_, FeedSourceRow>(
-            "SELECT * FROM cve_feed_sources WHERE id = ?1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("Failed to get CVE feed source")?;
+        let row =
+            sqlx::query_as::<_, FeedSourceRow>("SELECT * FROM cve_feed_sources WHERE id = ?1")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .context("Failed to get CVE feed source")?;
 
         Ok(row.map(Into::into))
     }
@@ -265,13 +263,11 @@ impl CveRepository {
     }
 
     pub async fn get_cve_entry(&self, cve_id: &str) -> Result<Option<CveEntry>> {
-        let row = sqlx::query_as::<_, CveEntryRow>(
-            "SELECT * FROM cve_entries WHERE id = ?1",
-        )
-        .bind(cve_id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("Failed to get CVE entry")?;
+        let row = sqlx::query_as::<_, CveEntryRow>("SELECT * FROM cve_entries WHERE id = ?1")
+            .bind(cve_id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("Failed to get CVE entry")?;
 
         Ok(row.map(Into::into))
     }
@@ -298,7 +294,11 @@ impl CveRepository {
         if let Some(kev) = is_kev {
             let idx = binds.len() + 1;
             sql.push_str(&format!(" AND is_kev = ?{}", idx));
-            binds.push(if kev { "1".to_string() } else { "0".to_string() });
+            binds.push(if kev {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            });
         }
 
         sql.push_str(&format!(
@@ -575,10 +575,7 @@ impl CveRepository {
         })
     }
 
-    pub async fn get_nodes_affected_by_cve(
-        &self,
-        cve_id: &str,
-    ) -> Result<Vec<CveAffectedNode>> {
+    pub async fn get_nodes_affected_by_cve(&self, cve_id: &str) -> Result<Vec<CveAffectedNode>> {
         let rows = sqlx::query(
             r#"
             SELECT certname, package_name, installed_version, matched_at
@@ -639,9 +636,7 @@ impl CveRepository {
             return Ok(Vec::new());
         }
 
-        let placeholders: Vec<String> = (1..=certnames.len())
-            .map(|i| format!("?{}", i))
-            .collect();
+        let placeholders: Vec<String> = (1..=certnames.len()).map(|i| format!("?{}", i)).collect();
         let sql = format!(
             "SELECT certname, package_name FROM host_vulnerability_matches WHERE certname IN ({}) GROUP BY certname, package_name ORDER BY certname",
             placeholders.join(", ")

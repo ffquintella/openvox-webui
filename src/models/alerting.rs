@@ -370,7 +370,7 @@ pub struct AlertCondition {
     /// Condition type (new format)
     #[serde(flatten)]
     pub condition_type: Option<ConditionType>,
-    
+
     /// Comparison operator
     pub operator: String, // eq, ne, gt, gte, lt, lte, contains, regex, in, not_in, exists, not_exists
     /// Value to compare against
@@ -378,7 +378,7 @@ pub struct AlertCondition {
     /// Whether condition is enabled
     #[serde(default = "default_true")]
     pub enabled: bool,
-    
+
     // Legacy simple format support
     /// Field to evaluate (e.g., "node.status", "compliance.rate", "drift.count")
     pub field: Option<String>,

@@ -14,12 +14,12 @@ pub mod services;
 pub mod utils;
 
 pub use config::AppConfig;
+use config::BackupConfig;
 pub use db::DbPool;
 pub use middleware::{
     auth_middleware, check_permission, optional_auth_middleware, require_permission_middleware,
     AuthUser, Claims, RbacError, RequirePermission,
 };
-use config::BackupConfig;
 use services::backup::BackupService;
 use services::code_deploy::{CodeDeployConfig, CodeDeployService};
 use services::notification::NotificationService;

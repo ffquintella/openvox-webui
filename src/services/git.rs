@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
-use git2::{
-    BranchType, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType,
-};
+use git2::{BranchType, Cred, FetchOptions, RemoteCallbacks, Repository, ResetType};
 use tracing::{debug, error, info, warn};
 
 /// Information about a Git commit
@@ -81,7 +79,10 @@ impl GitService {
             match Repository::open(&repo_path) {
                 Ok(repo) => Ok(repo),
                 Err(e) => {
-                    warn!("Failed to open repository at {:?}: {}. Removing and re-cloning.", repo_path, e);
+                    warn!(
+                        "Failed to open repository at {:?}: {}. Removing and re-cloning.",
+                        repo_path, e
+                    );
                     // Remove the invalid repository directory
                     if let Err(rm_err) = std::fs::remove_dir_all(&repo_path) {
                         error!("Failed to remove invalid repository directory: {}", rm_err);
@@ -113,7 +114,10 @@ impl GitService {
             match Repository::open(&repo_path) {
                 Ok(repo) => Ok(repo),
                 Err(e) => {
-                    warn!("Failed to open repository at {:?}: {}. Removing and re-cloning.", repo_path, e);
+                    warn!(
+                        "Failed to open repository at {:?}: {}. Removing and re-cloning.",
+                        repo_path, e
+                    );
                     // Remove the invalid repository directory
                     if let Err(rm_err) = std::fs::remove_dir_all(&repo_path) {
                         error!("Failed to remove invalid repository directory: {}", rm_err);
@@ -146,7 +150,11 @@ impl GitService {
 
         info!(
             "Git clone operation starting as user '{}' (uid={}, gid={}): url='{}', path='{}'",
-            username, current_uid, current_gid, url, path.display()
+            username,
+            current_uid,
+            current_gid,
+            url,
+            path.display()
         );
 
         // Ensure parent directory exists
@@ -206,7 +214,9 @@ impl GitService {
             Ok(repo) => {
                 info!(
                     "Git clone succeeded: url='{}', path='{}', auth='{}'",
-                    url, path.display(), auth_method
+                    url,
+                    path.display(),
+                    auth_method
                 );
                 Ok(repo)
             }
@@ -233,8 +243,14 @@ impl GitService {
 
         info!(
             "Git fetch operation starting as user '{}' (uid={}): remote='{}', auth='{}'",
-            username, current_uid, remote_url,
-            if ssh_private_key.is_some() { "SSH key" } else { "none" }
+            username,
+            current_uid,
+            remote_url,
+            if ssh_private_key.is_some() {
+                "SSH key"
+            } else {
+                "none"
+            }
         );
 
         let mut remote = repo
@@ -285,7 +301,9 @@ impl GitService {
 
         info!(
             "Git fetch (PAT) operation starting as user '{}' (uid={}): remote='{}', auth='{}'",
-            username, current_uid, remote_url,
+            username,
+            current_uid,
+            remote_url,
             if github_pat.is_some() { "PAT" } else { "none" }
         );
 
@@ -324,18 +342,14 @@ impl GitService {
     }
 
     /// List all remote branches matching a pattern
-    pub fn list_branches(
-        &self,
-        repo: &Repository,
-        pattern: &str,
-    ) -> Result<Vec<BranchInfo>> {
+    pub fn list_branches(&self, repo: &Repository, pattern: &str) -> Result<Vec<BranchInfo>> {
         let mut branches = Vec::new();
 
         // Get HEAD reference to determine default branch
         let head_ref = repo.head().ok();
-        let default_branch = head_ref.as_ref().and_then(|h| {
-            h.shorthand().map(|s| s.to_string())
-        });
+        let default_branch = head_ref
+            .as_ref()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()));
 
         // Iterate through remote branches
         for branch_result in repo.branches(Some(BranchType::Remote))? {
@@ -459,8 +473,7 @@ impl GitService {
         let repo_path = self.repo_path(repo_id);
 
         if repo_path.exists() {
-            std::fs::remove_dir_all(&repo_path)
-                .context("Failed to delete repository directory")?;
+            std::fs::remove_dir_all(&repo_path).context("Failed to delete repository directory")?;
             info!("Deleted repository at {:?}", repo_path);
         }
 
@@ -491,7 +504,8 @@ impl GitService {
         let public_key = private_key.public_key();
 
         // Convert to OpenSSH format string
-        let openssh_str = public_key.to_openssh()
+        let openssh_str = public_key
+            .to_openssh()
             .map_err(|e| anyhow::anyhow!("Failed to format public key: {}", e))?;
 
         info!("Successfully extracted public key from OpenSSH private key");
@@ -505,7 +519,9 @@ fn commit_to_info(commit: &git2::Commit) -> CommitInfo {
 
     CommitInfo {
         sha: commit.id().to_string(),
-        message: commit.message().map(|m| m.lines().next().unwrap_or(m).to_string()),
+        message: commit
+            .message()
+            .map(|m| m.lines().next().unwrap_or(m).to_string()),
         author: author.name().map(|s| s.to_string()),
         author_email: author.email().map(|s| s.to_string()),
         date: {
@@ -599,6 +615,9 @@ AAAACWxvY2FsaG9zdAAAAA==
         let invalid_key = "not a valid key";
         let result = GitService::extract_public_key(invalid_key);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Could not parse private key"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Could not parse private key"));
     }
 }

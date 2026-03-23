@@ -577,11 +577,13 @@ impl InventoryRepository {
 
         let mut top_outdated_software: Vec<TopOutdatedSoftwareItem> = outdated_counts
             .into_iter()
-            .map(|((software_type, name), affected_nodes)| TopOutdatedSoftwareItem {
-                software_type,
-                name,
-                affected_nodes,
-            })
+            .map(
+                |((software_type, name), affected_nodes)| TopOutdatedSoftwareItem {
+                    software_type,
+                    name,
+                    affected_nodes,
+                },
+            )
             .collect();
         top_outdated_software.sort_by(|left, right| {
             right
@@ -905,7 +907,9 @@ impl InventoryRepository {
         let result_status = request.status;
         if !matches!(
             result_status,
-            UpdateTargetStatus::Succeeded | UpdateTargetStatus::Failed | UpdateTargetStatus::Cancelled
+            UpdateTargetStatus::Succeeded
+                | UpdateTargetStatus::Failed
+                | UpdateTargetStatus::Cancelled
         ) {
             anyhow::bail!("Node result status must be succeeded, failed, or cancelled");
         }
@@ -1018,7 +1022,10 @@ impl InventoryRepository {
             operation_type: UpdateOperationType::from_str(&row.operation_type).unwrap_or_default(),
             package_names: serde_json::from_str(&row.package_names_json).unwrap_or_default(),
             target_group_id: row.target_group_id,
-            target_nodes: targets.iter().map(|target| target.certname.clone()).collect(),
+            target_nodes: targets
+                .iter()
+                .map(|target| target.certname.clone())
+                .collect(),
             requires_approval: row.requires_approval,
             scheduled_for: row.scheduled_for.as_deref().and_then(parse_timestamp),
             maintenance_window_start: row
@@ -2284,7 +2291,10 @@ mod tests {
             .await
             .expect("claim pending updates");
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].operation_type, UpdateOperationType::PackageUpdate);
+        assert_eq!(
+            pending[0].operation_type,
+            UpdateOperationType::PackageUpdate
+        );
         assert_eq!(pending[0].package_names, vec!["httpd".to_string()]);
 
         let completed = repo

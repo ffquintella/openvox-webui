@@ -76,15 +76,12 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Notification {
             message: row.try_get("message")?,
             r#type: {
                 let type_str: String = row.try_get("type")?;
-                type_str.parse().map_err(|e: String| {
-                    sqlx::Error::ColumnDecode {
+                type_str
+                    .parse()
+                    .map_err(|e: String| sqlx::Error::ColumnDecode {
                         index: "type".to_string(),
-                        source: Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            e,
-                        )),
-                    }
-                })?
+                        source: Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                    })?
             },
             category: row.try_get("category")?,
             link: row.try_get("link")?,

@@ -14,9 +14,8 @@ use crate::{
     middleware::AuthUser,
     models::{
         ApproveUpdateJobRequest, CreateUpdateJobRequest, InventoryDashboardReport,
-        InventoryFleetStatusSummary, RepositoryVersionCatalogEntry, UpdateJob,
-        UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
-        UpdatePreviewTarget,
+        InventoryFleetStatusSummary, RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType,
+        UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -241,7 +240,12 @@ async fn approve_update_job(
 
     let repo = InventoryRepository::new(state.db.clone());
     let job = repo
-        .approve_update_job(&job_id, payload.approved, &auth_user.username, payload.notes.as_deref())
+        .approve_update_job(
+            &job_id,
+            payload.approved,
+            &auth_user.username,
+            payload.notes.as_deref(),
+        )
         .await
         .map_err(|e| AppError::Internal(format!("Failed to update job approval state: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Update job '{}' not found", job_id)))?;
@@ -283,9 +287,7 @@ async fn preview_update_job(
             .await
             .map_err(|e| AppError::Internal(format!("Failed to get update status: {}", e)))?;
 
-        let outdated_items = update_status
-            .map(|s| s.outdated_items)
-            .unwrap_or_default();
+        let outdated_items = update_status.map(|s| s.outdated_items).unwrap_or_default();
 
         let mut packages_to_update: Vec<UpdatePreviewPackage> = Vec::new();
 

@@ -473,8 +473,7 @@ mod tests {
                 assert!(
                     check.allowed,
                     "SuperAdmin should have {:?} permission for {:?}",
-                    action,
-                    resource
+                    action, resource
                 );
                 assert_eq!(
                     check.reason,
@@ -561,13 +560,8 @@ mod tests {
         );
 
         // Should NOT be able to update groups globally (no specific group_id)
-        let check_global = service.check_permission(
-            &[role_id],
-            Resource::Groups,
-            Action::Update,
-            None,
-            None,
-        );
+        let check_global =
+            service.check_permission(&[role_id], Resource::Groups, Action::Update, None, None);
         assert!(
             !check_global.allowed,
             "Should NOT be able to update groups globally"
@@ -605,19 +599,43 @@ mod tests {
         service.create_role(multi_group_role).unwrap();
 
         // Should be able to update group_1
-        assert!(service
-            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_1), None)
-            .allowed);
+        assert!(
+            service
+                .check_permission(
+                    &[role_id],
+                    Resource::Groups,
+                    Action::Update,
+                    Some(group_1),
+                    None
+                )
+                .allowed
+        );
 
         // Should be able to update group_2
-        assert!(service
-            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_2), None)
-            .allowed);
+        assert!(
+            service
+                .check_permission(
+                    &[role_id],
+                    Resource::Groups,
+                    Action::Update,
+                    Some(group_2),
+                    None
+                )
+                .allowed
+        );
 
         // Should NOT be able to update group_3 (not in the list)
-        assert!(!service
-            .check_permission(&[role_id], Resource::Groups, Action::Update, Some(group_3), None)
-            .allowed);
+        assert!(
+            !service
+                .check_permission(
+                    &[role_id],
+                    Resource::Groups,
+                    Action::Update,
+                    Some(group_3),
+                    None
+                )
+                .allowed
+        );
     }
 
     #[test]

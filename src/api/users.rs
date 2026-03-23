@@ -167,20 +167,17 @@ async fn create_user(
     use crate::models::AuthProvider;
 
     // Parse auth_provider
-    let auth_provider: AuthProvider = payload
-        .auth_provider
-        .parse()
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "validation_error".to_string(),
-                    message: "Invalid auth_provider. Must be 'local', 'saml', or 'both'".to_string(),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?;
+    let auth_provider: AuthProvider = payload.auth_provider.parse().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "validation_error".to_string(),
+                message: "Invalid auth_provider. Must be 'local', 'saml', or 'both'".to_string(),
+                details: None,
+                code: None,
+            }),
+        )
+    })?;
 
     // Validate input
     if payload.username.len() < 3 {
@@ -240,7 +237,10 @@ async fn create_user(
 
     // SAML users should have an external_id (use email as default)
     let external_id = if auth_provider.allows_saml() {
-        payload.external_id.as_deref().or(Some(payload.email.as_str()))
+        payload
+            .external_id
+            .as_deref()
+            .or(Some(payload.email.as_str()))
     } else {
         None
     };

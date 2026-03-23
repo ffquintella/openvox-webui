@@ -414,14 +414,8 @@ mod tests {
         // SuperAdmin should have all permissions on all resources
         for resource in Resource::all() {
             for action in Action::all() {
-                let result = check_permission(
-                    &rbac_service,
-                    &auth_user,
-                    resource,
-                    action,
-                    None,
-                    None,
-                );
+                let result =
+                    check_permission(&rbac_service, &auth_user, resource, action, None, None);
                 assert!(
                     result.is_ok(),
                     "SuperAdmin should have {:?} permission for {:?}",

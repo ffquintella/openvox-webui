@@ -52,7 +52,10 @@ impl CodeDeploySchedulerState {
 /// - Polling repositories for updates
 /// - Processing the deployment queue
 /// - Cleaning up old deployments
-pub fn start_code_deploy_scheduler(pool: DbPool, config: CodeDeployConfig) -> CodeDeploySchedulerState {
+pub fn start_code_deploy_scheduler(
+    pool: DbPool,
+    config: CodeDeployConfig,
+) -> CodeDeploySchedulerState {
     let state = CodeDeploySchedulerState::new(pool.clone(), config.clone());
     let state_clone = state.clone();
 
@@ -127,8 +130,9 @@ async fn repository_poll_task(state: CodeDeploySchedulerState) {
                         Err(e) => {
                             warn!("Failed to sync repository {}: {}", repo.name, e);
                             // Record the error on the repository
-                            if let Err(e2) =
-                                service.record_repository_error(repo.id, &e.to_string()).await
+                            if let Err(e2) = service
+                                .record_repository_error(repo.id, &e.to_string())
+                                .await
                             {
                                 error!("Failed to record repository error: {}", e2);
                             }

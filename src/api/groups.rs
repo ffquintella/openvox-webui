@@ -61,18 +61,22 @@ async fn check_group_permission(
 ) -> Result<(), AppError> {
     let check = state
         .rbac_db
-        .check_permission(&auth_user.user_id(), Resource::Groups, action, group_id, None)
+        .check_permission(
+            &auth_user.user_id(),
+            Resource::Groups,
+            action,
+            group_id,
+            None,
+        )
         .await
         .map_err(|e| AppError::internal(format!("Permission check failed: {}", e)))?;
 
     if check.allowed {
         Ok(())
     } else {
-        Err(AppError::forbidden(
-            &check
-                .reason
-                .unwrap_or_else(|| "No matching permission found".to_string()),
-        ))
+        Err(AppError::forbidden(&check.reason.unwrap_or_else(|| {
+            "No matching permission found".to_string()
+        })))
     }
 }
 
@@ -276,7 +280,11 @@ async fn get_group_nodes(
                 node.certname,
                 uuid,
                 matches_group,
-                classification.groups.iter().map(|g| (&g.name, &g.match_type)).collect::<Vec<_>>()
+                classification
+                    .groups
+                    .iter()
+                    .map(|g| (&g.name, &g.match_type))
+                    .collect::<Vec<_>>()
             );
             if matches_group {
                 matched_nodes.push(node.certname);

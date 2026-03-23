@@ -79,7 +79,9 @@ impl NotificationService {
         .map_err(|e| AppError::Database(e.to_string()))?;
 
         // Broadcast the new notification
-        let _ = self.broadcast.send(NotificationEvent::New(notification.clone()));
+        let _ = self
+            .broadcast
+            .send(NotificationEvent::New(notification.clone()));
 
         Ok(notification)
     }
@@ -235,7 +237,10 @@ impl NotificationService {
             placeholders
         );
 
-        let mut query = sqlx::query(&sql).bind(req.read).bind(&read_at).bind(user_id);
+        let mut query = sqlx::query(&sql)
+            .bind(req.read)
+            .bind(&read_at)
+            .bind(user_id);
 
         for id in &req.notification_ids {
             query = query.bind(id);

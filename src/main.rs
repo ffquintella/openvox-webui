@@ -240,7 +240,11 @@ async fn main() -> Result<()> {
                 "CVE feed sync enabled (sync: {}s, match refresh: {}s)",
                 cve_cfg.sync_interval_secs, cve_cfg.match_refresh_interval_secs
             );
-            Some(services::start_cve_scheduler(db.clone(), cve_cfg.clone(), Some(notification_service.clone())))
+            Some(services::start_cve_scheduler(
+                db.clone(),
+                cve_cfg.clone(),
+                Some(notification_service.clone()),
+            ))
         } else {
             info!("CVE feed sync is disabled");
             None

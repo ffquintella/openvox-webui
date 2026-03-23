@@ -48,7 +48,11 @@ async fn classify_node(world: &mut TestWorld, certname: String) {
     // Simulate classification using stored group_rules and node_facts
     let mut matched: Vec<String> = Vec::new();
     let node_environment = world.node_environments.get(&certname).cloned();
-    let facts = world.node_facts.get(&certname).cloned().unwrap_or(serde_json::json!({}));
+    let facts = world
+        .node_facts
+        .get(&certname)
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
 
     // First pass: match groups with rules
     for (group, rules) in &world.group_rules {
@@ -223,7 +227,9 @@ async fn set_node_environment(world: &mut TestWorld, certname: String, environme
     world.node_environments.insert(certname, environment);
 }
 
-#[when(expr = "I create a node group named {string} with environment {string} as environment group")]
+#[when(
+    expr = "I create a node group named {string} with environment {string} as environment group"
+)]
 async fn create_environment_group_api(world: &mut TestWorld, name: String, environment: String) {
     world.created_groups.push(name.clone());
     world.group_environments.insert(name.clone(), environment);

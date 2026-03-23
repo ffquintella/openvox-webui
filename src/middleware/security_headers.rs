@@ -83,7 +83,9 @@ pub async fn api_cache_control_middleware(request: Request<Body>, next: Next) ->
     // Prevent caching of API responses
     headers.insert(
         "Cache-Control",
-        "no-store, no-cache, must-revalidate, private".parse().unwrap(),
+        "no-store, no-cache, must-revalidate, private"
+            .parse()
+            .unwrap(),
     );
     headers.insert("Pragma", "no-cache".parse().unwrap());
     headers.insert("Expires", "0".parse().unwrap());
@@ -107,10 +109,7 @@ mod tests {
             .route("/test", get(test_handler))
             .layer(axum::middleware::from_fn(security_headers_middleware));
 
-        let request = Request::builder()
-            .uri("/test")
-            .body(Body::empty())
-            .unwrap();
+        let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
         let response = app.oneshot(request).await.unwrap();
 

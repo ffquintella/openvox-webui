@@ -244,9 +244,7 @@ impl AuthService {
         // and no external_id provided, use email as default
         let new_external_id = match (external_id, &new_auth_provider) {
             (Some(eid), _) => Some(eid.to_string()),
-            (None, AuthProvider::Saml | AuthProvider::Both)
-                if existing.external_id.is_none() =>
-            {
+            (None, AuthProvider::Saml | AuthProvider::Both) if existing.external_id.is_none() => {
                 Some(new_email.to_string())
             }
             (None, _) => existing.external_id.clone(),
@@ -649,7 +647,10 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
     // SQLite stores BOOLEAN as INTEGER (0 or 1), so try both types
     let force_password_change: bool = row
         .try_get::<bool, _>("force_password_change")
-        .or_else(|_| row.try_get::<i32, _>("force_password_change").map(|v| v != 0))
+        .or_else(|_| {
+            row.try_get::<i32, _>("force_password_change")
+                .map(|v| v != 0)
+        })
         .unwrap_or(false);
 
     // Parse auth_provider with default fallback

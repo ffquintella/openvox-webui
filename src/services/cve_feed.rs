@@ -10,9 +10,7 @@ use serde::Deserialize;
 use tracing::{debug, error, info};
 
 use crate::db::CveRepository;
-use crate::models::{
-    CveFeedSource, CveFeedType, CvePackageMatch, CveSeverity, FeedSyncResult,
-};
+use crate::models::{CveFeedSource, CveFeedType, CvePackageMatch, CveSeverity, FeedSyncResult};
 
 pub struct CveFeedService {
     client: Client,
@@ -160,7 +158,11 @@ impl CveFeedService {
 
     /// Sync a feed source, dispatching by type.
     pub async fn sync_feed(&self, feed: &CveFeedSource) -> Result<FeedSyncResult> {
-        info!("Starting sync for feed '{}' ({})", feed.name, feed.feed_type.as_str());
+        info!(
+            "Starting sync for feed '{}' ({})",
+            feed.name,
+            feed.feed_type.as_str()
+        );
 
         let result = match feed.feed_type {
             CveFeedType::NvdJson => self.sync_nvd_feed(feed).await,
@@ -251,18 +253,19 @@ impl CveFeedService {
                         result.package_matches_created += match_count;
                     }
                     Err(e) => {
-                        result.errors.push(format!(
-                            "Error processing {}: {}",
-                            vuln.cve.id,
-                            e
-                        ));
+                        result
+                            .errors
+                            .push(format!("Error processing {}: {}", vuln.cve.id, e));
                     }
                 }
             }
 
             start_index += page_count;
 
-            if page_count < page_size || start_index >= max_results || start_index >= nvd_response.total_results {
+            if page_count < page_size
+                || start_index >= max_results
+                || start_index >= nvd_response.total_results
+            {
                 break;
             }
 
@@ -273,11 +276,7 @@ impl CveFeedService {
         Ok(result)
     }
 
-    async fn process_nvd_cve(
-        &self,
-        cve: &NvdCve,
-        feed_source_id: &str,
-    ) -> Result<(bool, usize)> {
+    async fn process_nvd_cve(&self, cve: &NvdCve, feed_source_id: &str) -> Result<(bool, usize)> {
         let existing = self.repo.get_cve_entry(&cve.id).await?;
         let is_new = existing.is_none();
 
@@ -397,10 +396,9 @@ impl CveFeedService {
                     }
                 }
                 Err(e) => {
-                    result.errors.push(format!(
-                        "Error processing KEV {}: {}",
-                        entry.cve_id, e
-                    ));
+                    result
+                        .errors
+                        .push(format!("Error processing KEV {}: {}", entry.cve_id, e));
                 }
             }
         }
@@ -408,11 +406,7 @@ impl CveFeedService {
         Ok(result)
     }
 
-    async fn process_kev_entry(
-        &self,
-        entry: &CisaKevEntry,
-        feed_source_id: &str,
-    ) -> Result<bool> {
+    async fn process_kev_entry(&self, entry: &CisaKevEntry, feed_source_id: &str) -> Result<bool> {
         let existing = self.repo.get_cve_entry(&entry.cve_id).await?;
         let is_new = existing.is_none();
 
@@ -431,10 +425,7 @@ impl CveFeedService {
         let cvss_score = existing.as_ref().and_then(|e| e.cvss_score);
         let cvss_vector = existing.as_ref().and_then(|e| e.cvss_vector.clone());
 
-        let affected = vec![format!(
-            "{}:{}",
-            entry.vendor_project, entry.product
-        )];
+        let affected = vec![format!("{}:{}", entry.vendor_project, entry.product)];
 
         self.repo
             .upsert_cve_entry(
@@ -525,9 +516,12 @@ fn parse_cpe_to_package_match(cpe: &str) -> Option<CpeParseResult> {
         "o" => {
             // OS-level product, try to infer platform from vendor/product
             let product_lower = product.to_lowercase();
-            if product_lower.contains("linux") || product_lower.contains("ubuntu")
-                || product_lower.contains("debian") || product_lower.contains("redhat")
-                || product_lower.contains("centos") || product_lower.contains("oracle")
+            if product_lower.contains("linux")
+                || product_lower.contains("ubuntu")
+                || product_lower.contains("debian")
+                || product_lower.contains("redhat")
+                || product_lower.contains("centos")
+                || product_lower.contains("oracle")
                 || product_lower.contains("suse")
             {
                 Some("linux".to_string())

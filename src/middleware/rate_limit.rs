@@ -103,9 +103,7 @@ impl RateLimitState {
         let quota = Quota::per_second(
             NonZeroU32::new(self.config.requests_per_second).unwrap_or(NonZeroU32::MIN),
         )
-        .allow_burst(
-            NonZeroU32::new(self.config.burst_size).unwrap_or(NonZeroU32::MIN),
-        );
+        .allow_burst(NonZeroU32::new(self.config.burst_size).unwrap_or(NonZeroU32::MIN));
 
         let limiter = Arc::new(RateLimiter::direct(quota));
         limiters.insert(ip, limiter.clone());
@@ -125,11 +123,7 @@ impl RateLimitState {
 
         if limiters.len() > MAX_TRACKED_IPS {
             // Remove oldest entries (in practice, just clear half)
-            let to_remove: Vec<_> = limiters
-                .keys()
-                .take(limiters.len() / 2)
-                .cloned()
-                .collect();
+            let to_remove: Vec<_> = limiters.keys().take(limiters.len() / 2).cloned().collect();
 
             for ip in to_remove {
                 limiters.remove(&ip);

@@ -68,8 +68,14 @@ impl NodeRemovalRepository {
         .context("Failed to mark node for removal")?;
 
         // Log the action
-        self.log_audit(certname, RemovalAuditAction::Marked, Some(reason.as_str()), marked_by, notes)
-            .await?;
+        self.log_audit(
+            certname,
+            RemovalAuditAction::Marked,
+            Some(reason.as_str()),
+            marked_by,
+            notes,
+        )
+        .await?;
 
         Ok(PendingNodeRemoval {
             id: id.to_string(),
@@ -171,8 +177,14 @@ impl NodeRemovalRepository {
         .context("Failed to unmark node")?;
 
         if result.rows_affected() > 0 {
-            self.log_audit(certname, RemovalAuditAction::Unmarked, None, performed_by, notes)
-                .await?;
+            self.log_audit(
+                certname,
+                RemovalAuditAction::Unmarked,
+                None,
+                performed_by,
+                notes,
+            )
+            .await?;
             Ok(true)
         } else {
             Ok(false)

@@ -70,13 +70,9 @@ impl FacterService {
                     "variables" => Ok(classification.variables.clone()),
                     _ => {
                         // Try to get from variables
-                        classification
-                            .variables
-                            .get(key)
-                            .cloned()
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("Classification key '{}' not found", key)
-                            })
+                        classification.variables.get(key).cloned().ok_or_else(|| {
+                            anyhow::anyhow!("Classification key '{}' not found", key)
+                        })
                     }
                 }
             }

@@ -245,9 +245,7 @@ impl<'a> GroupRepository<'a> {
         let is_environment_group = req
             .is_environment_group
             .unwrap_or(existing.is_environment_group);
-        let match_all_nodes = req
-            .match_all_nodes
-            .unwrap_or(existing.match_all_nodes);
+        let match_all_nodes = req.match_all_nodes.unwrap_or(existing.match_all_nodes);
         let rule_match_type = req
             .rule_match_type
             .unwrap_or(existing.rule_match_type)

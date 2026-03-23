@@ -22,7 +22,11 @@ pub struct CveSchedulerState {
 }
 
 impl CveSchedulerState {
-    pub fn new(pool: DbPool, config: CveConfig, notification_service: Option<Arc<NotificationService>>) -> Self {
+    pub fn new(
+        pool: DbPool,
+        config: CveConfig,
+        notification_service: Option<Arc<NotificationService>>,
+    ) -> Self {
         Self {
             running: Arc::new(RwLock::new(false)),
             pool,
@@ -38,7 +42,11 @@ impl CveSchedulerState {
     }
 }
 
-pub fn start_cve_scheduler(pool: DbPool, config: CveConfig, notification_service: Option<Arc<NotificationService>>) -> CveSchedulerState {
+pub fn start_cve_scheduler(
+    pool: DbPool,
+    config: CveConfig,
+    notification_service: Option<Arc<NotificationService>>,
+) -> CveSchedulerState {
     let state = CveSchedulerState::new(pool, config, notification_service);
     let state_clone = state.clone();
 
@@ -73,10 +81,7 @@ pub fn start_cve_scheduler(pool: DbPool, config: CveConfig, notification_service
 async fn feed_sync_task(state: CveSchedulerState) {
     let interval_secs = state.config.sync_interval_secs.max(300); // minimum 5 minutes
     let mut timer = interval(Duration::from_secs(interval_secs));
-    info!(
-        "CVE feed sync task started (interval: {}s)",
-        interval_secs
-    );
+    info!("CVE feed sync task started (interval: {}s)", interval_secs);
 
     loop {
         timer.tick().await;
@@ -152,7 +157,9 @@ async fn vulnerability_match_task(state: CveSchedulerState) {
                     if let Some(ns) = &state.notification_service {
                         match repo.get_fleet_vulnerability_dashboard().await {
                             Ok(dashboard) => {
-                                let critical = dashboard.severity_distribution.iter()
+                                let critical = dashboard
+                                    .severity_distribution
+                                    .iter()
                                     .find(|s| s.severity == "critical")
                                     .map(|s| s.count)
                                     .unwrap_or(0);
@@ -188,12 +195,18 @@ async fn vulnerability_match_task(state: CveSchedulerState) {
                                     };
 
                                     if let Err(e) = ns.create_notification(req).await {
-                                        error!("Failed to create vulnerability notification: {}", e);
+                                        error!(
+                                            "Failed to create vulnerability notification: {}",
+                                            e
+                                        );
                                     }
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to get vulnerability dashboard for notification: {}", e);
+                                error!(
+                                    "Failed to get vulnerability dashboard for notification: {}",
+                                    e
+                                );
                             }
                         }
                     }

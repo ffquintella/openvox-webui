@@ -154,10 +154,8 @@ async fn check_certificate_status(state: &NodeRemovalSchedulerState) -> anyhow::
         .query_nodes(&crate::services::puppetdb::QueryBuilder::new())
         .await?;
 
-    let puppetdb_certnames: HashSet<String> = puppetdb_nodes
-        .iter()
-        .map(|n| n.certname.clone())
-        .collect();
+    let puppetdb_certnames: HashSet<String> =
+        puppetdb_nodes.iter().map(|n| n.certname.clone()).collect();
 
     debug!("Found {} nodes in PuppetDB", puppetdb_certnames.len());
 
@@ -172,12 +170,13 @@ async fn check_certificate_status(state: &NodeRemovalSchedulerState) -> anyhow::
             }
         };
 
-        let signed_certnames: HashSet<String> = signed_certs
-            .iter()
-            .map(|c| c.certname.clone())
-            .collect();
+        let signed_certnames: HashSet<String> =
+            signed_certs.iter().map(|c| c.certname.clone()).collect();
 
-        debug!("Found {} signed certificates in Puppet CA", signed_certnames.len());
+        debug!(
+            "Found {} signed certificates in Puppet CA",
+            signed_certnames.len()
+        );
 
         // Check for revoked certificates
         // We need to check individual certificates for revocation status

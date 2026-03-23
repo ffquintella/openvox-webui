@@ -23,8 +23,7 @@ use uuid::Uuid;
 use crate::config::BackupConfig;
 use crate::db::BackupRepository;
 use crate::models::{
-    BackupRestore, BackupSchedule, BackupStatus, BackupTrigger, ServerBackup,
-    VerifyBackupResponse,
+    BackupRestore, BackupSchedule, BackupStatus, BackupTrigger, ServerBackup, VerifyBackupResponse,
 };
 use crate::services::backup_encryption::{self, EncryptedData};
 
@@ -119,7 +118,11 @@ impl BackupService {
 
         let backup_id = Uuid::new_v4();
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
-        let filename = format!("backup_{}_{}.tar.gz", timestamp, &backup_id.to_string()[..8]);
+        let filename = format!(
+            "backup_{}_{}.tar.gz",
+            timestamp,
+            &backup_id.to_string()[..8]
+        );
         let file_path = self.config.backup_dir.join(&filename);
 
         // Create initial backup record
@@ -414,11 +417,18 @@ impl BackupService {
         };
 
         // Extract archive
-        match self.extract_archive(&archive_data, backup.includes_database, backup.includes_config) {
+        match self.extract_archive(
+            &archive_data,
+            backup.includes_database,
+            backup.includes_config,
+        ) {
             Ok(_) => {
                 repo.update_restore_status(restore.id, BackupStatus::Completed, None)
                     .await?;
-                info!("Restore completed successfully from backup: {}", backup.filename);
+                info!(
+                    "Restore completed successfully from backup: {}",
+                    backup.filename
+                );
 
                 // Return updated restore record
                 repo.get_restore(restore.id)
@@ -686,7 +696,9 @@ impl BackupService {
             None => self.config.retention.max_backups,
         };
 
-        let old_backups = repo.get_backups_exceeding_retention(retention_count).await?;
+        let old_backups = repo
+            .get_backups_exceeding_retention(retention_count)
+            .await?;
         let mut deleted_count = 0;
 
         for backup in old_backups {
@@ -817,6 +829,9 @@ mod tests {
             extract_path_from_sqlite_url("sqlite:./data/db.sqlite"),
             Some(PathBuf::from("./data/db.sqlite"))
         );
-        assert_eq!(extract_path_from_sqlite_url("postgres://localhost/db"), None);
+        assert_eq!(
+            extract_path_from_sqlite_url("postgres://localhost/db"),
+            None
+        );
     }
 }

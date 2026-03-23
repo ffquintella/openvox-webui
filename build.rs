@@ -94,9 +94,7 @@ fn main() {
         if !dist_index.exists() {
             true
         } else {
-            let dist_time = fs::metadata(&dist_index)
-                .and_then(|m| m.modified())
-                .ok();
+            let dist_time = fs::metadata(&dist_index).and_then(|m| m.modified()).ok();
 
             if let Some(dist_time) = dist_time {
                 // Check if any file in frontend/src is newer

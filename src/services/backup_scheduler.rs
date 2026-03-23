@@ -204,16 +204,26 @@ async fn check_and_run_scheduled_backup(state: &BackupSchedulerState) -> anyhow:
             );
 
             // Calculate next run time
-            let next_run = calculate_next_run(&schedule.frequency, &schedule.time_of_day, schedule.day_of_week);
+            let next_run = calculate_next_run(
+                &schedule.frequency,
+                &schedule.time_of_day,
+                schedule.day_of_week,
+            );
 
             // Update last run time
-            repo.update_schedule_last_run(schedule.id, now, next_run).await?;
+            repo.update_schedule_last_run(schedule.id, now, next_run)
+                .await?;
         }
         Err(e) => {
             error!("Scheduled backup failed: {}", e);
             // Still update last_run to avoid retrying immediately
-            let next_run = calculate_next_run(&schedule.frequency, &schedule.time_of_day, schedule.day_of_week);
-            repo.update_schedule_last_run(schedule.id, now, next_run).await?;
+            let next_run = calculate_next_run(
+                &schedule.frequency,
+                &schedule.time_of_day,
+                schedule.day_of_week,
+            );
+            repo.update_schedule_last_run(schedule.id, now, next_run)
+                .await?;
         }
     }
 
@@ -316,8 +326,11 @@ fn calculate_next_run(
     match frequency {
         "hourly" => {
             // Next hour at minute 0
-            Some(now + chrono::Duration::hours(1) - chrono::Duration::minutes(now.minute() as i64)
-                - chrono::Duration::seconds(now.second() as i64))
+            Some(
+                now + chrono::Duration::hours(1)
+                    - chrono::Duration::minutes(now.minute() as i64)
+                    - chrono::Duration::seconds(now.second() as i64),
+            )
         }
         "daily" => {
             // Tomorrow at scheduled time

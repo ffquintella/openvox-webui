@@ -14,9 +14,9 @@ use crate::{
     models::{
         CreateCveFeedSourceRequest, CveDetailResponse, CveEntry, CveFeedSource, CveSearchQuery,
         FeedSyncResult, HostVulnerabilityMatch, NodeVulnerabilitySummary,
-        UpdateCveFeedSourceRequest, UpdatePreviewPackage, UpdatePreviewRequest,
-        UpdatePreviewResponse, UpdatePreviewTarget, VulnerabilityDashboardReport,
-        VulnerableNodesQuery, UpdateOperationType,
+        UpdateCveFeedSourceRequest, UpdateOperationType, UpdatePreviewPackage,
+        UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
+        VulnerabilityDashboardReport, VulnerableNodesQuery,
     },
     services::cve_feed::CveFeedService,
     utils::error::{AppError, AppResult},
@@ -31,10 +31,7 @@ pub fn routes() -> Router<AppState> {
         .route("/entries", get(search_cve_entries))
         .route("/entries/{cve_id}", get(get_cve_detail))
         .route("/feeds", get(list_cve_feeds).post(create_cve_feed))
-        .route(
-            "/feeds/{id}",
-            put(update_cve_feed).delete(delete_cve_feed),
-        )
+        .route("/feeds/{id}", put(update_cve_feed).delete(delete_cve_feed))
         .route("/feeds/{id}/sync", post(trigger_feed_sync))
         .route("/refresh-matches", post(trigger_match_refresh))
 }

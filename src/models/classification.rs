@@ -103,7 +103,11 @@ mod tests {
         };
 
         assert_eq!(result.certname, "node1.example.com");
-        assert!(result.classes.as_object().unwrap().contains_key("profile::base"));
+        assert!(result
+            .classes
+            .as_object()
+            .unwrap()
+            .contains_key("profile::base"));
     }
 
     #[test]

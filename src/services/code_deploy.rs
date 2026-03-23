@@ -106,7 +106,10 @@ impl CodeDeployService {
 
         // Check if name already exists
         if repo.get_by_name(&req.name).await?.is_some() {
-            return Err(anyhow::anyhow!("SSH key with name '{}' already exists", req.name));
+            return Err(anyhow::anyhow!(
+                "SSH key with name '{}' already exists",
+                req.name
+            ));
         }
 
         // Extract public key from private key
@@ -168,12 +171,18 @@ impl CodeDeployService {
     }
 
     /// Create a new PAT token
-    pub async fn create_pat_token(&self, req: &CreatePatTokenRequest) -> Result<CodePatTokenResponse> {
+    pub async fn create_pat_token(
+        &self,
+        req: &CreatePatTokenRequest,
+    ) -> Result<CodePatTokenResponse> {
         let repo = CodePatTokenRepository::new(&self.pool);
 
         // Check if name already exists
         if repo.get_by_name(&req.name).await?.is_some() {
-            return Err(anyhow::anyhow!("PAT token with name '{}' already exists", req.name));
+            return Err(anyhow::anyhow!(
+                "PAT token with name '{}' already exists",
+                req.name
+            ));
         }
 
         // Encrypt the token
@@ -184,7 +193,11 @@ impl CodeDeployService {
     }
 
     /// Update a PAT token
-    pub async fn update_pat_token(&self, id: Uuid, req: &UpdatePatTokenRequest) -> Result<CodePatTokenResponse> {
+    pub async fn update_pat_token(
+        &self,
+        id: Uuid,
+        req: &UpdatePatTokenRequest,
+    ) -> Result<CodePatTokenResponse> {
         let repo = CodePatTokenRepository::new(&self.pool);
 
         // Check token exists
@@ -196,13 +209,20 @@ impl CodeDeployService {
         if let Some(name) = &req.name {
             if let Some(existing) = repo.get_by_name(name).await? {
                 if existing.id != id {
-                    return Err(anyhow::anyhow!("PAT token with name '{}' already exists", name));
+                    return Err(anyhow::anyhow!(
+                        "PAT token with name '{}' already exists",
+                        name
+                    ));
                 }
             }
         }
 
         // Encrypt new token if provided
-        let encrypted_token = req.token.as_ref().map(|t| self.encrypt_private_key(t)).transpose()?;
+        let encrypted_token = req
+            .token
+            .as_ref()
+            .map(|t| self.encrypt_private_key(t))
+            .transpose()?;
 
         let token = repo.update(id, req, encrypted_token.as_deref()).await?;
         Ok(CodePatTokenResponse::from(token))
@@ -227,7 +247,10 @@ impl CodeDeployService {
     }
 
     /// List PAT tokens that are expired or expiring soon
-    pub async fn list_expiring_pat_tokens(&self, days_threshold: i64) -> Result<Vec<CodePatTokenResponse>> {
+    pub async fn list_expiring_pat_tokens(
+        &self,
+        days_threshold: i64,
+    ) -> Result<Vec<CodePatTokenResponse>> {
         let repo = CodePatTokenRepository::new(&self.pool);
         let tokens = repo.get_expiring_tokens(days_threshold).await?;
         Ok(tokens.into_iter().map(CodePatTokenResponse::from).collect())
@@ -235,7 +258,10 @@ impl CodeDeployService {
 
     /// Check for expiring PAT tokens and return notifications to be created
     /// Returns a list of (token_name, days_until_expiration, is_expired) tuples
-    pub async fn check_expiring_pat_tokens(&self, days_threshold: i64) -> Result<Vec<(String, i64, bool)>> {
+    pub async fn check_expiring_pat_tokens(
+        &self,
+        days_threshold: i64,
+    ) -> Result<Vec<(String, i64, bool)>> {
         let tokens = self.list_expiring_pat_tokens(days_threshold).await?;
         let mut warnings = Vec::new();
 
@@ -290,7 +316,11 @@ impl CodeDeployService {
             None
         };
 
-        Ok(Some(self.repository_to_response(repository, ssh_key_name, env_count)))
+        Ok(Some(self.repository_to_response(
+            repository,
+            ssh_key_name,
+            env_count,
+        )))
     }
 
     /// Get the raw repository by ID (includes webhook_secret for internal use)
@@ -303,13 +333,19 @@ impl CodeDeployService {
     }
 
     /// Create a new repository
-    pub async fn create_repository(&self, req: &CreateRepositoryRequest) -> Result<CodeRepositoryResponse> {
+    pub async fn create_repository(
+        &self,
+        req: &CreateRepositoryRequest,
+    ) -> Result<CodeRepositoryResponse> {
         use crate::models::AuthType;
         let repo = CodeRepositoryRepository::new(&self.pool);
 
         // Check if name already exists
         if repo.get_by_name(&req.name).await?.is_some() {
-            return Err(anyhow::anyhow!("Repository with name '{}' already exists", req.name));
+            return Err(anyhow::anyhow!(
+                "Repository with name '{}' already exists",
+                req.name
+            ));
         }
 
         // Validate authentication credentials and URL format
@@ -327,7 +363,9 @@ impl CodeDeployService {
                         return Err(anyhow::anyhow!("SSH key not found"));
                     }
                 } else {
-                    return Err(anyhow::anyhow!("SSH key ID required when auth_type is 'ssh'"));
+                    return Err(anyhow::anyhow!(
+                        "SSH key ID required when auth_type is 'ssh'"
+                    ));
                 }
             }
             AuthType::Pat => {
@@ -341,11 +379,17 @@ impl CodeDeployService {
                 if req.pat_token_id.is_some() {
                     // Validate the PAT token exists
                     let token_repo = CodePatTokenRepository::new(&self.pool);
-                    if token_repo.get_by_id(req.pat_token_id.unwrap()).await?.is_none() {
+                    if token_repo
+                        .get_by_id(req.pat_token_id.unwrap())
+                        .await?
+                        .is_none()
+                    {
                         return Err(anyhow::anyhow!("PAT token not found"));
                     }
                 } else if req.github_pat.is_none() {
-                    return Err(anyhow::anyhow!("PAT token ID or GitHub PAT required when auth_type is 'pat'"));
+                    return Err(anyhow::anyhow!(
+                        "PAT token ID or GitHub PAT required when auth_type is 'pat'"
+                    ));
                 }
             }
             AuthType::None => {
@@ -354,9 +398,11 @@ impl CodeDeployService {
         }
 
         // Encrypt PAT if provided
-        let github_pat_encrypted = req.github_pat.as_ref().map(|pat| {
-            self.encrypt_private_key(pat)
-        }).transpose()?;
+        let github_pat_encrypted = req
+            .github_pat
+            .as_ref()
+            .map(|pat| self.encrypt_private_key(pat))
+            .transpose()?;
 
         let repository = repo.create(req, github_pat_encrypted.as_deref()).await?;
         Ok(self.repository_to_response(repository, None, 0))
@@ -416,16 +462,23 @@ impl CodeDeployService {
         }
 
         // Encrypt PAT if provided
-        let github_pat_encrypted = req.github_pat.as_ref().map(|pat| {
-            self.encrypt_private_key(pat)
-        }).transpose()?;
+        let github_pat_encrypted = req
+            .github_pat
+            .as_ref()
+            .map(|pat| self.encrypt_private_key(pat))
+            .transpose()?;
 
-        let Some(repository) = repo.update(id, req, github_pat_encrypted.as_deref()).await? else {
+        let Some(repository) = repo
+            .update(id, req, github_pat_encrypted.as_deref())
+            .await?
+        else {
             return Ok(None);
         };
 
         let env_count = repo.get_environment_count(repository.id).await?;
-        Ok(Some(self.repository_to_response(repository, None, env_count)))
+        Ok(Some(
+            self.repository_to_response(repository, None, env_count),
+        ))
     }
 
     /// Delete a repository
@@ -465,9 +518,10 @@ impl CodeDeployService {
                 // Get SSH key if configured
                 let ssh_key = if let Some(key_id) = repository.ssh_key_id {
                     let key_repo = CodeSshKeyRepository::new(&self.pool);
-                    key_repo.get_by_id(key_id).await?.map(|k| {
-                        self.decrypt_private_key(&k.private_key_encrypted)
-                    })
+                    key_repo
+                        .get_by_id(key_id)
+                        .await?
+                        .map(|k| self.decrypt_private_key(&k.private_key_encrypted))
                 } else {
                     None
                 };
@@ -487,7 +541,10 @@ impl CodeDeployService {
                             Some(self.decrypt_private_key(&token.token_encrypted))
                         }
                         None => {
-                            error!("PAT token {} not found for repository {}", token_id, repository.id);
+                            error!(
+                                "PAT token {} not found for repository {}",
+                                token_id, repository.id
+                            );
                             None
                         }
                     }
@@ -509,7 +566,10 @@ impl CodeDeployService {
         let ssh_key_ref = match &ssh_key {
             Some(Ok(key)) => Some(key.as_str()),
             Some(Err(e)) => {
-                error!("Failed to decrypt SSH key for repository {}: {}", repository.id, e);
+                error!(
+                    "Failed to decrypt SSH key for repository {}: {}",
+                    repository.id, e
+                );
                 None
             }
             None => None,
@@ -518,12 +578,18 @@ impl CodeDeployService {
         let github_pat_ref = match &github_pat {
             Some(Ok(pat)) => Some(pat.as_str()),
             Some(Err(e)) => {
-                error!("Failed to decrypt GitHub PAT for repository {}: {}", repository.id, e);
+                error!(
+                    "Failed to decrypt GitHub PAT for repository {}: {}",
+                    repository.id, e
+                );
                 None
             }
             None => {
                 if repository.auth_type == AuthType::Pat {
-                    warn!("Repository {} is configured for PAT auth but no PAT is stored", repository.id);
+                    warn!(
+                        "Repository {} is configured for PAT auth but no PAT is stored",
+                        repository.id
+                    );
                 }
                 None
             }
@@ -531,16 +597,14 @@ impl CodeDeployService {
 
         // Clone or open the repository based on auth type
         let git_repo = match repository.auth_type {
-            AuthType::Pat | AuthType::None => {
-                self.git
-                    .clone_or_open_with_pat(&repository.id.to_string(), &repository.url, github_pat_ref)
-                    .context("Failed to open repository")?
-            }
-            AuthType::Ssh => {
-                self.git
-                    .clone_or_open(&repository.id.to_string(), &repository.url, ssh_key_ref)
-                    .context("Failed to open repository")?
-            }
+            AuthType::Pat | AuthType::None => self
+                .git
+                .clone_or_open_with_pat(&repository.id.to_string(), &repository.url, github_pat_ref)
+                .context("Failed to open repository")?,
+            AuthType::Ssh => self
+                .git
+                .clone_or_open(&repository.id.to_string(), &repository.url, ssh_key_ref)
+                .context("Failed to open repository")?,
         };
 
         // Fetch updates based on auth type
@@ -636,7 +700,9 @@ impl CodeDeployService {
         }
 
         // Delete environments for branches that no longer exist
-        let deleted = env_repo.delete_missing(repository.id, &branch_names).await?;
+        let deleted = env_repo
+            .delete_missing(repository.id, &branch_names)
+            .await?;
         if deleted > 0 {
             info!("Deleted {} environments for removed branches", deleted);
         }
@@ -695,7 +761,9 @@ impl CodeDeployService {
         let pending = deploy_repo.get_pending_for_environment(env.id).await?;
         let latest = deploy_repo.get_latest_for_environment(env.id).await?;
 
-        Ok(Some(self.environment_to_response(env, repo_name, pending, latest)))
+        Ok(Some(
+            self.environment_to_response(env, repo_name, pending, latest),
+        ))
     }
 
     /// Update environment settings
@@ -773,7 +841,9 @@ impl CodeDeployService {
         let commit = commit_sha
             .map(|s| s.to_string())
             .or_else(|| env.current_commit.clone())
-            .ok_or_else(|| anyhow::anyhow!("No commit specified and environment has no current commit"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("No commit specified and environment has no current commit")
+            })?;
 
         // Determine initial status based on environment settings
         let status = if env.auto_deploy && !env.requires_approval {
@@ -906,7 +976,11 @@ impl CodeDeployService {
     }
 
     /// Retry a failed deployment
-    pub async fn retry_deployment(&self, id: Uuid, requested_by: Option<Uuid>) -> Result<CodeDeployment> {
+    pub async fn retry_deployment(
+        &self,
+        id: Uuid,
+        requested_by: Option<Uuid>,
+    ) -> Result<CodeDeployment> {
         let deploy_repo = CodeDeploymentRepository::new(&self.pool);
 
         let Some(deployment) = deploy_repo.get_by_id(id).await? else {
@@ -939,9 +1013,10 @@ impl CodeDeployService {
 
     /// Generate webhook URL for a repository
     pub fn webhook_url(&self, repository_id: Uuid, provider: &str) -> Option<String> {
-        self.config.webhook_base_url.as_ref().map(|base| {
-            format!("{}/api/v1/webhooks/{}/{}", base, provider, repository_id)
-        })
+        self.config
+            .webhook_base_url
+            .as_ref()
+            .map(|base| format!("{}/api/v1/webhooks/{}/{}", base, provider, repository_id))
     }
 
     /// Verify webhook signature (GitHub)
@@ -981,8 +1056,8 @@ impl CodeDeployService {
     pub async fn cleanup_old_deployments(&self) -> Result<u64> {
         let deploy_repo = CodeDeploymentRepository::new(&self.pool);
 
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::days(self.config.retain_history_days as i64);
+        let cutoff =
+            chrono::Utc::now() - chrono::Duration::days(self.config.retain_history_days as i64);
 
         deploy_repo.delete_old(cutoff).await
     }
@@ -1184,10 +1259,13 @@ impl CodeDeployService {
         }
 
         // Get PAT token
-        let pat_token_id = repository.pat_token_id
+        let pat_token_id = repository
+            .pat_token_id
             .ok_or_else(|| anyhow::anyhow!("Repository uses PAT auth but no PAT token ID set"))?;
 
-        let pat_token = pat_repo.get_by_id(pat_token_id).await?
+        let pat_token = pat_repo
+            .get_by_id(pat_token_id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("PAT token not found"))?;
 
         // Decrypt the token
@@ -1201,16 +1279,21 @@ impl CodeDeployService {
             ))?;
 
         // Extract machine (hostname) from repository URL
-        let machine = extract_hostname_from_url(&repository.url)
-            .ok_or_else(|| anyhow::anyhow!("Could not extract hostname from repository URL: {}", repository.url))?;
+        let machine = extract_hostname_from_url(&repository.url).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not extract hostname from repository URL: {}",
+                repository.url
+            )
+        })?;
 
         // Get current user info for logging
         let current_uid = unsafe { libc::getuid() };
-        let system_username = std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
+        let system_username =
+            std::env::var("USER").unwrap_or_else(|_| format!("uid:{}", current_uid));
 
         // Determine home directory
-        let home_dir = std::env::var("HOME")
-            .unwrap_or_else(|_| "/var/lib/openvox-webui".to_string());
+        let home_dir =
+            std::env::var("HOME").unwrap_or_else(|_| "/var/lib/openvox-webui".to_string());
 
         let netrc_path = std::path::PathBuf::from(&home_dir).join(".netrc");
 
@@ -1282,12 +1365,12 @@ impl CodeDeployService {
         // Set permissions to 600 (owner read/write only)
         let mut perms = file.metadata()?.permissions();
         perms.set_mode(0o600);
-        fs::set_permissions(&netrc_path, perms)
-            .context("Failed to set .netrc permissions")?;
+        fs::set_permissions(&netrc_path, perms).context("Failed to set .netrc permissions")?;
 
         info!(
             ".netrc updated successfully for machine '{}' at '{}'",
-            machine, netrc_path.display()
+            machine,
+            netrc_path.display()
         );
 
         Ok(true)
@@ -1306,14 +1389,20 @@ impl CodeDeployService {
                     Ok(true) => count += 1,
                     Ok(false) => {}
                     Err(e) => {
-                        warn!("Failed to setup .netrc for repository '{}': {}", repo.name, e);
+                        warn!(
+                            "Failed to setup .netrc for repository '{}': {}",
+                            repo.name, e
+                        );
                     }
                 }
             }
         }
 
         if count > 0 {
-            info!("Setup .netrc entries for {} PAT-authenticated repositories", count);
+            info!(
+                "Setup .netrc entries for {} PAT-authenticated repositories",
+                count
+            );
         }
 
         Ok(count)
@@ -1386,8 +1475,14 @@ mod tests {
         let signature = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
 
         assert!(verify_github_signature_helper(secret, payload, &signature));
-        assert!(!verify_github_signature_helper(secret, payload, "sha256=invalid"));
-        assert!(!verify_github_signature_helper("wrong", payload, &signature));
+        assert!(!verify_github_signature_helper(
+            secret,
+            payload,
+            "sha256=invalid"
+        ));
+        assert!(!verify_github_signature_helper(
+            "wrong", payload, &signature
+        ));
     }
 
     #[test]
