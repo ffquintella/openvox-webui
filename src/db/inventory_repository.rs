@@ -6,8 +6,9 @@ use sqlx::{FromRow, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    ComplianceCategoryNode, HostApplicationInventoryItem, HostContainerInventoryItem,
-    HostOsInventory, HostPackageInventoryItem, HostRuntimeInventoryItem, HostUpdateStatus,
+    ComplianceCategoryNode, FleetRepositoryConfig, HostApplicationInventoryItem,
+    HostContainerInventoryItem, HostOsInventory, HostPackageInventoryItem,
+    HostRepositoryConfig, HostRuntimeInventoryItem, HostUpdateStatus,
     HostUserInventoryItem, HostWebInventoryItem, InventoryDashboardReport,
     InventoryDistributionPoint, InventoryFleetStatusSummary, InventoryPayload,
     InventorySnapshotSummary, InventorySummary, NodeInventory, NodePendingUpdateJob,
@@ -137,10 +138,29 @@ impl InventoryRepository {
             .await?;
         self.replace_users(&mut tx, certname, &snapshot_id, &payload.users, now)
             .await?;
+        self.replace_repositories(
+            &mut tx,
+            certname,
+            &snapshot_id,
+            &payload.os.os_family,
+            &payload.os.distribution,
+            &payload.os.os_version,
+            payload.os.package_manager.as_deref().unwrap_or(""),
+            &payload.repositories,
+            now,
+        )
+        .await?;
 
         tx.commit()
             .await
             .context("Failed to commit inventory transaction")?;
+
+        // Refresh fleet-wide repository configs outside the transaction
+        if !payload.repositories.is_empty() {
+            if let Err(e) = self.refresh_fleet_repository_configs().await {
+                tracing::warn!("Failed to refresh fleet repository configs: {}", e);
+            }
+        }
 
         self.get_current_inventory(certname)
             .await?
@@ -1463,6 +1483,218 @@ impl InventoryRepository {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn replace_repositories(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        certname: &str,
+        snapshot_id: &str,
+        os_family: &str,
+        distribution: &str,
+        os_version: &str,
+        package_manager: &str,
+        repositories: &[HostRepositoryConfig],
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query("DELETE FROM node_repository_configs WHERE certname = ?1")
+            .bind(certname)
+            .execute(&mut **tx)
+            .await
+            .context("Failed to clear node repository configs")?;
+
+        for repo in repositories {
+            sqlx::query(
+                r#"
+                INSERT INTO node_repository_configs (
+                    id, certname, snapshot_id, os_family, distribution, os_version,
+                    package_manager, repo_id, repo_name, repo_type, base_url,
+                    mirror_list_url, distribution_path, components, architectures,
+                    enabled, gpg_check, created_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                ON CONFLICT(certname, repo_id, package_manager) DO UPDATE SET
+                    snapshot_id = excluded.snapshot_id,
+                    os_family = excluded.os_family,
+                    distribution = excluded.distribution,
+                    os_version = excluded.os_version,
+                    repo_name = excluded.repo_name,
+                    repo_type = excluded.repo_type,
+                    base_url = excluded.base_url,
+                    mirror_list_url = excluded.mirror_list_url,
+                    distribution_path = excluded.distribution_path,
+                    components = excluded.components,
+                    architectures = excluded.architectures,
+                    enabled = excluded.enabled,
+                    gpg_check = excluded.gpg_check,
+                    created_at = excluded.created_at
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(certname)
+            .bind(snapshot_id)
+            .bind(os_family)
+            .bind(distribution)
+            .bind(os_version)
+            .bind(package_manager)
+            .bind(&repo.repo_id)
+            .bind(&repo.repo_name)
+            .bind(&repo.repo_type)
+            .bind(&repo.base_url)
+            .bind(&repo.mirror_list_url)
+            .bind(&repo.distribution_path)
+            .bind(&repo.components)
+            .bind(&repo.architectures)
+            .bind(repo.enabled)
+            .bind(repo.gpg_check.map(|b| b as i64))
+            .bind(now.to_rfc3339())
+            .execute(&mut **tx)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to insert repository config '{}'",
+                    repo.repo_id
+                )
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Deduplicate node repository configs into fleet-wide configs.
+    /// Groups by (os_family, distribution, major_version, package_manager, repo_id)
+    /// and upserts into fleet_repository_configs.
+    pub async fn refresh_fleet_repository_configs(&self) -> Result<usize> {
+        let now = Utc::now();
+
+        // Aggregate unique repos across all nodes, grouping by major version
+        let rows = sqlx::query_as::<_, FleetRepoAggregateRow>(
+            r#"
+            SELECT
+                os_family,
+                distribution,
+                -- Extract major version: take everything before the first '.'
+                CASE
+                    WHEN INSTR(os_version, '.') > 0
+                    THEN SUBSTR(os_version, 1, INSTR(os_version, '.') - 1)
+                    ELSE os_version
+                END AS os_version_pattern,
+                package_manager,
+                repo_id,
+                repo_type,
+                -- Pick the most common values
+                MAX(repo_name) AS repo_name,
+                MAX(base_url) AS base_url,
+                MAX(mirror_list_url) AS mirror_list_url,
+                MAX(distribution_path) AS distribution_path,
+                MAX(components) AS components,
+                MAX(architectures) AS architectures,
+                COUNT(DISTINCT certname) AS reporting_nodes
+            FROM node_repository_configs
+            WHERE enabled = 1
+            GROUP BY os_family, distribution,
+                     CASE
+                         WHEN INSTR(os_version, '.') > 0
+                         THEN SUBSTR(os_version, 1, INSTR(os_version, '.') - 1)
+                         ELSE os_version
+                     END,
+                     package_manager, repo_id, repo_type
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to aggregate node repository configs")?;
+
+        let mut upserted = 0usize;
+
+        for row in &rows {
+            sqlx::query(
+                r#"
+                INSERT INTO fleet_repository_configs (
+                    id, os_family, distribution, os_version_pattern, package_manager,
+                    repo_id, repo_name, repo_type, base_url, mirror_list_url,
+                    distribution_path, components, architectures, enabled,
+                    reporting_nodes, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 1, ?14, ?15, ?16)
+                ON CONFLICT(os_family, distribution, os_version_pattern, package_manager, repo_id)
+                DO UPDATE SET
+                    repo_name = excluded.repo_name,
+                    repo_type = excluded.repo_type,
+                    base_url = excluded.base_url,
+                    mirror_list_url = excluded.mirror_list_url,
+                    distribution_path = excluded.distribution_path,
+                    components = excluded.components,
+                    architectures = excluded.architectures,
+                    reporting_nodes = excluded.reporting_nodes,
+                    updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(&row.os_family)
+            .bind(&row.distribution)
+            .bind(&row.os_version_pattern)
+            .bind(&row.package_manager)
+            .bind(&row.repo_id)
+            .bind(&row.repo_name)
+            .bind(&row.repo_type)
+            .bind(&row.base_url)
+            .bind(&row.mirror_list_url)
+            .bind(&row.distribution_path)
+            .bind(&row.components)
+            .bind(&row.architectures)
+            .bind(row.reporting_nodes)
+            .bind(now.to_rfc3339())
+            .bind(now.to_rfc3339())
+            .execute(&self.pool)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to upsert fleet repository config '{}'",
+                    row.repo_id
+                )
+            })?;
+            upserted += 1;
+        }
+
+        Ok(upserted)
+    }
+
+    /// List all fleet repository configs.
+    pub async fn list_fleet_repository_configs(&self) -> Result<Vec<FleetRepositoryConfig>> {
+        let rows = sqlx::query_as::<_, FleetRepositoryConfigRow>(
+            "SELECT * FROM fleet_repository_configs WHERE enabled = 1 ORDER BY os_family, distribution, repo_id",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to list fleet repository configs")?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    /// Update the check status for a fleet repository config.
+    pub async fn update_fleet_repo_check_status(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            UPDATE fleet_repository_configs
+            SET last_checked_at = ?1, last_check_status = ?2, last_check_error = ?3, updated_at = ?4
+            WHERE id = ?5
+            "#,
+        )
+        .bind(now.to_rfc3339())
+        .bind(status)
+        .bind(error)
+        .bind(now.to_rfc3339())
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update fleet repo check status")?;
+        Ok(())
+    }
+
     async fn insert_catalog_entry(
         &self,
         entry: &RepositoryVersionCatalogEntry,
@@ -1494,6 +1726,48 @@ impl InventoryRepository {
         .execute(&self.pool)
         .await
         .with_context(|| format!("Failed to insert catalog entry '{}'", entry.software_name))?;
+
+        Ok(())
+    }
+
+    /// Upsert a catalog entry, using ON CONFLICT to update if already present.
+    /// Used by the repo checker to insert "repo-checked" catalog entries.
+    pub async fn upsert_catalog_entry(&self, entry: &RepositoryVersionCatalogEntry) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            INSERT INTO repository_version_catalog (
+                id, platform_family, distribution, package_manager, software_type,
+                software_name, repository_source, latest_version, latest_release, source_kind,
+                observed_nodes, last_seen_at, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            ON CONFLICT(platform_family, distribution, package_manager, software_type,
+                        software_name, COALESCE(repository_source, ''), source_kind)
+            DO UPDATE SET
+                latest_version = excluded.latest_version,
+                latest_release = excluded.latest_release,
+                observed_nodes = excluded.observed_nodes,
+                last_seen_at = excluded.last_seen_at,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&entry.id)
+        .bind(&entry.platform_family)
+        .bind(&entry.distribution)
+        .bind(&entry.package_manager)
+        .bind(&entry.software_type)
+        .bind(&entry.software_name)
+        .bind(&entry.repository_source)
+        .bind(&entry.latest_version)
+        .bind(&entry.latest_release)
+        .bind(&entry.source_kind)
+        .bind(entry.observed_nodes as i64)
+        .bind(entry.last_seen_at.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .with_context(|| format!("Failed to upsert catalog entry '{}'", entry.software_name))?;
 
         Ok(())
     }
@@ -1825,6 +2099,74 @@ impl From<RepositoryVersionCatalogRow> for RepositoryVersionCatalogEntry {
             source_kind: row.source_kind,
             observed_nodes: row.observed_nodes.max(0) as usize,
             last_seen_at: parse_timestamp_required(&row.last_seen_at),
+            created_at: parse_timestamp_required(&row.created_at),
+            updated_at: parse_timestamp_required(&row.updated_at),
+        }
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct FleetRepoAggregateRow {
+    os_family: String,
+    distribution: String,
+    os_version_pattern: String,
+    package_manager: String,
+    repo_id: String,
+    repo_type: String,
+    repo_name: Option<String>,
+    base_url: Option<String>,
+    mirror_list_url: Option<String>,
+    distribution_path: Option<String>,
+    components: Option<String>,
+    architectures: Option<String>,
+    reporting_nodes: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct FleetRepositoryConfigRow {
+    id: String,
+    os_family: String,
+    distribution: String,
+    os_version_pattern: String,
+    package_manager: String,
+    repo_id: String,
+    repo_name: Option<String>,
+    repo_type: String,
+    base_url: Option<String>,
+    mirror_list_url: Option<String>,
+    distribution_path: Option<String>,
+    components: Option<String>,
+    architectures: Option<String>,
+    enabled: bool,
+    last_checked_at: Option<String>,
+    last_check_status: Option<String>,
+    last_check_error: Option<String>,
+    reporting_nodes: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<FleetRepositoryConfigRow> for FleetRepositoryConfig {
+    fn from(row: FleetRepositoryConfigRow) -> Self {
+        Self {
+            id: row.id,
+            os_family: row.os_family,
+            distribution: row.distribution,
+            os_version_pattern: row.os_version_pattern,
+            package_manager: row.package_manager,
+            repo_id: row.repo_id,
+            repo_name: row.repo_name,
+            repo_type: row.repo_type,
+            base_url: row.base_url,
+            mirror_list_url: row.mirror_list_url,
+            distribution_path: row.distribution_path,
+            components: row.components,
+            architectures: row.architectures,
+            enabled: row.enabled,
+            last_checked_at: row.last_checked_at.map(|s| parse_timestamp_required(&s)),
+            last_check_status: row.last_check_status,
+            last_check_error: row.last_check_error,
+            reporting_nodes: row.reporting_nodes.max(0) as usize,
             created_at: parse_timestamp_required(&row.created_at),
             updated_at: parse_timestamp_required(&row.updated_at),
         }
@@ -2169,17 +2511,43 @@ fn compare_packages(
     packages: &[HostPackageJoined],
     catalogs: &[RepositoryVersionCatalogEntry],
 ) -> Vec<OutdatedInventoryItem> {
+    // Partition catalogs: prefer "repo-checked" entries over "fleet-observed"
+    let repo_checked: Vec<_> = catalogs
+        .iter()
+        .filter(|e| e.source_kind == "repo-checked" && e.software_type == "package")
+        .collect();
+    let fleet_observed: Vec<_> = catalogs
+        .iter()
+        .filter(|e| e.source_kind == "fleet-observed" && e.software_type == "package")
+        .collect();
+
     packages
         .iter()
         .filter_map(|pkg| {
-            let catalog = catalogs.iter().find(|entry| {
-                entry.software_type == "package"
-                    && entry.platform_family == pkg.os_family
-                    && entry.distribution == pkg.distribution
-                    && entry.package_manager == pkg.package_manager
-                    && entry.software_name == pkg.name
-                    && entry.repository_source == pkg.repository_source
-            })?;
+            // First try repo-checked: match by name + os_family + distribution + package_manager
+            // (ignore repository_source since repo-checked uses repo_id, not vendor)
+            let (catalog, source_kind) = repo_checked
+                .iter()
+                .find(|entry| {
+                    entry.platform_family == pkg.os_family
+                        && entry.distribution == pkg.distribution
+                        && entry.package_manager == pkg.package_manager
+                        && entry.software_name == pkg.name
+                })
+                .map(|e| (*e, "repo-checked"))
+                // Fall back to fleet-observed (original behavior)
+                .or_else(|| {
+                    fleet_observed
+                        .iter()
+                        .find(|entry| {
+                            entry.platform_family == pkg.os_family
+                                && entry.distribution == pkg.distribution
+                                && entry.package_manager == pkg.package_manager
+                                && entry.software_name == pkg.name
+                                && entry.repository_source == pkg.repository_source
+                        })
+                        .map(|e| (*e, "fleet-observed"))
+                })?;
 
             (compare_version_triplets(
                 &pkg.version,
@@ -2196,6 +2564,7 @@ fn compare_packages(
                 latest_version: catalog.latest_version.clone(),
                 latest_release: catalog.latest_release.clone(),
                 repository_source: pkg.repository_source.clone(),
+                source_kind: Some(source_kind.to_string()),
             })
         })
         .collect()
@@ -2226,6 +2595,7 @@ fn compare_applications(
                     latest_version: catalog.latest_version.clone(),
                     latest_release: None,
                     repository_source: repo_source,
+                    source_kind: Some(catalog.source_kind.clone()),
                 }
             })
         })
@@ -2327,7 +2697,7 @@ fn roll_up_update_job_status(targets: &[UpdateJobTargetStateRow]) -> UpdateJobSt
     }
 }
 
-fn compare_version_triplets(
+pub fn compare_version_triplets(
     lhs_version: &str,
     lhs_release: Option<&str>,
     rhs_version: &str,

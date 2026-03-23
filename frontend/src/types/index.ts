@@ -160,6 +160,30 @@ export interface OutdatedInventoryItem {
   latest_version: string;
   latest_release?: string | null;
   repository_source?: string | null;
+  source_kind?: string | null;
+}
+
+export interface FleetRepositoryConfig {
+  id: string;
+  os_family: string;
+  distribution: string;
+  os_version_pattern: string;
+  package_manager: string;
+  repo_id: string;
+  repo_name?: string | null;
+  repo_type: string;
+  base_url?: string | null;
+  mirror_list_url?: string | null;
+  distribution_path?: string | null;
+  components?: string | null;
+  architectures?: string | null;
+  enabled: boolean;
+  last_checked_at?: string | null;
+  last_check_status?: string | null;
+  last_check_error?: string | null;
+  reporting_nodes: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface HostUpdateStatus {
@@ -411,17 +435,20 @@ export interface AddPinnedNodeRequest {
 export type ReportStatus = 'changed' | 'unchanged' | 'failed';
 
 export interface ReportMetrics {
-  resources: {
+  resources?: {
     total: number;
     changed: number;
     failed: number;
     skipped: number;
   };
-  time: {
+  time?: {
     total: number;
     config_retrieval: number;
   };
-  changes: number;
+  changes?: number;
+  // PuppetDB raw format fields
+  data?: Array<{ name: string; category?: string; value: unknown }>;
+  href?: string;
 }
 
 export interface Report {

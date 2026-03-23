@@ -155,11 +155,30 @@ export default function Analytics() {
   // Transform reports to heatmap data
   const heatmapData = useMemo(() => {
     return reports
-      .filter((r) => r.start_time && r.metrics?.changes !== undefined)
-      .map((r) => ({
-        timestamp: r.start_time!,
-        changes: r.metrics!.changes,
-      }));
+      .filter((r) => r.start_time)
+      .map((r) => {
+        let changes = 0;
+        const metrics = r.metrics;
+        if (metrics) {
+          if (metrics.changes !== undefined) {
+            // Parsed ReportMetrics format
+            changes = metrics.changes;
+          } else if (Array.isArray(metrics.data)) {
+            // Raw PuppetDB format: data is array of {name, category, value}
+            const changesEntry = metrics.data.find(
+              (d) => d.name === 'total' && d.category === 'changes',
+            );
+            if (changesEntry && typeof changesEntry.value === 'number') {
+              changes = changesEntry.value;
+            }
+          }
+        }
+        return {
+          timestamp: r.start_time!,
+          changes,
+        };
+      })
+      .filter((d) => d.changes > 0 || true); // Include all reports with timestamps
   }, [reports]);
 
   const isLoading = nodesLoading || groupsLoading || reportsLoading;

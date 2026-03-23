@@ -130,6 +130,7 @@ import type {
   ApproveUpdateJobRequest,
   OutdatedSoftwareNodeDetail,
   ComplianceCategoryNode,
+  FleetRepositoryConfig,
   // CVE types
   CveFeedSource,
   CreateCveFeedSourceRequest,
@@ -275,6 +276,21 @@ export const api = {
     const response = await client.get(
       `/inventory/dashboard/compliance/${encodeURIComponent(category)}`
     );
+    return response.data;
+  },
+
+  getFleetRepositories: async (): Promise<FleetRepositoryConfig[]> => {
+    const response = await client.get('/inventory/repositories');
+    return response.data;
+  },
+
+  triggerRepoCheck: async (): Promise<{
+    repos_checked: number;
+    repos_succeeded: number;
+    repos_failed: number;
+    catalog_entries_upserted: number;
+  }> => {
+    const response = await client.post('/inventory/repositories/check');
     return response.data;
   },
 

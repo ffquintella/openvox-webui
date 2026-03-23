@@ -22,6 +22,8 @@ pub struct InventoryPayload {
     pub containers: Vec<HostContainerInventoryItem>,
     #[serde(default)]
     pub users: Vec<HostUserInventoryItem>,
+    #[serde(default)]
+    pub repositories: Vec<HostRepositoryConfig>,
 }
 
 fn default_full_snapshot() -> bool {
@@ -123,6 +125,49 @@ pub struct HostUserInventoryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostRepositoryConfig {
+    pub repo_id: String,
+    pub repo_name: Option<String>,
+    pub repo_type: String,
+    pub base_url: Option<String>,
+    pub mirror_list_url: Option<String>,
+    pub distribution_path: Option<String>,
+    pub components: Option<String>,
+    pub architectures: Option<String>,
+    #[serde(default = "default_repo_enabled")]
+    pub enabled: bool,
+    pub gpg_check: Option<bool>,
+}
+
+fn default_repo_enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetRepositoryConfig {
+    pub id: String,
+    pub os_family: String,
+    pub distribution: String,
+    pub os_version_pattern: String,
+    pub package_manager: String,
+    pub repo_id: String,
+    pub repo_name: Option<String>,
+    pub repo_type: String,
+    pub base_url: Option<String>,
+    pub mirror_list_url: Option<String>,
+    pub distribution_path: Option<String>,
+    pub components: Option<String>,
+    pub architectures: Option<String>,
+    pub enabled: bool,
+    pub last_checked_at: Option<DateTime<Utc>>,
+    pub last_check_status: Option<String>,
+    pub last_check_error: Option<String>,
+    pub reporting_nodes: usize,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventorySnapshotSummary {
     pub id: String,
     pub certname: String,
@@ -191,6 +236,8 @@ pub struct OutdatedInventoryItem {
     pub latest_version: String,
     pub latest_release: Option<String>,
     pub repository_source: Option<String>,
+    #[serde(default)]
+    pub source_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

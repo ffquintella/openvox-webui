@@ -15,7 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add repository-based package version checking: nodes report their configured repository metadata (YUM/APT/Zypper/Winget), server periodically fetches latest package versions directly from repositories
+- Add `fleet_repository_configs` and `node_repository_configs` database tables for storing repository metadata
+- Add `RepoCheckerService` with YUM (repodata/primary.xml) and APT (Packages.gz) metadata parsing
+- Add background repo checker scheduler with configurable interval (default: 24h)
+- Add API endpoints: `GET /inventory/repositories` to list fleet repos, `POST /inventory/repositories/check` to trigger manual check
+- Add facter collector methods for YUM, APT, Zypper, and Winget repository discovery
+- Add `source_kind` field to `OutdatedInventoryItem` to distinguish "repo-checked" vs "fleet-observed" outdated determinations
+- Add `winget` as default Windows package repository source
+
 ### Fixed
+- Fix dashboard stats grid layout: 5 status cards now fit on a single row instead of wrapping
+- Fix Activity Heatmap showing "No activity data available" — now correctly parses PuppetDB raw metrics format (`{data: [...], href: "..."}`) in addition to pre-parsed format
 - Fix outdated software "Affected Nodes" count inflated by duplicate package entries (e.g., gpg-pubkey) — now counts unique nodes per package
 - Fix dashboard stats cards not summing to Total Nodes — added Warning category for stale nodes and aligned all cards to health-based classification
 - Add openvox-webui user to puppet group in ENC manifest for r10k cache directory access

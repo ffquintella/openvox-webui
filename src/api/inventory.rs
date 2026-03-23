@@ -14,9 +14,10 @@ use crate::{
     middleware::AuthUser,
     models::{
         ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
-        InventoryDashboardReport, InventoryFleetStatusSummary, OutdatedSoftwareNodeDetail,
-        RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType, UpdatePreviewPackage,
-        UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
+        FleetRepositoryConfig, InventoryDashboardReport, InventoryFleetStatusSummary,
+        OutdatedSoftwareNodeDetail, RepositoryVersionCatalogEntry, UpdateJob,
+        UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
+        UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -39,6 +40,11 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/summary", get(get_inventory_summary))
         .route("/catalog", get(list_version_catalog))
+        .route(
+            "/repositories",
+            get(list_fleet_repositories),
+        )
+        .route("/repositories/check", post(trigger_repo_check))
 }
 
 #[derive(Debug, Deserialize)]
@@ -400,4 +406,36 @@ async fn preview_update_job(
         total_packages,
         targets,
     }))
+}
+
+async fn list_fleet_repositories(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> AppResult<Json<Vec<FleetRepositoryConfig>>> {
+    require_inventory_update_read(&auth_user)?;
+    let repo = InventoryRepository::new(state.db.clone());
+    let configs = repo
+        .list_fleet_repository_configs()
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to list fleet repositories: {}", e)))?;
+    Ok(Json(configs))
+}
+
+async fn trigger_repo_check(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> AppResult<Json<serde_json::Value>> {
+    require_inventory_update_write(&auth_user)?;
+    let repo = InventoryRepository::new(state.db.clone());
+    let service = crate::services::RepoCheckerService::new(repo, 120, 4);
+    let summary = service
+        .check_all_repos()
+        .await
+        .map_err(|e| AppError::internal(format!("Repo check failed: {}", e)))?;
+    Ok(Json(serde_json::json!({
+        "repos_checked": summary.repos_checked,
+        "repos_succeeded": summary.repos_succeeded,
+        "repos_failed": summary.repos_failed,
+        "catalog_entries_upserted": summary.catalog_entries_upserted,
+    })))
 }

@@ -1193,6 +1193,18 @@ pub struct InventoryConfig {
     pub status_refresh_interval_secs: u64,
     #[serde(default = "default_inventory_stale_after_hours")]
     pub stale_after_hours: i64,
+    /// Enable repository-based version checking
+    #[serde(default)]
+    pub repo_check_enabled: bool,
+    /// Interval in seconds between repository metadata checks (default: 86400 = 24h)
+    #[serde(default = "default_repo_check_interval_secs")]
+    pub repo_check_interval_secs: u64,
+    /// HTTP timeout for fetching repository metadata in seconds
+    #[serde(default = "default_repo_check_timeout_secs")]
+    pub repo_check_timeout_secs: u64,
+    /// Maximum concurrent repository checks
+    #[serde(default = "default_repo_check_max_concurrent")]
+    pub repo_check_max_concurrent: usize,
 }
 
 fn default_inventory_catalog_refresh_interval_secs() -> u64 {
@@ -1207,6 +1219,18 @@ fn default_inventory_stale_after_hours() -> i64 {
     48
 }
 
+fn default_repo_check_interval_secs() -> u64 {
+    86400
+}
+
+fn default_repo_check_timeout_secs() -> u64 {
+    120
+}
+
+fn default_repo_check_max_concurrent() -> usize {
+    4
+}
+
 impl Default for InventoryConfig {
     fn default() -> Self {
         Self {
@@ -1214,6 +1238,10 @@ impl Default for InventoryConfig {
             catalog_refresh_interval_secs: default_inventory_catalog_refresh_interval_secs(),
             status_refresh_interval_secs: default_inventory_status_refresh_interval_secs(),
             stale_after_hours: default_inventory_stale_after_hours(),
+            repo_check_enabled: false,
+            repo_check_interval_secs: default_repo_check_interval_secs(),
+            repo_check_timeout_secs: default_repo_check_timeout_secs(),
+            repo_check_max_concurrent: default_repo_check_max_concurrent(),
         }
     }
 }

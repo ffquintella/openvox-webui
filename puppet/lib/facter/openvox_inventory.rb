@@ -117,8 +117,19 @@ module OpenVoxInventory
               []
             end
 
+    repositories = case family
+                   when 'RedHat', 'Suse'
+                     collect_yum_repos(os_fact)
+                   when 'Debian'
+                     collect_apt_repos
+                   when 'windows', 'Windows'
+                     collect_winget_repos
+                   else
+                     []
+                   end
+
     payload = {
-      'collector_version' => 'phase10.3-puppet',
+      'collector_version' => 'phase10.4-puppet',
       'collected_at' => collected_at,
       'is_full_snapshot' => true,
       'os' => collect_os_inventory(os_fact, collected_at),
@@ -127,7 +138,8 @@ module OpenVoxInventory
       'websites' => trim(normalize_websites(websites), config),
       'runtimes' => trim(normalize_runtimes(runtimes), config),
       'containers' => trim(normalize_containers(containers), config),
-      'users' => trim(normalize_users(users), config)
+      'users' => trim(normalize_users(users), config),
+      'repositories' => repositories
     }
 
     payload['os']['update_channel'] ||= infer_update_channel(payload)
@@ -263,6 +275,242 @@ module OpenVoxInventory
     Facter.debug("openvox_inventory: Failed to collect Homebrew inventory: #{e.message}")
     []
   end
+
+  # ---- Repository configuration collection ----
+
+  def collect_yum_repos(os_fact)
+    repos = []
+    repo_dir = '/etc/yum.repos.d'
+    return repos unless Dir.exist?(repo_dir)
+
+    releasever = os_fact.dig('release', 'major') || ''
+    basearch = Facter.value(:architecture) || ''
+
+    Dir.glob(File.join(repo_dir, '*.repo')).each do |repo_file|
+      parse_yum_repo_file(repo_file, releasever, basearch, repos)
+    end
+
+    repos
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect YUM repos: #{e.message}")
+    []
+  end
+
+  def parse_yum_repo_file(path, releasever, basearch, repos)
+    current = nil
+
+    File.readlines(path).each do |line|
+      line = line.strip
+      next if line.empty? || line.start_with?('#')
+
+      if line =~ /^\[(.+)\]$/
+        # Save previous section if it exists
+        repos << current if current && current['enabled']
+        current = {
+          'repo_id' => Regexp.last_match(1),
+          'repo_name' => nil,
+          'repo_type' => 'yum',
+          'base_url' => nil,
+          'mirror_list_url' => nil,
+          'distribution_path' => nil,
+          'components' => nil,
+          'architectures' => basearch,
+          'enabled' => true,
+          'gpg_check' => nil
+        }
+      elsif current
+        key, value = line.split('=', 2).map(&:strip)
+        next unless key && value
+
+        value = substitute_yum_vars(value, releasever, basearch)
+
+        case key
+        when 'name'
+          current['repo_name'] = value
+        when 'baseurl'
+          current['base_url'] = value.split(/\s+/).first
+        when 'mirrorlist', 'metalink'
+          current['mirror_list_url'] = value
+        when 'enabled'
+          current['enabled'] = value != '0'
+        when 'gpgcheck'
+          current['gpg_check'] = value != '0'
+        end
+      end
+    end
+
+    repos << current if current && current['enabled']
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to parse #{path}: #{e.message}")
+  end
+
+  def substitute_yum_vars(value, releasever, basearch)
+    value.gsub('$releasever', releasever)
+         .gsub('$basearch', basearch)
+  end
+
+  def collect_apt_repos
+    repos = []
+
+    # Parse sources.list
+    sources_list = '/etc/apt/sources.list'
+    parse_apt_sources_list(sources_list, repos) if File.exist?(sources_list)
+
+    # Parse sources.list.d/*.list
+    list_dir = '/etc/apt/sources.list.d'
+    if Dir.exist?(list_dir)
+      Dir.glob(File.join(list_dir, '*.list')).each do |f|
+        parse_apt_sources_list(f, repos)
+      end
+
+      # Parse DEB822 .sources files
+      Dir.glob(File.join(list_dir, '*.sources')).each do |f|
+        parse_apt_deb822_sources(f, repos)
+      end
+    end
+
+    repos
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect APT repos: #{e.message}")
+    []
+  end
+
+  def parse_apt_sources_list(path, repos)
+    File.readlines(path).each do |line|
+      line = line.strip
+      next if line.empty? || line.start_with?('#')
+
+      # Format: deb [options] URI distribution [component...]
+      next unless line =~ /^deb\s+/
+
+      # Strip 'deb' prefix and optional [options]
+      remainder = line.sub(/^deb\s+/, '')
+      remainder = remainder.sub(/\[.*?\]\s*/, '')
+
+      parts = remainder.split(/\s+/)
+      next if parts.size < 2
+
+      uri = parts[0]
+      distribution = parts[1]
+      components = parts[2..].join(' ')
+
+      repo_id = "#{uri}_#{distribution}".gsub(%r{[^a-zA-Z0-9._-]}, '_')
+
+      repos << {
+        'repo_id' => repo_id,
+        'repo_name' => nil,
+        'repo_type' => 'apt',
+        'base_url' => uri,
+        'mirror_list_url' => nil,
+        'distribution_path' => distribution,
+        'components' => components.empty? ? nil : components,
+        'architectures' => Facter.value(:architecture),
+        'enabled' => true,
+        'gpg_check' => nil
+      }
+    end
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to parse #{path}: #{e.message}")
+  end
+
+  def parse_apt_deb822_sources(path, repos)
+    # DEB822 format: blocks separated by blank lines
+    current = {}
+
+    File.readlines(path).each do |line|
+      line = line.rstrip
+
+      if line.empty?
+        add_deb822_entry(current, repos) unless current.empty?
+        current = {}
+        next
+      end
+
+      next if line.start_with?('#')
+
+      if line =~ /^(\S+):\s*(.*)/
+        current[Regexp.last_match(1)] = Regexp.last_match(2).strip
+      end
+    end
+
+    add_deb822_entry(current, repos) unless current.empty?
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to parse DEB822 #{path}: #{e.message}")
+  end
+
+  def add_deb822_entry(entry, repos)
+    types = (entry['Types'] || '').split
+    return unless types.include?('deb')
+
+    uris = (entry['URIs'] || '').split
+    suites = (entry['Suites'] || '').split
+    components = (entry['Components'] || '').strip
+
+    uris.each do |uri|
+      suites.each do |suite|
+        repo_id = "#{uri}_#{suite}".gsub(%r{[^a-zA-Z0-9._-]}, '_')
+        repos << {
+          'repo_id' => repo_id,
+          'repo_name' => nil,
+          'repo_type' => 'apt',
+          'base_url' => uri,
+          'mirror_list_url' => nil,
+          'distribution_path' => suite,
+          'components' => components.empty? ? nil : components,
+          'architectures' => entry['Architectures'] || Facter.value(:architecture),
+          'enabled' => (entry['Enabled'] || 'yes') != 'no',
+          'gpg_check' => nil
+        }
+      end
+    end
+  end
+
+  def collect_winget_repos
+    repos = []
+
+    # Query winget sources
+    output = run_command('winget source list')
+    return repos if output.nil? || output.empty?
+
+    # Parse winget source list output (table format with Name and Argument columns)
+    lines = output.lines.map(&:strip).reject(&:empty?)
+    # Skip header lines (name, dashes)
+    data_started = false
+
+    lines.each do |line|
+      if line =~ /^-+/
+        data_started = true
+        next
+      end
+      next unless data_started
+
+      parts = line.split(/\s{2,}/)
+      next if parts.size < 2
+
+      name = parts[0].strip
+      url = parts[1].strip
+
+      repos << {
+        'repo_id' => name,
+        'repo_name' => name,
+        'repo_type' => 'winget',
+        'base_url' => url,
+        'mirror_list_url' => nil,
+        'distribution_path' => nil,
+        'components' => nil,
+        'architectures' => Facter.value(:architecture),
+        'enabled' => true,
+        'gpg_check' => nil
+      }
+    end
+
+    repos
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect winget repos: #{e.message}")
+    []
+  end
+
+  # ---- End repository collection ----
 
   def collect_macos_applications(config)
     apps = []

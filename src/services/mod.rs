@@ -15,6 +15,8 @@ pub mod facter;
 pub mod git;
 pub mod inventory_scheduler;
 pub mod node_removal_scheduler;
+pub mod repo_checker;
+pub mod repo_checker_scheduler;
 pub mod notification;
 pub mod puppet_ca;
 pub mod puppetdb;
@@ -41,6 +43,8 @@ pub use facter::{ExportFormat, FacterService, GeneratedFacts};
 pub use git::{BranchInfo, CommitInfo, GitService, GitServiceConfig};
 pub use inventory_scheduler::{start_inventory_scheduler, InventorySchedulerState};
 pub use node_removal_scheduler::{start_node_removal_scheduler, NodeRemovalSchedulerState};
+pub use repo_checker::RepoCheckerService;
+pub use repo_checker_scheduler::{start_repo_checker_scheduler, RepoCheckerSchedulerState};
 pub use notification::{NotificationEvent, NotificationService};
 pub use puppet_ca::PuppetCAService;
 pub use puppetdb::{

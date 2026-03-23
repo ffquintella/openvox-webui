@@ -229,6 +229,20 @@ async fn main() -> Result<()> {
         None
     };
 
+    let _repo_checker_scheduler = if let Some(ref inventory_cfg) = inventory_config {
+        if inventory_cfg.repo_check_enabled {
+            info!("Starting Repository Checker scheduler");
+            Some(services::start_repo_checker_scheduler(
+                db.clone(),
+                inventory_cfg.clone(),
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Initialize notification service
     info!("Initializing notification service");
     let notification_service = Arc::new(NotificationService::new(db.clone()));
