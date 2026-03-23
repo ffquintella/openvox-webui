@@ -114,7 +114,7 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 cucumber = "0.22"
 tokio-test = "0.4"
 wiremock = "0.6"
-fake = { version = "4.4", features = ["derive"] }
+fake = { version = "5.1", features = ["derive"] }
 rstest = "0.26"
 bytes = "1.11"
 
