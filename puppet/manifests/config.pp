@@ -190,6 +190,14 @@ class openvox_webui::config {
         creates => $ssh_keys_dir,
         path    => ['/bin', '/usr/bin'],
       }
+
+      # Install base64 gem for r10k compatibility
+      # Ruby 3.2 ships base64 0.1.1 as default gem, but puppet_forge 6.1.0
+      # requires base64 >= 0.2.0. Without this, r10k fails to run.
+      package { 'base64':
+        ensure   => '0.3.0',
+        provider => 'puppet_gem',
+      }
     }
 
     # Create Backup directory if enabled
