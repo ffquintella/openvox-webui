@@ -93,7 +93,7 @@ ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "std"
 
 # HMAC for webhook signature verification
 hmac = "0.12"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 
 # Backup encryption and archiving
