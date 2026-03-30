@@ -3218,7 +3218,7 @@ dependencies = [
  "once_cell",
  "printpdf",
  "quick-xml 0.39.2",
- "rand 0.8.5",
+ "rand 0.10.0",
  "regex",
  "reqwest",
  "rstest",
