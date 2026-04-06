@@ -20,7 +20,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip",
 
 # Rate limiting
 governor = "0.10"
-hyper = { version = "1.8", features = ["full"] }
+hyper = { version = "1.9", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
 # TLS support
@@ -30,7 +30,7 @@ rustls-pemfile = "2.2"
 tokio-rustls = "0.26"
 
 # Async runtime
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
