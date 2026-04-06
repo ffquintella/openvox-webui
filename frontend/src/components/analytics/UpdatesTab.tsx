@@ -4,6 +4,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
   BarChart,
   Bar,
   XAxis,
@@ -183,24 +184,32 @@ export default function UpdatesTab() {
                     />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => [String(value), 'Nodes']} />
+                <Tooltip formatter={(value: number, name: string) => [String(value), name]} />
+                <Legend
+                  formatter={(value: string) => {
+                    const entry = complianceData.find((d) => d.label === value);
+                    return `${value}: ${entry?.value ?? 0}`;
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
           )}
           <div className="flex justify-center gap-6 mt-2">
-            {complianceData.map((entry) => (
-              <button
-                key={entry.label}
-                className="flex items-center gap-2 text-sm hover:underline"
-                onClick={() => setSelectedCompliance(entry.label.toLowerCase())}
-              >
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: COMPLIANCE_COLORS[entry.label] ?? '#d1d5db' }}
-                />
-                {entry.label}: {entry.value}
-              </button>
-            ))}
+            {['Compliant', 'Outdated', 'Stale']
+              .filter((cat) => !complianceData.some((d) => d.label === cat))
+              .map((cat) => (
+                <button
+                  key={cat}
+                  className="flex items-center gap-2 text-sm text-gray-400"
+                  onClick={() => setSelectedCompliance(cat.toLowerCase())}
+                >
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: COMPLIANCE_COLORS[cat] ?? '#d1d5db' }}
+                  />
+                  {cat}: 0
+                </button>
+              ))}
           </div>
         </div>
 

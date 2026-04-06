@@ -164,6 +164,7 @@ impl RepoCheckerService {
                 id: Uuid::new_v4().to_string(),
                 platform_family: config.os_family.clone(),
                 distribution: config.distribution.clone(),
+                os_version_pattern: Some(config.os_version_pattern.clone()),
                 package_manager: Some(config.package_manager.clone()),
                 software_type: "package".to_string(),
                 software_name: name.clone(),
