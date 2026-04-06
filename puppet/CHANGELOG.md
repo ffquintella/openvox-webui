@@ -24,8 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add facter collector methods for YUM, APT, Zypper, and Winget repository discovery
 - Add `source_kind` field to `OutdatedInventoryItem` to distinguish "repo-checked" vs "fleet-observed" outdated determinations
 - Add `winget` as default Windows package repository source
+- Add "Update Schedules" tab to Node Groups for scheduling one-time and recurring (cron-based) update tasks with optional approval workflows
+- Add `group_update_schedules` database table and full CRUD API (`GET/POST /groups/:id/update-schedules`, `PUT/DELETE /groups/:id/update-schedules/:scheduleId`, `POST .../run`)
+- Add background update schedule scheduler that auto-creates UpdateJobs when schedules are due
 
 ### Fixed
+- Detect last successful system update time from dnf/yum history, apt logs, and zypper history instead of always reporting "Never recorded"
+- Fix false-positive outdated package detection when fleet has nodes on different OS major versions (e.g., el8 vs el9) by adding `os_version_pattern` dimension to the version catalog
+- Fix Update Compliance donut chart legend showing "value" instead of proper category labels (Compliant/Outdated/Stale); always include all 3 compliance categories even when count is zero
 - Fix RPM/DEB package build failure caused by missing `react-is` peer dependency required by `recharts` v3
 - Fix inventory submission 422 error caused by container runtime entries missing the `image` field — make `image` optional in `HostContainerInventoryItem` so runtime-only entries (e.g. Docker Engine) are accepted
 - Install base64 gem for r10k compatibility with Ruby 3.2 (puppet_forge requires >= 0.2.0, but Ruby 3.2 only ships 0.1.1)

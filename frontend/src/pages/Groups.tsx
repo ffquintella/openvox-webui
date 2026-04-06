@@ -16,6 +16,9 @@ import {
   Edit2,
   AlertCircle,
   Variable,
+  CalendarClock,
+  Clock,
+  Play,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
@@ -25,6 +28,9 @@ import type {
   RuleOperator,
   RuleMatchType,
   CreateRuleRequest,
+  GroupUpdateSchedule,
+  CreateGroupUpdateScheduleRequest,
+  UpdateOperationType,
 } from '../types';
 
 const RULE_OPERATORS: { value: RuleOperator; label: string; description: string }[] = [
@@ -44,7 +50,7 @@ export default function Groups() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<NodeGroup | null>(null);
-  const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'variables'>('rules');
+  const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'variables' | 'schedules'>('rules');
 
   // Create/Edit form state
   const [formName, setFormName] = useState('');
@@ -85,6 +91,17 @@ export default function Groups() {
   const [editingVariableKey, setEditingVariableKey] = useState<string | null>(null);
   const [editingVarKey, setEditingVarKey] = useState('');
   const [editingVarValue, setEditingVarValue] = useState('');
+
+  // Schedule form state
+  const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
+  const [newScheduleName, setNewScheduleName] = useState('');
+  const [newScheduleDescription, setNewScheduleDescription] = useState('');
+  const [newScheduleType, setNewScheduleType] = useState<'one_time' | 'recurring'>('recurring');
+  const [newScheduleCron, setNewScheduleCron] = useState('');
+  const [newScheduleDate, setNewScheduleDate] = useState('');
+  const [newScheduleOperationType, setNewScheduleOperationType] = useState<UpdateOperationType>('system_patch');
+  const [newSchedulePackageNames, setNewSchedulePackageNames] = useState('');
+  const [newScheduleRequiresApproval, setNewScheduleRequiresApproval] = useState(false);
 
   // Collapsed state for group tree (store IDs of collapsed groups)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -225,6 +242,47 @@ export default function Groups() {
     },
   });
 
+  // Schedule queries and mutations
+  const { data: schedules = [] } = useQuery({
+    queryKey: ['group-schedules', selectedGroup?.id],
+    queryFn: () => api.getGroupUpdateSchedules(selectedGroup!.id),
+    enabled: !!selectedGroup,
+  });
+
+  const createScheduleMutation = useMutation({
+    mutationFn: ({ groupId, data }: { groupId: string; data: CreateGroupUpdateScheduleRequest }) =>
+      api.createGroupUpdateSchedule(groupId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-schedules'] });
+      setIsAddScheduleOpen(false);
+      resetScheduleForm();
+    },
+  });
+
+  const updateScheduleMutation = useMutation({
+    mutationFn: ({ groupId, scheduleId, data }: { groupId: string; scheduleId: string; data: { enabled?: boolean } }) =>
+      api.updateGroupUpdateSchedule(groupId, scheduleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-schedules'] });
+    },
+  });
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: ({ groupId, scheduleId }: { groupId: string; scheduleId: string }) =>
+      api.deleteGroupUpdateSchedule(groupId, scheduleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-schedules'] });
+    },
+  });
+
+  const runScheduleMutation = useMutation({
+    mutationFn: ({ groupId, scheduleId }: { groupId: string; scheduleId: string }) =>
+      api.runGroupUpdateSchedule(groupId, scheduleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-schedules'] });
+    },
+  });
+
   const resetForm = () => {
     setFormName('');
     setFormDescription('');
@@ -257,6 +315,46 @@ export default function Groups() {
     setEditingVariableKey(null);
     setEditingVarKey('');
     setEditingVarValue('');
+  };
+
+  const resetScheduleForm = () => {
+    setNewScheduleName('');
+    setNewScheduleDescription('');
+    setNewScheduleType('recurring');
+    setNewScheduleCron('');
+    setNewScheduleDate('');
+    setNewScheduleOperationType('system_patch');
+    setNewSchedulePackageNames('');
+    setNewScheduleRequiresApproval(false);
+  };
+
+  const handleAddSchedule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGroup || !newScheduleName.trim()) return;
+
+    const data: CreateGroupUpdateScheduleRequest = {
+      name: newScheduleName.trim(),
+      description: newScheduleDescription.trim() || undefined,
+      schedule_type: newScheduleType,
+      operation_type: newScheduleOperationType,
+      requires_approval: newScheduleRequiresApproval,
+    };
+    if (newScheduleType === 'recurring' && newScheduleCron.trim()) {
+      data.cron_expression = newScheduleCron.trim();
+    }
+    if (newScheduleType === 'one_time' && newScheduleDate) {
+      data.scheduled_for = new Date(newScheduleDate).toISOString();
+    }
+    if (newScheduleOperationType === 'package_update' && newSchedulePackageNames.trim()) {
+      data.package_names = newSchedulePackageNames.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    createScheduleMutation.mutate({ groupId: selectedGroup.id, data });
+  };
+
+  const formatScheduleDate = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr).toLocaleString();
   };
 
   const serializeValueForInput = (value: unknown): string => {
@@ -856,6 +954,7 @@ export default function Groups() {
                     { id: 'pinned', label: 'Pinned Nodes', icon: Pin },
                     { id: 'classes', label: 'Classes', icon: Settings },
                     { id: 'variables', label: 'Variables', icon: Variable },
+                    { id: 'schedules', label: 'Update Schedules', icon: CalendarClock },
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -887,6 +986,11 @@ export default function Groups() {
                       {tab.id === 'variables' && (
                         <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
                           {Object.keys(selectedGroup.variables || {}).length}
+                        </span>
+                      )}
+                      {tab.id === 'schedules' && (
+                        <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+                          {schedules.length}
                         </span>
                       )}
                     </button>
@@ -1360,6 +1464,283 @@ export default function Groups() {
                         <p className="text-xs text-gray-400 mt-1">
                           Add classes to apply Puppet modules to nodes in this group
                         </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Schedules Tab */}
+              {activeTab === 'schedules' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm text-gray-600">
+                      Define automatic or approval-required update schedules for this group's nodes.
+                    </p>
+                    <button
+                      onClick={() => setIsAddScheduleOpen(true)}
+                      className="btn btn-secondary text-sm flex items-center"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Schedule
+                    </button>
+                  </div>
+
+                  {/* Add Schedule Form */}
+                  {isAddScheduleOpen && (
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                      <form onSubmit={handleAddSchedule} className="space-y-4">
+                        <div>
+                          <label className="label">Name</label>
+                          <input
+                            type="text"
+                            value={newScheduleName}
+                            onChange={(e) => setNewScheduleName(e.target.value)}
+                            className="input"
+                            placeholder="e.g., Weekly security patches"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Description</label>
+                          <input
+                            type="text"
+                            value={newScheduleDescription}
+                            onChange={(e) => setNewScheduleDescription(e.target.value)}
+                            className="input"
+                            placeholder="Optional description..."
+                          />
+                        </div>
+                        <div>
+                          <label className="label">Schedule Type</label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setNewScheduleType('one_time')}
+                              className={clsx(
+                                'btn text-sm',
+                                newScheduleType === 'one_time' ? 'btn-primary' : 'btn-secondary'
+                              )}
+                            >
+                              One-time
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewScheduleType('recurring')}
+                              className={clsx(
+                                'btn text-sm',
+                                newScheduleType === 'recurring' ? 'btn-primary' : 'btn-secondary'
+                              )}
+                            >
+                              Recurring
+                            </button>
+                          </div>
+                        </div>
+                        {newScheduleType === 'one_time' ? (
+                          <div>
+                            <label className="label">Date & Time</label>
+                            <input
+                              type="datetime-local"
+                              value={newScheduleDate}
+                              onChange={(e) => setNewScheduleDate(e.target.value)}
+                              className="input"
+                              required
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="label">Cron Expression</label>
+                            <input
+                              type="text"
+                              value={newScheduleCron}
+                              onChange={(e) => setNewScheduleCron(e.target.value)}
+                              className="input"
+                              placeholder="e.g., 0 0 2 * * *"
+                              required
+                            />
+                            <p className="text-xs text-gray-500 mt-1">6-field cron: sec min hour dom month dow</p>
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => setNewScheduleCron('0 0 2 * * *')}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+                              >
+                                Daily 2AM
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewScheduleCron('0 0 3 * * SUN')}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+                              >
+                                Weekly Sun 3AM
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNewScheduleCron('0 0 4 1 * *')}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+                              >
+                                Monthly 1st 4AM
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="label">Operation Type</label>
+                          <select
+                            value={newScheduleOperationType}
+                            onChange={(e) => setNewScheduleOperationType(e.target.value as UpdateOperationType)}
+                            className="input"
+                          >
+                            <option value="system_patch">System Patch</option>
+                            <option value="security_patch">Security Patch</option>
+                            <option value="package_update">Package Update</option>
+                          </select>
+                        </div>
+                        {newScheduleOperationType === 'package_update' && (
+                          <div>
+                            <label className="label">Package Names (comma-separated)</label>
+                            <input
+                              type="text"
+                              value={newSchedulePackageNames}
+                              onChange={(e) => setNewSchedulePackageNames(e.target.value)}
+                              className="input"
+                              placeholder="e.g., nginx, openssl, curl"
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-center">
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newScheduleRequiresApproval}
+                              onChange={(e) => setNewScheduleRequiresApproval(e.target.checked)}
+                              className="mr-2"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Requires Approval</span>
+                          </label>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddScheduleOpen(false);
+                              resetScheduleForm();
+                            }}
+                            className="btn btn-secondary text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={createScheduleMutation.isPending}
+                            className="btn btn-primary text-sm"
+                          >
+                            {createScheduleMutation.isPending ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Schedule List */}
+                  <div className="space-y-3">
+                    {schedules.length > 0 ? (
+                      schedules.map((schedule: GroupUpdateSchedule) => (
+                        <div
+                          key={schedule.id}
+                          className="bg-white border border-gray-200 rounded-lg px-4 py-3"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-gray-900">{schedule.name}</span>
+                                <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+                                  {schedule.operation_type === 'system_patch' ? 'System Patch' :
+                                   schedule.operation_type === 'security_patch' ? 'Security Patch' : 'Package Update'}
+                                </span>
+                              </div>
+                              {schedule.description && (
+                                <p className="text-sm text-gray-500 mb-2">{schedule.description}</p>
+                              )}
+                              <div className="flex items-center gap-4 text-sm text-gray-500">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  {schedule.schedule_type === 'recurring'
+                                    ? `Recurring: ${schedule.cron_expression}`
+                                    : `One-time: ${formatScheduleDate(schedule.scheduled_for)}`}
+                                </span>
+                                {schedule.requires_approval ? (
+                                  <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                                    Requires Approval
+                                  </span>
+                                ) : (
+                                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                                    Auto
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 mt-1 text-xs text-gray-400">
+                                <span>Next run: {formatScheduleDate(schedule.next_run_at)}</span>
+                                <span>Last run: {formatScheduleDate(schedule.last_run_at)}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                              <button
+                                onClick={() =>
+                                  updateScheduleMutation.mutate({
+                                    groupId: selectedGroup!.id,
+                                    scheduleId: schedule.id,
+                                    data: { enabled: !schedule.enabled },
+                                  })
+                                }
+                                className={clsx(
+                                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                                  schedule.enabled ? 'bg-primary-600' : 'bg-gray-300'
+                                )}
+                                title={schedule.enabled ? 'Disable' : 'Enable'}
+                              >
+                                <span
+                                  className={clsx(
+                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                                    schedule.enabled ? 'translate-x-6' : 'translate-x-1'
+                                  )}
+                                />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  runScheduleMutation.mutate({
+                                    groupId: selectedGroup!.id,
+                                    scheduleId: schedule.id,
+                                  })
+                                }
+                                disabled={runScheduleMutation.isPending}
+                                className="text-gray-400 hover:text-primary-600 transition-colors"
+                                title="Run Now"
+                              >
+                                <Play className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  deleteScheduleMutation.mutate({
+                                    groupId: selectedGroup!.id,
+                                    scheduleId: schedule.id,
+                                  })
+                                }
+                                disabled={deleteScheduleMutation.isPending}
+                                className="text-gray-400 hover:text-red-600 transition-colors"
+                                title="Delete schedule"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                        <CalendarClock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p>No update schedules defined</p>
+                        <p className="text-sm mt-1">Create one to automate updates for this group's nodes.</p>
                       </div>
                     )}
                   </div>
