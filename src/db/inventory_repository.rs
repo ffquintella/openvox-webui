@@ -6,14 +6,15 @@ use sqlx::{FromRow, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    ComplianceCategoryNode, FleetRepositoryConfig, HostApplicationInventoryItem,
-    HostContainerInventoryItem, HostOsInventory, HostPackageInventoryItem,
-    HostRepositoryConfig, HostRuntimeInventoryItem, HostUpdateStatus,
-    HostUserInventoryItem, HostWebInventoryItem, InventoryDashboardReport,
-    InventoryDistributionPoint, InventoryFleetStatusSummary, InventoryPayload,
-    InventorySnapshotSummary, InventorySummary, NodeInventory, NodePendingUpdateJob,
-    OutdatedInventoryItem, OutdatedSoftwareNodeDetail, PatchAgeBucket,
-    RepositoryVersionCatalogEntry, SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem,
+    ComplianceCategoryNode, CreateGroupUpdateScheduleRequest, FleetRepositoryConfig,
+    GroupUpdateSchedule, HostApplicationInventoryItem, HostContainerInventoryItem,
+    HostOsInventory, HostPackageInventoryItem, HostRepositoryConfig,
+    HostRuntimeInventoryItem, HostUpdateStatus, HostUserInventoryItem,
+    HostWebInventoryItem, InventoryDashboardReport, InventoryDistributionPoint,
+    InventoryFleetStatusSummary, InventoryPayload, InventorySnapshotSummary,
+    InventorySummary, NodeInventory, NodePendingUpdateJob, OutdatedInventoryItem,
+    OutdatedSoftwareNodeDetail, PatchAgeBucket, RepositoryVersionCatalogEntry,
+    SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem, UpdateGroupUpdateScheduleRequest,
     UpdateJob, UpdateJobResult, UpdateJobStatus, UpdateJobTarget, UpdateOperationType,
     UpdateTargetStatus,
 };
@@ -335,12 +336,20 @@ impl InventoryRepository {
         let now = Utc::now();
         let package_rows = sqlx::query_as::<_, CatalogPackageObservationRow>(
             r#"
-            SELECT o.os_family, o.distribution, o.package_manager, p.name, p.repository_source,
+            SELECT o.os_family, o.distribution,
+                   CASE WHEN INSTR(o.os_version, '.') > 0
+                        THEN SUBSTR(o.os_version, 1, INSTR(o.os_version, '.') - 1)
+                        ELSE o.os_version END AS os_version_pattern,
+                   o.package_manager, p.name, p.repository_source,
                    p.version, p.release, MAX(s.collected_at) AS last_seen_at, COUNT(DISTINCT p.certname) AS observed_nodes
             FROM host_package_inventory p
             INNER JOIN host_os_inventory o ON o.certname = p.certname
             INNER JOIN host_inventory_snapshots s ON s.id = p.snapshot_id
-            GROUP BY o.os_family, o.distribution, o.package_manager, p.name, p.repository_source, p.version, p.release
+            GROUP BY o.os_family, o.distribution,
+                     CASE WHEN INSTR(o.os_version, '.') > 0
+                          THEN SUBSTR(o.os_version, 1, INSTR(o.os_version, '.') - 1)
+                          ELSE o.os_version END,
+                     o.package_manager, p.name, p.repository_source, p.version, p.release
             "#
         )
         .fetch_all(&self.pool)
@@ -349,12 +358,20 @@ impl InventoryRepository {
 
         let application_rows = sqlx::query_as::<_, CatalogApplicationObservationRow>(
             r#"
-            SELECT o.os_family, o.distribution, o.package_manager, a.name, a.publisher, a.application_type,
+            SELECT o.os_family, o.distribution,
+                   CASE WHEN INSTR(o.os_version, '.') > 0
+                        THEN SUBSTR(o.os_version, 1, INSTR(o.os_version, '.') - 1)
+                        ELSE o.os_version END AS os_version_pattern,
+                   o.package_manager, a.name, a.publisher, a.application_type,
                    a.version, MAX(s.collected_at) AS last_seen_at, COUNT(DISTINCT a.certname) AS observed_nodes
             FROM host_application_inventory a
             INNER JOIN host_os_inventory o ON o.certname = a.certname
             INNER JOIN host_inventory_snapshots s ON s.id = a.snapshot_id
-            GROUP BY o.os_family, o.distribution, o.package_manager, a.name, a.publisher, a.application_type, a.version
+            GROUP BY o.os_family, o.distribution,
+                     CASE WHEN INSTR(o.os_version, '.') > 0
+                          THEN SUBSTR(o.os_version, 1, INSTR(o.os_version, '.') - 1)
+                          ELSE o.os_version END,
+                     o.package_manager, a.name, a.publisher, a.application_type, a.version
             "#
         )
         .fetch_all(&self.pool)
@@ -401,7 +418,7 @@ impl InventoryRepository {
         let catalogs = self.list_version_catalog().await?;
         let package_rows = sqlx::query_as::<_, HostPackageJoinedRow>(
             r#"
-            SELECT p.certname, o.os_family, o.distribution, o.package_manager, p.name, p.version, p.release, p.repository_source
+            SELECT p.certname, o.os_family, o.distribution, o.os_version, o.package_manager, p.name, p.version, p.release, p.repository_source
             FROM host_package_inventory p
             INNER JOIN host_os_inventory o ON o.certname = p.certname
             ORDER BY p.certname ASC
@@ -412,7 +429,7 @@ impl InventoryRepository {
         .context("Failed to load package inventory for update status")?;
         let application_rows = sqlx::query_as::<_, HostApplicationJoinedRow>(
             r#"
-            SELECT a.certname, o.os_family, o.distribution, o.package_manager, a.name, a.version, a.publisher, a.application_type
+            SELECT a.certname, o.os_family, o.distribution, o.os_version, o.package_manager, a.name, a.version, a.publisher, a.application_type
             FROM host_application_inventory a
             INNER JOIN host_os_inventory o ON o.certname = a.certname
             ORDER BY a.certname ASC
@@ -658,20 +675,21 @@ impl InventoryRepository {
             summary,
             platform_distribution: map_distribution(platform_distribution),
             os_distribution: map_distribution(os_distribution),
-            update_compliance: map_distribution(vec![
-                DashboardDistributionRow {
+            // Always include all compliance categories (even when 0) so the chart legend is complete
+            update_compliance: vec![
+                InventoryDistributionPoint {
                     label: "Compliant".to_string(),
-                    value: compliance_rows.compliant_nodes,
+                    value: compliance_rows.compliant_nodes.max(0) as usize,
                 },
-                DashboardDistributionRow {
+                InventoryDistributionPoint {
                     label: "Outdated".to_string(),
-                    value: compliance_rows.outdated_nodes,
+                    value: compliance_rows.outdated_nodes.max(0) as usize,
                 },
-                DashboardDistributionRow {
+                InventoryDistributionPoint {
                     label: "Stale".to_string(),
-                    value: compliance_rows.stale_nodes,
+                    value: compliance_rows.stale_nodes.max(0) as usize,
                 },
-            ]),
+            ],
             patch_age_buckets: map_buckets(patch_rows),
             top_outdated_software,
         })
@@ -1703,15 +1721,16 @@ impl InventoryRepository {
         sqlx::query(
             r#"
             INSERT INTO repository_version_catalog (
-                id, platform_family, distribution, package_manager, software_type,
+                id, platform_family, distribution, os_version_pattern, package_manager, software_type,
                 software_name, repository_source, latest_version, latest_release, source_kind,
                 observed_nodes, last_seen_at, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
             "#,
         )
         .bind(&entry.id)
         .bind(&entry.platform_family)
         .bind(&entry.distribution)
+        .bind(&entry.os_version_pattern)
         .bind(&entry.package_manager)
         .bind(&entry.software_type)
         .bind(&entry.software_name)
@@ -1737,12 +1756,13 @@ impl InventoryRepository {
         sqlx::query(
             r#"
             INSERT INTO repository_version_catalog (
-                id, platform_family, distribution, package_manager, software_type,
+                id, platform_family, distribution, os_version_pattern, package_manager, software_type,
                 software_name, repository_source, latest_version, latest_release, source_kind,
                 observed_nodes, last_seen_at, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
             ON CONFLICT(platform_family, distribution, package_manager, software_type,
-                        software_name, COALESCE(repository_source, ''), source_kind)
+                        software_name, COALESCE(repository_source, ''), source_kind,
+                        COALESCE(os_version_pattern, ''))
             DO UPDATE SET
                 latest_version = excluded.latest_version,
                 latest_release = excluded.latest_release,
@@ -1754,6 +1774,7 @@ impl InventoryRepository {
         .bind(&entry.id)
         .bind(&entry.platform_family)
         .bind(&entry.distribution)
+        .bind(&entry.os_version_pattern)
         .bind(&entry.package_manager)
         .bind(&entry.software_type)
         .bind(&entry.software_name)
@@ -1770,6 +1791,298 @@ impl InventoryRepository {
         .with_context(|| format!("Failed to upsert catalog entry '{}'", entry.software_name))?;
 
         Ok(())
+    }
+
+    // ── Group Update Schedules ──────────────────────────────────────
+
+    pub async fn list_group_update_schedules(
+        &self,
+        group_id: &str,
+    ) -> Result<Vec<GroupUpdateSchedule>> {
+        let rows = sqlx::query_as::<_, GroupUpdateScheduleRow>(
+            "SELECT * FROM group_update_schedules WHERE group_id = ?1 ORDER BY created_at DESC",
+        )
+        .bind(group_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to list group update schedules")?;
+
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn get_group_update_schedule(
+        &self,
+        id: &str,
+    ) -> Result<Option<GroupUpdateSchedule>> {
+        let row = sqlx::query_as::<_, GroupUpdateScheduleRow>(
+            "SELECT * FROM group_update_schedules WHERE id = ?1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch group update schedule")?;
+
+        Ok(row.map(Into::into))
+    }
+
+    pub async fn create_group_update_schedule(
+        &self,
+        group_id: &str,
+        request: &CreateGroupUpdateScheduleRequest,
+        created_by: &str,
+    ) -> Result<GroupUpdateSchedule> {
+        use crate::services::scheduler::{calculate_next_run, validate_cron_expression};
+
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        // Validate and compute next_run_at
+        let next_run_at = match request.schedule_type.as_str() {
+            "recurring" => {
+                let cron_expr = request
+                    .cron_expression
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("cron_expression is required for recurring schedules"))?;
+                validate_cron_expression(cron_expr)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                calculate_next_run(cron_expr, "UTC")
+            }
+            "one_time" => request.scheduled_for,
+            _ => anyhow::bail!("Invalid schedule_type: must be 'one_time' or 'recurring'"),
+        };
+
+        let package_names_json = serde_json::to_string(&request.package_names)
+            .context("Failed to serialize package names")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO group_update_schedules (
+                id, group_id, name, description, schedule_type, cron_expression, scheduled_for,
+                operation_type, package_names_json, requires_approval,
+                maintenance_window_start, maintenance_window_end,
+                enabled, last_run_at, next_run_at, last_job_id,
+                created_by, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1, NULL, ?13, NULL, ?14, ?15, ?16)
+            "#,
+        )
+        .bind(&id)
+        .bind(group_id)
+        .bind(&request.name)
+        .bind(&request.description)
+        .bind(&request.schedule_type)
+        .bind(&request.cron_expression)
+        .bind(request.scheduled_for.map(|ts| ts.to_rfc3339()))
+        .bind(request.operation_type.as_str())
+        .bind(&package_names_json)
+        .bind(request.requires_approval)
+        .bind(&request.maintenance_window_start)
+        .bind(&request.maintenance_window_end)
+        .bind(next_run_at.map(|ts| ts.to_rfc3339()))
+        .bind(created_by)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .context("Failed to create group update schedule")?;
+
+        self.get_group_update_schedule(&id)
+            .await?
+            .context("Schedule was created but could not be reloaded")
+    }
+
+    pub async fn update_group_update_schedule(
+        &self,
+        id: &str,
+        request: &UpdateGroupUpdateScheduleRequest,
+    ) -> Result<Option<GroupUpdateSchedule>> {
+        use crate::services::scheduler::{calculate_next_run, validate_cron_expression};
+
+        let existing = match self.get_group_update_schedule(id).await? {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        let now = Utc::now();
+        let name = request.name.as_deref().unwrap_or(&existing.name);
+        let description = request.description.as_deref().or(existing.description.as_deref());
+        let operation_type = request.operation_type.unwrap_or(existing.operation_type);
+        let requires_approval = request.requires_approval.unwrap_or(existing.requires_approval);
+        let enabled = request.enabled.unwrap_or(existing.enabled);
+        let mw_start = request
+            .maintenance_window_start
+            .as_deref()
+            .or(existing.maintenance_window_start.as_deref());
+        let mw_end = request
+            .maintenance_window_end
+            .as_deref()
+            .or(existing.maintenance_window_end.as_deref());
+        let package_names = request
+            .package_names
+            .as_ref()
+            .unwrap_or(&existing.package_names);
+        let package_names_json =
+            serde_json::to_string(package_names).context("Failed to serialize package names")?;
+
+        // Recompute next_run_at if schedule changed
+        let cron_expression = request
+            .cron_expression
+            .as_deref()
+            .or(existing.cron_expression.as_deref());
+        let scheduled_for = request.scheduled_for.or(existing.scheduled_for);
+
+        let next_run_at = if enabled {
+            match existing.schedule_type.as_str() {
+                "recurring" => {
+                    if let Some(cron_expr) = cron_expression {
+                        validate_cron_expression(cron_expr)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+                        calculate_next_run(cron_expr, "UTC")
+                    } else {
+                        existing.next_run_at
+                    }
+                }
+                "one_time" => scheduled_for,
+                _ => existing.next_run_at,
+            }
+        } else {
+            None
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE group_update_schedules SET
+                name = ?1, description = ?2, cron_expression = ?3, scheduled_for = ?4,
+                operation_type = ?5, package_names_json = ?6, requires_approval = ?7,
+                maintenance_window_start = ?8, maintenance_window_end = ?9,
+                enabled = ?10, next_run_at = ?11, updated_at = ?12
+            WHERE id = ?13
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(cron_expression)
+        .bind(scheduled_for.map(|ts| ts.to_rfc3339()))
+        .bind(operation_type.as_str())
+        .bind(&package_names_json)
+        .bind(requires_approval)
+        .bind(mw_start)
+        .bind(mw_end)
+        .bind(enabled)
+        .bind(next_run_at.map(|ts| ts.to_rfc3339()))
+        .bind(now.to_rfc3339())
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update group update schedule")?;
+
+        self.get_group_update_schedule(id).await
+    }
+
+    pub async fn delete_group_update_schedule(&self, id: &str) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM group_update_schedules WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .context("Failed to delete group update schedule")?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_due_update_schedules(&self) -> Result<Vec<GroupUpdateSchedule>> {
+        let now = Utc::now().to_rfc3339();
+        let rows = sqlx::query_as::<_, GroupUpdateScheduleRow>(
+            r#"
+            SELECT * FROM group_update_schedules
+            WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?1
+            ORDER BY next_run_at ASC
+            "#,
+        )
+        .bind(&now)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch due update schedules")?;
+
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn update_schedule_after_run(
+        &self,
+        id: &str,
+        last_run_at: DateTime<Utc>,
+        next_run_at: Option<DateTime<Utc>>,
+        last_job_id: &str,
+        disable: bool,
+    ) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            UPDATE group_update_schedules SET
+                last_run_at = ?1, next_run_at = ?2, last_job_id = ?3,
+                enabled = CASE WHEN ?4 THEN 0 ELSE enabled END,
+                updated_at = ?5
+            WHERE id = ?6
+            "#,
+        )
+        .bind(last_run_at.to_rfc3339())
+        .bind(next_run_at.map(|ts| ts.to_rfc3339()))
+        .bind(last_job_id)
+        .bind(disable)
+        .bind(now.to_rfc3339())
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("Failed to update schedule after run")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct GroupUpdateScheduleRow {
+    id: String,
+    group_id: String,
+    name: String,
+    description: Option<String>,
+    schedule_type: String,
+    cron_expression: Option<String>,
+    scheduled_for: Option<String>,
+    operation_type: String,
+    package_names_json: String,
+    requires_approval: bool,
+    maintenance_window_start: Option<String>,
+    maintenance_window_end: Option<String>,
+    enabled: bool,
+    last_run_at: Option<String>,
+    next_run_at: Option<String>,
+    last_job_id: Option<String>,
+    created_by: String,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<GroupUpdateScheduleRow> for GroupUpdateSchedule {
+    fn from(row: GroupUpdateScheduleRow) -> Self {
+        Self {
+            id: row.id,
+            group_id: row.group_id,
+            name: row.name,
+            description: row.description,
+            schedule_type: row.schedule_type,
+            cron_expression: row.cron_expression,
+            scheduled_for: row.scheduled_for.as_deref().map(parse_timestamp_required),
+            operation_type: UpdateOperationType::from_str(&row.operation_type)
+                .unwrap_or(UpdateOperationType::SystemPatch),
+            package_names: serde_json::from_str(&row.package_names_json).unwrap_or_default(),
+            requires_approval: row.requires_approval,
+            maintenance_window_start: row.maintenance_window_start,
+            maintenance_window_end: row.maintenance_window_end,
+            enabled: row.enabled,
+            last_run_at: row.last_run_at.as_deref().map(parse_timestamp_required),
+            next_run_at: row.next_run_at.as_deref().map(parse_timestamp_required),
+            last_job_id: row.last_job_id,
+            created_by: row.created_by,
+            created_at: parse_timestamp_required(&row.created_at),
+            updated_at: parse_timestamp_required(&row.updated_at),
+        }
     }
 }
 
@@ -2071,6 +2384,7 @@ struct RepositoryVersionCatalogRow {
     id: String,
     platform_family: String,
     distribution: String,
+    os_version_pattern: Option<String>,
     package_manager: Option<String>,
     software_type: String,
     software_name: String,
@@ -2090,6 +2404,7 @@ impl From<RepositoryVersionCatalogRow> for RepositoryVersionCatalogEntry {
             id: row.id,
             platform_family: row.platform_family,
             distribution: row.distribution,
+            os_version_pattern: row.os_version_pattern,
             package_manager: row.package_manager,
             software_type: row.software_type,
             software_name: row.software_name,
@@ -2177,6 +2492,7 @@ impl From<FleetRepositoryConfigRow> for FleetRepositoryConfig {
 struct CatalogPackageObservationRow {
     os_family: String,
     distribution: String,
+    os_version_pattern: String,
     package_manager: Option<String>,
     name: String,
     repository_source: Option<String>,
@@ -2190,6 +2506,7 @@ struct CatalogPackageObservationRow {
 struct CatalogApplicationObservationRow {
     os_family: String,
     distribution: String,
+    os_version_pattern: String,
     package_manager: Option<String>,
     name: String,
     publisher: Option<String>,
@@ -2211,6 +2528,7 @@ struct HostPackageJoinedRow {
     certname: String,
     os_family: String,
     distribution: String,
+    os_version: String,
     package_manager: Option<String>,
     name: String,
     version: String,
@@ -2222,6 +2540,7 @@ struct HostPackageJoinedRow {
 struct HostPackageJoined {
     os_family: String,
     distribution: String,
+    os_version_pattern: Option<String>,
     package_manager: Option<String>,
     name: String,
     version: String,
@@ -2234,6 +2553,7 @@ struct HostApplicationJoinedRow {
     certname: String,
     os_family: String,
     distribution: String,
+    os_version: String,
     package_manager: Option<String>,
     name: String,
     version: String,
@@ -2245,6 +2565,7 @@ struct HostApplicationJoinedRow {
 struct HostApplicationJoined {
     os_family: String,
     distribution: String,
+    os_version_pattern: Option<String>,
     package_manager: Option<String>,
     name: String,
     version: String,
@@ -2352,7 +2673,7 @@ fn fold_package_catalog(
 ) -> Vec<RepositoryVersionCatalogEntry> {
     use std::collections::HashMap;
     let mut grouped: HashMap<
-        (String, String, Option<String>, String, Option<String>),
+        (String, String, String, Option<String>, String, Option<String>),
         CatalogPackageObservationRow,
     > = HashMap::new();
 
@@ -2360,6 +2681,7 @@ fn fold_package_catalog(
         let key = (
             row.os_family.clone(),
             row.distribution.clone(),
+            row.os_version_pattern.clone(),
             row.package_manager.clone(),
             row.name.clone(),
             row.repository_source.clone(),
@@ -2390,6 +2712,7 @@ fn fold_package_catalog(
             id: Uuid::new_v4().to_string(),
             platform_family: row.os_family,
             distribution: row.distribution,
+            os_version_pattern: Some(row.os_version_pattern),
             package_manager: row.package_manager,
             software_type: "package".to_string(),
             software_name: row.name,
@@ -2413,6 +2736,7 @@ fn fold_application_catalog(
         (
             String,
             String,
+            String,
             Option<String>,
             String,
             Option<String>,
@@ -2425,6 +2749,7 @@ fn fold_application_catalog(
         let key = (
             row.os_family.clone(),
             row.distribution.clone(),
+            row.os_version_pattern.clone(),
             row.package_manager.clone(),
             row.name.clone(),
             row.publisher.clone(),
@@ -2448,6 +2773,7 @@ fn fold_application_catalog(
             id: Uuid::new_v4().to_string(),
             platform_family: row.os_family,
             distribution: row.distribution,
+            os_version_pattern: Some(row.os_version_pattern),
             package_manager: row.package_manager,
             software_type: "application".to_string(),
             software_name: row.name,
@@ -2463,6 +2789,13 @@ fn fold_application_catalog(
         .collect()
 }
 
+fn extract_major_version(os_version: &str) -> String {
+    match os_version.find('.') {
+        Some(pos) => os_version[..pos].to_string(),
+        None => os_version.to_string(),
+    }
+}
+
 fn group_packages_by_host(
     rows: Vec<HostPackageJoinedRow>,
 ) -> std::collections::HashMap<String, Vec<HostPackageJoined>> {
@@ -2475,6 +2808,7 @@ fn group_packages_by_host(
             .push(HostPackageJoined {
                 os_family: row.os_family,
                 distribution: row.distribution,
+                os_version_pattern: Some(extract_major_version(&row.os_version)),
                 package_manager: row.package_manager,
                 name: row.name,
                 version: row.version,
@@ -2497,6 +2831,7 @@ fn group_applications_by_host(
             .push(HostApplicationJoined {
                 os_family: row.os_family,
                 distribution: row.distribution,
+                os_version_pattern: Some(extract_major_version(&row.os_version)),
                 package_manager: row.package_manager,
                 name: row.name,
                 version: row.version,
@@ -2524,13 +2859,14 @@ fn compare_packages(
     packages
         .iter()
         .filter_map(|pkg| {
-            // First try repo-checked: match by name + os_family + distribution + package_manager
+            // First try repo-checked: match by name + os_family + distribution + os_version_pattern + package_manager
             // (ignore repository_source since repo-checked uses repo_id, not vendor)
             let (catalog, source_kind) = repo_checked
                 .iter()
                 .find(|entry| {
                     entry.platform_family == pkg.os_family
                         && entry.distribution == pkg.distribution
+                        && entry.os_version_pattern == pkg.os_version_pattern
                         && entry.package_manager == pkg.package_manager
                         && entry.software_name == pkg.name
                 })
@@ -2542,6 +2878,7 @@ fn compare_packages(
                         .find(|entry| {
                             entry.platform_family == pkg.os_family
                                 && entry.distribution == pkg.distribution
+                                && entry.os_version_pattern == pkg.os_version_pattern
                                 && entry.package_manager == pkg.package_manager
                                 && entry.software_name == pkg.name
                                 && entry.repository_source == pkg.repository_source
@@ -2581,6 +2918,7 @@ fn compare_applications(
                 entry.software_type == "application"
                     && entry.platform_family == app.os_family
                     && entry.distribution == app.distribution
+                    && entry.os_version_pattern == app.os_version_pattern
                     && entry.package_manager == app.package_manager
                     && entry.software_name == app.name
                     && entry.repository_source == repo_source

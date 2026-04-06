@@ -26,6 +26,7 @@ pub mod rbac_db;
 pub mod reporting;
 pub mod saml;
 pub mod scheduler;
+pub mod update_schedule_scheduler;
 
 pub use alerting::AlertingService;
 pub use auth::AuthService;
@@ -58,3 +59,4 @@ pub use rbac_db::DbRbacService;
 pub use reporting::ReportingService;
 pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};
+pub use update_schedule_scheduler::{start_update_schedule_scheduler, UpdateScheduleSchedulerState};

@@ -158,7 +158,7 @@ module OpenVoxInventory
       'package_manager' => detect_package_manager(os_fact),
       'update_channel' => nil,
       'last_inventory_at' => collected_at,
-      'last_successful_update_at' => nil
+      'last_successful_update_at' => detect_last_successful_update(os_fact)
     }
   end
 
@@ -177,6 +177,107 @@ module OpenVoxInventory
     else
       nil
     end
+  end
+
+  def detect_last_successful_update(os_fact)
+    family = os_fact['family']
+    timestamp = case family
+                when 'RedHat'
+                  detect_last_update_rpm
+                when 'Debian'
+                  detect_last_update_apt
+                when 'Suse'
+                  detect_last_update_zypper
+                else
+                  nil
+                end
+    timestamp&.utc&.iso8601
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to detect last update time: #{e.message}")
+    nil
+  end
+
+  def detect_last_update_rpm
+    # Try dnf first, fall back to yum
+    output = run_command('dnf history list 2>/dev/null') ||
+             run_command('yum history list all 2>/dev/null')
+    return nil if output.nil? || output.empty?
+
+    # dnf history output format (varies by version):
+    #   ID | Command line | Date and time    | Action(s) | Altered
+    #   15 | update -y    | 2025-03-15 10:23 | Update    |   42
+    # Look for the last line with an Update/Upgrade action
+    last_date = nil
+    output.each_line do |line|
+      next unless line =~ /\b(Update|Upgrade|U|I,\s*U)\b/i
+      if line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/
+        begin
+          last_date = Time.parse(Regexp.last_match(1))
+        rescue StandardError
+          nil
+        end
+      end
+    end
+    last_date
+  rescue StandardError
+    nil
+  end
+
+  def detect_last_update_apt
+    # Check /var/log/apt/history.log for the latest End-Date of an upgrade
+    last_date = nil
+
+    if File.exist?('/var/log/apt/history.log')
+      File.readlines('/var/log/apt/history.log').each do |line|
+        if line =~ /^End-Date:\s+(.+)/
+          begin
+            last_date = Time.parse(Regexp.last_match(1).strip)
+          rescue StandardError
+            nil
+          end
+        end
+      end
+    end
+
+    # Fallback: check dpkg.log for last configure/install action
+    if last_date.nil? && File.exist?('/var/log/dpkg.log')
+      File.readlines('/var/log/dpkg.log').reverse_each do |line|
+        if line =~ /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(configure|install)/
+          begin
+            last_date = Time.parse(Regexp.last_match(1))
+            break
+          rescue StandardError
+            nil
+          end
+        end
+      end
+    end
+
+    last_date
+  rescue StandardError
+    nil
+  end
+
+  def detect_last_update_zypper
+    # /var/log/zypp/history format: "timestamp|action|..."
+    return nil unless File.exist?('/var/log/zypp/history')
+
+    last_date = nil
+    File.readlines('/var/log/zypp/history').each do |line|
+      next if line.start_with?('#')
+      parts = line.split('|')
+      next if parts.length < 2
+      action = parts[1].to_s.strip.downcase
+      next unless action =~ /install|update/
+      begin
+        last_date = Time.parse(parts[0].strip)
+      rescue StandardError
+        nil
+      end
+    end
+    last_date
+  rescue StandardError
+    nil
   end
 
   def collect_linux_rpm_packages(_config)

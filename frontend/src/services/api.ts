@@ -128,6 +128,9 @@ import type {
   UpdateJob,
   CreateUpdateJobRequest,
   ApproveUpdateJobRequest,
+  GroupUpdateSchedule,
+  CreateGroupUpdateScheduleRequest,
+  UpdateGroupUpdateScheduleRequest,
   OutdatedSoftwareNodeDetail,
   ComplianceCategoryNode,
   FleetRepositoryConfig,
@@ -380,6 +383,31 @@ export const api = {
 
   removePinnedNode: async (groupId: string, certname: string): Promise<void> => {
     await client.delete(`/groups/${groupId}/pinned/${encodeURIComponent(certname)}`);
+  },
+
+  // Group Update Schedules
+  getGroupUpdateSchedules: async (groupId: string): Promise<GroupUpdateSchedule[]> => {
+    const response = await client.get(`/groups/${groupId}/update-schedules`);
+    return response.data;
+  },
+
+  createGroupUpdateSchedule: async (groupId: string, data: CreateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+    const response = await client.post(`/groups/${groupId}/update-schedules`, data);
+    return response.data;
+  },
+
+  updateGroupUpdateSchedule: async (groupId: string, scheduleId: string, data: UpdateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+    const response = await client.put(`/groups/${groupId}/update-schedules/${scheduleId}`, data);
+    return response.data;
+  },
+
+  deleteGroupUpdateSchedule: async (groupId: string, scheduleId: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/update-schedules/${scheduleId}`);
+  },
+
+  runGroupUpdateSchedule: async (groupId: string, scheduleId: string): Promise<UpdateJob> => {
+    const response = await client.post(`/groups/${groupId}/update-schedules/${scheduleId}/run`);
+    return response.data;
   },
 
   // Facts

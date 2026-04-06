@@ -10,11 +10,12 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    db::repository::GroupRepository,
+    db::{repository::GroupRepository, InventoryRepository},
     middleware::AuthUser,
     models::{
-        Action, AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest, CreateRuleRequest,
-        NodeGroup, Resource, UpdateGroupRequest,
+        Action, AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest,
+        CreateGroupUpdateScheduleRequest, CreateRuleRequest, GroupUpdateSchedule, NodeGroup,
+        Resource, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest, UpdateJob,
     },
     utils::AppError,
     AppState,
@@ -33,6 +34,20 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/rules/{rule_id}", delete(delete_rule))
         .route("/{id}/pinned", post(add_pinned_node))
         .route("/{id}/pinned/{certname}", delete(remove_pinned_node))
+        .route(
+            "/{id}/update-schedules",
+            get(list_update_schedules).post(create_update_schedule),
+        )
+        .route(
+            "/{id}/update-schedules/{schedule_id}",
+            get(get_update_schedule)
+                .put(update_update_schedule)
+                .delete(delete_update_schedule),
+        )
+        .route(
+            "/{id}/update-schedules/{schedule_id}/run",
+            post(run_update_schedule),
+        )
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -472,4 +487,172 @@ async fn remove_pinned_node(
     } else {
         Err(AppError::not_found("Pinned node not found"))
     }
+}
+
+// ── Update Schedule Endpoints ──────────────────────────────────────
+
+async fn list_update_schedules(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<GroupUpdateSchedule>>, AppError> {
+    check_group_permission(&state, &auth_user, Action::Read, None).await?;
+
+    let repo = InventoryRepository::new(state.db.clone());
+    let schedules = repo
+        .list_group_update_schedules(&id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list update schedules: {}", e);
+            AppError::internal("Failed to list update schedules")
+        })?;
+
+    Ok(Json(schedules))
+}
+
+async fn create_update_schedule(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(id): Path<String>,
+    Json(payload): Json<CreateGroupUpdateScheduleRequest>,
+) -> Result<(StatusCode, Json<GroupUpdateSchedule>), AppError> {
+    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
+
+    let repo = InventoryRepository::new(state.db.clone());
+    let schedule = repo
+        .create_group_update_schedule(&id, &payload, &auth_user.username)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to create update schedule: {}", e);
+            AppError::bad_request(&format!("Failed to create update schedule: {}", e))
+        })?;
+
+    Ok((StatusCode::CREATED, Json(schedule)))
+}
+
+async fn get_update_schedule(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((id, schedule_id)): Path<(String, String)>,
+) -> Result<Json<GroupUpdateSchedule>, AppError> {
+    let _uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Read, None).await?;
+
+    let repo = InventoryRepository::new(state.db.clone());
+    let schedule = repo
+        .get_group_update_schedule(&schedule_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch update schedule: {}", e);
+            AppError::internal("Failed to fetch update schedule")
+        })?
+        .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
+
+    Ok(Json(schedule))
+}
+
+async fn update_update_schedule(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((id, schedule_id)): Path<(String, String)>,
+    Json(payload): Json<UpdateGroupUpdateScheduleRequest>,
+) -> Result<Json<GroupUpdateSchedule>, AppError> {
+    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
+
+    let repo = InventoryRepository::new(state.db.clone());
+    let schedule = repo
+        .update_group_update_schedule(&schedule_id, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update schedule: {}", e);
+            AppError::bad_request(&format!("Failed to update schedule: {}", e))
+        })?
+        .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
+
+    Ok(Json(schedule))
+}
+
+async fn delete_update_schedule(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((id, schedule_id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
+
+    let repo = InventoryRepository::new(state.db.clone());
+    let deleted = repo
+        .delete_group_update_schedule(&schedule_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete update schedule: {}", e);
+            AppError::internal("Failed to delete update schedule")
+        })?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::not_found("Update schedule not found"))
+    }
+}
+
+/// Manually trigger a schedule: resolve group members and create an UpdateJob
+async fn run_update_schedule(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path((id, schedule_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<UpdateJob>), AppError> {
+    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
+
+    let inv_repo = InventoryRepository::new(state.db.clone());
+    let schedule = inv_repo
+        .get_group_update_schedule(&schedule_id)
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to fetch schedule: {}", e)))?
+        .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
+
+    // Resolve group members
+    let group_repo = GroupRepository::new(&state.db);
+    let certnames = group_repo
+        .get_group_nodes(uuid)
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to resolve group nodes: {}", e)))?;
+
+    if certnames.is_empty() {
+        return Err(AppError::bad_request(
+            "No nodes found in this group to update",
+        ));
+    }
+
+    let job = inv_repo
+        .create_update_job(
+            schedule.operation_type,
+            &schedule.package_names,
+            Some(&id),
+            &certnames,
+            schedule.requires_approval,
+            None, // immediate execution
+            None,
+            None,
+            &auth_user.username,
+            Some(&format!("Manually triggered from schedule '{}'", schedule.name)),
+        )
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to create update job: {}", e)))?;
+
+    // Update schedule last_run_at
+    let _ = inv_repo
+        .update_schedule_after_run(
+            &schedule_id,
+            chrono::Utc::now(),
+            schedule.next_run_at, // keep existing next_run_at
+            &job.id,
+            false,
+        )
+        .await;
+
+    Ok((StatusCode::CREATED, Json(job)))
 }

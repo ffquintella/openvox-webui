@@ -220,6 +220,7 @@ pub struct RepositoryVersionCatalogEntry {
     pub id: String,
     pub platform_family: String,
     pub distribution: String,
+    pub os_version_pattern: Option<String>,
     pub package_manager: Option<String>,
     pub software_type: String,
     pub software_name: String,
@@ -528,4 +529,59 @@ pub struct SubmitUpdateJobResultRequest {
     pub output: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
+}
+
+// ── Group Update Schedules ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupUpdateSchedule {
+    pub id: String,
+    pub group_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub schedule_type: String,
+    pub cron_expression: Option<String>,
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub operation_type: UpdateOperationType,
+    pub package_names: Vec<String>,
+    pub requires_approval: bool,
+    pub maintenance_window_start: Option<String>,
+    pub maintenance_window_end: Option<String>,
+    pub enabled: bool,
+    pub last_run_at: Option<DateTime<Utc>>,
+    pub next_run_at: Option<DateTime<Utc>>,
+    pub last_job_id: Option<String>,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateGroupUpdateScheduleRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub schedule_type: String,
+    pub cron_expression: Option<String>,
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub operation_type: UpdateOperationType,
+    #[serde(default)]
+    pub package_names: Vec<String>,
+    #[serde(default)]
+    pub requires_approval: bool,
+    pub maintenance_window_start: Option<String>,
+    pub maintenance_window_end: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateGroupUpdateScheduleRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub cron_expression: Option<String>,
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub operation_type: Option<UpdateOperationType>,
+    pub package_names: Option<Vec<String>>,
+    pub requires_approval: Option<bool>,
+    pub maintenance_window_start: Option<String>,
+    pub maintenance_window_end: Option<String>,
+    pub enabled: Option<bool>,
 }

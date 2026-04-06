@@ -203,6 +203,7 @@ export interface RepositoryVersionCatalogEntry {
   id: string;
   platform_family: string;
   distribution: string;
+  os_version_pattern?: string | null;
   package_manager?: string | null;
   software_type: string;
   software_name: string;
@@ -214,6 +215,56 @@ export interface RepositoryVersionCatalogEntry {
   last_seen_at: string;
   created_at: string;
   updated_at: string;
+}
+
+// Group Update Schedules
+
+export interface GroupUpdateSchedule {
+  id: string;
+  group_id: string;
+  name: string;
+  description?: string | null;
+  schedule_type: 'one_time' | 'recurring';
+  cron_expression?: string | null;
+  scheduled_for?: string | null;
+  operation_type: UpdateOperationType;
+  package_names: string[];
+  requires_approval: boolean;
+  maintenance_window_start?: string | null;
+  maintenance_window_end?: string | null;
+  enabled: boolean;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
+  last_job_id?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGroupUpdateScheduleRequest {
+  name: string;
+  description?: string;
+  schedule_type: 'one_time' | 'recurring';
+  cron_expression?: string;
+  scheduled_for?: string;
+  operation_type: UpdateOperationType;
+  package_names?: string[];
+  requires_approval?: boolean;
+  maintenance_window_start?: string;
+  maintenance_window_end?: string;
+}
+
+export interface UpdateGroupUpdateScheduleRequest {
+  name?: string;
+  description?: string;
+  cron_expression?: string;
+  scheduled_for?: string;
+  operation_type?: UpdateOperationType;
+  package_names?: string[];
+  requires_approval?: boolean;
+  maintenance_window_start?: string;
+  maintenance_window_end?: string;
+  enabled?: boolean;
 }
 
 export interface InventoryFleetStatusSummary {
