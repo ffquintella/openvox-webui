@@ -7,16 +7,15 @@ use uuid::Uuid;
 
 use crate::models::{
     ComplianceCategoryNode, CreateGroupUpdateScheduleRequest, FleetRepositoryConfig,
-    GroupUpdateSchedule, HostApplicationInventoryItem, HostContainerInventoryItem,
-    HostOsInventory, HostPackageInventoryItem, HostRepositoryConfig,
-    HostRuntimeInventoryItem, HostUpdateStatus, HostUserInventoryItem,
-    HostWebInventoryItem, InventoryDashboardReport, InventoryDistributionPoint,
-    InventoryFleetStatusSummary, InventoryPayload, InventorySnapshotSummary,
-    InventorySummary, NodeInventory, NodePendingUpdateJob, OutdatedInventoryItem,
-    OutdatedSoftwareNodeDetail, PatchAgeBucket, RepositoryVersionCatalogEntry,
-    SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem, UpdateGroupUpdateScheduleRequest,
-    UpdateJob, UpdateJobResult, UpdateJobStatus, UpdateJobTarget, UpdateOperationType,
-    UpdateTargetStatus,
+    GroupUpdateSchedule, HostApplicationInventoryItem, HostContainerInventoryItem, HostOsInventory,
+    HostPackageInventoryItem, HostRepositoryConfig, HostRuntimeInventoryItem, HostUpdateStatus,
+    HostUserInventoryItem, HostWebInventoryItem, InventoryDashboardReport,
+    InventoryDistributionPoint, InventoryFleetStatusSummary, InventoryPayload,
+    InventorySnapshotSummary, InventorySummary, NodeInventory, NodePendingUpdateJob,
+    OutdatedInventoryItem, OutdatedSoftwareNodeDetail, PatchAgeBucket,
+    RepositoryVersionCatalogEntry, SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem,
+    UpdateGroupUpdateScheduleRequest, UpdateJob, UpdateJobResult, UpdateJobStatus, UpdateJobTarget,
+    UpdateOperationType, UpdateTargetStatus,
 };
 
 pub struct InventoryRepository {
@@ -625,7 +624,24 @@ impl InventoryRepository {
         .await
         .context("Failed to load compliance distribution")?;
         let patch_rows = sqlx::query_as::<_, PatchAgeSourceRow>(
-            "SELECT last_successful_update_at FROM host_os_inventory",
+            r#"
+            SELECT
+                o.last_successful_update_at,
+                o.last_inventory_at,
+                (
+                    SELECT MAX(p.install_time)
+                    FROM host_package_inventory p
+                    WHERE p.certname = o.certname
+                      AND TRIM(COALESCE(p.install_time, '')) <> ''
+                ) AS latest_package_install_at,
+                (
+                    SELECT MAX(a.install_date)
+                    FROM host_application_inventory a
+                    WHERE a.certname = o.certname
+                      AND TRIM(COALESCE(a.install_date, '')) <> ''
+                ) AS latest_application_install_at
+            FROM host_os_inventory o
+            "#,
         )
         .fetch_all(&self.pool)
         .await
@@ -654,13 +670,11 @@ impl InventoryRepository {
 
         let mut top_outdated_software: Vec<TopOutdatedSoftwareItem> = outdated_nodes_per_software
             .into_iter()
-            .map(
-                |((software_type, name), nodes)| TopOutdatedSoftwareItem {
-                    software_type,
-                    name,
-                    affected_nodes: nodes.len(),
-                },
-            )
+            .map(|((software_type, name), nodes)| TopOutdatedSoftwareItem {
+                software_type,
+                name,
+                affected_nodes: nodes.len(),
+            })
             .collect();
         top_outdated_software.sort_by(|left, right| {
             right
@@ -738,8 +752,12 @@ impl InventoryRepository {
     ) -> Result<Vec<ComplianceCategoryNode>> {
         let condition = match category {
             "stale" => "WHERE is_stale = 1",
-            "outdated" => "WHERE is_stale = 0 AND (outdated_packages > 0 OR outdated_applications > 0)",
-            "compliant" => "WHERE is_stale = 0 AND outdated_packages = 0 AND outdated_applications = 0",
+            "outdated" => {
+                "WHERE is_stale = 0 AND (outdated_packages > 0 OR outdated_applications > 0)"
+            }
+            "compliant" => {
+                "WHERE is_stale = 0 AND outdated_packages = 0 AND outdated_applications = 0"
+            }
             _ => return Err(anyhow::anyhow!("Invalid compliance category: {}", category)),
         };
 
@@ -1445,7 +1463,12 @@ impl InventoryRepository {
             .bind(now.to_rfc3339())
             .execute(&mut **tx)
             .await
-            .with_context(|| format!("Failed to insert container inventory item '{}'", container.name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to insert container inventory item '{}'",
+                    container.name
+                )
+            })?;
         }
 
         Ok(())
@@ -1484,10 +1507,7 @@ impl InventoryRepository {
             .bind(&user.home_directory)
             .bind(&user.shell)
             .bind(&user.user_type)
-            .bind(
-                serde_json::to_string(&user.groups)
-                    .context("Failed to serialize user groups")?,
-            )
+            .bind(serde_json::to_string(&user.groups).context("Failed to serialize user groups")?)
             .bind(&user.last_login)
             .bind(user.locked.map(|b| b as i64))
             .bind(&user.gecos)
@@ -1664,10 +1684,7 @@ impl InventoryRepository {
             .execute(&self.pool)
             .await
             .with_context(|| {
-                format!(
-                    "Failed to upsert fleet repository config '{}'",
-                    row.repo_id
-                )
+                format!("Failed to upsert fleet repository config '{}'", row.repo_id)
             })?;
             upserted += 1;
         }
@@ -1810,10 +1827,7 @@ impl InventoryRepository {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn get_group_update_schedule(
-        &self,
-        id: &str,
-    ) -> Result<Option<GroupUpdateSchedule>> {
+    pub async fn get_group_update_schedule(&self, id: &str) -> Result<Option<GroupUpdateSchedule>> {
         let row = sqlx::query_as::<_, GroupUpdateScheduleRow>(
             "SELECT * FROM group_update_schedules WHERE id = ?1",
         )
@@ -1839,12 +1853,10 @@ impl InventoryRepository {
         // Validate and compute next_run_at
         let next_run_at = match request.schedule_type.as_str() {
             "recurring" => {
-                let cron_expr = request
-                    .cron_expression
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("cron_expression is required for recurring schedules"))?;
-                validate_cron_expression(cron_expr)
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let cron_expr = request.cron_expression.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("cron_expression is required for recurring schedules")
+                })?;
+                validate_cron_expression(cron_expr).map_err(|e| anyhow::anyhow!("{}", e))?;
                 calculate_next_run(cron_expr, "UTC")
             }
             "one_time" => request.scheduled_for,
@@ -1904,9 +1916,14 @@ impl InventoryRepository {
 
         let now = Utc::now();
         let name = request.name.as_deref().unwrap_or(&existing.name);
-        let description = request.description.as_deref().or(existing.description.as_deref());
+        let description = request
+            .description
+            .as_deref()
+            .or(existing.description.as_deref());
         let operation_type = request.operation_type.unwrap_or(existing.operation_type);
-        let requires_approval = request.requires_approval.unwrap_or(existing.requires_approval);
+        let requires_approval = request
+            .requires_approval
+            .unwrap_or(existing.requires_approval);
         let enabled = request.enabled.unwrap_or(existing.enabled);
         let mw_start = request
             .maintenance_window_start
@@ -2305,7 +2322,9 @@ impl From<HostContainerInventoryRow> for HostContainerInventoryItem {
             ports: serde_json::from_str(&row.ports_json).unwrap_or_default(),
             mounts: serde_json::from_str(&row.mounts_json).unwrap_or_default(),
             runtime_type: row.runtime_type,
-            metadata: row.metadata_json.and_then(|v| serde_json::from_str(&v).ok()),
+            metadata: row
+                .metadata_json
+                .and_then(|v| serde_json::from_str(&v).ok()),
         }
     }
 }
@@ -2340,7 +2359,9 @@ impl From<HostUserInventoryRow> for HostUserInventoryItem {
             last_login: row.last_login,
             locked: row.locked,
             gecos: row.gecos,
-            metadata: row.metadata_json.and_then(|v| serde_json::from_str(&v).ok()),
+            metadata: row
+                .metadata_json
+                .and_then(|v| serde_json::from_str(&v).ok()),
         }
     }
 }
@@ -2595,6 +2616,9 @@ struct DashboardComplianceRow {
 #[derive(Debug, FromRow)]
 struct PatchAgeSourceRow {
     last_successful_update_at: Option<String>,
+    last_inventory_at: Option<String>,
+    latest_package_install_at: Option<String>,
+    latest_application_install_at: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -2673,7 +2697,14 @@ fn fold_package_catalog(
 ) -> Vec<RepositoryVersionCatalogEntry> {
     use std::collections::HashMap;
     let mut grouped: HashMap<
-        (String, String, String, Option<String>, String, Option<String>),
+        (
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+        ),
         CatalogPackageObservationRow,
     > = HashMap::new();
 
@@ -2959,16 +2990,12 @@ fn map_buckets(rows: Vec<PatchAgeSourceRow>) -> Vec<PatchAgeBucket> {
     let mut unknown = 0usize;
 
     for row in rows {
-        let Some(last_successful_update_at) = row.last_successful_update_at else {
-            unknown += 1;
-            continue;
-        };
-        let Some(timestamp) = parse_timestamp(&last_successful_update_at) else {
+        let Some(timestamp) = resolve_patch_age_timestamp(&row) else {
             unknown += 1;
             continue;
         };
 
-        let age_days = (now - timestamp).num_days();
+        let age_days = (now - timestamp).num_days().max(0);
         if age_days <= 7 {
             zero_to_seven += 1;
         } else if age_days <= 30 {
@@ -2993,6 +3020,19 @@ fn map_buckets(rows: Vec<PatchAgeSourceRow>) -> Vec<PatchAgeBucket> {
         value,
     })
     .collect()
+}
+
+fn resolve_patch_age_timestamp(row: &PatchAgeSourceRow) -> Option<DateTime<Utc>> {
+    [
+        row.last_successful_update_at.as_deref(),
+        row.latest_package_install_at.as_deref(),
+        row.latest_application_install_at.as_deref(),
+        row.last_inventory_at.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(parse_timestamp)
+    .max()
 }
 
 fn roll_up_update_job_status(targets: &[UpdateJobTargetStateRow]) -> UpdateJobStatus {
@@ -3244,6 +3284,57 @@ mod tests {
             .expect("inventory history");
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].collector_version, "phase10-test");
+    }
+
+    #[test]
+    fn patch_age_buckets_fall_back_to_install_and_inventory_timestamps() {
+        let now = Utc::now();
+        let rows = vec![
+            PatchAgeSourceRow {
+                last_successful_update_at: Some((now - chrono::Duration::days(3)).to_rfc3339()),
+                last_inventory_at: None,
+                latest_package_install_at: None,
+                latest_application_install_at: None,
+            },
+            PatchAgeSourceRow {
+                last_successful_update_at: None,
+                last_inventory_at: None,
+                latest_package_install_at: Some((now - chrono::Duration::days(20)).to_rfc3339()),
+                latest_application_install_at: None,
+            },
+            PatchAgeSourceRow {
+                last_successful_update_at: None,
+                last_inventory_at: None,
+                latest_package_install_at: None,
+                latest_application_install_at: Some(
+                    (now - chrono::Duration::days(60)).to_rfc3339(),
+                ),
+            },
+            PatchAgeSourceRow {
+                last_successful_update_at: None,
+                last_inventory_at: Some((now - chrono::Duration::days(120)).to_rfc3339()),
+                latest_package_install_at: None,
+                latest_application_install_at: None,
+            },
+            PatchAgeSourceRow {
+                last_successful_update_at: None,
+                last_inventory_at: None,
+                latest_package_install_at: None,
+                latest_application_install_at: None,
+            },
+        ];
+
+        let buckets = map_buckets(rows);
+        let counts = buckets
+            .into_iter()
+            .map(|bucket| (bucket.label, bucket.value))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(counts.get("0-7d"), Some(&1));
+        assert_eq!(counts.get("8-30d"), Some(&1));
+        assert_eq!(counts.get("31-90d"), Some(&1));
+        assert_eq!(counts.get("91d+"), Some(&1));
+        assert_eq!(counts.get("Unknown"), Some(&1));
     }
 
     #[tokio::test]

@@ -105,6 +105,12 @@ export default function Dashboard() {
   // Drill-down state for inventory compliance
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
   const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
+  const weeklyTrendSince = useMemo(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - 6);
+    return date.toISOString();
+  }, []);
 
   const { data: nodes = [], isLoading: nodesLoading, refetch: refetchNodes } = useQuery({
     queryKey: ['nodes'],
@@ -112,8 +118,14 @@ export default function Dashboard() {
   });
 
   const { data: reports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery({
-    queryKey: ['reports', { limit: 20 }],
-    queryFn: () => api.getReports({ limit: 20 }),
+    queryKey: ['reports', 'weekly-trend', { since: weeklyTrendSince, limit: 5000 }],
+    queryFn: () =>
+      api.getReports({
+        since: weeklyTrendSince,
+        limit: 5000,
+        order_by: 'end_time',
+        order_dir: 'desc',
+      }),
   });
 
   const {
@@ -213,8 +225,9 @@ export default function Dashboard() {
       const dayName = days[date.getDay()];
 
       const dayReports = reports.filter((r) => {
-        if (!r.start_time) return false;
-        const reportDate = new Date(r.start_time);
+        const reportTimestamp = r.end_time ?? r.start_time;
+        if (!reportTimestamp) return false;
+        const reportDate = new Date(reportTimestamp);
         return reportDate.toDateString() === date.toDateString();
       });
 

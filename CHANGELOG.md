@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default notification channels** via new migration - system removes pre-configured system-email and system-webhook channels that were non-functional
 
 ### Fixed
+- Dashboard weekly activity trend now uses the full last 7 days of reports, and patch age analytics fall back to observed install timestamps when explicit update history is missing
 - Puppet inventory collector Ruby compatibility by replacing `filter_map` usage and adding collector normalization tests
 - Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)
 - **Alert rule channel associations not being saved** - add_channel now properly generates ID for alert_rule_channels table inserts

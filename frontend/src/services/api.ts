@@ -424,7 +424,15 @@ export const api = {
   },
 
   // Reports
-  getReports: async (params?: { certname?: string; status?: string; limit?: number }): Promise<Report[]> => {
+  getReports: async (params?: {
+    certname?: string;
+    status?: string;
+    limit?: number;
+    since?: string;
+    until?: string;
+    order_by?: string;
+    order_dir?: string;
+  }): Promise<Report[]> => {
     const response = await client.get('/reports', { params });
     return response.data;
   },
