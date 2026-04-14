@@ -993,7 +993,7 @@ impl InventoryRepository {
             INNER JOIN update_jobs j ON j.id = t.job_id
             WHERE t.certname = ?1
               AND t.status = 'queued'
-              AND j.status = 'approved'
+              AND j.status IN ('approved', 'in_progress')
               AND (j.scheduled_for IS NULL OR datetime(j.scheduled_for) <= datetime(?2))
             ORDER BY datetime(j.created_at) ASC
             "#,
@@ -3411,5 +3411,72 @@ mod tests {
         assert_eq!(completed.targets[0].status, UpdateTargetStatus::Succeeded);
         assert_eq!(completed.results.len(), 1);
         assert_eq!(completed.results[0].status, UpdateTargetStatus::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn in_progress_jobs_still_dispatch_queued_targets_for_other_nodes() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+
+        let repo = InventoryRepository::new(pool);
+        let certnames = vec![
+            "node1.example.com".to_string(),
+            "node2.example.com".to_string(),
+        ];
+
+        let job = repo
+            .create_update_job(
+                UpdateOperationType::SystemPatch,
+                &[],
+                None,
+                &certnames,
+                false,
+                None,
+                None,
+                None,
+                "admin",
+                None,
+            )
+            .await
+            .expect("create update job");
+
+        assert_eq!(job.status, UpdateJobStatus::Approved);
+        assert_eq!(job.targets.len(), 2);
+
+        let node1_claims = repo
+            .claim_pending_updates_for_node("node1.example.com")
+            .await
+            .expect("node1 claim");
+        assert_eq!(node1_claims.len(), 1);
+
+        let after_first_claim = repo
+            .get_update_job(&job.id)
+            .await
+            .expect("reload job")
+            .expect("job exists");
+        assert_eq!(after_first_claim.status, UpdateJobStatus::InProgress);
+        assert!(after_first_claim
+            .targets
+            .iter()
+            .any(|target| target.certname == "node2.example.com"
+                && target.status == UpdateTargetStatus::Queued));
+
+        let node2_claims = repo
+            .claim_pending_updates_for_node("node2.example.com")
+            .await
+            .expect("node2 claim");
+        assert_eq!(node2_claims.len(), 1);
+        assert_eq!(
+            node2_claims[0].operation_type,
+            UpdateOperationType::SystemPatch
+        );
     }
 }

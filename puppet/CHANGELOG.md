@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add background update schedule scheduler that auto-creates UpdateJobs when schedules are due
 
 ### Fixed
+- Fix Oracle Linux / RedHat inventory collector missing `Last Successful Update` when `dnf history` reports abbreviated transaction actions like `E, I, U`
 - Detect last successful system update time from dnf/yum history, apt logs, and zypper history instead of always reporting "Never recorded"
 - Fix false-positive outdated package detection when fleet has nodes on different OS major versions (e.g., el8 vs el9) by adding `os_version_pattern` dimension to the version catalog
 - Fix Update Compliance donut chart legend showing "value" instead of proper category labels (Compliant/Outdated/Stale); always include all 3 compliance categories even when count is zero

@@ -5,8 +5,8 @@ use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
 use crate::models::{
-    ClassificationResult, ClassificationRule, GroupMatch, MatchType, NodeGroup, RuleEvaluation,
-    RuleMatchType, RuleOperator,
+    ClassificationResult, ClassificationRule, Fact, GroupMatch, MatchType, NodeGroup,
+    RuleEvaluation, RuleMatchType, RuleOperator,
 };
 
 /// Classification service for matching nodes to groups
@@ -498,6 +498,41 @@ impl ClassificationService {
     }
 }
 
+/// Build a classification fact payload from PuppetDB facts.
+///
+/// PuppetDB returns structured facts as dotted paths such as `os.family`.
+/// Classification walks fact values segment-by-segment, so those paths need to
+/// be reconstructed into nested JSON before evaluation.
+pub fn build_classification_facts(
+    facts: Vec<Fact>,
+    certname: &str,
+    catalog_environment: Option<&str>,
+) -> serde_json::Value {
+    let mut root = serde_json::Map::new();
+
+    for fact in facts {
+        insert_fact_value(&mut root, &fact.name, fact.value);
+    }
+
+    root.insert(
+        "clientcert".to_string(),
+        serde_json::Value::String(certname.to_string()),
+    );
+    root.insert(
+        "certname".to_string(),
+        serde_json::Value::String(certname.to_string()),
+    );
+
+    if let Some(environment) = catalog_environment {
+        root.insert(
+            "catalog_environment".to_string(),
+            serde_json::Value::String(environment.to_string()),
+        );
+    }
+
+    serde_json::Value::Object(root)
+}
+
 /// Get a fact value by path (e.g., "os.family" -> facts["os"]["family"])
 fn get_fact_value(facts: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
     let parts: Vec<&str> = path.split('.').collect();
@@ -511,6 +546,32 @@ fn get_fact_value(facts: &serde_json::Value, path: &str) -> Option<serde_json::V
     }
 
     Some(current.clone())
+}
+
+fn insert_fact_value(
+    current: &mut serde_json::Map<String, serde_json::Value>,
+    path: &str,
+    value: serde_json::Value,
+) {
+    let mut parts = path.split('.').peekable();
+    let mut node = current;
+
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            node.insert(part.to_string(), value);
+            return;
+        }
+
+        let entry = node
+            .entry(part.to_string())
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+        if !entry.is_object() {
+            *entry = serde_json::Value::Object(serde_json::Map::new());
+        }
+
+        node = entry.as_object_mut().expect("object inserted above");
+    }
 }
 
 /// Match a fact value against a rule value
@@ -662,6 +723,43 @@ mod tests {
 
         let value = get_fact_value(&facts, "missing");
         assert_eq!(value, None);
+    }
+
+    #[test]
+    fn test_build_classification_facts_rebuilds_nested_paths() {
+        let facts = vec![
+            Fact {
+                certname: "node1.example.com".to_string(),
+                name: "os.family".to_string(),
+                value: serde_json::json!("RedHat"),
+                environment: Some("develop".to_string()),
+            },
+            Fact {
+                certname: "node1.example.com".to_string(),
+                name: "os.release.major".to_string(),
+                value: serde_json::json!("9"),
+                environment: Some("develop".to_string()),
+            },
+        ];
+
+        let facts_json = build_classification_facts(facts, "node1.example.com", Some("develop"));
+
+        assert_eq!(
+            get_fact_value(&facts_json, "os.family"),
+            Some(serde_json::json!("RedHat"))
+        );
+        assert_eq!(
+            get_fact_value(&facts_json, "os.release.major"),
+            Some(serde_json::json!("9"))
+        );
+        assert_eq!(
+            get_fact_value(&facts_json, "catalog_environment"),
+            Some(serde_json::json!("develop"))
+        );
+        assert_eq!(
+            get_fact_value(&facts_json, "clientcert"),
+            Some(serde_json::json!("node1.example.com"))
+        );
     }
 
     #[test]

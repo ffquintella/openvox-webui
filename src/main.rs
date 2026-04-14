@@ -269,8 +269,7 @@ async fn main() -> Result<()> {
 
     // Start Update Schedule scheduler (always enabled)
     info!("Starting Update Schedule scheduler");
-    let _update_schedule_scheduler =
-        services::start_update_schedule_scheduler(db.clone());
+    let _update_schedule_scheduler = services::start_update_schedule_scheduler(db.clone());
 
     // Create application state
     let state = AppState {

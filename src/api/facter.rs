@@ -13,11 +13,11 @@ use crate::{
     db::repository::{FactTemplateRepository, GroupRepository},
     middleware::AuthUser,
     models::{
-        CreateFactTemplateRequest, ExportFormat, Fact, FactTemplate, GenerateFactsRequest,
+        CreateFactTemplateRequest, ExportFormat, FactTemplate, GenerateFactsRequest,
         UpdateFactTemplateRequest,
     },
     services::{
-        classification::ClassificationService,
+        classification::{build_classification_facts, ClassificationService},
         facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
     },
     utils::{
@@ -26,15 +26,6 @@ use crate::{
     },
     AppState,
 };
-
-/// Convert a Vec<Fact> to a JSON object for use with FacterService
-fn facts_to_json(facts: Vec<Fact>) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    for fact in facts {
-        obj.insert(fact.name, fact.value);
-    }
-    serde_json::Value::Object(obj)
-}
 
 /// Create routes for facter endpoints
 pub fn routes() -> Router<AppState> {
@@ -264,7 +255,7 @@ async fn generate_facts(
                         tracing::warn!("Failed to get facts from PuppetDB: {}", e);
                         AppError::internal("Failed to get facts from PuppetDB")
                     })?;
-                facts_to_json(facts)
+                build_classification_facts(facts, &payload.certname, None)
             } else {
                 serde_json::json!({})
             }
@@ -333,7 +324,7 @@ async fn export_facts(
     // Get existing facts from PuppetDB if available
     let existing_facts = if let Some(ref puppetdb) = state.puppetdb {
         match puppetdb.get_node_facts(&certname).await {
-            Ok(facts) => facts_to_json(facts),
+            Ok(facts) => build_classification_facts(facts, &certname, None),
             Err(e) => {
                 tracing::warn!("Failed to get facts from PuppetDB: {}", e);
                 serde_json::json!({})

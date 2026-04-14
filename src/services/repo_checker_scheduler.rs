@@ -58,10 +58,7 @@ pub fn start_repo_checker_scheduler(
 async fn repo_check_task(state: RepoCheckerSchedulerState) {
     let interval_secs = state.config.repo_check_interval_secs.max(300); // minimum 5 minutes
     let mut timer = interval(Duration::from_secs(interval_secs));
-    info!(
-        "Repo check task started (interval: {}s)",
-        interval_secs
-    );
+    info!("Repo check task started (interval: {}s)", interval_secs);
 
     loop {
         timer.tick().await;
@@ -82,7 +79,9 @@ async fn repo_check_task(state: RepoCheckerSchedulerState) {
             Ok(summary) => {
                 info!(
                     "Repo check complete: {}/{} repos succeeded, {} catalog entries upserted",
-                    summary.repos_succeeded, summary.repos_checked, summary.catalog_entries_upserted
+                    summary.repos_succeeded,
+                    summary.repos_checked,
+                    summary.catalog_entries_upserted
                 );
             }
             Err(err) => {

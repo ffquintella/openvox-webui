@@ -15,9 +15,8 @@ use crate::{
     models::{
         ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
         FleetRepositoryConfig, InventoryDashboardReport, InventoryFleetStatusSummary,
-        OutdatedSoftwareNodeDetail, RepositoryVersionCatalogEntry, UpdateJob,
-        UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
-        UpdatePreviewTarget,
+        OutdatedSoftwareNodeDetail, RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType,
+        UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -40,10 +39,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/summary", get(get_inventory_summary))
         .route("/catalog", get(list_version_catalog))
-        .route(
-            "/repositories",
-            get(list_fleet_repositories),
-        )
+        .route("/repositories", get(list_fleet_repositories))
         .route("/repositories/check", post(trigger_repo_check))
 }
 

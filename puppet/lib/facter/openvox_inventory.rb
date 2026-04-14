@@ -203,24 +203,43 @@ module OpenVoxInventory
              run_command('yum history list all 2>/dev/null')
     return nil if output.nil? || output.empty?
 
-    # dnf history output format (varies by version):
-    #   ID | Command line | Date and time    | Action(s) | Altered
-    #   15 | update -y    | 2025-03-15 10:23 | Update    |   42
-    # Look for the last line with an Update/Upgrade action
-    last_date = nil
+    timestamps = []
     output.each_line do |line|
-      next unless line =~ /\b(Update|Upgrade|U|I,\s*U)\b/i
-      if line =~ /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/
-        begin
-          last_date = Time.parse(Regexp.last_match(1))
-        rescue StandardError
-          nil
-        end
-      end
+      timestamp = parse_rpm_history_timestamp(line)
+      timestamps << timestamp if timestamp
     end
-    last_date
+    timestamps.max
   rescue StandardError
     nil
+  end
+
+  def parse_rpm_history_timestamp(line)
+    parts = line.split('|').map(&:strip)
+    return nil if parts.length < 4
+
+    command = parts[1]
+    timestamp = parts[2]
+    actions = parts[3]
+
+    return nil unless rpm_history_update_transaction?(command, actions)
+
+    Time.parse(timestamp)
+  rescue StandardError
+    nil
+  end
+
+  def rpm_history_update_transaction?(command, actions)
+    combined = [command, actions].compact.join(' ')
+
+    return true if combined.match?(/\b(update|upgrade|distrosync|distro-sync|security)\b/i)
+
+    action_codes = actions.to_s.upcase.scan(/[A-Z]+/)
+    update_codes = %w[U UPGRADE UPDATE]
+    install_codes = %w[I INSTALL]
+    erase_codes = %w[E ERASE REMOVE]
+
+    (action_codes & update_codes).any? ||
+      ((action_codes & install_codes).any? && (action_codes & erase_codes).any?)
   end
 
   def detect_last_update_apt

@@ -22,7 +22,7 @@ use crate::{
         Resource as RbacResource, SubmitUpdateJobResultRequest, UpdateJob,
     },
     services::{
-        classification::ClassificationService,
+        classification::{build_classification_facts, ClassificationService},
         puppetdb::{QueryBuilder, QueryParams, Resource},
     },
     utils::error::{AppError, AppResult},
@@ -475,22 +475,15 @@ async fn get_node_classification(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
 
-    // Convert facts to JSON object for classification
-    let mut facts_obj = serde_json::Map::new();
-    for fact in facts {
-        facts_obj.insert(fact.name, fact.value);
-    }
-    // Add certname as pseudo-facts so rules can match against it
-    // Add both clientcert and certname for compatibility
-    facts_obj.insert(
-        "clientcert".to_string(),
-        serde_json::Value::String(certname.clone()),
+    let node = puppetdb
+        .get_node(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
+    let facts_json = build_classification_facts(
+        facts,
+        &certname,
+        node.and_then(|n| n.catalog_environment).as_deref(),
     );
-    facts_obj.insert(
-        "certname".to_string(),
-        serde_json::Value::String(certname.clone()),
-    );
-    let facts_json = serde_json::Value::Object(facts_obj);
 
     // Get organization ID from authenticated user, or allow override for super_admin
     let org_id = query.organization_id.unwrap_or(auth_user.organization_id);
@@ -603,22 +596,15 @@ async fn get_node_classification_public(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
 
-    // Convert facts to JSON object for classification
-    let mut facts_obj = serde_json::Map::new();
-    for fact in facts {
-        facts_obj.insert(fact.name, fact.value);
-    }
-    // Add certname as pseudo-facts so rules can match against it
-    // Add both clientcert and certname for compatibility
-    facts_obj.insert(
-        "clientcert".to_string(),
-        serde_json::Value::String(certname.clone()),
+    let node = puppetdb
+        .get_node(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
+    let facts_json = build_classification_facts(
+        facts,
+        &certname,
+        node.and_then(|n| n.catalog_environment).as_deref(),
     );
-    facts_obj.insert(
-        "certname".to_string(),
-        serde_json::Value::String(certname.clone()),
-    );
-    let facts_json = serde_json::Value::Object(facts_obj);
 
     // Get ALL groups from ALL organizations for cross-org classification
     let group_repo = GroupRepository::new(&state.db);
@@ -759,21 +745,15 @@ async fn get_node_environment_public(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node facts: {}", e)))?;
 
-    // Convert facts to JSON object for classification
-    let mut facts_obj = serde_json::Map::new();
-    for fact in facts {
-        facts_obj.insert(fact.name, fact.value);
-    }
-    // Add certname as pseudo-facts so rules can match against it
-    facts_obj.insert(
-        "clientcert".to_string(),
-        serde_json::Value::String(certname.clone()),
+    let node = puppetdb
+        .get_node(&certname)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
+    let facts_json = build_classification_facts(
+        facts,
+        &certname,
+        node.and_then(|n| n.catalog_environment).as_deref(),
     );
-    facts_obj.insert(
-        "certname".to_string(),
-        serde_json::Value::String(certname.clone()),
-    );
-    let facts_json = serde_json::Value::Object(facts_obj);
 
     // Get ALL groups from ALL organizations for cross-org classification
     let group_repo = GroupRepository::new(&state.db);

@@ -88,10 +88,7 @@ impl RepoCheckerService {
             match result {
                 Ok(packages) => {
                     let count = packages.len();
-                    if let Err(e) = self
-                        .upsert_repo_checked_catalog(&config, &packages)
-                        .await
-                    {
+                    if let Err(e) = self.upsert_repo_checked_catalog(&config, &packages).await {
                         error!(
                             "Failed to upsert catalog for repo '{}': {}",
                             config.repo_id, e
@@ -121,11 +118,7 @@ impl RepoCheckerService {
                 Err(e) => {
                     warn!("Failed to check repo '{}': {}", config.repo_id, e);
                     self.repo
-                        .update_fleet_repo_check_status(
-                            &config.id,
-                            "error",
-                            Some(&e.to_string()),
-                        )
+                        .update_fleet_repo_check_status(&config.id, "error", Some(&e.to_string()))
                         .await
                         .ok();
                     summary.repos_failed += 1;
@@ -221,10 +214,7 @@ async fn check_yum_repo(
         .context("Failed to fetch repomd.xml")?;
 
     if !repomd_response.status().is_success() {
-        anyhow::bail!(
-            "repomd.xml returned status {}",
-            repomd_response.status()
-        );
+        anyhow::bail!("repomd.xml returned status {}", repomd_response.status());
     }
 
     let repomd_text = repomd_response
@@ -246,10 +236,7 @@ async fn check_yum_repo(
         .context("Failed to fetch primary.xml")?;
 
     if !primary_response.status().is_success() {
-        anyhow::bail!(
-            "primary.xml returned status {}",
-            primary_response.status()
-        );
+        anyhow::bail!("primary.xml returned status {}", primary_response.status());
     }
 
     let primary_bytes = primary_response
@@ -538,10 +525,7 @@ async fn check_apt_repo(
         .split_whitespace()
         .collect();
 
-    let arch = config
-        .architectures
-        .as_deref()
-        .unwrap_or("amd64");
+    let arch = config.architectures.as_deref().unwrap_or("amd64");
 
     let mut all_packages = Vec::new();
 

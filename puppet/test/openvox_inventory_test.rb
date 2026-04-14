@@ -32,6 +32,16 @@ end
 require_relative '../lib/facter/openvox_inventory'
 
 class OpenVoxInventoryTest < Minitest::Test
+  def with_stubbed_run_command(result)
+    original = OpenVoxInventory.method(:run_command)
+    OpenVoxInventory.define_singleton_method(:run_command) do |_command|
+      result
+    end
+    yield
+  ensure
+    OpenVoxInventory.define_singleton_method(:run_command, original)
+  end
+
   def test_normalize_packages_filters_invalid_and_deduplicates
     items = [
       { 'name' => 'httpd', 'version' => '2.4.62', 'release' => '1.el9', 'architecture' => 'x86_64' },
@@ -77,5 +87,32 @@ class OpenVoxInventoryTest < Minitest::Test
     assert_equal 3, trimmed.length
     assert_equal 'pkg1', trimmed.first['name']
     assert_equal 'pkg3', trimmed.last['name']
+  end
+
+  def test_detect_last_update_rpm_parses_abbreviated_dnf_actions
+    history = <<~HISTORY
+      ID     | Command line             | Date and time    | Action(s)      | Altered
+      --------------------------------------------------------------------------------
+      51     | upgrade -y               | 2026-04-14 09:23 | E, I, U        |       42
+      50     | install vim              | 2026-04-13 08:10 | Install        |        1
+    HISTORY
+
+    with_stubbed_run_command(history) do
+      timestamp = OpenVoxInventory.detect_last_update_rpm
+      assert_equal Time.parse('2026-04-14 09:23').utc, timestamp.utc
+    end
+  end
+
+  def test_detect_last_successful_update_returns_iso8601_for_redhat_nodes
+    history = <<~HISTORY
+      ID     | Command line             | Date and time    | Action(s)      | Altered
+      --------------------------------------------------------------------------------
+      77     | dnf -y update            | 2026-04-12 17:45 | Upgrade        |       12
+    HISTORY
+
+    with_stubbed_run_command(history) do
+      timestamp = OpenVoxInventory.detect_last_successful_update('family' => 'RedHat')
+      assert_equal Time.parse('2026-04-12 17:45').utc.iso8601, timestamp
+    end
   end
 end

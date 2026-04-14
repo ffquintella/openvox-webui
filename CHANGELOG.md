@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default notification channels** via new migration - system removes pre-configured system-email and system-webhook channels that were non-functional
 
 ### Fixed
+- Group matched-node lookups now rebuild PuppetDB dotted fact paths into nested JSON and include `catalog_environment`, so hierarchical classification rules return the expected nodes
+- Update jobs no longer strand remaining queued targets after the first node claims a multi-node job; queued targets now continue dispatching while the job is `in_progress`
 - Dashboard weekly activity trend now uses the full last 7 days of reports, and patch age analytics fall back to observed install timestamps when explicit update history is missing
 - Puppet inventory collector Ruby compatibility by replacing `filter_map` usage and adding collector normalization tests
 - Fixed Rust compilation errors in evaluate_condition function - properly handle optional AlertCondition fields (field and value)

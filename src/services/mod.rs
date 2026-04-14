@@ -15,14 +15,14 @@ pub mod facter;
 pub mod git;
 pub mod inventory_scheduler;
 pub mod node_removal_scheduler;
-pub mod repo_checker;
-pub mod repo_checker_scheduler;
 pub mod notification;
 pub mod puppet_ca;
 pub mod puppetdb;
 pub mod r10k;
 pub mod rbac;
 pub mod rbac_db;
+pub mod repo_checker;
+pub mod repo_checker_scheduler;
 pub mod reporting;
 pub mod saml;
 pub mod scheduler;
@@ -44,8 +44,6 @@ pub use facter::{ExportFormat, FacterService, GeneratedFacts};
 pub use git::{BranchInfo, CommitInfo, GitService, GitServiceConfig};
 pub use inventory_scheduler::{start_inventory_scheduler, InventorySchedulerState};
 pub use node_removal_scheduler::{start_node_removal_scheduler, NodeRemovalSchedulerState};
-pub use repo_checker::RepoCheckerService;
-pub use repo_checker_scheduler::{start_repo_checker_scheduler, RepoCheckerSchedulerState};
 pub use notification::{NotificationEvent, NotificationService};
 pub use puppet_ca::PuppetCAService;
 pub use puppetdb::{
@@ -56,7 +54,11 @@ pub use puppetdb::{
 pub use r10k::{R10kConfig, R10kService, R10kSource};
 pub use rbac::RbacService;
 pub use rbac_db::DbRbacService;
+pub use repo_checker::RepoCheckerService;
+pub use repo_checker_scheduler::{start_repo_checker_scheduler, RepoCheckerSchedulerState};
 pub use reporting::ReportingService;
 pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};
-pub use update_schedule_scheduler::{start_update_schedule_scheduler, UpdateScheduleSchedulerState};
+pub use update_schedule_scheduler::{
+    start_update_schedule_scheduler, UpdateScheduleSchedulerState,
+};

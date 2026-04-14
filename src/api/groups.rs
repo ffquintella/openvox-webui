@@ -17,6 +17,7 @@ use crate::{
         CreateGroupUpdateScheduleRequest, CreateRuleRequest, GroupUpdateSchedule, NodeGroup,
         Resource, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest, UpdateJob,
     },
+    services::classification::{build_classification_facts, ClassificationService},
     utils::AppError,
     AppState,
 };
@@ -248,8 +249,7 @@ async fn get_group_nodes(
         })?;
 
         // Create classification service
-        let classification_service =
-            crate::services::classification::ClassificationService::new(all_groups);
+        let classification_service = ClassificationService::new(all_groups);
 
         // Get all nodes from PuppetDB
         let nodes = puppetdb.get_nodes().await.map_err(|e| {
@@ -266,19 +266,11 @@ async fn get_group_nodes(
 
             // Get facts for the node
             let facts = match puppetdb.get_node_facts(&node.certname).await {
-                Ok(facts) => {
-                    // Convert facts Vec to JSON object
-                    let mut facts_obj = serde_json::Map::new();
-                    for fact in facts {
-                        facts_obj.insert(fact.name, fact.value);
-                    }
-                    // Add certname as a pseudo-fact so rules can match against it
-                    facts_obj.insert(
-                        "clientcert".to_string(),
-                        serde_json::Value::String(node.certname.clone()),
-                    );
-                    serde_json::Value::Object(facts_obj)
-                }
+                Ok(facts) => build_classification_facts(
+                    facts,
+                    &node.certname,
+                    node.catalog_environment.as_deref(),
+                ),
                 Err(e) => {
                     tracing::warn!("Failed to get facts for {}: {}", node.certname, e);
                     continue;
@@ -499,13 +491,10 @@ async fn list_update_schedules(
     check_group_permission(&state, &auth_user, Action::Read, None).await?;
 
     let repo = InventoryRepository::new(state.db.clone());
-    let schedules = repo
-        .list_group_update_schedules(&id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list update schedules: {}", e);
-            AppError::internal("Failed to list update schedules")
-        })?;
+    let schedules = repo.list_group_update_schedules(&id).await.map_err(|e| {
+        tracing::error!("Failed to list update schedules: {}", e);
+        AppError::internal("Failed to list update schedules")
+    })?;
 
     Ok(Json(schedules))
 }
@@ -638,7 +627,10 @@ async fn run_update_schedule(
             None,
             None,
             &auth_user.username,
-            Some(&format!("Manually triggered from schedule '{}'", schedule.name)),
+            Some(&format!(
+                "Manually triggered from schedule '{}'",
+                schedule.name
+            )),
         )
         .await
         .map_err(|e| AppError::internal(&format!("Failed to create update job: {}", e)))?;
