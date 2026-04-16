@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { X, AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 import { Notification, NotificationType } from '../types/notification';
 
@@ -16,6 +16,13 @@ export default function NotificationToast({
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
 
+  const handleClose = useCallback(() => {
+    setIsExiting(true);
+    setTimeout(() => {
+      onClose();
+    }, 300);
+  }, [onClose]);
+
   useEffect(() => {
     // Trigger enter animation
     const timer = setTimeout(() => setIsVisible(true), 10);
@@ -29,14 +36,7 @@ export default function NotificationToast({
       clearTimeout(timer);
       clearTimeout(hideTimer);
     };
-  }, [autoHideDuration]);
-
-  const handleClose = () => {
-    setIsExiting(true);
-    setTimeout(() => {
-      onClose();
-    }, 300);
-  };
+  }, [autoHideDuration, handleClose]);
 
   const getToastConfig = (type: NotificationType) => {
     switch (type) {

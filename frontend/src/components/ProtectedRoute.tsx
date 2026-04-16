@@ -16,7 +16,17 @@ interface ProtectedRouteProps {
 export default function ProtectedRoute({ children, requiredPermission }: ProtectedRouteProps) {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const hasPermission = usePermissionsStore((state) => state.hasPermission);
+
+  // Wait for auth store hydration to avoid false redirects on browser refresh.
+  if (!hasHydrated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500" />
+      </div>
+    );
+  }
 
   // Check authentication
   if (!isAuthenticated) {

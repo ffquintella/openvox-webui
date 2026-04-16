@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add optional node group selection to drift detection baselines in create and edit modals
 
 ### Fixed
+- Fix login session persistence after browser refresh by waiting for auth store hydration before protected-route redirects
+- Fix access token expiration handling by adding automatic refresh-token retry for authenticated API requests
+- Fix intermittent WebUI freezes by hardening browser storage access, showing hydration loader state, and adding API request timeout defaults
+- Fix SQLite contention spikes during inventory ingestion by serializing version-catalog refreshes and debouncing post-ingest refresh triggers
+- Fix frontend lint and hook-order issues across Node Detail, Alerting, Login, Notifications, and auth/session store modules
 - Fix report metrics over time chart by fetching a 30-day report data window (`since`) with a higher 10000-report limit and using linear interpolation to avoid misleading smoothing
 - Fix hung/stale update jobs: dispatched targets that receive no agent response within 2 hours are automatically marked as failed and the parent job status is rolled up accordingly
 - Fix compliance baseline modal action buttons to use the shared design-system button styles

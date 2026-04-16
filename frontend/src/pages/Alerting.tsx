@@ -33,6 +33,7 @@ import type {
   UpdateAlertRuleRequest,
   CreateSilenceRequest,
   AlertCondition,
+  AlertConditionType,
 } from '../types';
 
 type TabId = 'alerts' | 'rules' | 'channels' | 'silences';
@@ -101,6 +102,23 @@ function formatRelativeTime(dateString: string): string {
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${days}d ago`;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const maybeError = error as {
+      message?: string;
+      response?: { data?: { error?: string; message?: string } };
+    };
+    return (
+      maybeError.response?.data?.error
+      || maybeError.response?.data?.message
+      || maybeError.message
+      || 'Unknown error'
+    );
+  }
+
+  return typeof error === 'string' ? error : 'Unknown error';
 }
 
 export default function Alerting() {
@@ -771,9 +789,9 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error('Failed to create channel:', error);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      const errorMsg = getErrorMessage(error);
       alert(`Failed to create channel: ${errorMsg}`);
     },
   });
@@ -964,10 +982,9 @@ function RuleModal({
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error('Failed to create alert rule:', error);
-      console.error('Error response:', error.response?.data);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      const errorMsg = getErrorMessage(error);
       alert(`Failed to create alert rule: ${errorMsg}`);
     },
   });
@@ -978,10 +995,9 @@ function RuleModal({
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       onClose();
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error('Failed to update alert rule:', error);
-      console.error('Error response:', error.response?.data);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || 'Unknown error';
+      const errorMsg = getErrorMessage(error);
       alert(`Failed to update alert rule: ${errorMsg}`);
     },
   });
@@ -1011,7 +1027,6 @@ function RuleModal({
       return;
     }
     
-    console.log('Form submitted', { name, description, ruleType, severity, selectedChannels, conditions, conditionOperator });
     if (isEditing) {
       const request: UpdateAlertRuleRequest = {
         name,
@@ -1022,7 +1037,6 @@ function RuleModal({
         is_enabled: isEnabled,
         channel_ids: selectedChannels,
       };
-      console.log('Update request:', request);
       updateMutation.mutate(request);
     } else {
       const request: CreateAlertRuleRequest = {
@@ -1034,7 +1048,6 @@ function RuleModal({
         severity,
         channel_ids: selectedChannels,
       };
-      console.log('Create request:', request);
       createMutation.mutate(request);
     }
   };
@@ -1119,7 +1132,10 @@ function RuleModal({
                           value={condition.type || ''}
                           onChange={(e) => {
                             const newConditions = [...conditions];
-                            newConditions[index] = { ...condition, type: e.target.value as any };
+                            newConditions[index] = {
+                              ...condition,
+                              type: e.target.value as AlertConditionType,
+                            };
                             setConditions(newConditions);
                           }}
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
@@ -1338,14 +1354,11 @@ function RuleModal({
                         checked={isChecked}
                         onChange={(e) => {
                           e.stopPropagation();
-                          console.log('Checkbox changed:', { channelId: channel.id, channelName: channel.name, checked: e.target.checked, currentSelected: selectedChannels });
                           if (e.target.checked) {
                             const newSelected = [...selectedChannels, channel.id];
-                            console.log('Adding channel, new selection:', newSelected);
                             setSelectedChannels(newSelected);
                           } else {
                             const newSelected = selectedChannels.filter((id) => id !== channel.id);
-                            console.log('Removing channel, new selection:', newSelected);
                             setSelectedChannels(newSelected);
                           }
                         }}

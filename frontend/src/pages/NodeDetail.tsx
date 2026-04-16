@@ -920,17 +920,12 @@ function InventorySection({
   historyLoading: boolean;
 }) {
   const { data: vulnerabilities = [] } = useNodeVulnerabilities(certname);
-  if (!inventory) {
-    return (
-      <div className="text-center py-10 text-gray-500">
-        <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-        <p>No inventory has been submitted for this node yet.</p>
-        <p className="text-sm text-gray-400 mt-1">
-          Phase 10 inventory data will appear here after an agent posts a snapshot.
-        </p>
-      </div>
-    );
-  }
+  const packages = useMemo(() => inventory?.packages ?? [], [inventory]);
+  const applications = useMemo(() => inventory?.applications ?? [], [inventory]);
+  const websites = useMemo(() => inventory?.websites ?? [], [inventory]);
+  const runtimes = useMemo(() => inventory?.runtimes ?? [], [inventory]);
+  const containers = useMemo(() => inventory?.containers ?? [], [inventory]);
+  const users = useMemo(() => inventory?.users ?? [], [inventory]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeView, setActiveView] = useState<InventoryView>('all');
@@ -944,33 +939,33 @@ function InventorySection({
   const [applicationDisplayCount, setApplicationDisplayCount] = useState(100);
 
   const packageRepos = useMemo(
-    () => ['all', ...new Set(inventory.packages.map((pkg) => pkg.repository_source).filter(Boolean) as string[])],
-    [inventory.packages],
+    () => ['all', ...new Set(packages.map((pkg) => pkg.repository_source).filter(Boolean) as string[])],
+    [packages],
   );
   const applicationTypes = useMemo(
-    () => ['all', ...new Set(inventory.applications.map((app) => app.application_type).filter(Boolean) as string[])],
-    [inventory.applications],
+    () => ['all', ...new Set(applications.map((app) => app.application_type).filter(Boolean) as string[])],
+    [applications],
   );
   const websiteTypes = useMemo(
-    () => ['all', ...new Set(inventory.websites.map((site) => site.server_type).filter(Boolean))],
-    [inventory.websites],
+    () => ['all', ...new Set(websites.map((site) => site.server_type).filter(Boolean))],
+    [websites],
   );
   const runtimeTypes = useMemo(
-    () => ['all', ...new Set(inventory.runtimes.map((runtime) => runtime.runtime_type).filter(Boolean))],
-    [inventory.runtimes],
+    () => ['all', ...new Set(runtimes.map((runtime) => runtime.runtime_type).filter(Boolean))],
+    [runtimes],
   );
   const containerRuntimeTypes = useMemo(
-    () => ['all', ...new Set((inventory?.containers ?? []).map((c) => c.runtime_type).filter(Boolean))],
-    [inventory?.containers],
+    () => ['all', ...new Set(containers.map((c) => c.runtime_type).filter(Boolean))],
+    [containers],
   );
   const userTypes = useMemo(
-    () => ['all', ...new Set((inventory?.users ?? []).map((u) => u.user_type).filter(Boolean) as string[])],
-    [inventory?.users],
+    () => ['all', ...new Set(users.map((u) => u.user_type).filter(Boolean) as string[])],
+    [users],
   );
 
   const filteredPackages = useMemo(
     () =>
-      inventory.packages.filter((pkg) => {
+      packages.filter((pkg) => {
         if (packageRepoFilter !== 'all' && pkg.repository_source !== packageRepoFilter) {
           return false;
         }
@@ -980,12 +975,12 @@ function InventorySection({
           searchQuery,
         );
       }),
-    [inventory.packages, packageRepoFilter, searchQuery],
+    [packages, packageRepoFilter, searchQuery],
   );
 
   const filteredApplications = useMemo(
     () =>
-      inventory.applications.filter((app) => {
+      applications.filter((app) => {
         if (applicationTypeFilter !== 'all' && app.application_type !== applicationTypeFilter) {
           return false;
         }
@@ -995,12 +990,12 @@ function InventorySection({
           searchQuery,
         );
       }),
-    [inventory.applications, applicationTypeFilter, searchQuery],
+    [applications, applicationTypeFilter, searchQuery],
   );
 
   const filteredWebsites = useMemo(
     () =>
-      inventory.websites.filter((site) => {
+      websites.filter((site) => {
         if (websiteTypeFilter !== 'all' && site.server_type !== websiteTypeFilter) {
           return false;
         }
@@ -1010,12 +1005,12 @@ function InventorySection({
           searchQuery,
         );
       }),
-    [inventory.websites, websiteTypeFilter, searchQuery],
+    [websites, websiteTypeFilter, searchQuery],
   );
 
   const filteredRuntimes = useMemo(
     () =>
-      inventory.runtimes.filter((runtime) => {
+      runtimes.filter((runtime) => {
         if (runtimeTypeFilter !== 'all' && runtime.runtime_type !== runtimeTypeFilter) {
           return false;
         }
@@ -1025,12 +1020,12 @@ function InventorySection({
           searchQuery,
         );
       }),
-    [inventory.runtimes, runtimeTypeFilter, searchQuery],
+    [runtimes, runtimeTypeFilter, searchQuery],
   );
 
   const filteredContainers = useMemo(
     () => {
-      const items = inventory?.containers ?? [];
+      const items = containers;
       return items.filter((c) => {
         if (containerRuntimeFilter !== 'all' && c.runtime_type !== containerRuntimeFilter) return false;
         if (!searchQuery) return true;
@@ -1039,12 +1034,12 @@ function InventorySection({
           .some((v) => v?.toLowerCase().includes(query));
       });
     },
-    [inventory?.containers, containerRuntimeFilter, searchQuery],
+    [containers, containerRuntimeFilter, searchQuery],
   );
 
   const filteredUsers = useMemo(
     () => {
-      const items = inventory?.users ?? [];
+      const items = users;
       return items.filter((u) => {
         if (userTypeFilter !== 'all' && u.user_type !== userTypeFilter) return false;
         if (!searchQuery) return true;
@@ -1053,7 +1048,7 @@ function InventorySection({
           .some((v) => v?.toLowerCase().includes(query));
       });
     },
-    [inventory?.users, userTypeFilter, searchQuery],
+    [users, userTypeFilter, searchQuery],
   );
 
   useEffect(() => {
@@ -1071,6 +1066,18 @@ function InventorySection({
       ),
     [history, searchQuery],
   );
+
+  if (!inventory) {
+    return (
+      <div className="text-center py-10 text-gray-500">
+        <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+        <p>No inventory has been submitted for this node yet.</p>
+        <p className="text-sm text-gray-400 mt-1">
+          Phase 10 inventory data will appear here after an agent posts a snapshot.
+        </p>
+      </div>
+    );
+  }
 
   const summaryCards = [
     {

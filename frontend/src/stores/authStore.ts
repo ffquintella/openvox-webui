@@ -8,20 +8,68 @@ export const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const AUTH_LOGOUT_REASON_KEY = 'auth_logout_reason';
 const LAST_ACTIVITY_STORAGE_KEY = 'auth_last_activity_at';
 
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures to prevent UI lockups in restricted browser contexts.
+  }
+}
+
+function safeLocalStorageRemove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures to prevent UI lockups in restricted browser contexts.
+  }
+}
+
+function safeSessionStorageGet(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSessionStorageSet(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures to prevent UI lockups in restricted browser contexts.
+  }
+}
+
+function safeSessionStorageRemove(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures to prevent UI lockups in restricted browser contexts.
+  }
+}
+
 export function recordSessionActivity(timestamp = Date.now()) {
-  localStorage.setItem(LAST_ACTIVITY_STORAGE_KEY, timestamp.toString());
+  safeLocalStorageSet(LAST_ACTIVITY_STORAGE_KEY, timestamp.toString());
 }
 
 export function getLastSessionActivity(): number {
-  const rawValue = localStorage.getItem(LAST_ACTIVITY_STORAGE_KEY);
+  const rawValue = safeLocalStorageGet(LAST_ACTIVITY_STORAGE_KEY);
   const parsedValue = rawValue ? Number.parseInt(rawValue, 10) : NaN;
   return Number.isFinite(parsedValue) ? parsedValue : Date.now();
 }
 
 export function consumeSessionLogoutReason(): string | null {
-  const reason = sessionStorage.getItem(AUTH_LOGOUT_REASON_KEY);
+  const reason = safeSessionStorageGet(AUTH_LOGOUT_REASON_KEY);
   if (reason) {
-    sessionStorage.removeItem(AUTH_LOGOUT_REASON_KEY);
+    safeSessionStorageRemove(AUTH_LOGOUT_REASON_KEY);
   }
   return reason;
 }
@@ -30,6 +78,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  hasHydrated: boolean;
   login: (user: User, token: string, refreshToken?: string) => void;
   logout: (reason?: string) => void;
 }
@@ -38,25 +87,26 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      token: null,
-      isAuthenticated: false,
+      token: typeof window !== 'undefined' ? safeLocalStorageGet('auth_token') : null,
+      isAuthenticated: typeof window !== 'undefined' ? !!safeLocalStorageGet('auth_token') : false,
+      hasHydrated: false,
 
       login: (user: User, token: string, refreshToken?: string) => {
-        localStorage.setItem('auth_token', token);
+        safeLocalStorageSet('auth_token', token);
         if (refreshToken !== undefined) {
-          localStorage.setItem('refresh_token', refreshToken);
+          safeLocalStorageSet('refresh_token', refreshToken);
         }
-        sessionStorage.removeItem(AUTH_LOGOUT_REASON_KEY);
+        safeSessionStorageRemove(AUTH_LOGOUT_REASON_KEY);
         recordSessionActivity();
         set({ user, token, isAuthenticated: true });
       },
 
       logout: (reason?: string) => {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
+        safeLocalStorageRemove('auth_token');
+        safeLocalStorageRemove('refresh_token');
+        safeLocalStorageRemove(LAST_ACTIVITY_STORAGE_KEY);
         if (reason) {
-          sessionStorage.setItem(AUTH_LOGOUT_REASON_KEY, reason);
+          safeSessionStorageSet(AUTH_LOGOUT_REASON_KEY, reason);
         }
         // Clear permissions when logging out
         usePermissionsStore.getState().clearPermissions();
@@ -65,7 +115,19 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ user: state.user, token: state.token }),
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state, _error) => {
+        const storedToken = typeof window !== 'undefined' ? safeLocalStorageGet('auth_token') : null;
+        if (state) {
+          state.hasHydrated = true;
+          state.token = state.token ?? storedToken;
+          state.isAuthenticated = !!(state.token ?? storedToken);
+        }
+      },
     }
   )
 );

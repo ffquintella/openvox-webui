@@ -34,7 +34,7 @@ export interface CreateNotificationRequest {
   category?: string;
   link?: string;
   expires_at?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface NotificationQuery {

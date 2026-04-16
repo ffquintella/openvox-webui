@@ -9,6 +9,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 use crate::{
     db::{repository::GroupRepository, InventoryRepository},
@@ -28,6 +29,8 @@ use crate::{
     utils::error::{AppError, AppResult},
     AppState,
 };
+
+const POST_INGEST_CATALOG_REFRESH_DEBOUNCE_SECS: i64 = 120;
 
 /// Create routes for node endpoints (protected, requires JWT auth)
 pub fn routes() -> Router<AppState> {
@@ -652,11 +655,29 @@ async fn ingest_node_inventory(
         .unwrap_or(48);
     tokio::spawn(async move {
         let repo = InventoryRepository::new(db);
-        if let Err(e) = repo.refresh_version_catalog().await {
-            tracing::warn!("Post-ingestion catalog refresh failed: {}", e);
+        match repo
+            .refresh_version_catalog_debounced_from_ingest(
+                POST_INGEST_CATALOG_REFRESH_DEBOUNCE_SECS,
+            )
+            .await
+        {
+            Ok(Some(entries)) => {
+                debug!(
+                    "Post-ingestion catalog refresh completed: {} entries",
+                    entries
+                );
+            }
+            Ok(None) => {
+                debug!(
+                    "Post-ingestion catalog refresh skipped (in progress or within debounce window)"
+                );
+            }
+            Err(e) => {
+                warn!("Post-ingestion catalog refresh failed: {}", e);
+            }
         }
         if let Err(e) = repo.refresh_host_update_statuses(stale_hours).await {
-            tracing::warn!("Post-ingestion status refresh failed: {}", e);
+            warn!("Post-ingestion status refresh failed: {}", e);
         }
     });
 

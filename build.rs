@@ -43,7 +43,6 @@ fn main() {
         .unwrap_or(false);
 
     if !serve_frontend {
-        println!("cargo:warning=Skipping frontend build (OPENVOX_SERVE_FRONTEND != true)");
         return;
     }
 
@@ -52,23 +51,19 @@ fn main() {
 
     // Check if frontend directory exists
     if !frontend_dir.exists() {
-        println!("cargo:warning=Frontend directory not found, skipping frontend build");
         return;
     }
 
     // Check if node_modules exists, run npm install if not
     let node_modules = frontend_dir.join("node_modules");
     if !node_modules.exists() {
-        println!("cargo:warning=Installing frontend dependencies...");
         let status = Command::new("npm")
             .arg("install")
             .current_dir(frontend_dir)
             .status();
 
         match status {
-            Ok(s) if s.success() => {
-                println!("cargo:warning=Frontend dependencies installed successfully");
-            }
+            Ok(s) if s.success() => {}
             Ok(s) => {
                 println!(
                     "cargo:warning=npm install failed with exit code: {:?}",
@@ -110,11 +105,8 @@ fn main() {
     };
 
     if !needs_rebuild {
-        println!("cargo:warning=Frontend is up to date, skipping build");
         return;
     }
-
-    println!("cargo:warning=Building frontend...");
 
     let status = Command::new("npm")
         .arg("run")
@@ -123,9 +115,7 @@ fn main() {
         .status();
 
     match status {
-        Ok(s) if s.success() => {
-            println!("cargo:warning=Frontend built successfully");
-        }
+        Ok(s) if s.success() => {}
         Ok(s) => {
             // Don't fail the entire build, just warn
             println!(

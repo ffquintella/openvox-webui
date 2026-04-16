@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import type {
+  Notification,
+  NotificationStats,
+  CreateNotificationRequest,
+} from '../types/notification';
+import type {
   Node,
   NodeGroup,
   Report,
@@ -153,10 +158,55 @@ import type {
 
 const client = axios.create({
   baseURL: '/api/v1',
+  timeout: 15_000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+interface RetriableRequestConfig {
+  _retry?: boolean;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+let refreshRequestPromise: Promise<string> | null = null;
+
+const isAuthEndpoint = (url?: string): boolean => {
+  if (!url) {
+    return false;
+  }
+
+  return (
+    url.includes('/auth/login')
+    || url.includes('/auth/refresh')
+    || url.includes('/auth/logout')
+  );
+};
+
+const refreshAccessToken = async (): Promise<string> => {
+  const refreshToken = localStorage.getItem('refresh_token');
+
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const response = await client.post('/auth/refresh', { refresh_token: refreshToken });
+  const newAccessToken = response.data?.access_token as string | undefined;
+
+  if (!newAccessToken) {
+    throw new Error('No access token returned by refresh endpoint');
+  }
+
+  localStorage.setItem('auth_token', newAccessToken);
+  useAuthStore.setState((state) => ({
+    ...state,
+    token: newAccessToken,
+    isAuthenticated: true,
+  }));
+
+  return newAccessToken;
+};
 
 // Add auth interceptor
 client.interceptors.request.use((config) => {
@@ -169,8 +219,37 @@ client.interceptors.request.use((config) => {
 
 client.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
+    const originalRequest = (error.config ?? {}) as RetriableRequestConfig;
+
+    if (
+      status === 401
+      && !originalRequest._retry
+      && !isAuthEndpoint(originalRequest.url)
+      && localStorage.getItem('refresh_token')
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        if (!refreshRequestPromise) {
+          refreshRequestPromise = refreshAccessToken().finally(() => {
+            refreshRequestPromise = null;
+          });
+        }
+
+        const newAccessToken = await refreshRequestPromise;
+        originalRequest.headers = {
+          ...(originalRequest.headers ?? {}),
+          Authorization: `Bearer ${newAccessToken}`,
+        };
+
+        return client(originalRequest);
+      } catch {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
 
     if (status === 401 && useAuthStore.getState().isAuthenticated) {
       const serverMessage =
@@ -1190,17 +1269,17 @@ export const notificationApi = {
     category?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ notifications: any[] }> => {
+  }): Promise<{ notifications: Notification[] }> => {
     const response = await client.get('/notifications', { params: query });
     return response.data;
   },
 
-  getNotificationStats: async (): Promise<{ stats: any }> => {
+  getNotificationStats: async (): Promise<{ stats: NotificationStats }> => {
     const response = await client.get('/notifications/stats');
     return response.data;
   },
 
-  markAsRead: async (id: string, read: boolean): Promise<{ notification: any }> => {
+  markAsRead: async (id: string, read: boolean): Promise<{ notification: Notification }> => {
     const response = await client.put(`/notifications/${id}/read`, { read });
     return response.data;
   },
@@ -1228,14 +1307,7 @@ export const notificationApi = {
     return response.data;
   },
 
-  createNotification: async (data: {
-    user_id: string;
-    title: string;
-    message: string;
-    type: 'info' | 'success' | 'warning' | 'error';
-    category?: string;
-    link?: string;
-  }): Promise<{ notification: any }> => {
+  createNotification: async (data: CreateNotificationRequest): Promise<{ notification: Notification }> => {
     const response = await client.post('/notifications', data);
     return response.data;
   },

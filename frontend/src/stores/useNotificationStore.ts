@@ -152,7 +152,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     });
 
     eventSource.onopen = () => {
-      console.log('SSE connection established');
+      console.warn('SSE connection established');
       set({ isConnected: true });
     };
 
@@ -196,7 +196,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
       // Attempt to reconnect after 5 seconds
       setTimeout(() => {
-        console.log('Attempting to reconnect SSE...');
+        console.warn('Attempting to reconnect SSE...');
         get().connectSSE();
       }, 5000);
     };
@@ -210,7 +210,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     if (eventSource) {
       eventSource.close();
       set({ eventSource: null, isConnected: false });
-      console.log('SSE connection closed');
+      console.warn('SSE connection closed');
     }
   },
 

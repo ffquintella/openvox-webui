@@ -3,6 +3,9 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{FromRow, SqlitePool};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::models::{
@@ -20,6 +23,16 @@ use crate::models::{
 
 pub struct InventoryRepository {
     pool: SqlitePool,
+}
+
+fn catalog_refresh_lock() -> &'static Mutex<()> {
+    static CATALOG_REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    CATALOG_REFRESH_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn last_ingest_catalog_refresh_ts() -> &'static AtomicI64 {
+    static LAST_INGEST_CATALOG_REFRESH_TS: OnceLock<AtomicI64> = OnceLock::new();
+    LAST_INGEST_CATALOG_REFRESH_TS.get_or_init(|| AtomicI64::new(0))
 }
 
 impl InventoryRepository {
@@ -331,7 +344,7 @@ impl InventoryRepository {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    pub async fn refresh_version_catalog(&self) -> Result<usize> {
+    async fn refresh_version_catalog_unlocked(&self) -> Result<usize> {
         let now = Utc::now();
         let package_rows = sqlx::query_as::<_, CatalogPackageObservationRow>(
             r#"
@@ -395,6 +408,39 @@ impl InventoryRepository {
         }
 
         Ok(inserted)
+    }
+
+    /// Refresh the version catalog with single-flight protection.
+    ///
+    /// SQLite allows only one writer at a time, so this lock prevents concurrent
+    /// full-catalog rebuilds from contending with each other.
+    pub async fn refresh_version_catalog(&self) -> Result<usize> {
+        let _guard = catalog_refresh_lock().lock().await;
+        self.refresh_version_catalog_unlocked().await
+    }
+
+    /// Debounced catalog refresh for post-ingestion triggers.
+    ///
+    /// Returns `Ok(None)` when skipped due to active refresh or cooldown window.
+    pub async fn refresh_version_catalog_debounced_from_ingest(
+        &self,
+        min_interval_secs: i64,
+    ) -> Result<Option<usize>> {
+        let Ok(_guard) = catalog_refresh_lock().try_lock() else {
+            return Ok(None);
+        };
+
+        let now_ts = Utc::now().timestamp();
+        let last_ts = last_ingest_catalog_refresh_ts().load(Ordering::Relaxed);
+
+        if min_interval_secs > 0 && now_ts.saturating_sub(last_ts) < min_interval_secs {
+            return Ok(None);
+        }
+
+        let inserted = self.refresh_version_catalog_unlocked().await?;
+        last_ingest_catalog_refresh_ts().store(now_ts, Ordering::Relaxed);
+
+        Ok(Some(inserted))
     }
 
     pub async fn refresh_host_update_statuses(
