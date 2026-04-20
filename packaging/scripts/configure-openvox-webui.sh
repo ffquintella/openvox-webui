@@ -195,11 +195,30 @@ detect_puppet() {
             local ssl_port=$(grep -E "^ssl-port\s*=" "$PUPPETDB_CONFDIR/conf.d/jetty.ini" 2>/dev/null | sed 's/.*=\s*//' | tr -d ' ')
             local plain_port=$(grep -E "^port\s*=" "$PUPPETDB_CONFDIR/conf.d/jetty.ini" 2>/dev/null | sed 's/.*=\s*//' | tr -d ' ')
 
-            [ -n "$ssl_port" ] && PUPPETDB_SSL_PORT="$ssl_port"
+            [ -n "$ssl_port" ] && PUPPETDB_SSL_PORT="$ssl_port" && PUPPETDB_PORT="$ssl_port"
             [ -n "$plain_port" ] && PUPPETDB_PLAINTEXT_PORT="$plain_port"
         fi
     else
         log_warn "PuppetDB not detected"
+    fi
+}
+
+# PuppetDB Jetty HTTPS certificates usually list the node's certname/FQDN in SAN,
+# not "localhost". Using localhost breaks TLS verification (curl HTTP 000, app ssl_verify).
+resolve_local_puppetdb_host() {
+    if [ "$HAS_PUPPETDB" != "true" ]; then
+        return 0
+    fi
+    local cn=""
+    if command -v puppet >/dev/null 2>&1; then
+        cn=$(puppet config print certname 2>/dev/null || true)
+    fi
+    if [ -z "$cn" ]; then
+        cn=$(hostname -f 2>/dev/null || hostname)
+    fi
+    if [ -n "$cn" ]; then
+        PUPPETDB_HOST="$cn"
+        log_info "Using PuppetDB host for TLS (matches typical server cert): $PUPPETDB_HOST"
     fi
 }
 
@@ -272,6 +291,8 @@ test_puppetdb_connection() {
 
 configure_puppetdb_access() {
     print_section "PuppetDB Configuration"
+
+    resolve_local_puppetdb_host
 
     if [ "$HAS_PUPPETDB" != "true" ]; then
         echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════╗${NC}"
@@ -381,7 +402,9 @@ configure_puppetdb_access() {
     if command -v curl >/dev/null 2>&1; then
         echo ""
         if ask_yes_no "Test PuppetDB connection now?" "y"; then
-            test_puppetdb_connection "$puppetdb_url" "$PUPPETDB_USE_SSL"
+            if ! test_puppetdb_connection "$puppetdb_url" "$PUPPETDB_USE_SSL"; then
+                log_warn "PuppetDB connection check failed; continuing install. Adjust puppetdb.url in $CONFIG_FILE if needed."
+            fi
         fi
     fi
 

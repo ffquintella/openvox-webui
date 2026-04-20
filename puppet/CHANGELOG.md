@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add optional node group selection to drift detection baselines in create and edit modals
 
 ### Fixed
+- **Package post-install:** When PuppetDB is on the same host, the configure script now uses the agent `certname` (or FQDN) for the PuppetDB URL instead of `localhost`, so TLS matches the Jetty certificate. A failed post-install connection check no longer aborts `dpkg`/`apt` (warning only).
 - Fix login session persistence after browser refresh by waiting for auth store hydration before protected-route redirects
 - Fix access token expiration handling by adding automatic refresh-token retry for authenticated API requests
 - Fix intermittent WebUI freezes by hardening browser storage access, showing hydration loader state, and adding API request timeout defaults
