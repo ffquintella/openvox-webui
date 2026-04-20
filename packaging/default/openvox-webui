@@ -1,0 +1,41 @@
+# OpenVox WebUI environment configuration
+# This file is read by systemd on service start
+#
+# For Debian/Ubuntu: /etc/default/openvox-webui
+# For RHEL/CentOS:   /etc/sysconfig/openvox-webui
+
+# Configuration file path
+# OPENVOX_CONFIG=/etc/openvox-webui/config.yaml
+
+# Log level (trace, debug, info, warn, error)
+# RUST_LOG=info
+
+# Log format (pretty, json, compact)
+# OPENVOX_LOG_FORMAT=pretty
+
+# Log target (console, file, both)
+# OPENVOX_LOG_TARGET=file
+
+# Log directory (when using file logging)
+# OPENVOX_LOG_DIR=/var/log/openvox/webui
+
+# Server host and port (override config file)
+# OPENVOX_HOST=0.0.0.0
+# OPENVOX_PORT=5051
+
+# Database URL
+# DATABASE_URL=sqlite:///var/lib/openvox-webui/openvox.db
+
+# JWT secret (CHANGE THIS IN PRODUCTION!)
+# JWT_SECRET=your-secure-random-string-at-least-32-characters
+
+# TLS configuration
+# OPENVOX_TLS_CERT=/etc/openvox-webui/ssl/server.crt
+# OPENVOX_TLS_KEY=/etc/openvox-webui/ssl/server.key
+# OPENVOX_TLS_MIN_VERSION=1.3
+
+# PuppetDB connection
+# PUPPETDB_URL=http://localhost:8081
+# PUPPETDB_SSL_CERT=/etc/openvox-webui/ssl/puppetdb-client.pem
+# PUPPETDB_SSL_KEY=/etc/openvox-webui/ssl/puppetdb-client.key
+# PUPPETDB_SSL_CA=/etc/openvox-webui/ssl/ca.pem

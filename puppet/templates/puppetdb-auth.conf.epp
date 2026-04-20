@@ -1,0 +1,69 @@
+<%- |
+  String $client_certname,
+| -%>
+# OpenVox WebUI Authorization Rules for PuppetDB
+# Managed by Puppet - DO NOT EDIT MANUALLY
+#
+# This file grants the OpenVox WebUI client certificate access to the
+# PuppetDB API for querying nodes, facts, reports, and other data.
+
+authorization: {
+    version: 1
+    rules: [
+        # Allow OpenVox WebUI to query PuppetDB (PQL queries, AST queries)
+        {
+            match-request: {
+                path: "^/pdb/query/v4"
+                type: regex
+                method: [get, post]
+            }
+            allow: "<%= $client_certname %>"
+            sort-order: 100
+            name: "openvox-webui-pdb-query"
+        },
+        # Allow OpenVox WebUI to access PuppetDB command API (for write operations)
+        {
+            match-request: {
+                path: "^/pdb/cmd/v1"
+                type: regex
+                method: post
+            }
+            allow: "<%= $client_certname %>"
+            sort-order: 101
+            name: "openvox-webui-pdb-command"
+        },
+        # Allow OpenVox WebUI to access PuppetDB metadata API
+        {
+            match-request: {
+                path: "^/pdb/meta/v1"
+                type: regex
+                method: get
+            }
+            allow: "<%= $client_certname %>"
+            sort-order: 102
+            name: "openvox-webui-pdb-meta"
+        },
+        # Allow OpenVox WebUI to access PuppetDB status/metrics API
+        {
+            match-request: {
+                path: "^/status/v1"
+                type: regex
+                method: get
+            }
+            allow: "<%= $client_certname %>"
+            sort-order: 103
+            name: "openvox-webui-pdb-status"
+        },
+        # Allow OpenVox WebUI to access PuppetDB metrics API
+        {
+            match-request: {
+                path: "^/metrics/v[12]"
+                type: regex
+                method: get
+            }
+            allow: "<%= $client_certname %>"
+            sort-order: 104
+            name: "openvox-webui-pdb-metrics"
+        }
+    ]
+}

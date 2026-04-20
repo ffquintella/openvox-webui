@@ -1,0 +1,247 @@
+# OpenVox WebUI Configuration
+# Copy this file to config.yaml and adjust settings for your environment
+
+# Server settings
+server:
+  host: "127.0.0.1"
+  port: 5051
+  # workers: 4  # Number of worker threads (defaults to CPU count)
+  # request_timeout_secs: 30  # Request timeout in seconds
+
+  # Frontend static files (serves the React app from the same server)
+  serve_frontend: true
+  static_dir: "frontend/dist"  # Path to built frontend files
+
+  # TLS/HTTPS configuration (uncomment to enable HTTPS)
+  # tls:
+  #   cert_file: "/etc/openvox-webui/ssl/server.crt"
+  #   key_file: "/etc/openvox-webui/ssl/server.key"
+  #   min_version: "1.2"  # Minimum TLS version: "1.2" or "1.3"
+  #   ciphers: []  # Custom cipher suites (empty = secure defaults)
+
+# PuppetDB connection settings (optional)
+puppetdb:
+  url: "http://localhost:8081"
+  timeout_secs: 30
+  ssl_verify: true
+  # Uncomment and set paths for SSL client authentication
+  # ssl_cert: "/etc/openvox-webui/ssl/client.pem"
+  # ssl_key: "/etc/openvox-webui/ssl/client.key"
+  # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
+
+# Puppet CA connection settings (optional)
+puppet_ca:
+  url: "https://localhost:8140"
+  timeout_secs: 30
+  ssl_verify: true
+  # Uncomment and set paths for SSL client authentication
+  # ssl_cert: "/etc/openvox-webui/ssl/ca_client.pem"
+  # ssl_key: "/etc/openvox-webui/ssl/ca_client.key"
+  # ssl_ca: "/etc/openvox-webui/ssl/ca.pem"
+
+# Authentication settings
+auth:
+  jwt_secret: "change-this-to-a-secure-random-string-in-production"
+  token_expiry_hours: 24
+  refresh_token_expiry_days: 7
+  bcrypt_cost: 12
+  password_min_length: 8
+
+# Database settings (SQLite for local storage)
+database:
+  url: "sqlite://data/openvox.db"
+  max_connections: 10
+  min_connections: 1
+  connect_timeout_secs: 30
+  idle_timeout_secs: 600
+
+# Logging configuration
+logging:
+  level: "info"  # trace, debug, info, warn, error
+  format: "pretty"  # pretty, json, compact
+
+  # Log output target:
+  # - "console": Output to stdout (default, recommended for development)
+  # - "file": Output to log files with daily rotation (recommended for production)
+  # - "both": Output to both console and files
+  target: "console"
+
+  # File logging settings (used when target is "file" or "both")
+  log_dir: "/var/log/openvox/webui"  # Directory for log files
+  log_prefix: "openvox-webui"        # Log file prefix
+  daily_rotation: true                # Enable daily log rotation
+  max_log_files: 30                   # Number of log files to keep (0 = unlimited)
+
+# Cache configuration for PuppetDB data
+cache:
+  enabled: true
+  node_ttl_secs: 300      # 5 minutes
+  fact_ttl_secs: 300      # 5 minutes
+  report_ttl_secs: 60     # 1 minute (reports change frequently)
+  resource_ttl_secs: 600  # 10 minutes
+  catalog_ttl_secs: 600   # 10 minutes
+  max_entries: 10000
+  sync_interval_secs: 0   # 0 = disabled, set to positive value for background sync
+
+# Dashboard layout and display preferences
+dashboard:
+  default_time_range: "24h"  # 1h, 6h, 12h, 24h, 7d, 30d
+  refresh_interval_secs: 60  # 0 to disable auto-refresh
+  nodes_per_page: 50
+  reports_per_page: 25
+  show_inactive_nodes: true
+  inactive_threshold_hours: 24
+  theme: "light"  # light, dark, system
+
+  # Dashboard widgets configuration (optional)
+  # widgets:
+  #   - id: "node-status-1"
+  #     type: "node_status"
+  #     title: "Node Overview"
+  #     enabled: true
+  #     position:
+  #       row: 0
+  #       col: 0
+  #       width: 6
+  #       height: 2
+  #   - id: "activity-1"
+  #     type: "recent_activity"
+  #     title: "Recent Activity"
+  #     enabled: true
+  #     position:
+  #       row: 0
+  #       col: 6
+  #       width: 6
+  #       height: 2
+
+# Role-based access control configuration
+rbac:
+  default_role: "viewer"           # Default role for new users
+  session_timeout_minutes: 480     # 8 hours
+  max_failed_logins: 5
+  lockout_duration_minutes: 30
+
+  # Custom role definitions (in addition to built-in roles)
+  # Built-in roles: admin, operator, viewer, group_admin, auditor
+  # roles:
+  #   - name: "developer"
+  #     display_name: "Developer"
+  #     description: "Read access to nodes and reports, write access to facter templates"
+  #     permissions:
+  #       - resource: "nodes"
+  #         action: "read"
+  #         scope: "all"
+  #       - resource: "reports"
+  #         action: "read"
+  #         scope: "all"
+  #       - resource: "facter_templates"
+  #         action: "admin"
+  #         scope: "all"
+  #   - name: "env_admin"
+  #     display_name: "Environment Admin"
+  #     description: "Full access to production environment only"
+  #     permissions:
+  #       - resource: "nodes"
+  #         action: "admin"
+  #         scope: "environment"
+  #         scope_value: "production"
+  #       - resource: "groups"
+  #         action: "admin"
+  #         scope: "environment"
+  #         scope_value: "production"
+
+# Path to separate groups configuration file (optional)
+# If not specified, groups are managed only via database/API
+# groups_config_path: "/etc/openvox-webui/groups.yaml"
+
+# Code Deploy feature configuration (Git-based Puppet environment management)
+# Similar to Puppet Code Manager - manages Puppet environments from Git repositories
+# code_deploy:
+#   enabled: true
+#
+#   # Encryption key for storing SSH private keys (must be exactly 32 bytes)
+#   encryption_key: "change-this-to-32-byte-key-here!"
+#
+#   # Base URL for webhook callbacks (used to generate webhook URLs)
+#   webhook_base_url: "http://localhost:5051"
+#
+#   # Days to retain deployment history (0 = forever)
+#   retain_history_days: 90
+#
+#   # Git repository settings
+#   repos_base_dir: "/var/lib/openvox-webui/repos"    # Where to clone repos
+#   ssh_keys_dir: "/etc/openvox-webui/ssh-keys"       # Where to store SSH keys
+#
+#   # r10k integration settings
+#   r10k_binary_path: "/opt/puppetlabs/puppet/bin/r10k"
+#   r10k_config_path: "/etc/puppetlabs/r10k/r10k.yaml"
+#   r10k_cachedir: "/opt/puppetlabs/puppet/cache/r10k"
+#   r10k_pool_size: 1  # Thread pool size for r10k module installs (1 = workaround for Ruby 3.2 chown segfault)
+#   environments_basedir: "/etc/puppetlabs/code/environments"
+
+# SAML 2.0 Single Sign-On configuration
+# Enables authentication via external Identity Providers (Okta, Azure AD, Keycloak, ADFS, etc.)
+# saml:
+#   enabled: true
+#
+#   # Service Provider (SP) configuration - identifies this application to the IdP
+#   sp:
+#     entity_id: "https://openvox.example.com/saml"  # Unique identifier for this SP
+#     acs_url: "https://openvox.example.com/api/v1/auth/saml/acs"  # Assertion Consumer Service URL
+#     # Optional: SP certificate and key for signing requests (recommended for production)
+#     # certificate_file: "/etc/openvox-webui/saml/sp.crt"
+#     # private_key_file: "/etc/openvox-webui/saml/sp.key"
+#     sign_requests: false           # Sign AuthnRequests (requires certificate)
+#     require_signed_assertions: true # Require IdP to sign assertions
+#
+#   # Identity Provider (IdP) configuration
+#   idp:
+#     # Option 1: Load metadata from URL (recommended - auto-fetches IdP settings)
+#     metadata_url: "https://idp.example.com/saml/metadata"
+#
+#     # Option 2: Load metadata from local file
+#     # metadata_file: "/etc/openvox-webui/saml/idp-metadata.xml"
+#
+#     # Option 3: Manual configuration (if metadata not available)
+#     # entity_id: "https://idp.example.com"
+#     # sso_url: "https://idp.example.com/sso"
+#     # certificate_file: "/etc/openvox-webui/saml/idp.crt"
+#
+#   # User mapping configuration
+#   user_mapping:
+#     username_attribute: "NameID"   # SAML attribute for username (NameID or attribute name)
+#     email_attribute: null          # SAML attribute for email (null = auto-detect)
+#     require_existing_user: true    # Users must be pre-provisioned (no auto-provisioning)
+#     allow_idp_initiated: false     # Allow IdP-initiated login (less secure)
+#
+#   # Session settings for SAML authentication
+#   session:
+#     relay_state_cookie: "saml_relay_state"  # Cookie name for storing relay state
+#     request_max_age_secs: 300               # Maximum age of SAML requests (5 minutes)
+
+# Node Bootstrap configuration
+# Settings for the bootstrap script that helps add new OpenVox agents to the infrastructure
+# node_bootstrap:
+#   # OpenVox Server URL that agents will connect to
+#   openvox_server_url: "openvox.example.com"
+#
+#   # Custom repository base URL for OpenVox/Puppet packages
+#   # If not set, the script will use default Vox Pupuli repositories:
+#   #   - YUM: https://yum.voxpupuli.org/openvox8
+#   #   - APT: https://apt.voxpupuli.org
+#   # For custom YUM-based repos: "https://yum.example.com/openvox8"
+#   # For custom APT-based repos: "https://apt.example.com/openvox8"
+#   # repository_base_url: "https://yum.voxpupuli.org/openvox8"
+#
+#   # Package name to install (default: openvox-agent)
+#   agent_package_name: "openvox-agent"
+
+# Classification endpoint configuration
+# Settings for the /api/v1/nodes/{certname}/classify endpoint used by Puppet agents
+# classification:
+#   # Shared key for alternative authentication (debug mode)
+#   # When set, clients can authenticate with X-Classification-Key header instead of client certificates
+#   # This is useful for debugging or testing without requiring mTLS setup
+#   # WARNING: Less secure than client certificate authentication - use only for debugging
+#   # Can also be set via CLASSIFICATION_SHARED_KEY environment variable
+#   shared_key: "your-secret-shared-key-here"

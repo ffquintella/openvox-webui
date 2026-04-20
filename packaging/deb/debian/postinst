@@ -1,0 +1,158 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create openvox-webui group if it doesn't exist
+        if ! getent group openvox-webui >/dev/null; then
+            addgroup --system openvox-webui
+        fi
+
+        # Create openvox-webui user if it doesn't exist
+        if ! getent passwd openvox-webui >/dev/null; then
+            adduser --system --ingroup openvox-webui \
+                --home /var/lib/openvox-webui \
+                --no-create-home \
+                --gecos "OpenVox WebUI service account" \
+                openvox-webui
+        fi
+
+        # Create and set permissions on data directory
+        if [ ! -d /var/lib/openvox-webui ]; then
+            mkdir -p /var/lib/openvox-webui
+        fi
+        chown openvox-webui:openvox-webui /var/lib/openvox-webui
+        chmod 750 /var/lib/openvox-webui
+
+        # Create and set permissions on log directory hierarchy
+        if [ ! -d /var/log/openvox ]; then
+            mkdir -p /var/log/openvox
+        fi
+        chown openvox-webui:openvox-webui /var/log/openvox
+        chmod 750 /var/log/openvox
+
+        if [ ! -d /var/log/openvox/webui ]; then
+            mkdir -p /var/log/openvox/webui
+        fi
+        chown openvox-webui:openvox-webui /var/log/openvox/webui
+        chmod 750 /var/log/openvox/webui
+
+        # Set SSL directory permissions
+        if [ -d /etc/openvox-webui/ssl ]; then
+            chown root:openvox-webui /etc/openvox-webui/ssl
+            chmod 750 /etc/openvox-webui/ssl
+        fi
+
+        # Ensure r10k cache directory exists and is writable by openvox-webui
+        # This is needed for Code Deploy functionality
+        if [ -d /opt/puppetlabs/puppet/cache ]; then
+            mkdir -p /opt/puppetlabs/puppet/cache/r10k
+            chown -R openvox-webui:openvox-webui /opt/puppetlabs/puppet/cache/r10k
+            chmod 750 /opt/puppetlabs/puppet/cache/r10k
+        fi
+
+        # Ensure puppet code environments directory is writable by openvox-webui
+        # This is where r10k deploys puppet code
+        if [ -d /etc/puppetlabs/code ]; then
+            mkdir -p /etc/puppetlabs/code/environments
+            chown -R openvox-webui:openvox-webui /etc/puppetlabs/code/environments
+            chmod 750 /etc/puppetlabs/code/environments
+        fi
+
+        # Check if this is a fresh install (not upgrade)
+        # dpkg passes the previously installed version as $2 for upgrades
+        if [ -z "$2" ]; then
+            # Fresh install - run interactive configuration
+            if [ -t 0 ] && [ -t 1 ]; then
+                echo ""
+                echo "╔══════════════════════════════════════════════════════════════════╗"
+                echo "║     OpenVox WebUI - Interactive Configuration Available          ║"
+                echo "╚══════════════════════════════════════════════════════════════════╝"
+                echo ""
+                echo "OpenVox WebUI can automatically detect and configure integration"
+                echo "with PuppetDB and Puppet CA on this system."
+                echo ""
+
+                # Prompt for interactive configuration
+                printf "Would you like to run the interactive configuration now? [Y/n] "
+                read -r REPLY
+                REPLY=${REPLY:-Y}
+
+                case "$REPLY" in
+                    [Yy]*)
+                        /usr/share/openvox-webui/scripts/configure-openvox-webui.sh
+                        ;;
+                    *)
+                        # Set basic permissions and show manual instructions
+                        if [ -f /etc/openvox-webui/config.yaml ]; then
+                            chown root:openvox-webui /etc/openvox-webui/config.yaml
+                            chmod 640 /etc/openvox-webui/config.yaml
+                        fi
+
+                        echo ""
+                        echo "Skipping interactive configuration."
+                        echo ""
+                        echo "You can run the configuration script later:"
+                        echo "  /usr/share/openvox-webui/scripts/configure-openvox-webui.sh"
+                        echo ""
+                        echo "Or manually configure:"
+                        echo "  1. Edit /etc/openvox-webui/config.yaml"
+                        echo "  2. Set up TLS certificates in /etc/openvox-webui/ssl/"
+                        echo "  3. Start the service: systemctl start openvox-webui"
+                        echo "  4. Enable on boot: systemctl enable openvox-webui"
+                        echo ""
+                        echo "Default admin credentials (change immediately!):"
+                        echo "  Username: admin"
+                        echo "  Password: admin"
+                        echo ""
+                        ;;
+                esac
+            else
+                # Non-interactive installation (e.g., automated deployment)
+                /usr/share/openvox-webui/scripts/configure-openvox-webui.sh --non-interactive
+            fi
+        else
+            # Upgrade - preserve existing configuration
+            if [ -f /etc/openvox-webui/config.yaml ]; then
+                chown root:openvox-webui /etc/openvox-webui/config.yaml 2>/dev/null || true
+                chmod 640 /etc/openvox-webui/config.yaml 2>/dev/null || true
+            fi
+
+            echo ""
+            echo "OpenVox WebUI has been upgraded!"
+            echo ""
+            echo "Your existing configuration has been preserved."
+            echo "To reconfigure, run:"
+            echo "  /usr/share/openvox-webui/scripts/configure-openvox-webui.sh"
+            echo ""
+        fi
+
+        # Always show Puppet classification instructions
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║          PUPPET NODE CLASSIFICATION - Quick Start                ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "To enable automatic class assignment to Puppet agents:"
+        echo ""
+        echo "1. Copy the Puppet module to your Puppet server:"
+        echo "   cp -r /usr/share/openvox-webui/puppet \\"
+        echo "     /etc/puppetlabs/code/environments/production/modules/openvox_webui"
+        echo ""
+        echo "2. Add to your site.pp or node classification:"
+        echo "   class { 'openvox_webui::client':"
+        echo "     api_url          => 'https://<YOUR_SERVER>:5051',"
+        echo "     use_puppet_certs => true,"
+        echo "   }"
+        echo "   include openvox_webui::classification"
+        echo ""
+        echo "3. Define groups with classes in OpenVox WebUI"
+        echo ""
+        echo "Full instructions: /usr/share/openvox-webui/scripts/classification-instructions.txt"
+        echo ""
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

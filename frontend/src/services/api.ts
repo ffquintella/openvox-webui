@@ -1,0 +1,1500 @@
+import axios from 'axios';
+import { useAuthStore } from '../stores/authStore';
+import type {
+  Notification,
+  NotificationStats,
+  CreateNotificationRequest,
+} from '../types/notification';
+import type {
+  Node,
+  NodeGroup,
+  Report,
+  ResourceEvent,
+  CreateGroupRequest,
+  UpdateGroupRequest,
+  CreateRuleRequest,
+  ClassificationRule,
+  Role,
+  Permission,
+  CreateRoleRequest,
+  UserResponse,
+  CreateUserRequest,
+  UpdateUserRequest,
+  EffectivePermissions,
+  ResourceInfo,
+  ActionInfo,
+  PermissionMatrix,
+  BulkPermissionRequest,
+  BulkPermissionResult,
+  CreatePermissionRequest,
+  FactTemplate,
+  CreateFactTemplateRequest,
+  UpdateFactTemplateRequest,
+  GenerateFactsRequest,
+  GeneratedFacts,
+  ExportFormat,
+  SettingsResponse,
+  DeleteNodeResponse,
+  DashboardConfig,
+  RbacConfigResponse,
+  ExportConfigResponse,
+  ImportConfigResponse,
+  ValidateConfigResponse,
+  ConfigHistoryEntry,
+  ServerInfoResponse,
+  SmtpSettings,
+  UpdateSmtpSettingsRequest,
+  CAStatus,
+  CertificateRequest,
+  Certificate,
+  SignRequest,
+  SignResponse,
+  RejectResponse,
+  RevokeResponse,
+  RenewCARequest,
+  RenewCAResponse,
+  SavedReport,
+  CreateSavedReportRequest,
+  UpdateSavedReportRequest,
+  ReportSchedule,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+  ReportExecution,
+  ExecuteReportRequest,
+  ReportTemplate,
+  ComplianceBaseline,
+  CreateComplianceBaselineRequest,
+  UpdateComplianceBaselineRequest,
+  DriftBaseline,
+  CreateDriftBaselineRequest,
+  UpdateDriftBaselineRequest,
+  GenerateReportRequest,
+  ReportType,
+  ReportQueryConfig,
+  // Alerting types
+  NotificationChannel,
+  CreateChannelRequest,
+  UpdateChannelRequest,
+  AlertRule,
+  CreateAlertRuleRequest,
+  UpdateAlertRuleRequest,
+  Alert,
+  AlertSilence,
+  CreateSilenceRequest,
+  AlertStats,
+  TestChannelRequest,
+  TestChannelResponse,
+  TriggerAlertRequest,
+  AlertRuleType,
+  AlertSeverity,
+  AlertStatus,
+  // Code Deploy types
+  CodeSshKey,
+  CreateSshKeyRequest,
+  CodeRepository,
+  CreateRepositoryRequest,
+  UpdateRepositoryRequest,
+  CodeEnvironment,
+  UpdateEnvironmentRequest,
+  CodeDeployment,
+  TriggerDeploymentRequest,
+  ApproveDeploymentRequest,
+  RejectDeploymentRequest,
+  ListDeploymentsQuery,
+  ListEnvironmentsQuery,
+  CodePatToken,
+  CreatePatTokenRequest,
+  UpdatePatTokenRequest,
+  // Group-scoped permissions types
+  GroupPermissionInfo,
+  AddGroupPermissionRequest,
+  // Backup types
+  ServerBackup,
+  BackupSchedule,
+  BackupRestore,
+  BackupFeatureStatus,
+  CreateBackupRequest,
+  RestoreBackupRequest,
+  VerifyBackupRequest,
+  VerifyBackupResponse,
+  UpdateBackupScheduleRequest,
+  ListBackupsQuery,
+  // Node Removal types
+  PendingNodeRemoval,
+  NodeRemovalAudit,
+  PendingRemovalStats,
+  NodeRemovalFeatureStatus,
+  MarkNodeForRemovalRequest,
+  ExtendRemovalDeadlineRequest,
+  // Bootstrap types
+  BootstrapConfigResponse,
+  NodeInventory,
+  InventorySnapshotSummary,
+  InventoryFleetStatusSummary,
+  InventoryDashboardReport,
+  RepositoryVersionCatalogEntry,
+  UpdateJob,
+  CreateUpdateJobRequest,
+  ApproveUpdateJobRequest,
+  GroupUpdateSchedule,
+  CreateGroupUpdateScheduleRequest,
+  UpdateGroupUpdateScheduleRequest,
+  OutdatedSoftwareNodeDetail,
+  ComplianceCategoryNode,
+  FleetRepositoryConfig,
+  // CVE types
+  CveFeedSource,
+  CreateCveFeedSourceRequest,
+  UpdateCveFeedSourceRequest,
+  CveEntry,
+  CveDetailResponse,
+  HostVulnerabilityMatch,
+  NodeVulnerabilitySummary,
+  VulnerabilityDashboardReport,
+  FeedSyncResult,
+  UpdatePreviewRequest,
+  UpdatePreviewResponse,
+} from '../types';
+
+const client = axios.create({
+  baseURL: '/api/v1',
+  timeout: 15_000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+interface RetriableRequestConfig {
+  _retry?: boolean;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+let refreshRequestPromise: Promise<string> | null = null;
+
+const isAuthEndpoint = (url?: string): boolean => {
+  if (!url) {
+    return false;
+  }
+
+  return (
+    url.includes('/auth/login')
+    || url.includes('/auth/refresh')
+    || url.includes('/auth/logout')
+  );
+};
+
+const refreshAccessToken = async (): Promise<string> => {
+  const refreshToken = localStorage.getItem('refresh_token');
+
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const response = await client.post('/auth/refresh', { refresh_token: refreshToken });
+  const newAccessToken = response.data?.access_token as string | undefined;
+
+  if (!newAccessToken) {
+    throw new Error('No access token returned by refresh endpoint');
+  }
+
+  localStorage.setItem('auth_token', newAccessToken);
+  useAuthStore.setState((state) => ({
+    ...state,
+    token: newAccessToken,
+    isAuthenticated: true,
+  }));
+
+  return newAccessToken;
+};
+
+// Add auth interceptor
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+client.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error.response?.status;
+    const originalRequest = (error.config ?? {}) as RetriableRequestConfig;
+
+    if (
+      status === 401
+      && !originalRequest._retry
+      && !isAuthEndpoint(originalRequest.url)
+      && localStorage.getItem('refresh_token')
+    ) {
+      originalRequest._retry = true;
+
+      try {
+        if (!refreshRequestPromise) {
+          refreshRequestPromise = refreshAccessToken().finally(() => {
+            refreshRequestPromise = null;
+          });
+        }
+
+        const newAccessToken = await refreshRequestPromise;
+        originalRequest.headers = {
+          ...(originalRequest.headers ?? {}),
+          Authorization: `Bearer ${newAccessToken}`,
+        };
+
+        return client(originalRequest);
+      } catch {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
+
+    if (status === 401 && useAuthStore.getState().isAuthenticated) {
+      const serverMessage =
+        typeof error.response?.data?.message === 'string'
+          ? error.response.data.message
+          : '';
+
+      const reason = serverMessage === 'Session expired due to inactivity'
+        ? 'Your session expired after 30 minutes of inactivity.'
+        : 'Your session has expired. Please sign in again.';
+
+      useAuthStore.getState().logout(reason);
+
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.replace('/login');
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// Auth response types
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    force_password_change?: boolean;
+  };
+}
+
+interface RefreshResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export const api = {
+  // Auth
+  login: async (username: string, password: string): Promise<LoginResponse> => {
+    const response = await client.post('/auth/login', { username, password });
+    return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await client.post('/auth/logout');
+  },
+
+  refreshToken: async (refreshToken: string): Promise<RefreshResponse> => {
+    const response = await client.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+    const response = await client.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+
+  getCurrentUser: async (): Promise<UserResponse> => {
+    const response = await client.get('/auth/me');
+    return response.data;
+  },
+
+  // Health
+  health: async () => {
+    const response = await client.get('/health');
+    return response.data;
+  },
+
+  // Nodes
+  getNodes: async (): Promise<Node[]> => {
+    const response = await client.get('/nodes');
+    return response.data;
+  },
+
+  getNode: async (certname: string): Promise<Node | null> => {
+    const response = await client.get(`/nodes/${certname}`);
+    return response.data;
+  },
+
+  getNodeFacts: async (certname: string): Promise<Record<string, unknown>> => {
+    const response = await client.get(`/nodes/${certname}/facts`);
+    return response.data;
+  },
+
+  getNodeReports: async (certname: string): Promise<Report[]> => {
+    const response = await client.get(`/nodes/${certname}/reports`);
+    return response.data;
+  },
+
+  getNodeInventory: async (certname: string): Promise<NodeInventory | null> => {
+    const response = await client.get(`/nodes/${certname}/inventory`);
+    return response.data;
+  },
+
+  getNodeInventoryHistory: async (certname: string): Promise<InventorySnapshotSummary[]> => {
+    const response = await client.get(`/nodes/${certname}/inventory/history`);
+    return response.data;
+  },
+
+  getInventorySummary: async (): Promise<InventoryFleetStatusSummary> => {
+    const response = await client.get('/inventory/summary');
+    return response.data;
+  },
+
+  getInventoryDashboard: async (): Promise<InventoryDashboardReport> => {
+    const response = await client.get('/inventory/dashboard');
+    return response.data;
+  },
+
+  getOutdatedSoftwareNodes: async (
+    name: string,
+    softwareType?: string
+  ): Promise<OutdatedSoftwareNodeDetail[]> => {
+    const params = softwareType ? { software_type: softwareType } : {};
+    const response = await client.get(
+      `/inventory/dashboard/outdated-software/${encodeURIComponent(name)}`,
+      { params }
+    );
+    return response.data;
+  },
+
+  getComplianceCategoryNodes: async (
+    category: string
+  ): Promise<ComplianceCategoryNode[]> => {
+    const response = await client.get(
+      `/inventory/dashboard/compliance/${encodeURIComponent(category)}`
+    );
+    return response.data;
+  },
+
+  getFleetRepositories: async (): Promise<FleetRepositoryConfig[]> => {
+    const response = await client.get('/inventory/repositories');
+    return response.data;
+  },
+
+  triggerRepoCheck: async (): Promise<{
+    repos_checked: number;
+    repos_succeeded: number;
+    repos_failed: number;
+    catalog_entries_upserted: number;
+  }> => {
+    const response = await client.post('/inventory/repositories/check');
+    return response.data;
+  },
+
+  getUpdateJobs: async (): Promise<UpdateJob[]> => {
+    const response = await client.get('/inventory/updates');
+    return response.data;
+  },
+
+  getUpdateJob: async (jobId: string): Promise<UpdateJob> => {
+    const response = await client.get(`/inventory/updates/${jobId}`);
+    return response.data;
+  },
+
+  createUpdateJob: async (request: CreateUpdateJobRequest): Promise<UpdateJob> => {
+    const response = await client.post('/inventory/updates', request);
+    return response.data;
+  },
+
+  approveUpdateJob: async (
+    jobId: string,
+    request: ApproveUpdateJobRequest
+  ): Promise<UpdateJob> => {
+    const response = await client.post(`/inventory/updates/${jobId}/approve`, request);
+    return response.data;
+  },
+
+  cancelUpdateJob: async (jobId: string): Promise<UpdateJob> => {
+    const response = await client.post(`/inventory/updates/${jobId}/cancel`);
+    return response.data;
+  },
+
+  getInventoryCatalog: async (): Promise<RepositoryVersionCatalogEntry[]> => {
+    const response = await client.get('/inventory/catalog');
+    return response.data;
+  },
+
+  deleteNode: async (certname: string): Promise<DeleteNodeResponse> => {
+    const response = await client.delete(`/nodes/${certname}`);
+    return response.data;
+  },
+
+  // Groups
+  getGroups: async (): Promise<NodeGroup[]> => {
+    const response = await client.get('/groups');
+    return response.data;
+  },
+
+  getGroup: async (id: string): Promise<NodeGroup | null> => {
+    const response = await client.get(`/groups/${id}`);
+    return response.data;
+  },
+
+  createGroup: async (data: CreateGroupRequest): Promise<NodeGroup> => {
+    const response = await client.post('/groups', data);
+    return response.data;
+  },
+
+  updateGroup: async (id: string, data: UpdateGroupRequest): Promise<NodeGroup> => {
+    const response = await client.put(`/groups/${id}`, data);
+    return response.data;
+  },
+
+  deleteGroup: async (id: string): Promise<boolean> => {
+    const response = await client.delete(`/groups/${id}`);
+    return response.data;
+  },
+
+  getGroupNodes: async (id: string): Promise<string[]> => {
+    const response = await client.get(`/groups/${id}/nodes`);
+    return response.data;
+  },
+
+  // Group Rules
+  getGroupRules: async (id: string): Promise<ClassificationRule[]> => {
+    const response = await client.get(`/groups/${id}/rules`);
+    return response.data;
+  },
+
+  addGroupRule: async (id: string, rule: CreateRuleRequest): Promise<ClassificationRule> => {
+    const response = await client.post(`/groups/${id}/rules`, rule);
+    return response.data;
+  },
+
+  deleteGroupRule: async (groupId: string, ruleId: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/rules/${ruleId}`);
+  },
+
+  // Pinned Nodes
+  addPinnedNode: async (groupId: string, certname: string): Promise<void> => {
+    await client.post(`/groups/${groupId}/pinned`, { certname });
+  },
+
+  removePinnedNode: async (groupId: string, certname: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/pinned/${encodeURIComponent(certname)}`);
+  },
+
+  // Group Update Schedules
+  getGroupUpdateSchedules: async (groupId: string): Promise<GroupUpdateSchedule[]> => {
+    const response = await client.get(`/groups/${groupId}/update-schedules`);
+    return response.data;
+  },
+
+  createGroupUpdateSchedule: async (groupId: string, data: CreateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+    const response = await client.post(`/groups/${groupId}/update-schedules`, data);
+    return response.data;
+  },
+
+  updateGroupUpdateSchedule: async (groupId: string, scheduleId: string, data: UpdateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+    const response = await client.put(`/groups/${groupId}/update-schedules/${scheduleId}`, data);
+    return response.data;
+  },
+
+  deleteGroupUpdateSchedule: async (groupId: string, scheduleId: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/update-schedules/${scheduleId}`);
+  },
+
+  runGroupUpdateSchedule: async (groupId: string, scheduleId: string): Promise<UpdateJob> => {
+    const response = await client.post(`/groups/${groupId}/update-schedules/${scheduleId}/run`);
+    return response.data;
+  },
+
+  // Facts
+  getFacts: async (params?: { name?: string; certname?: string }): Promise<Array<{ certname: string; name: string; value: unknown }>> => {
+    const response = await client.get('/facts', { params });
+    // Backend returns { facts: [...], total: N } wrapper, extract the facts array
+    return response.data.facts || response.data;
+  },
+
+  getFactNames: async (): Promise<string[]> => {
+    const response = await client.get('/facts/names');
+    return response.data;
+  },
+
+  // Reports
+  getReports: async (params?: {
+    certname?: string;
+    status?: string;
+    limit?: number;
+    since?: string;
+    until?: string;
+    order_by?: string;
+    order_dir?: string;
+  }): Promise<Report[]> => {
+    const response = await client.get('/reports', { params });
+    return response.data;
+  },
+
+  getReport: async (hash: string): Promise<Report | null> => {
+    const response = await client.get(`/reports/${hash}`);
+    return response.data;
+  },
+
+  getReportEvents: async (hash: string, params?: { status?: string; type?: string }): Promise<ResourceEvent[]> => {
+    const response = await client.get(`/reports/${hash}/events`, { params });
+    return response.data;
+  },
+
+  // Query
+  executeQuery: async (query: string): Promise<unknown[]> => {
+    const response = await client.post('/query', { query });
+    return response.data;
+  },
+
+  // Roles
+  getRoles: async (): Promise<Role[]> => {
+    const response = await client.get('/roles');
+    return response.data;
+  },
+
+  getRole: async (id: string): Promise<Role | null> => {
+    const response = await client.get(`/roles/${id}`);
+    return response.data;
+  },
+
+  createRole: async (data: CreateRoleRequest): Promise<Role> => {
+    const response = await client.post('/roles', data);
+    return response.data;
+  },
+
+  updateRole: async (id: string, data: CreateRoleRequest): Promise<Role> => {
+    const response = await client.put(`/roles/${id}`, data);
+    return response.data;
+  },
+
+  deleteRole: async (id: string): Promise<boolean> => {
+    const response = await client.delete(`/roles/${id}`);
+    return response.data;
+  },
+
+  getRolePermissions: async (id: string): Promise<Permission[]> => {
+    const response = await client.get(`/roles/${id}/permissions`);
+    return response.data;
+  },
+
+  updateRolePermissions: async (id: string, permissions: Permission[]): Promise<Permission[]> => {
+    const response = await client.put(`/roles/${id}/permissions`, permissions);
+    return response.data;
+  },
+
+  // Users
+  getUsers: async (): Promise<UserResponse[]> => {
+    const response = await client.get('/users');
+    return response.data;
+  },
+
+  getUser: async (id: string): Promise<UserResponse | null> => {
+    const response = await client.get(`/users/${id}`);
+    return response.data;
+  },
+
+  createUser: async (data: CreateUserRequest): Promise<UserResponse> => {
+    const response = await client.post('/users', data);
+    return response.data;
+  },
+
+  updateUser: async (id: string, data: UpdateUserRequest): Promise<UserResponse> => {
+    const response = await client.put(`/users/${id}`, data);
+    return response.data;
+  },
+
+  deleteUser: async (id: string): Promise<boolean> => {
+    const response = await client.delete(`/users/${id}`);
+    return response.data;
+  },
+
+  getUserRoles: async (id: string): Promise<Role[]> => {
+    const response = await client.get(`/users/${id}/roles`);
+    return response.data;
+  },
+
+  assignUserRoles: async (id: string, roleIds: string[]): Promise<Role[]> => {
+    const response = await client.put(`/users/${id}/roles`, { role_ids: roleIds });
+    return response.data;
+  },
+
+  getUserPermissions: async (id: string): Promise<EffectivePermissions> => {
+    const response = await client.get(`/users/${id}/permissions`);
+    return response.data;
+  },
+
+  // Permissions
+  getPermissions: async (): Promise<Permission[]> => {
+    const response = await client.get('/permissions');
+    return response.data;
+  },
+
+  getResources: async (): Promise<ResourceInfo[]> => {
+    const response = await client.get('/permissions/resources');
+    return response.data;
+  },
+
+  getActions: async (): Promise<ActionInfo[]> => {
+    const response = await client.get('/permissions/actions');
+    return response.data;
+  },
+
+  getPermissionMatrix: async (): Promise<PermissionMatrix> => {
+    const response = await client.get('/permissions/matrix');
+    return response.data;
+  },
+
+  bulkUpdatePermissions: async (request: BulkPermissionRequest): Promise<BulkPermissionResult> => {
+    const response = await client.post('/permissions/bulk', request);
+    return response.data;
+  },
+
+  addPermissionToRole: async (roleId: string, permission: CreatePermissionRequest): Promise<Role> => {
+    const response = await client.post(`/roles/${roleId}/permissions`, permission);
+    return response.data;
+  },
+
+  removePermissionFromRole: async (roleId: string, permissionId: string): Promise<void> => {
+    await client.delete(`/roles/${roleId}/permissions/${permissionId}`);
+  },
+
+  // Facter Templates
+  getFactTemplates: async (): Promise<FactTemplate[]> => {
+    const response = await client.get('/facter/templates');
+    return response.data;
+  },
+
+  getFactTemplate: async (id: string): Promise<FactTemplate> => {
+    const response = await client.get(`/facter/templates/${id}`);
+    return response.data;
+  },
+
+  createFactTemplate: async (data: CreateFactTemplateRequest): Promise<FactTemplate> => {
+    const response = await client.post('/facter/templates', data);
+    return response.data;
+  },
+
+  updateFactTemplate: async (id: string, data: UpdateFactTemplateRequest): Promise<FactTemplate> => {
+    const response = await client.put(`/facter/templates/${id}`, data);
+    return response.data;
+  },
+
+  deleteFactTemplate: async (id: string): Promise<void> => {
+    await client.delete(`/facter/templates/${id}`);
+  },
+
+  generateFacts: async (data: GenerateFactsRequest): Promise<GeneratedFacts> => {
+    const response = await client.post('/facter/generate', data);
+    return response.data;
+  },
+
+  exportFacts: async (certname: string, template: string, format: ExportFormat = 'json'): Promise<string> => {
+    const response = await client.get(`/facter/export/${encodeURIComponent(certname)}`, {
+      params: { template, format },
+    });
+    return response.data;
+  },
+
+  // Settings
+  getSettings: async (): Promise<SettingsResponse> => {
+    const response = await client.get('/settings');
+    return response.data;
+  },
+
+  getDashboardConfig: async (): Promise<DashboardConfig> => {
+    const response = await client.get('/settings/dashboard');
+    return response.data;
+  },
+
+  updateDashboardConfig: async (config: Partial<DashboardConfig>): Promise<DashboardConfig> => {
+    const response = await client.put('/settings/dashboard', config);
+    return response.data;
+  },
+
+  getRbacConfig: async (): Promise<RbacConfigResponse> => {
+    const response = await client.get('/settings/rbac');
+    return response.data;
+  },
+
+  exportConfig: async (): Promise<ExportConfigResponse> => {
+    const response = await client.get('/settings/export');
+    return response.data;
+  },
+
+  importConfig: async (content: string, dryRun: boolean = false): Promise<ImportConfigResponse> => {
+    const response = await client.post('/settings/import', { content, format: 'yaml', dry_run: dryRun });
+    return response.data;
+  },
+
+  validateConfig: async (content: string): Promise<ValidateConfigResponse> => {
+    const response = await client.post('/settings/validate', { content, format: 'yaml' });
+    return response.data;
+  },
+
+  getConfigHistory: async (): Promise<ConfigHistoryEntry[]> => {
+    const response = await client.get('/settings/history');
+    return response.data;
+  },
+
+  getServerInfo: async (): Promise<ServerInfoResponse> => {
+    const response = await client.get('/settings/server');
+    return response.data;
+  },
+
+  getSmtpSettings: async (): Promise<SmtpSettings> => {
+    const response = await client.get('/settings/smtp');
+    return response.data;
+  },
+
+  updateSmtpSettings: async (config: UpdateSmtpSettingsRequest): Promise<SmtpSettings> => {
+    const response = await client.put('/settings/smtp', config);
+    return response.data;
+  },
+
+  // Bootstrap (public endpoint - no auth required)
+  getBootstrapConfig: async (): Promise<BootstrapConfigResponse> => {
+    // Use axios directly since this is a public endpoint
+    const response = await axios.get('/api/v1/bootstrap/config');
+    return response.data;
+  },
+
+  // CA (Certificate Authority)
+  getCAStatus: async (): Promise<CAStatus> => {
+    const response = await client.get('/ca/status');
+    return response.data;
+  },
+
+  getCertificateRequests: async (): Promise<CertificateRequest[]> => {
+    const response = await client.get('/ca/requests');
+    return response.data;
+  },
+
+  getCertificates: async (): Promise<Certificate[]> => {
+    const response = await client.get('/ca/certificates');
+    return response.data;
+  },
+
+  getCertificate: async (certname: string): Promise<Certificate> => {
+    const response = await client.get(`/ca/certificates/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  signCertificate: async (certname: string, request?: SignRequest): Promise<SignResponse> => {
+    const response = await client.post(`/ca/sign/${encodeURIComponent(certname)}`, request || {});
+    return response.data;
+  },
+
+  rejectCertificate: async (certname: string): Promise<RejectResponse> => {
+    const response = await client.post(`/ca/reject/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  revokeCertificate: async (certname: string): Promise<RevokeResponse> => {
+    const response = await client.delete(`/ca/certificates/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  renewCA: async (request: RenewCARequest): Promise<RenewCAResponse> => {
+    const response = await client.post('/ca/renew', request);
+    return response.data;
+  },
+
+  // Analytics & Reporting
+  getSavedReports: async (reportType?: ReportType): Promise<SavedReport[]> => {
+    const params = reportType ? { report_type: reportType } : {};
+    const response = await client.get('/analytics/saved-reports', { params });
+    return response.data;
+  },
+
+  getSavedReport: async (id: string): Promise<SavedReport> => {
+    const response = await client.get(`/analytics/saved-reports/${id}`);
+    return response.data;
+  },
+
+  createSavedReport: async (request: CreateSavedReportRequest): Promise<SavedReport> => {
+    const response = await client.post('/analytics/saved-reports', request);
+    return response.data;
+  },
+
+  updateSavedReport: async (id: string, request: UpdateSavedReportRequest): Promise<SavedReport> => {
+    const response = await client.put(`/analytics/saved-reports/${id}`, request);
+    return response.data;
+  },
+
+  deleteSavedReport: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/saved-reports/${id}`);
+  },
+
+  executeReport: async (id: string, request?: ExecuteReportRequest): Promise<ReportExecution> => {
+    const response = await client.post(`/analytics/saved-reports/${id}/execute`, request || {});
+    return response.data;
+  },
+
+  getReportExecutions: async (id: string, limit?: number): Promise<ReportExecution[]> => {
+    const params = limit ? { limit } : {};
+    const response = await client.get(`/analytics/saved-reports/${id}/executions`, { params });
+    return response.data;
+  },
+
+  getReportTemplates: async (reportType?: ReportType): Promise<ReportTemplate[]> => {
+    const params = reportType ? { report_type: reportType } : {};
+    const response = await client.get('/analytics/templates', { params });
+    return response.data;
+  },
+
+  getReportTemplate: async (id: string): Promise<ReportTemplate> => {
+    const response = await client.get(`/analytics/templates/${id}`);
+    return response.data;
+  },
+
+  getSchedules: async (): Promise<ReportSchedule[]> => {
+    const response = await client.get('/analytics/schedules');
+    return response.data;
+  },
+
+  getSchedule: async (id: string): Promise<ReportSchedule> => {
+    const response = await client.get(`/analytics/schedules/${id}`);
+    return response.data;
+  },
+
+  createSchedule: async (request: CreateScheduleRequest): Promise<ReportSchedule> => {
+    const response = await client.post('/analytics/schedules', request);
+    return response.data;
+  },
+
+  updateSchedule: async (id: string, request: UpdateScheduleRequest): Promise<ReportSchedule> => {
+    const response = await client.put(`/analytics/schedules/${id}`, request);
+    return response.data;
+  },
+
+  deleteSchedule: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/schedules/${id}`);
+  },
+
+  generateReport: async (request: GenerateReportRequest): Promise<unknown> => {
+    const response = await client.post('/analytics/generate', request);
+    return response.data;
+  },
+
+  generateReportByType: async (reportType: ReportType, config?: ReportQueryConfig): Promise<unknown> => {
+    const response = await client.post(`/analytics/generate/${reportType}`, config || {});
+    return response.data;
+  },
+
+  getComplianceBaselines: async (): Promise<ComplianceBaseline[]> => {
+    const response = await client.get('/analytics/compliance-baselines');
+    return response.data;
+  },
+
+  getComplianceBaseline: async (id: string): Promise<ComplianceBaseline> => {
+    const response = await client.get(`/analytics/compliance-baselines/${id}`);
+    return response.data;
+  },
+
+  createComplianceBaseline: async (request: CreateComplianceBaselineRequest): Promise<ComplianceBaseline> => {
+    const response = await client.post('/analytics/compliance-baselines', request);
+    return response.data;
+  },
+
+  updateComplianceBaseline: async (id: string, request: UpdateComplianceBaselineRequest): Promise<ComplianceBaseline> => {
+    const response = await client.put(`/analytics/compliance-baselines/${id}`, request);
+    return response.data;
+  },
+
+  deleteComplianceBaseline: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/compliance-baselines/${id}`);
+  },
+
+  getDriftBaselines: async (): Promise<DriftBaseline[]> => {
+    const response = await client.get('/analytics/drift-baselines');
+    return response.data;
+  },
+
+  getDriftBaseline: async (id: string): Promise<DriftBaseline> => {
+    const response = await client.get(`/analytics/drift-baselines/${id}`);
+    return response.data;
+  },
+
+  createDriftBaseline: async (request: CreateDriftBaselineRequest): Promise<DriftBaseline> => {
+    const response = await client.post('/analytics/drift-baselines', request);
+    return response.data;
+  },
+
+  updateDriftBaseline: async (id: string, request: UpdateDriftBaselineRequest): Promise<DriftBaseline> => {
+    const response = await client.put(`/analytics/drift-baselines/${id}`, request);
+    return response.data;
+  },
+
+  deleteDriftBaseline: async (id: string): Promise<void> => {
+    await client.delete(`/analytics/drift-baselines/${id}`);
+  },
+
+  exportExecution: async (id: string, format?: string): Promise<Blob> => {
+    const params = format ? { format } : {};
+    const response = await client.get(`/analytics/executions/${id}/export`, {
+      params,
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  // ============================================================================
+  // Alerting
+  // ============================================================================
+
+  // Notification Channels
+  getChannels: async (): Promise<NotificationChannel[]> => {
+    const response = await client.get('/alerting/channels');
+    return response.data.data;
+  },
+
+  getChannel: async (id: string): Promise<NotificationChannel> => {
+    const response = await client.get(`/alerting/channels/${id}`);
+    return response.data.data;
+  },
+
+  createChannel: async (request: CreateChannelRequest): Promise<NotificationChannel> => {
+    const response = await client.post('/alerting/channels', request);
+    return response.data.data;
+  },
+
+  updateChannel: async (id: string, request: UpdateChannelRequest): Promise<NotificationChannel> => {
+    const response = await client.put(`/alerting/channels/${id}`, request);
+    return response.data.data;
+  },
+
+  deleteChannel: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/channels/${id}`);
+  },
+
+  testChannel: async (id: string, request?: TestChannelRequest): Promise<TestChannelResponse> => {
+    const response = await client.post(`/alerting/channels/${id}/test`, request || {});
+    return response.data.data;
+  },
+
+  // Alert Rules
+  getRules: async (ruleType?: AlertRuleType, enabled?: boolean): Promise<AlertRule[]> => {
+    const params: Record<string, string | boolean> = {};
+    if (ruleType) params.rule_type = ruleType;
+    if (enabled !== undefined) params.enabled = enabled;
+    const response = await client.get('/alerting/rules', { params });
+    return response.data.data;
+  },
+
+  getRule: async (id: string): Promise<AlertRule> => {
+    const response = await client.get(`/alerting/rules/${id}`);
+    return response.data.data;
+  },
+
+  createRule: async (request: CreateAlertRuleRequest): Promise<AlertRule> => {
+    const response = await client.post('/alerting/rules', request);
+    return response.data.data;
+  },
+
+  updateRule: async (id: string, request: UpdateAlertRuleRequest): Promise<AlertRule> => {
+    const response = await client.put(`/alerting/rules/${id}`, request);
+    return response.data.data;
+  },
+
+  deleteRule: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/rules/${id}`);
+  },
+
+  // Alerts
+  getAlerts: async (
+    status?: AlertStatus,
+    severity?: AlertSeverity,
+    ruleId?: string,
+    limit?: number
+  ): Promise<Alert[]> => {
+    const params: Record<string, string | number> = {};
+    if (status) params.status = status;
+    if (severity) params.severity = severity;
+    if (ruleId) params.rule_id = ruleId;
+    if (limit) params.limit = limit;
+    const response = await client.get('/alerting/alerts', { params });
+    return response.data.data;
+  },
+
+  getAlert: async (id: string): Promise<Alert> => {
+    const response = await client.get(`/alerting/alerts/${id}`);
+    return response.data.data;
+  },
+
+  getAlertStats: async (): Promise<AlertStats> => {
+    const response = await client.get('/alerting/alerts/stats');
+    return response.data.data;
+  },
+
+  acknowledgeAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/acknowledge`);
+    return response.data.data;
+  },
+
+  resolveAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/resolve`);
+    return response.data.data;
+  },
+
+  silenceAlert: async (id: string): Promise<Alert> => {
+    const response = await client.post(`/alerting/alerts/${id}/silence`);
+    return response.data.data;
+  },
+
+  // Silences
+  getSilences: async (): Promise<AlertSilence[]> => {
+    const response = await client.get('/alerting/silences');
+    return response.data.data;
+  },
+
+  createSilence: async (request: CreateSilenceRequest): Promise<AlertSilence> => {
+    const response = await client.post('/alerting/silences', request);
+    return response.data.data;
+  },
+
+  deleteSilence: async (id: string): Promise<void> => {
+    await client.delete(`/alerting/silences/${id}`);
+  },
+
+  // Trigger & Evaluate
+  triggerAlert: async (request: TriggerAlertRequest): Promise<Alert> => {
+    const response = await client.post('/alerting/trigger', request);
+    return response.data.data;
+  },
+
+  evaluateRules: async (): Promise<{ alerts_triggered: number; alerts: Alert[] }> => {
+    const response = await client.post('/alerting/evaluate');
+    return response.data.data;
+  },
+
+  // ============================================================================
+  // Code Deploy
+  // ============================================================================
+
+  // Feature Status
+  getCodeDeployFeatureStatus: async (): Promise<{ enabled: boolean; message?: string }> => {
+    const response = await client.get('/code/status');
+    return response.data;
+  },
+
+  // SSH Keys
+  getSshKeys: async (): Promise<CodeSshKey[]> => {
+    const response = await client.get('/code/ssh-keys');
+    return response.data;
+  },
+
+  getSshKey: async (id: string): Promise<CodeSshKey> => {
+    const response = await client.get(`/code/ssh-keys/${id}`);
+    return response.data;
+  },
+
+  createSshKey: async (request: CreateSshKeyRequest): Promise<CodeSshKey> => {
+    const response = await client.post('/code/ssh-keys', request);
+    return response.data;
+  },
+
+  deleteSshKey: async (id: string): Promise<void> => {
+    await client.delete(`/code/ssh-keys/${id}`);
+  },
+
+  // PAT Tokens
+  getPatTokens: async (): Promise<CodePatToken[]> => {
+    const response = await client.get('/code/pat-tokens');
+    return response.data;
+  },
+
+  getPatToken: async (id: string): Promise<CodePatToken> => {
+    const response = await client.get(`/code/pat-tokens/${id}`);
+    return response.data;
+  },
+
+  getExpiringPatTokens: async (days: number = 30): Promise<CodePatToken[]> => {
+    const response = await client.get('/code/pat-tokens/expiring', { params: { days } });
+    return response.data;
+  },
+
+  createPatToken: async (request: CreatePatTokenRequest): Promise<CodePatToken> => {
+    const response = await client.post('/code/pat-tokens', request);
+    return response.data;
+  },
+
+  updatePatToken: async (id: string, request: UpdatePatTokenRequest): Promise<CodePatToken> => {
+    const response = await client.put(`/code/pat-tokens/${id}`, request);
+    return response.data;
+  },
+
+  deletePatToken: async (id: string): Promise<void> => {
+    await client.delete(`/code/pat-tokens/${id}`);
+  },
+
+  // Repositories
+  getCodeRepositories: async (): Promise<CodeRepository[]> => {
+    const response = await client.get('/code/repositories');
+    return response.data;
+  },
+
+  getCodeRepository: async (id: string): Promise<CodeRepository> => {
+    const response = await client.get(`/code/repositories/${id}`);
+    return response.data;
+  },
+
+  createCodeRepository: async (request: CreateRepositoryRequest): Promise<CodeRepository> => {
+    const response = await client.post('/code/repositories', request);
+    return response.data;
+  },
+
+  updateCodeRepository: async (id: string, request: UpdateRepositoryRequest): Promise<CodeRepository> => {
+    const response = await client.put(`/code/repositories/${id}`, request);
+    return response.data;
+  },
+
+  deleteCodeRepository: async (id: string): Promise<void> => {
+    await client.delete(`/code/repositories/${id}`);
+  },
+
+  syncCodeRepository: async (id: string): Promise<CodeEnvironment[]> => {
+    const response = await client.post(`/code/repositories/${id}/sync`);
+    return response.data;
+  },
+
+  // Environments
+  getCodeEnvironments: async (query?: ListEnvironmentsQuery): Promise<CodeEnvironment[]> => {
+    const response = await client.get('/code/environments', { params: query });
+    return response.data;
+  },
+
+  getCodeEnvironment: async (id: string): Promise<CodeEnvironment> => {
+    const response = await client.get(`/code/environments/${id}`);
+    return response.data;
+  },
+
+  updateCodeEnvironment: async (id: string, request: UpdateEnvironmentRequest): Promise<CodeEnvironment> => {
+    const response = await client.put(`/code/environments/${id}`, request);
+    return response.data;
+  },
+
+  // Deployments
+  getCodeDeployments: async (query?: ListDeploymentsQuery): Promise<CodeDeployment[]> => {
+    const response = await client.get('/code/deployments', { params: query });
+    return response.data;
+  },
+
+  getCodeDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.get(`/code/deployments/${id}`);
+    return response.data;
+  },
+
+  triggerDeployment: async (request: TriggerDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post('/code/deployments', request);
+    return response.data;
+  },
+
+  approveDeployment: async (id: string, request?: ApproveDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/approve`, request || {});
+    return response.data;
+  },
+
+  rejectDeployment: async (id: string, request: RejectDeploymentRequest): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/reject`, request);
+    return response.data;
+  },
+
+  retryDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/retry`);
+    return response.data;
+  },
+
+  cancelDeployment: async (id: string): Promise<CodeDeployment> => {
+    const response = await client.post(`/code/deployments/${id}/cancel`);
+    return response.data;
+  },
+
+  // Deployment Queue Stats
+  getDeploymentQueueStats: async (): Promise<{
+    pending: number;
+    approved: number;
+    deploying: number;
+    recent_failures: number;
+  }> => {
+    const response = await client.get('/code/deployments/stats');
+    return response.data;
+  },
+
+  // ============================================================================
+  // Group-Scoped Permissions
+  // ============================================================================
+
+  getGroupPermissions: async (roleId: string): Promise<GroupPermissionInfo[]> => {
+    const response = await client.get(`/roles/${roleId}/group-permissions`);
+    return response.data;
+  },
+
+  addGroupPermission: async (roleId: string, request: AddGroupPermissionRequest): Promise<GroupPermissionInfo> => {
+    const response = await client.post(`/roles/${roleId}/group-permissions`, request);
+    return response.data;
+  },
+
+  removeGroupPermission: async (roleId: string, groupId: string): Promise<void> => {
+    await client.delete(`/roles/${roleId}/group-permissions/${groupId}`);
+  },
+};
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+export const notificationApi = {
+  getNotifications: async (query?: {
+    unread_only?: boolean;
+    type?: string;
+    category?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ notifications: Notification[] }> => {
+    const response = await client.get('/notifications', { params: query });
+    return response.data;
+  },
+
+  getNotificationStats: async (): Promise<{ stats: NotificationStats }> => {
+    const response = await client.get('/notifications/stats');
+    return response.data;
+  },
+
+  markAsRead: async (id: string, read: boolean): Promise<{ notification: Notification }> => {
+    const response = await client.put(`/notifications/${id}/read`, { read });
+    return response.data;
+  },
+
+  markAllAsRead: async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const response = await client.post('/notifications/mark-all-read');
+    return response.data;
+  },
+
+  bulkMarkRead: async (notificationIds: string[], read: boolean): Promise<{ success: boolean; count: number }> => {
+    const response = await client.post('/notifications/bulk-mark-read', {
+      notification_ids: notificationIds,
+      read,
+    });
+    return response.data;
+  },
+
+  dismissNotification: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.post(`/notifications/${id}/dismiss`);
+    return response.data;
+  },
+
+  deleteNotification: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.delete(`/notifications/${id}`);
+    return response.data;
+  },
+
+  createNotification: async (data: CreateNotificationRequest): Promise<{ notification: Notification }> => {
+    const response = await client.post('/notifications', data);
+    return response.data;
+  },
+};
+
+// ============================================================================
+// Backup API
+// ============================================================================
+
+export const backupApi = {
+  // Feature status
+  getFeatureStatus: async (): Promise<BackupFeatureStatus> => {
+    const response = await client.get('/backup/status');
+    return response.data;
+  },
+
+  // Backups
+  listBackups: async (query?: ListBackupsQuery): Promise<ServerBackup[]> => {
+    const response = await client.get('/backup/backups', { params: query });
+    return response.data;
+  },
+
+  getBackup: async (id: string): Promise<ServerBackup> => {
+    const response = await client.get(`/backup/backups/${id}`);
+    return response.data;
+  },
+
+  createBackup: async (request: CreateBackupRequest): Promise<ServerBackup> => {
+    const response = await client.post('/backup/backups', request);
+    return response.data;
+  },
+
+  deleteBackup: async (id: string): Promise<void> => {
+    await client.delete(`/backup/backups/${id}`);
+  },
+
+  downloadBackup: async (id: string): Promise<Blob> => {
+    const response = await client.get(`/backup/backups/${id}/download`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  verifyBackup: async (id: string, request: VerifyBackupRequest): Promise<VerifyBackupResponse> => {
+    const response = await client.post(`/backup/backups/${id}/verify`, request);
+    return response.data;
+  },
+
+  restoreBackup: async (id: string, request: RestoreBackupRequest): Promise<BackupRestore> => {
+    const response = await client.post(`/backup/backups/${id}/restore`, request);
+    return response.data;
+  },
+
+  // Schedule
+  getSchedule: async (): Promise<BackupSchedule | null> => {
+    const response = await client.get('/backup/schedule');
+    return response.data;
+  },
+
+  updateSchedule: async (request: UpdateBackupScheduleRequest): Promise<BackupSchedule> => {
+    const response = await client.put('/backup/schedule', request);
+    return response.data;
+  },
+
+  // Restore history
+  listRestores: async (): Promise<BackupRestore[]> => {
+    const response = await client.get('/backup/restores');
+    return response.data;
+  },
+};
+
+// ============================================================================
+// Node Removal API
+// ============================================================================
+
+export const nodeRemovalApi = {
+  // Feature status
+  getFeatureStatus: async (): Promise<NodeRemovalFeatureStatus> => {
+    const response = await client.get('/node-removal/status');
+    return response.data;
+  },
+
+  // Pending removals
+  listPendingRemovals: async (): Promise<PendingNodeRemoval[]> => {
+    const response = await client.get('/node-removal/pending');
+    return response.data;
+  },
+
+  getPendingRemoval: async (certname: string): Promise<PendingNodeRemoval> => {
+    const response = await client.get(`/node-removal/pending/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  unmarkRemoval: async (certname: string): Promise<{ success: boolean; message: string }> => {
+    const response = await client.delete(`/node-removal/pending/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  // Manual marking
+  markForRemoval: async (request: MarkNodeForRemovalRequest): Promise<PendingNodeRemoval> => {
+    const response = await client.post('/node-removal/mark', request);
+    return response.data;
+  },
+
+  // Extend deadline
+  extendDeadline: async (request: ExtendRemovalDeadlineRequest): Promise<PendingNodeRemoval> => {
+    const response = await client.post('/node-removal/extend', request);
+    return response.data;
+  },
+
+  // Statistics
+  getStats: async (): Promise<PendingRemovalStats> => {
+    const response = await client.get('/node-removal/stats');
+    return response.data;
+  },
+
+  // Audit log
+  listAuditLog: async (): Promise<NodeRemovalAudit[]> => {
+    const response = await client.get('/node-removal/audit');
+    return response.data;
+  },
+
+  getNodeAuditLog: async (certname: string): Promise<NodeRemovalAudit[]> => {
+    const response = await client.get(`/node-removal/audit/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+};
+
+// CVE / Vulnerability API - separated to avoid TypeScript object literal property limit
+export const cveApi = {
+  getVulnerabilityDashboard: async (): Promise<VulnerabilityDashboardReport> => {
+    const response = await client.get('/cve/dashboard');
+    return response.data;
+  },
+
+  getVulnerableNodes: async (severity?: string, limit?: number): Promise<NodeVulnerabilitySummary[]> => {
+    const response = await client.get('/cve/nodes', { params: { severity, limit } });
+    return response.data;
+  },
+
+  getNodeVulnerabilities: async (certname: string): Promise<HostVulnerabilityMatch[]> => {
+    const response = await client.get(`/cve/nodes/${encodeURIComponent(certname)}`);
+    return response.data;
+  },
+
+  searchCves: async (query?: string, severity?: string, isKev?: boolean, limit?: number): Promise<CveEntry[]> => {
+    const response = await client.get('/cve/entries', { params: { query, severity, is_kev: isKev, limit } });
+    return response.data;
+  },
+
+  getCveDetail: async (cveId: string): Promise<CveDetailResponse> => {
+    const response = await client.get(`/cve/entries/${encodeURIComponent(cveId)}`);
+    return response.data;
+  },
+
+  getCveFeeds: async (): Promise<CveFeedSource[]> => {
+    const response = await client.get('/cve/feeds');
+    return response.data;
+  },
+
+  createCveFeed: async (request: CreateCveFeedSourceRequest): Promise<CveFeedSource> => {
+    const response = await client.post('/cve/feeds', request);
+    return response.data;
+  },
+
+  updateCveFeed: async (id: string, request: UpdateCveFeedSourceRequest): Promise<CveFeedSource> => {
+    const response = await client.put(`/cve/feeds/${id}`, request);
+    return response.data;
+  },
+
+  deleteCveFeed: async (id: string): Promise<void> => {
+    await client.delete(`/cve/feeds/${id}`);
+  },
+
+  triggerFeedSync: async (id: string): Promise<FeedSyncResult> => {
+    const response = await client.post(`/cve/feeds/${id}/sync`);
+    return response.data;
+  },
+
+  triggerMatchRefresh: async (): Promise<{ matches_refreshed: number }> => {
+    const response = await client.post('/cve/refresh-matches');
+    return response.data;
+  },
+
+  previewUpdateJob: async (request: UpdatePreviewRequest): Promise<UpdatePreviewResponse> => {
+    const response = await client.post('/inventory/updates/preview', request);
+    return response.data;
+  },
+};

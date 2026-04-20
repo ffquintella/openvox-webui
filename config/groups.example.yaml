@@ -1,0 +1,122 @@
+# Node Groups Configuration
+# Define your node classification groups here
+
+groups:
+  # Root group - all nodes inherit from this
+  - name: "All Nodes"
+    id: "00000000-0000-0000-0000-000000000001"
+    description: "Root group for all nodes"
+    rule_match_type: all
+    classes: []
+    parameters: {}
+    rules: []
+
+  # Environment groups
+  - name: "Production"
+    id: "00000000-0000-0000-0000-000000000010"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    description: "Production environment nodes"
+    environment: production
+    rule_match_type: all
+    classes:
+      - "profile::base"
+    parameters:
+      monitoring_enabled: true
+      backup_enabled: true
+    rules:
+      - fact_path: "trusted.extensions.pp_environment"
+        operator: "="
+        value: "production"
+
+  - name: "Staging"
+    id: "00000000-0000-0000-0000-000000000011"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    description: "Staging environment nodes"
+    environment: staging
+    rule_match_type: all
+    classes:
+      - "profile::base"
+    parameters:
+      monitoring_enabled: true
+      backup_enabled: false
+    rules:
+      - fact_path: "trusted.extensions.pp_environment"
+        operator: "="
+        value: "staging"
+
+  - name: "Development"
+    id: "00000000-0000-0000-0000-000000000012"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    description: "Development environment nodes"
+    environment: development
+    rule_match_type: all
+    classes:
+      - "profile::base"
+    parameters:
+      monitoring_enabled: false
+      backup_enabled: false
+    rules:
+      - fact_path: "trusted.extensions.pp_environment"
+        operator: "="
+        value: "development"
+
+  # Role-based groups
+  - name: "Web Servers"
+    id: "00000000-0000-0000-0000-000000000020"
+    parent_id: "00000000-0000-0000-0000-000000000010"
+    description: "Web server nodes"
+    rule_match_type: any
+    classes:
+      - "profile::webserver"
+      - "profile::nginx"
+    parameters:
+      http_port: 80
+      https_port: 443
+    rules:
+      - fact_path: "trusted.extensions.pp_role"
+        operator: "="
+        value: "webserver"
+      - fact_path: "custom_role"
+        operator: "~"
+        value: "^web.*"
+
+  - name: "Database Servers"
+    id: "00000000-0000-0000-0000-000000000021"
+    parent_id: "00000000-0000-0000-0000-000000000010"
+    description: "Database server nodes"
+    rule_match_type: all
+    classes:
+      - "profile::database"
+    parameters:
+      backup_schedule: "daily"
+    rules:
+      - fact_path: "trusted.extensions.pp_role"
+        operator: "="
+        value: "database"
+
+  # OS-based groups
+  - name: "RedHat Family"
+    id: "00000000-0000-0000-0000-000000000030"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    description: "RedHat-based operating systems"
+    rule_match_type: all
+    classes:
+      - "profile::os::redhat"
+    parameters: {}
+    rules:
+      - fact_path: "os.family"
+        operator: "="
+        value: "RedHat"
+
+  - name: "Debian Family"
+    id: "00000000-0000-0000-0000-000000000031"
+    parent_id: "00000000-0000-0000-0000-000000000001"
+    description: "Debian-based operating systems"
+    rule_match_type: all
+    classes:
+      - "profile::os::debian"
+    parameters: {}
+    rules:
+      - fact_path: "os.family"
+        operator: "="
+        value: "Debian"

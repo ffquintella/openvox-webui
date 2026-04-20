@@ -1,0 +1,4 @@
+etc/openvox-webui
+usr/bin
+usr/share/openvox-webui/static
+var/lib/openvox-webui

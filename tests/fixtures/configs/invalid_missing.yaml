@@ -1,0 +1,11 @@
+# Invalid configuration - missing required fields
+
+# Missing auth section entirely
+# Missing database section entirely
+
+server:
+  host: "127.0.0.1"
+  port: 8080
+
+logging:
+  level: "info"

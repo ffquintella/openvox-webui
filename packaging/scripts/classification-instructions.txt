@@ -1,0 +1,83 @@
+
+================================================================================
+         PUPPET NODE CLASSIFICATION - Configuration Instructions
+================================================================================
+
+OpenVox WebUI includes a Node Classification feature similar to Puppet Enterprise.
+To enable automatic class assignment to your Puppet agents:
+
+STEP 1: Install the Puppet Module on Your Puppet Server
+-------------------------------------------------------
+The OpenVox WebUI Puppet module is included with this installation.
+Copy it to your Puppet modules directory:
+
+  cp -r /usr/share/openvox-webui/puppet /etc/puppetlabs/code/environments/production/modules/openvox_webui
+
+Or install from Puppet Forge (when available):
+
+  puppet module install openvox-webui
+
+STEP 2: Configure Agents to Fetch Classification
+------------------------------------------------
+Add this to your site.pp or a role/profile class that applies to all nodes:
+
+  # Configure the client to fetch classification data
+  class { 'openvox_webui::client':
+    api_url          => 'https://<YOUR_OPENVOX_SERVER>:5051',
+    use_puppet_certs => true,  # Uses Puppet agent certificates for auth
+  }
+
+  # Apply classified classes with their parameters
+  include openvox_webui::classification
+
+STEP 3: Define Classification Groups in OpenVox WebUI
+-----------------------------------------------------
+1. Log into OpenVox WebUI (default: https://<server>:5051)
+2. Navigate to Groups in the sidebar
+3. Create groups with:
+   - Classification Rules (e.g., os.family = "RedHat")
+   - Classes to apply (e.g., "ntp" with parameters {"servers": ["ntp.example.com"]})
+   - Variables that become Facter facts (e.g., "role" => "webserver")
+
+STEP 4: Run Puppet Agent
+------------------------
+On your managed nodes, run:
+
+  puppet agent -t
+
+The agent will:
+1. Fetch its classification from OpenVox WebUI
+2. Automatically include all classified classes with parameters
+3. Export variables as top-level Facter facts
+
+AVAILABLE FACTS
+---------------
+After configuration, these facts are available on managed nodes:
+
+  $facts['openvox_classification']  # Full classification data
+  $facts['openvox_groups']          # Array of group names
+  $facts['openvox_classes']         # Hash of classes with parameters
+  $facts['openvox_variables']       # Variables from matched groups
+  $facts['openvox_environment']     # Classified environment
+  $facts['<variable_name>']         # Each variable as a top-level fact
+
+AUTHENTICATION OPTIONS
+----------------------
+Option A - Puppet Certificates (Recommended):
+  class { 'openvox_webui::client':
+    api_url          => 'https://openvox.example.com:5051',
+    use_puppet_certs => true,
+  }
+
+Option B - API Token:
+  class { 'openvox_webui::client':
+    api_url   => 'https://openvox.example.com:5051',
+    api_token => Sensitive('your-api-token'),
+  }
+
+DOCUMENTATION
+-------------
+Full documentation: https://github.com/ffquintella/openvox-webui
+Puppet module docs:  /usr/share/openvox-webui/puppet/README.md
+
+================================================================================

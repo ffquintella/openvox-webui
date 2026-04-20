@@ -1,0 +1,340 @@
+<%- |
+  Stdlib::Host $listen_address,
+  Stdlib::Port $listen_port,
+  Stdlib::Absolutepath $database_path,
+  Enum['trace', 'debug', 'info', 'warn', 'error'] $log_level,
+  Stdlib::Absolutepath $log_dir,
+  Optional[Stdlib::HTTPUrl] $puppetdb_url,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_cert,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_key,
+  Optional[Stdlib::Absolutepath] $puppetdb_ssl_ca,
+  Integer $puppetdb_timeout,
+  Optional[Stdlib::HTTPUrl] $puppet_ca_url,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_cert,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_key,
+  Optional[Stdlib::Absolutepath] $puppet_ca_ssl_ca,
+  Integer $puppet_ca_timeout,
+  String $jwt_secret,
+  String $jwt_expiry,
+  Integer $session_timeout,
+  Integer $max_login_attempts,
+  Integer $lockout_duration,
+  String $admin_username,
+  Optional[Sensitive[String]] $admin_password,
+  Optional[String] $admin_email,
+  Boolean $enable_tls,
+  Optional[Stdlib::Absolutepath] $tls_cert_file,
+  Optional[Stdlib::Absolutepath] $tls_key_file,
+  Enum['1.2', '1.3'] $tls_min_version,
+  Array[String] $tls_ciphers,
+  Stdlib::Absolutepath $static_dir,
+  Boolean $serve_frontend,
+  Integer $cache_ttl,
+  Integer $cache_max_entries,
+  String $dashboard_theme,
+  Integer $dashboard_page_size,
+  Integer $dashboard_refresh,
+  Integer $max_rules_per_group,
+  # SAML parameters
+  Boolean $saml_enabled,
+  Optional[String] $saml_sp_entity_id,
+  Optional[Stdlib::HTTPUrl] $saml_sp_acs_url,
+  Optional[Stdlib::Absolutepath] $saml_sp_certificate_file,
+  Optional[Stdlib::Absolutepath] $saml_sp_private_key_file,
+  Boolean $saml_sign_requests,
+  Boolean $saml_require_signed_assertions,
+  Optional[Stdlib::HTTPUrl] $saml_idp_metadata_url,
+  Optional[Stdlib::Absolutepath] $saml_idp_metadata_file,
+  Optional[String] $saml_idp_entity_id,
+  Optional[Stdlib::HTTPUrl] $saml_idp_sso_url,
+  Optional[Stdlib::Absolutepath] $saml_idp_certificate_file,
+  String $saml_username_attribute,
+  Optional[String] $saml_email_attribute,
+  Boolean $saml_require_existing_user,
+  Boolean $saml_allow_idp_initiated,
+  Integer $saml_request_max_age,
+  # Code Deploy parameters
+  Boolean $code_deploy_enabled,
+  Stdlib::Absolutepath $code_deploy_repos_base_dir,
+  Stdlib::Absolutepath $code_deploy_ssh_keys_dir,
+  Stdlib::Absolutepath $code_deploy_r10k_path,
+  Integer $code_deploy_r10k_pool_size,
+  String $code_deploy_encryption_key,
+  # Backup parameters
+  Boolean $backup_enabled,
+  Stdlib::Absolutepath $backup_dir,
+  Enum['hourly', 'daily', 'weekly', 'custom', 'disabled'] $backup_frequency,
+  String $backup_time,
+  Optional[String] $backup_cron,
+  Integer $backup_day_of_week,
+  Integer $backup_max_backups,
+  Integer $backup_min_age_hours,
+  Boolean $backup_encryption_enabled,
+  Boolean $backup_require_password,
+  Boolean $backup_include_database,
+  Boolean $backup_include_config,
+  # Node Bootstrap parameters
+  Optional[String] $node_bootstrap_openvox_server_url,
+  Optional[String] $node_bootstrap_repository_base_url,
+  String $node_bootstrap_agent_package_name,
+  # Classification parameters
+  Optional[String] $classification_key,
+| -%>
+# OpenVox WebUI Configuration
+# Managed by Puppet - DO NOT EDIT MANUALLY
+
+server:
+  host: "<%= $listen_address %>"
+  port: <%= $listen_port %>
+  workers: 4
+  serve_frontend: <%= $serve_frontend %>
+  static_dir: "<%= $static_dir %>"
+<% if $enable_tls and $tls_cert_file and $tls_key_file { -%>
+  tls:
+    cert_file: "<%= $tls_cert_file %>"
+    key_file: "<%= $tls_key_file %>"
+    min_version: "<%= $tls_min_version %>"
+<% if !$tls_ciphers.empty { -%>
+    ciphers:
+<% $tls_ciphers.each |$cipher| { -%>
+      - "<%= $cipher %>"
+<% } -%>
+<% } -%>
+<% } -%>
+
+database:
+  url: "sqlite://<%= $database_path %>"
+  max_connections: 10
+
+logging:
+  level: "<%= $log_level %>"
+  format: "json"
+  target: "file"
+  log_dir: "<%= $log_dir %>"
+  log_prefix: "openvox-webui"
+  daily_rotation: true
+  max_log_files: 30
+
+<% if $puppetdb_url { -%>
+puppetdb:
+  url: "<%= $puppetdb_url %>"
+  timeout_secs: <%= $puppetdb_timeout %>
+  ssl_verify: true
+<% if $puppetdb_ssl_cert { -%>
+  ssl_cert: "<%= $puppetdb_ssl_cert %>"
+<% } -%>
+<% if $puppetdb_ssl_key { -%>
+  ssl_key: "<%= $puppetdb_ssl_key %>"
+<% } -%>
+<% if $puppetdb_ssl_ca { -%>
+  ssl_ca: "<%= $puppetdb_ssl_ca %>"
+<% } -%>
+<% } else { -%>
+# puppetdb:
+#   url: "https://puppetdb.example.com:8081"
+#   timeout_secs: 30
+#   ssl_verify: true
+#   ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
+#   ssl_key: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
+#   ssl_ca: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
+<% } -%>
+
+<% if $puppet_ca_url { -%>
+puppet_ca:
+  url: "<%= $puppet_ca_url %>"
+  timeout_secs: <%= $puppet_ca_timeout %>
+  ssl_verify: true
+<% if $puppet_ca_ssl_cert { -%>
+  ssl_cert: "<%= $puppet_ca_ssl_cert %>"
+<% } -%>
+<% if $puppet_ca_ssl_key { -%>
+  ssl_key: "<%= $puppet_ca_ssl_key %>"
+<% } -%>
+<% if $puppet_ca_ssl_ca { -%>
+  ssl_ca: "<%= $puppet_ca_ssl_ca %>"
+<% } -%>
+<% } else { -%>
+# puppet_ca:
+#   url: "https://puppet.example.com:8140"
+#   timeout_secs: 30
+#   ssl_verify: true
+#   ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/webui.pem"
+#   ssl_key: "/etc/puppetlabs/puppet/ssl/private_keys/webui.pem"
+#   ssl_ca: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
+<% } -%>
+
+auth:
+  jwt_secret: "<%= $jwt_secret %>"
+  jwt_expiry: "<%= $jwt_expiry %>"
+  session_timeout: <%= $session_timeout %>
+  password_min_length: 8
+  max_login_attempts: <%= $max_login_attempts %>
+  lockout_duration: <%= $lockout_duration %>
+<% if $admin_username and $admin_password { -%>
+
+# Initial admin account (only used on first run)
+initial_admin:
+  username: "<%= $admin_username %>"
+  password: "<%= $admin_password.unwrap %>"
+<% if $admin_email { -%>
+  email: "<%= $admin_email %>"
+<% } -%>
+<% } -%>
+
+cache:
+  ttl: <%= $cache_ttl %>
+  max_entries: <%= $cache_max_entries %>
+
+dashboard:
+  theme: "<%= $dashboard_theme %>"
+  default_page_size: <%= $dashboard_page_size %>
+  refresh_interval: <%= $dashboard_refresh %>
+
+classification:
+  cache_ttl: <%= $cache_ttl %>
+  max_rules_per_group: <%= $max_rules_per_group %>
+<% if $classification_key { -%>
+  shared_key: "<%= $classification_key %>"
+<% } -%>
+
+facter:
+  templates_dir: "/etc/openvox-webui/templates"
+  output_format: "yaml"
+
+<% if $saml_enabled and $saml_sp_entity_id and $saml_sp_acs_url { -%>
+# SAML 2.0 Single Sign-On configuration
+saml:
+  enabled: true
+
+  # Service Provider (SP) configuration
+  sp:
+    entity_id: "<%= $saml_sp_entity_id %>"
+    acs_url: "<%= $saml_sp_acs_url %>"
+<% if $saml_sp_certificate_file { -%>
+    certificate_file: "<%= $saml_sp_certificate_file %>"
+<% } -%>
+<% if $saml_sp_private_key_file { -%>
+    private_key_file: "<%= $saml_sp_private_key_file %>"
+<% } -%>
+    sign_requests: <%= $saml_sign_requests %>
+    require_signed_assertions: <%= $saml_require_signed_assertions %>
+
+  # Identity Provider (IdP) configuration
+  idp:
+<% if $saml_idp_metadata_url { -%>
+    metadata_url: "<%= $saml_idp_metadata_url %>"
+<% } -%>
+<% if $saml_idp_metadata_file { -%>
+    metadata_file: "<%= $saml_idp_metadata_file %>"
+<% } -%>
+<% if $saml_idp_entity_id { -%>
+    entity_id: "<%= $saml_idp_entity_id %>"
+<% } -%>
+<% if $saml_idp_sso_url { -%>
+    sso_url: "<%= $saml_idp_sso_url %>"
+<% } -%>
+<% if $saml_idp_certificate_file { -%>
+    certificate_file: "<%= $saml_idp_certificate_file %>"
+<% } -%>
+
+  # User mapping configuration
+  user_mapping:
+    username_attribute: "<%= $saml_username_attribute %>"
+<% if $saml_email_attribute { -%>
+    email_attribute: "<%= $saml_email_attribute %>"
+<% } -%>
+    require_existing_user: <%= $saml_require_existing_user %>
+    allow_idp_initiated: <%= $saml_allow_idp_initiated %>
+
+  # Session settings
+  session:
+    relay_state_cookie: "saml_relay_state"
+    request_max_age_secs: <%= $saml_request_max_age %>
+<% } else { -%>
+# SAML 2.0 Single Sign-On (disabled)
+# saml:
+#   enabled: true
+#   sp:
+#     entity_id: "https://openvox.example.com/saml"
+#     acs_url: "https://openvox.example.com/api/v1/auth/saml/acs"
+#   idp:
+#     metadata_url: "https://idp.example.com/saml/metadata"
+#   user_mapping:
+#     username_attribute: "NameID"
+#     require_existing_user: true
+<% } -%>
+
+<% if $code_deploy_enabled { -%>
+# Code Deploy - Git-based environment management
+code_deploy:
+  enabled: true
+  repos_base_dir: "<%= $code_deploy_repos_base_dir %>"
+  ssh_keys_dir: "<%= $code_deploy_ssh_keys_dir %>"
+  r10k_path: "<%= $code_deploy_r10k_path %>"
+  r10k_pool_size: <%= $code_deploy_r10k_pool_size %>
+  encryption_key: "<%= $code_deploy_encryption_key %>"
+<% } else { -%>
+# Code Deploy - Git-based environment management (disabled)
+# code_deploy:
+#   enabled: true
+#   repos_base_dir: "/var/lib/openvox-webui/code-deploy/repos"
+#   ssh_keys_dir: "/etc/openvox-webui/code-deploy/ssh-keys"
+#   r10k_path: "/opt/puppetlabs/puppet/bin/r10k"
+#   encryption_key: "<randomly-generated-key>"
+<% } -%>
+
+<% if $backup_enabled { -%>
+# Server Backup configuration
+backup:
+  enabled: true
+  backup_dir: "<%= $backup_dir %>"
+  schedule:
+    frequency: "<%= $backup_frequency %>"
+    time: "<%= $backup_time %>"
+<% if $backup_cron { -%>
+    cron: "<%= $backup_cron %>"
+<% } -%>
+    day_of_week: <%= $backup_day_of_week %>
+  retention:
+    max_backups: <%= $backup_max_backups %>
+    min_age_hours: <%= $backup_min_age_hours %>
+  encryption:
+    enabled: <%= $backup_encryption_enabled %>
+    require_password: <%= $backup_require_password %>
+  include:
+    database: <%= $backup_include_database %>
+    config_files: <%= $backup_include_config %>
+<% } else { -%>
+# Server Backup (disabled)
+# backup:
+#   enabled: true
+#   backup_dir: "/var/lib/openvox-webui/backups"
+#   schedule:
+#     frequency: "daily"
+#     time: "02:00"
+#   retention:
+#     max_backups: 30
+#     min_age_hours: 24
+#   encryption:
+#     enabled: true
+#     require_password: true
+#   include:
+#     database: true
+#     config_files: true
+<% } -%>
+
+<% if $node_bootstrap_openvox_server_url { -%>
+# Node Bootstrap configuration
+node_bootstrap:
+  openvox_server_url: "<%= $node_bootstrap_openvox_server_url %>"
+<% if $node_bootstrap_repository_base_url { -%>
+  repository_base_url: "<%= $node_bootstrap_repository_base_url %>"
+<% } -%>
+  agent_package_name: "<%= $node_bootstrap_agent_package_name %>"
+<% } else { -%>
+# Node Bootstrap (disabled - openvox_server_url not configured)
+# node_bootstrap:
+#   openvox_server_url: "openvox.example.com"
+#   repository_base_url: "https://yum.voxpupuli.org/openvox8"
+#   agent_package_name: "openvox-agent"
+<% } -%>

@@ -1,0 +1,45 @@
+# Various PuppetDB configuration scenarios
+
+# Scenario 1: HTTP without SSL
+---
+auth:
+  jwt_secret: "valid-jwt-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://./test.db"
+puppetdb:
+  url: "http://localhost:8081"
+  timeout_secs: 30
+  ssl_verify: false
+
+# Scenario 2: HTTPS with SSL verification
+---
+auth:
+  jwt_secret: "valid-jwt-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://./test.db"
+puppetdb:
+  url: "https://puppetdb.example.com:8081"
+  timeout_secs: 60
+  ssl_verify: true
+
+# Scenario 3: HTTPS with client certificates
+---
+auth:
+  jwt_secret: "valid-jwt-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://./test.db"
+puppetdb:
+  url: "https://puppetdb.secure.example.com:8081"
+  timeout_secs: 45
+  ssl_verify: true
+  ssl_cert: "/etc/puppetlabs/puppet/ssl/certs/client.pem"
+  ssl_key: "/etc/puppetlabs/puppet/ssl/private_keys/client.pem"
+  ssl_ca: "/etc/puppetlabs/puppet/ssl/certs/ca.pem"
+
+# Scenario 4: No PuppetDB (optional)
+---
+auth:
+  jwt_secret: "valid-jwt-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://./test.db"
+# puppetdb section omitted - runs without PuppetDB integration

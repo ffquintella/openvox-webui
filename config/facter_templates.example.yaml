@@ -1,0 +1,100 @@
+# Facter Templates Configuration
+# Define templates for generating external facts based on classification
+
+templates:
+  # Basic classification facts
+  - name: "classification"
+    description: "Generate facts from node classification"
+    facts:
+      - name: "openvox_environment"
+        value:
+          type: FromClassification
+          value: "environment"
+
+      - name: "openvox_groups"
+        value:
+          type: FromClassification
+          value: "groups"
+
+      - name: "openvox_classes"
+        value:
+          type: FromClassification
+          value: "classes"
+
+  # Role-based facts
+  - name: "role_facts"
+    description: "Generate role-specific facts"
+    facts:
+      - name: "server_role"
+        value:
+          type: Template
+          value: "{{fact:trusted.extensions.pp_role}}"
+
+      - name: "server_environment"
+        value:
+          type: Template
+          value: "{{environment}}"
+
+      - name: "server_fqdn"
+        value:
+          type: FromFact
+          value: "networking.fqdn"
+
+  # Web server specific facts
+  - name: "webserver"
+    description: "Facts for web servers"
+    facts:
+      - name: "web_cluster"
+        value:
+          type: Static
+          value: "default"
+
+      - name: "load_balancer_member"
+        value:
+          type: Static
+          value: true
+
+      - name: "web_ports"
+        value:
+          type: Static
+          value:
+            http: 80
+            https: 443
+
+  # Database server specific facts
+  - name: "database"
+    description: "Facts for database servers"
+    facts:
+      - name: "db_cluster"
+        value:
+          type: Static
+          value: "primary"
+
+      - name: "db_replication_role"
+        value:
+          type: Static
+          value: "master"
+
+      - name: "backup_enabled"
+        value:
+          type: FromClassification
+          value: "backup_enabled"
+
+  # Monitoring facts
+  - name: "monitoring"
+    description: "Facts for monitoring integration"
+    facts:
+      - name: "monitoring_tags"
+        value:
+          type: Template
+          value: "env:{{environment}},role:{{fact:trusted.extensions.pp_role}}"
+
+      - name: "metrics_endpoint"
+        value:
+          type: Template
+          value: "http://{{fact:networking.ip}}:9100/metrics"
+
+      - name: "alerting_team"
+        value:
+          type: Static
+          value: "infrastructure"

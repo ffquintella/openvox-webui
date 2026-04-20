@@ -1,0 +1,30 @@
+# Cargo configuration for OpenVox WebUI
+
+[build]
+# Use all available cores for compilation
+jobs = -1
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[alias]
+# Development shortcuts
+dev = "run"
+b = "build"
+br = "build --release"
+t = "test"
+c = "check"
+cl = "clippy --all-targets --all-features"
+fmt-check = "fmt --all -- --check"
+lint = "clippy --all-targets --all-features -- -D warnings"
+
+# Test aliases
+test-unit = "test --lib"
+test-integration = "test --test '*'"
+test-bdd = "test --test cucumber"
+
+[env]
+RUST_BACKTRACE = "1"

@@ -1,0 +1,43 @@
+//! Data models
+
+mod alerting;
+mod analytics;
+mod api_key;
+mod audit;
+mod backup;
+mod certificate;
+mod classification;
+mod code_deploy;
+mod cve;
+mod fact;
+mod group;
+mod inventory;
+mod node;
+mod node_removal;
+mod notification;
+mod organization;
+mod rbac;
+mod report;
+mod settings;
+mod user;
+
+pub use alerting::*;
+pub use analytics::*;
+pub use api_key::*;
+pub use audit::*;
+pub use backup::*;
+pub use certificate::*;
+pub use classification::*;
+pub use code_deploy::*;
+pub use cve::*;
+pub use fact::*;
+pub use group::*;
+pub use inventory::*;
+pub use node::*;
+pub use node_removal::*;
+pub use notification::*;
+pub use organization::*;
+pub use rbac::*;
+pub use report::*;
+pub use settings::*;
+pub use user::*;

@@ -1,0 +1,6 @@
+# Minimal valid configuration - only required fields
+auth:
+  jwt_secret: "this-is-a-valid-jwt-secret-that-is-at-least-32-characters"
+
+database:
+  url: "sqlite://./test.db"

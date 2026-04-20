@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Remove data directory on purge
+        rm -rf /var/lib/openvox-webui
+
+        # Remove user and group
+        if getent passwd openvox-webui >/dev/null; then
+            deluser --system openvox-webui || true
+        fi
+
+        if getent group openvox-webui >/dev/null; then
+            delgroup --system openvox-webui || true
+        fi
+
+        # Remove config directory
+        rm -rf /etc/openvox-webui
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

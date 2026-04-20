@@ -1,0 +1,71 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build frontend
+	cd frontend && npm ci --prefer-offline && npm run build
+	# Build backend
+	cargo build --release
+
+override_dh_auto_install:
+	# Install binary
+	install -D -m 755 target/release/openvox-webui \
+		debian/openvox-webui/usr/bin/openvox-webui
+
+	# Install scheduled reports binary
+	install -D -m 755 target/release/run-scheduled-reports \
+		debian/openvox-webui/usr/bin/openvox-webui-scheduled-reports
+
+	# Install frontend assets
+	mkdir -p debian/openvox-webui/usr/share/openvox-webui/static
+	cp -r frontend/dist/* debian/openvox-webui/usr/share/openvox-webui/static/
+
+	# Install configuration script
+	install -D -m 755 packaging/scripts/configure-openvox-webui.sh \
+		debian/openvox-webui/usr/share/openvox-webui/scripts/configure-openvox-webui.sh
+
+	# Install classification instructions
+	install -D -m 644 packaging/scripts/classification-instructions.txt \
+		debian/openvox-webui/usr/share/openvox-webui/scripts/classification-instructions.txt
+
+	# Install Puppet module
+	mkdir -p debian/openvox-webui/usr/share/openvox-webui/puppet
+	cp -r puppet/* debian/openvox-webui/usr/share/openvox-webui/puppet/
+
+	# Install configuration
+	install -D -m 640 config/config.example.yaml \
+		debian/openvox-webui/etc/openvox-webui/config.yaml
+
+	# Create SSL directory
+	install -d -m 750 debian/openvox-webui/etc/openvox-webui/ssl
+
+	# Install default environment file
+	install -D -m 644 packaging/default/openvox-webui \
+		debian/openvox-webui/etc/default/openvox-webui
+
+	# Install systemd service
+	install -D -m 644 packaging/systemd/openvox-webui.service \
+		debian/openvox-webui/lib/systemd/system/openvox-webui.service
+
+	# Create data and log directories
+	install -d -m 750 debian/openvox-webui/var/lib/openvox-webui
+	install -d -m 750 debian/openvox-webui/var/log/openvox/webui
+
+override_dh_auto_clean:
+	cargo clean || true
+	rm -rf frontend/node_modules frontend/dist || true
+
+override_dh_auto_test:
+	# Skip tests during package build
+	true
+
+override_dh_fixperms:
+	dh_fixperms
+	# Fix permissions for sensitive files
+	chmod 640 debian/openvox-webui/etc/openvox-webui/config.yaml || true
+	chmod 750 debian/openvox-webui/etc/openvox-webui/ssl || true
