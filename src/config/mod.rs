@@ -1180,6 +1180,11 @@ pub struct ClassificationConfig {
     /// This allows debugging without requiring client certificates
     #[serde(default)]
     pub shared_key: Option<String>,
+    /// Disable authentication for public classification/environment endpoints
+    /// (`/api/v1/nodes/{certname}/classify` and `/api/v1/nodes/{certname}/environment`).
+    /// Disabled by default for security.
+    #[serde(default)]
+    pub disable_authentication: bool,
 }
 
 /// Inventory/version intelligence configuration
@@ -1937,6 +1942,13 @@ impl AppConfig {
                 .get_or_insert_with(ClassificationConfig::default);
             classification.shared_key = Some(key);
         }
+        if let Ok(disable_auth) = std::env::var("CLASSIFICATION_DISABLE_AUTHENTICATION") {
+            let classification = self
+                .classification
+                .get_or_insert_with(ClassificationConfig::default);
+            classification.disable_authentication =
+                disable_auth.to_lowercase() == "true" || disable_auth == "1";
+        }
     }
 
     /// Validate configuration
@@ -2265,5 +2277,51 @@ widgets:
             config.dashboard.default_time_range
         );
         assert_eq!(parsed.rbac.default_role, config.rbac.default_role);
+    }
+
+    #[test]
+    fn test_classification_disable_authentication_default_false() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 3000
+auth:
+  jwt_secret: "test-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://test.db"
+classification:
+  shared_key: "abc123"
+"#;
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
+        assert!(
+            !config
+                .classification
+                .as_ref()
+                .unwrap()
+                .disable_authentication
+        );
+    }
+
+    #[test]
+    fn test_classification_disable_authentication_parsing() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 3000
+auth:
+  jwt_secret: "test-secret-that-is-at-least-32-characters-long"
+database:
+  url: "sqlite://test.db"
+classification:
+  disable_authentication: true
+"#;
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
+        assert!(
+            config
+                .classification
+                .as_ref()
+                .unwrap()
+                .disable_authentication
+        );
     }
 }

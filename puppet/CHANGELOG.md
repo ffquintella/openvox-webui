@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add inline compliance rule editor to create and edit compliance baselines, including add/remove rule controls and fact/operator/value configuration
 - Add server-backed auth session tracking so idle timeout enforcement survives page refreshes and token reuse
 - Add optional node group selection to drift detection baselines in create and edit modals
+- Add `classification.disable_authentication` config flag (default `false`) to disable authentication checks only for public node environment/classification endpoints
 
 ### Fixed
 - **Package post-install:** When PuppetDB is on the same host, the configure script now uses the agent `certname` (or FQDN) for the PuppetDB URL instead of `localhost`, so TLS matches the Jetty certificate. A failed post-install connection check no longer aborts `dpkg`/`apt` (warning only).

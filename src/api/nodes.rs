@@ -531,6 +531,13 @@ async fn get_node_classification_public(
     headers: HeaderMap,
     client_cert: OptionalClientCert,
 ) -> AppResult<Json<ClassificationResult>> {
+    if is_classification_authentication_disabled(&state) {
+        tracing::debug!(
+            "Classification: Authentication disabled by configuration for node '{}'",
+            certname
+        );
+    }
+
     // Check for shared key authentication first
     let shared_key_header = headers
         .get("X-Classification-Key")
@@ -543,44 +550,46 @@ async fn get_node_classification_public(
         .as_ref()
         .and_then(|c| c.shared_key.as_ref());
 
-    let authenticated =
-        if let (Some(header_key), Some(config_key)) = (&shared_key_header, configured_shared_key) {
-            // Shared key authentication
-            if header_key == config_key {
-                tracing::debug!(
+    let authenticated = if is_classification_authentication_disabled(&state) {
+        true
+    } else if let (Some(header_key), Some(config_key)) = (&shared_key_header, configured_shared_key)
+    {
+        // Shared key authentication
+        if header_key == config_key {
+            tracing::debug!(
                 "Classification: Shared key authentication successful for node '{}' (debug mode)",
                 certname
             );
-                true
-            } else {
-                tracing::warn!(
-                    "Classification: Invalid shared key provided for node '{}'",
-                    certname
-                );
-                false
-            }
-        } else if let Some(ref cert) = client_cert.0 {
-            // Client certificate authentication
-            if cert.matches_certname(&certname) {
-                tracing::debug!(
-                    "Classification: Client certificate authentication successful for node '{}'",
-                    certname
-                );
-                true
-            } else {
-                tracing::warn!(
-                    "Classification: Certificate CN '{}' does not match requested certname '{}'",
-                    cert.cn,
-                    certname
-                );
-                return Err(AppError::Forbidden(format!(
-                    "Certificate CN '{}' does not match requested node '{}'",
-                    cert.cn, certname
-                )));
-            }
+            true
         } else {
+            tracing::warn!(
+                "Classification: Invalid shared key provided for node '{}'",
+                certname
+            );
             false
-        };
+        }
+    } else if let Some(ref cert) = client_cert.0 {
+        // Client certificate authentication
+        if cert.matches_certname(&certname) {
+            tracing::debug!(
+                "Classification: Client certificate authentication successful for node '{}'",
+                certname
+            );
+            true
+        } else {
+            tracing::warn!(
+                "Classification: Certificate CN '{}' does not match requested certname '{}'",
+                cert.cn,
+                certname
+            );
+            return Err(AppError::Forbidden(format!(
+                "Certificate CN '{}' does not match requested node '{}'",
+                cert.cn, certname
+            )));
+        }
+    } else {
+        false
+    };
 
     if !authenticated {
         return Err(AppError::Unauthorized(
@@ -843,6 +852,15 @@ fn authenticate_node_request(
     Err(AppError::Unauthorized(
         "Client certificate or shared key required. Provide X-SSL-Client-CN header or X-Classification-Key header.".to_string(),
     ))
+}
+
+fn is_classification_authentication_disabled(state: &AppState) -> bool {
+    state
+        .config
+        .classification
+        .as_ref()
+        .map(|c| c.disable_authentication)
+        .unwrap_or(false)
 }
 
 /// Response for node deletion
