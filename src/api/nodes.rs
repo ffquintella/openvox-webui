@@ -531,13 +531,6 @@ async fn get_node_classification_public(
     headers: HeaderMap,
     client_cert: OptionalClientCert,
 ) -> AppResult<Json<ClassificationResult>> {
-    if is_classification_authentication_disabled(&state) {
-        tracing::debug!(
-            "Classification: Authentication disabled by configuration for node '{}'",
-            certname
-        );
-    }
-
     // Check for shared key authentication first
     let shared_key_header = headers
         .get("X-Classification-Key")
