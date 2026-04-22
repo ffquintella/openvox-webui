@@ -891,7 +891,12 @@ async fn delete_node(
             None,
         )
         .await
-        .map_err(|e| AppError::internal(format!("Permission check failed: {}", e)))?;
+        .map_err(|e| {
+            AppError::internal(format!(
+                "Failed to check nodes:delete permission for user '{}': {}",
+                auth_user.username, e
+            ))
+        })?;
 
     if !permission_check.allowed {
         return Err(AppError::forbidden(
