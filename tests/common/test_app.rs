@@ -3,7 +3,10 @@
 //! Provides utilities for setting up test instances of the application
 //! with in-memory databases and mock services.
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::AtomicBool,
+    Arc,
+};
 
 use axum::{body::Body, http::Request, Router};
 use chrono::Utc;
@@ -15,7 +18,7 @@ use openvox_webui::{
     api,
     config::{
         AppConfig, AuthConfig, CacheConfig, CodeDeployYamlConfig, DashboardConfig, DatabaseConfig,
-        LoggingConfig, RbacConfig, ServerConfig,
+        InventoryConfig, LoggingConfig, RbacConfig, ServerConfig,
     },
     db,
     middleware::auth::{Claims, TokenType},
@@ -47,6 +50,22 @@ impl TestApp {
         let db = db::init_pool(&config.database)
             .await
             .expect("Failed to initialize test database");
+
+        // Initialize a separate inventory database (in a unique temp file)
+        let inv_db_path = format!(
+            "/tmp/openvox_test_inv_{}.db",
+            Uuid::new_v4().to_string().replace('-', "")
+        );
+        let inv_db_url = format!("sqlite://{}?mode=rwc", inv_db_path);
+        let inventory_db = db::init_inventory_pool(&inv_db_url, &config.database)
+            .await
+            .expect("Failed to initialize test inventory database");
+        let inventory_config = InventoryConfig {
+            database_url: inv_db_url,
+            ..InventoryConfig::default()
+        };
+        // Mark inventory as ready immediately for tests (no migration needed)
+        let inventory_ready = Arc::new(AtomicBool::new(true));
 
         // Initialize RBAC services
         let rbac = Arc::new(RbacService::new());
@@ -84,6 +103,9 @@ impl TestApp {
         let state = AppState {
             config,
             db,
+            inventory_db,
+            inventory_config,
+            inventory_ready,
             puppetdb: None,
             puppet_ca: None,
             rbac,
