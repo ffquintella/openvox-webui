@@ -13,10 +13,7 @@ use tracing::{debug, warn};
 
 use crate::{
     db::{repository::GroupRepository, InventoryRepository},
-    middleware::{
-        rbac::{check_permission, RbacError},
-        AuthUser, OptionalClientCert,
-    },
+    middleware::{AuthUser, OptionalClientCert},
     models::{
         default_organization_uuid, Action, ClassificationResult, Fact, InventoryPayload,
         InventorySnapshotSummary, Node, NodeInventory, NodePendingUpdateJob, Report,
@@ -884,22 +881,30 @@ async fn delete_node(
     auth_user: AuthUser,
     Path(certname): Path<String>,
 ) -> Result<Json<DeleteNodeResponse>, AppError> {
-    // Check permission
-    check_permission(
-        &state.rbac,
-        &auth_user,
-        RbacResource::Nodes,
-        Action::Delete,
-        None,
-        None,
-    )
-    .map_err(|e| match e {
-        RbacError::PermissionDenied { reason, .. } => AppError::Forbidden(reason),
-        RbacError::NotAuthenticated => {
-            AppError::Unauthorized("Authentication required".to_string())
-        }
-        RbacError::RoleNotFound(name) => AppError::Internal(format!("Role not found: {}", name)),
-    })?;
+    let permission_check = state
+        .rbac_db
+        .check_permission(
+            &auth_user.user_id(),
+            RbacResource::Nodes,
+            Action::Delete,
+            None,
+            None,
+        )
+        .await
+        .map_err(|e| {
+            AppError::internal(format!(
+                "Failed to check nodes:delete permission for user '{}': {}",
+                auth_user.username, e
+            ))
+        })?;
+
+    if !permission_check.allowed {
+        return Err(AppError::forbidden(
+            &permission_check
+                .reason
+                .unwrap_or_else(|| "No matching permission found".to_string()),
+        ));
+    }
 
     tracing::info!(
         "User '{}' is deleting node '{}'",

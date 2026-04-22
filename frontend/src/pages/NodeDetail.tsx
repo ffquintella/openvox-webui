@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useNodeVulnerabilities } from '../hooks/useCve';
+import { getDeleteNodeErrorMessage } from './nodeDetailErrors';
+import { usePermissionsStore } from '../stores/permissionsStore';
 import type {
   Report,
   NodeGroup,
@@ -1752,6 +1754,7 @@ export default function NodeDetail() {
   const { certname } = useParams<{ certname: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const canDeleteNode = usePermissionsStore((state) => state.hasPermission('nodes', 'delete'));
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteResult, setDeleteResult] = useState<DeleteNodeResponse | null>(null);
@@ -1827,8 +1830,7 @@ export default function NodeDetail() {
     },
     onError: (error: Error) => {
       setShowDeleteConfirm(false);
-      // Show error to user - the API will return an error message
-      alert(`Failed to delete node: ${error.message}`);
+      alert(`Failed to delete node: ${getDeleteNodeErrorMessage(error)}`);
     },
   });
 
@@ -1945,8 +1947,9 @@ export default function NodeDetail() {
             </button>
             <button
               onClick={handleDeleteClick}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-              title="Delete this node"
+              disabled={!canDeleteNode}
+              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-red-600 disabled:hover:bg-transparent"
+              title={canDeleteNode ? 'Delete this node' : 'You do not have authorization to delete nodes'}
             >
               <Trash2 className="w-4 h-4" />
               Delete

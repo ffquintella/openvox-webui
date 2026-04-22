@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `classification.disable_authentication` config flag (default `false`) to disable authentication checks only for public node environment/classification endpoints
 
 ### Fixed
+- Fix node deletion authorization flow: users with `nodes:delete` permissions assigned through RBAC roles can now delete nodes, the Delete button is disabled when permission is missing, and 403 errors now show a clear authorization message
 - **Package post-install:** When PuppetDB is on the same host, the configure script now uses the agent `certname` (or FQDN) for the PuppetDB URL instead of `localhost`, so TLS matches the Jetty certificate. A failed post-install connection check no longer aborts `dpkg`/`apt` (warning only).
 - Fix login session persistence after browser refresh by waiting for auth store hydration before protected-route redirects
 - Fix access token expiration handling by adding automatic refresh-token retry for authenticated API requests
