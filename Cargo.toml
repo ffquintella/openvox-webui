@@ -112,7 +112,7 @@ quick-xml = { version = "0.39.2", features = ["serialize"] }
 
 [dev-dependencies]
 # Testing
-cucumber = "0.22"
+cucumber = "0.23"
 tokio-test = "0.4"
 wiremock = "0.6"
 fake = { version = "5.1", features = ["derive"] }
