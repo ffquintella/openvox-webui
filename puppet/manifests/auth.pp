@@ -11,22 +11,6 @@
 class openvox_webui::auth {
   assert_private()
 
-  # Make the notify targets exist in the catalog even if no other class on
-  # this node manages puppetserver / puppetdb (e.g. a node that pulls in
-  # `::openvox_webui` because it runs the WebUI but doesn't itself run
-  # puppetserver, or vice versa). `ensure_resource` is idempotent: if some
-  # other module already declares the service with explicit parameters those
-  # win; otherwise we declare a stub that can receive refresh events from the
-  # auth-file changes below. Without this, catalog compilation fails with
-  # "Could not find resource 'Service[puppetserver]' in parameter 'notify'"
-  # whenever auth.pp lands on a host outside the puppetserver/puppetdb host.
-  if $openvox_webui::manage_puppetserver_auth or $openvox_webui::manage_puppetserver_ca_conf {
-    ensure_resource('service', $openvox_webui::puppetserver_service, {})
-  }
-  if $openvox_webui::manage_puppetdb_auth {
-    ensure_resource('service', $openvox_webui::puppetdb_service, {})
-  }
-
   # Determine the client certificate CN to authorize
   # Priority: explicit parameter > auto-discovered from puppet_settings > hostname
   if $openvox_webui::auth_client_certname {
@@ -48,8 +32,7 @@ class openvox_webui::auth {
     # Reference the parent class's parameter directly. Aliasing it to a
     # bare local (`$puppetserver_confdir = ...`) would shadow the parent's
     # already-visible `$openvox_webui::puppetserver_confdir`, which Puppet
-    # rejects as a reassignment (seen as: "Cannot reassign variable
-    # '$puppetserver_confdir'" on the next reference of the qualified name).
+    # rejects as a reassignment.
     file { "${openvox_webui::puppetserver_confdir}/openvox-webui-auth.conf":
       ensure  => file,
       owner   => 'puppet',
@@ -58,14 +41,25 @@ class openvox_webui::auth {
       content => epp('openvox_webui/puppetserver-auth.conf.epp', {
           client_certname => $client_certname,
       }),
-      notify  => Service[$openvox_webui::puppetserver_service],
     }
+
+    # Refresh the puppetserver service ONLY if a matching Service resource
+    # is in the catalog. The virtual-resource collector emits a notify edge
+    # to whatever Service<title> resources match — and emits nothing if
+    # none match. This:
+    #   * keeps catalog compilation green on hosts that don't manage the
+    #     puppetserver service (the original "Could not find resource
+    #     Service[...] in parameter notify" failure),
+    #   * avoids the dependency cycle introduced by ensure_resource'ing a
+    #     stub Service whose title collides with the WebUI's own
+    #     `service_name` (both default to `openvox-server` on OpenVox-
+    #     branded fleets).
+    File["${openvox_webui::puppetserver_confdir}/openvox-webui-auth.conf"]
+    ~> Service <| title == $openvox_webui::puppetserver_service |>
   }
 
   # Manage PuppetDB auth.conf
   if $openvox_webui::manage_puppetdb_auth {
-    # Create a drop-in configuration file for PuppetDB.
-    # Same reasoning as above — use the qualified parent-class param.
     file { "${openvox_webui::puppetdb_confdir}/openvox-webui-auth.conf":
       ensure  => file,
       owner   => 'puppetdb',
@@ -74,8 +68,10 @@ class openvox_webui::auth {
       content => epp('openvox_webui/puppetdb-auth.conf.epp', {
           client_certname => $client_certname,
       }),
-      notify  => Service[$openvox_webui::puppetdb_service],
     }
+
+    File["${openvox_webui::puppetdb_confdir}/openvox-webui-auth.conf"]
+    ~> Service <| title == $openvox_webui::puppetdb_service |>
   }
 
   # Manage Puppet Server ca.conf to enable certificate_status endpoint
@@ -90,7 +86,9 @@ class openvox_webui::auth {
           client_certname         => $client_certname,
           allow_subject_alt_names => $openvox_webui::ca_allow_subject_alt_names,
       }),
-      notify  => Service[$openvox_webui::puppetserver_service],
     }
+
+    File["${openvox_webui::puppetserver_confdir}/ca.conf"]
+    ~> Service <| title == $openvox_webui::puppetserver_service |>
   }
 }
