@@ -206,15 +206,32 @@ impl ClassificationService {
                     }
                 }
 
-                // Add the pinned group to matched groups
-                matched_groups.push(GroupMatch {
-                    id: pinned_group.id,
-                    name: pinned_group.name.clone(),
-                    match_type: MatchType::Pinned,
-                    matched_rules: vec![],
-                });
+                // Add the pinned group to matched groups, plus every ancestor
+                // as `Inherited`. Pinning a node to a leaf group implies it
+                // is logically a member of every group above it in the tree —
+                // otherwise the parent group's `nodes matched` count silently
+                // omits these nodes and ancestor-level rules never see them.
+                // De-dupe against earlier pins-to-siblings that share an
+                // ancestor chain.
+                for ancestor in &ancestor_chain {
+                    if matched_groups.iter().any(|g| g.id == ancestor.id) {
+                        continue;
+                    }
+                    let match_type = if ancestor.id == pinned_group.id {
+                        MatchType::Pinned
+                    } else {
+                        MatchType::Inherited
+                    };
+                    matched_groups.push(GroupMatch {
+                        id: ancestor.id,
+                        name: ancestor.name.clone(),
+                        match_type,
+                        matched_rules: vec![],
+                    });
+                }
 
-                // Mark this group and all its ancestors as processed
+                // Mark this group and all its ancestors as processed so the
+                // BFS below doesn't double-count them via rule evaluation.
                 for ancestor in &ancestor_chain {
                     processed_groups.insert(ancestor.id);
                 }
@@ -1369,14 +1386,98 @@ mod tests {
 
         let result = service.classify("node1.example.com", &facts);
 
-        // Pinned child should match, inheriting parent's classes/variables
-        assert_eq!(result.groups.len(), 1);
-        assert_eq!(result.groups[0].name, "child");
-        assert_eq!(result.groups[0].match_type, MatchType::Pinned);
-        // Should have both parent and child classes (inherited via pinning)
+        // Pinned child should match (Pinned), and the parent should appear as
+        // Inherited because pinning to a leaf logically places the node in
+        // every ancestor group too. Both parent and child classes/variables
+        // are also merged into the result.
+        assert_eq!(result.groups.len(), 2);
+        let parent_match = result
+            .groups
+            .iter()
+            .find(|g| g.name == "parent")
+            .expect("parent should be inherited via pinned child");
+        assert_eq!(parent_match.match_type, MatchType::Inherited);
+        let child_match = result
+            .groups
+            .iter()
+            .find(|g| g.name == "child")
+            .expect("pinned child should match");
+        assert_eq!(child_match.match_type, MatchType::Pinned);
         let classes = result.classes.as_object().unwrap();
         assert!(classes.contains_key("parent_class"));
         assert!(classes.contains_key("child_class"));
+    }
+
+    #[test]
+    fn test_pinned_node_appears_in_every_ancestor_group() {
+        // Regression: in production, every node was pinned to a leaf group,
+        // and the pinning logic only added the leaf to matched_groups while
+        // marking ancestors as "processed" — making ancestor groups (Linux,
+        // Develop, etc.) always look empty in the UI even though they
+        // logically contained every pinned node. The fix propagates pinned
+        // membership up the entire ancestor chain.
+        let linux_id = Uuid::new_v4();
+        let linux = NodeGroup {
+            id: linux_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+        let develop_id = Uuid::new_v4();
+        let develop = NodeGroup {
+            id: develop_id,
+            name: "Develop".to_string(),
+            parent_id: Some(linux_id),
+            is_environment_group: true,
+            environment: Some("develop".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*ds.*"),
+            }],
+            ..Default::default()
+        };
+        let leaf_id = Uuid::new_v4();
+        let leaf = NodeGroup {
+            id: leaf_id,
+            name: "ADM-ESI".to_string(),
+            parent_id: Some(develop_id),
+            pinned_nodes: vec!["apldc1vds0044.fgv.br".to_string()],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![linux, develop, leaf]);
+        // Empty facts on purpose — without the fix, Linux's `kernel = Linux`
+        // would never match and the chain would never propagate. The pinning
+        // path must work even with sparse facts.
+        let facts = serde_json::json!({});
+
+        let result = service.classify("apldc1vds0044.fgv.br", &facts);
+
+        let names: Vec<&str> = result.groups.iter().map(|g| g.name.as_str()).collect();
+        assert!(names.contains(&"Linux"), "Linux ancestor missing: {names:?}");
+        assert!(names.contains(&"Develop"), "Develop ancestor missing: {names:?}");
+        assert!(names.contains(&"ADM-ESI"), "Pinned leaf missing: {names:?}");
+
+        let leaf_match = result.groups.iter().find(|g| g.name == "ADM-ESI").unwrap();
+        assert_eq!(leaf_match.match_type, MatchType::Pinned);
+        for ancestor in ["Linux", "Develop"] {
+            let m = result.groups.iter().find(|g| g.name == ancestor).unwrap();
+            assert_eq!(
+                m.match_type,
+                MatchType::Inherited,
+                "ancestor {ancestor} should be Inherited"
+            );
+        }
+
+        // Pinned-leaf inheritance also overrides environment with Develop's.
+        assert_eq!(result.environment.as_deref(), Some("develop"));
     }
 
     #[test]

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Node group classification: pinned nodes now appear in every ancestor group.** Previously a node pinned to a leaf group (e.g. `ADM - ESI (D)`) was only shown as a member of the leaf — every ancestor (`Develop`, `Linux`, …) silently reported "0 nodes matched" even though the pinning logically placed the node under them. Worse, the pinning short-circuit also prevented ancestor-level rules from being evaluated for any pinned node, so a rule like `clientcert ~ .*ds.*` on `Develop` never matched. Pinned membership now propagates up the entire ancestor chain (added with `MatchType::Inherited`) and ancestor groups show their full membership in the UI.
+
 ### Added
 - **Self-healing ENC watchdog** in the Puppet module. `openvox_webui::enc` now deploys a sibling `${enc_script_path}.template` (managed by the same class, byte-identical to the live script) plus `/opt/openvox/enc-watchdog.sh` and a systemd timer (`openvox-enc-watchdog.timer`, every 5 min). The watchdog probes the ENC end-to-end and breaks the chicken-and-egg deadlock seen in production where a broken ENC stops puppetserver compiling catalogs (which in turn stops Puppet from re-applying `openvox_webui::enc`). It restores the script from the on-disk template if it goes missing/broken, and restarts puppetserver if the JVM exec wedge is detected in the journal. Configurable via new `enable_watchdog` / `puppetserver_service_name` / `puppet_user` / `watchdog_allow_restart` / `watchdog_journal_lookback_min` class parameters.
 
