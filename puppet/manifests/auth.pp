@@ -28,11 +28,13 @@ class openvox_webui::auth {
 
   # Manage Puppet Server auth.conf
   if $openvox_webui::manage_puppetserver_auth {
-    # Create a drop-in configuration file for Puppet Server
-    # This is the recommended approach for Puppet Server 6+
-    $puppetserver_confdir = $openvox_webui::puppetserver_confdir
-
-    file { "${puppetserver_confdir}/openvox-webui-auth.conf":
+    # Create a drop-in configuration file for Puppet Server.
+    # Reference the parent class's parameter directly. Aliasing it to a
+    # bare local (`$puppetserver_confdir = ...`) would shadow the parent's
+    # already-visible `$openvox_webui::puppetserver_confdir`, which Puppet
+    # rejects as a reassignment (seen as: "Cannot reassign variable
+    # '$puppetserver_confdir'" on the next reference of the qualified name).
+    file { "${openvox_webui::puppetserver_confdir}/openvox-webui-auth.conf":
       ensure  => file,
       owner   => 'puppet',
       group   => 'puppet',
@@ -46,10 +48,9 @@ class openvox_webui::auth {
 
   # Manage PuppetDB auth.conf
   if $openvox_webui::manage_puppetdb_auth {
-    # Create a drop-in configuration file for PuppetDB
-    $puppetdb_confdir = $openvox_webui::puppetdb_confdir
-
-    file { "${puppetdb_confdir}/openvox-webui-auth.conf":
+    # Create a drop-in configuration file for PuppetDB.
+    # Same reasoning as above — use the qualified parent-class param.
+    file { "${openvox_webui::puppetdb_confdir}/openvox-webui-auth.conf":
       ensure  => file,
       owner   => 'puppetdb',
       group   => 'puppetdb',
@@ -64,9 +65,7 @@ class openvox_webui::auth {
   # Manage Puppet Server ca.conf to enable certificate_status endpoint
   # This endpoint is disabled by default in Puppet Server
   if $openvox_webui::manage_puppetserver_ca_conf {
-    $puppetserver_confdir = $openvox_webui::puppetserver_confdir
-
-    file { "${puppetserver_confdir}/ca.conf":
+    file { "${openvox_webui::puppetserver_confdir}/ca.conf":
       ensure  => file,
       owner   => 'puppet',
       group   => 'puppet',
