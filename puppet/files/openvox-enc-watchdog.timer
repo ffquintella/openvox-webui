@@ -1,0 +1,14 @@
+[Unit]
+Description=Periodic OpenVox ENC self-heal check
+Documentation=https://github.com/ffquintella/openvox-webui
+
+[Timer]
+# First run shortly after boot so a freshly rebooted server doesn't sit
+# broken until the first periodic tick.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=openvox-enc-watchdog.service
+
+[Install]
+WantedBy=timers.target

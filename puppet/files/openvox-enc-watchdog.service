@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenVox ENC self-healing watchdog (one-shot check)
+Documentation=https://github.com/ffquintella/openvox-webui
+After=puppetserver.service
+
+[Service]
+Type=oneshot
+# Run as root so we can `systemctl restart puppetserver` and `runuser` to
+# the puppet user when probing the ENC.
+ExecStart=/opt/openvox/enc-watchdog.sh
+# Bound to /opt/openvox where both the ENC script and watchdog live.
+ProtectSystem=full
+ProtectHome=yes
+NoNewPrivileges=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

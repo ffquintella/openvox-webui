@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Self-healing ENC watchdog.** `openvox_webui::enc` now deploys `/opt/openvox/enc-watchdog.sh` plus a systemd timer (`openvox-enc-watchdog.timer`) that runs every 5 minutes. It probes the ENC end-to-end and recovers from two failure modes seen in production: (a) corrupted/missing script — restored from a sibling `${enc_script_path}.template` managed by the same class, and (b) puppetserver JVM wedge ("Cannot run program ... error=2") — recovered via `systemctl restart puppetserver`. New parameters: `enable_watchdog`, `puppetserver_service_name`, `puppet_user`, `watchdog_allow_restart`, `watchdog_journal_lookback_min`. Disable with `enable_watchdog => false` if you have external monitoring covering the same failure modes.
+
 ### Changed
 - **Deployment note:** The packaged OpenVox WebUI service now uses a dedicated SQLite database for inventory data (`/var/lib/openvox-webui/inventory.db`). On the first start of v0.33.0 the service migrates existing inventory rows out of the main DB automatically; inventory endpoints return 503 until that completes. A one-time background `VACUUM` reclaims space on the main DB after the migration.
 - **systemd resource limits** raised: `MemoryHigh=3G`, `MemoryMax=6G` (was 1G/2G). `StartLimitIntervalSec` / `StartLimitBurst` moved under `[Unit]`.

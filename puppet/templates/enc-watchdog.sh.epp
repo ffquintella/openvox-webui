@@ -1,0 +1,98 @@
+<%- |
+  String  $enc_script_path,
+  String  $enc_template_path,
+  String  $puppet_user,
+  String  $puppetserver_service,
+  Boolean $allow_restart_puppetserver,
+  Integer $journal_lookback_minutes,
+| -%>
+#!/bin/bash
+# OpenVox ENC self-healing watchdog
+# Managed by Puppet — DO NOT EDIT MANUALLY
+#
+# Run periodically by openvox-enc-watchdog.timer. Detects two failure modes
+# and recovers from each:
+#
+#   1. The ENC script is missing, non-executable, or broken.
+#      Recovery: restore from the on-disk template kept by the same Puppet
+#      class (`<%= $enc_template_path %>`).
+#
+#   2. The ENC script is fine when invoked manually, but puppetserver's JVM
+#      cannot exec it (the "Cannot run program ... error=2" pattern that has
+#      been seen in production after long uptimes / package upgrades).
+#      Detected by grepping the puppetserver journal for that exact error.
+#      Recovery: restart puppetserver to clear stale JVM state.
+#
+# Both recoveries are best-effort: failures are logged to the journal under
+# the `openvox-enc-watchdog` tag and the watchdog exits non-zero so systemd
+# surfaces the failure on `systemctl status openvox-enc-watchdog.service`.
+
+set -u
+
+ENC_SCRIPT="<%= $enc_script_path %>"
+ENC_TEMPLATE="<%= $enc_template_path %>"
+PUPPET_USER="<%= $puppet_user %>"
+PUPPETSERVER="<%= $puppetserver_service %>"
+ALLOW_RESTART="<%= $allow_restart_puppetserver %>"
+LOOKBACK_MIN="<%= $journal_lookback_minutes %>"
+
+TEST_NODE="$(hostname -f 2>/dev/null || hostname)"
+
+log() { logger -t openvox-enc-watchdog -- "$*"; printf '%s %s\n' "$(date -Is)" "$*"; }
+err() { logger -p user.err -t openvox-enc-watchdog -- "$*"; printf '%s ERROR %s\n' "$(date -Is)" "$*" >&2; }
+
+# Step 1: can the puppet user execute enc.sh and produce something that looks
+# like a valid Puppet ENC YAML response?
+script_ok() {
+    [ -x "$ENC_SCRIPT" ] || return 1
+    runuser -u "$PUPPET_USER" -- "$ENC_SCRIPT" "$TEST_NODE" 2>/dev/null \
+      | grep -qE '^(environment:|---)'
+}
+
+# Step 2: did puppetserver hit the "Cannot run program" exec error recently?
+puppetserver_exec_failure_recent() {
+    journalctl -u "$PUPPETSERVER" --since "${LOOKBACK_MIN} minutes ago" --no-pager 2>/dev/null \
+      | grep -qE 'Cannot run program "?'"$ENC_SCRIPT"
+}
+
+restore_script() {
+    if [ ! -f "$ENC_TEMPLATE" ]; then
+        err "Cannot restore: template missing at $ENC_TEMPLATE"
+        return 1
+    fi
+    install -m 0755 -o root -g root "$ENC_TEMPLATE" "$ENC_SCRIPT"
+    log "Restored $ENC_SCRIPT from $ENC_TEMPLATE"
+}
+
+restart_puppetserver() {
+    if [ "$ALLOW_RESTART" != "true" ]; then
+        err "puppetserver restart needed but disabled by allow_restart_puppetserver=false"
+        return 1
+    fi
+    log "Restarting $PUPPETSERVER"
+    systemctl restart "$PUPPETSERVER"
+}
+
+main() {
+    if ! script_ok; then
+        err "ENC script broken — attempting restore"
+        if ! restore_script; then
+            exit 1
+        fi
+        if ! script_ok; then
+            err "ENC still failing after restore — giving up"
+            exit 1
+        fi
+        log "ENC restored; restarting puppetserver to clear cached state"
+        restart_puppetserver || exit 1
+        exit 0
+    fi
+
+    # Script works manually — but puppetserver's JVM may have stale state.
+    if puppetserver_exec_failure_recent; then
+        log "puppetserver journal shows recent ENC exec failures; restarting"
+        restart_puppetserver || exit 1
+    fi
+}
+
+main

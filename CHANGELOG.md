@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Self-healing ENC watchdog** in the Puppet module. `openvox_webui::enc` now deploys a sibling `${enc_script_path}.template` (managed by the same class, byte-identical to the live script) plus `/opt/openvox/enc-watchdog.sh` and a systemd timer (`openvox-enc-watchdog.timer`, every 5 min). The watchdog probes the ENC end-to-end and breaks the chicken-and-egg deadlock seen in production where a broken ENC stops puppetserver compiling catalogs (which in turn stops Puppet from re-applying `openvox_webui::enc`). It restores the script from the on-disk template if it goes missing/broken, and restarts puppetserver if the JVM exec wedge is detected in the journal. Configurable via new `enable_watchdog` / `puppetserver_service_name` / `puppet_user` / `watchdog_allow_restart` / `watchdog_journal_lookback_min` class parameters.
+
 ### Changed
 - **BREAKING (deployment):** Inventory data (Phase-10 snapshots, packages, applications, containers, users, update jobs, repository configs, group update schedules) now lives in a dedicated SQLite database at `/var/lib/openvox-webui/inventory.db` instead of the main application DB. On first start of this version, a one-shot migrator moves existing inventory rows out of the main DB, truncates the legacy tables, and schedules a background `VACUUM` to reclaim disk. Inventory endpoints return 503 until the migration completes. Motivation: production incidents where SQLite write-lock contention under heavy Puppet-agent inventory POSTs blocked all UI reads and caused the service to exceed its cgroup memory soft limit.
 - `InventoryConfig` gained `database_url`, `keep_raw_payload`, `snapshot_retention_per_node`, `maintenance_interval_secs`, and `vacuum_interval_secs` knobs. All default to sensible values; existing deployments do not need to change their config.

@@ -41,6 +41,32 @@
 #   Must match the key configured in OpenVox WebUI (CLASSIFICATION_SHARED_KEY).
 #   Required when the /classify endpoint requires authentication.
 #
+# @param enable_watchdog
+#   Deploy a systemd-timer driven watchdog (every 5 minutes) that detects
+#   a broken or unrunnable ENC and self-heals: restores the script from a
+#   sibling `.template` file managed by this class, and/or restarts
+#   puppetserver if its JVM has wedged on `Cannot run program ... error=2`.
+#   Default: true. Disable only if you have external monitoring covering
+#   the same failure modes.
+#
+# @param puppetserver_service_name
+#   Name of the puppetserver systemd unit the watchdog will restart.
+#   Default: 'puppetserver'.
+#
+# @param puppet_user
+#   Local user that owns the puppetserver process. The watchdog probes the
+#   ENC by running it as this user (matches puppetserver's runtime context).
+#   Default: 'puppet'.
+#
+# @param watchdog_allow_restart
+#   When the watchdog detects puppetserver's JVM cannot exec the ENC, may it
+#   `systemctl restart puppetserver`? Set to false in environments where the
+#   restart must be performed by an operator. Default: true.
+#
+# @param watchdog_journal_lookback_min
+#   How many minutes of puppetserver journal the watchdog scans for the
+#   "Cannot run program" exec failure. Default: 10 (twice the timer cadence).
+#
 # @example Basic usage with auto-detected URL
 #   include openvox_webui::enc
 #
@@ -71,15 +97,23 @@
 #   }
 #
 class openvox_webui::enc (
-  Optional[Stdlib::HTTPUrl] $webui_url                = undef,
-  Stdlib::Absolutepath      $enc_script_path          = '/opt/openvox/enc.sh',
-  Boolean                   $manage_puppet_conf       = true,
-  Boolean                   $manage_dependencies      = true,
-  Boolean                   $restart_puppetserver     = true,
-  Boolean                   $ssl_verify               = false,
-  Stdlib::Absolutepath      $puppet_conf_path         = '/etc/puppetlabs/puppet/puppet.conf',
-  Boolean                   $remove_agent_environment = true,
-  Optional[String]          $classification_key       = undef,
+  Optional[Stdlib::HTTPUrl] $webui_url                       = undef,
+  Stdlib::Absolutepath      $enc_script_path                 = '/opt/openvox/enc.sh',
+  Boolean                   $manage_puppet_conf              = true,
+  Boolean                   $manage_dependencies             = true,
+  Boolean                   $restart_puppetserver            = true,
+  Boolean                   $ssl_verify                      = false,
+  Stdlib::Absolutepath      $puppet_conf_path                = '/etc/puppetlabs/puppet/puppet.conf',
+  Boolean                   $remove_agent_environment        = true,
+  Optional[String]          $classification_key              = undef,
+  # Self-healing watchdog. Periodically tests the ENC end-to-end and
+  # restores it from an on-disk template / restarts puppetserver if its
+  # JVM has wedged. See templates/enc-watchdog.sh.epp for details.
+  Boolean                   $enable_watchdog                 = true,
+  String                    $puppetserver_service_name       = 'puppetserver',
+  String                    $puppet_user                     = 'puppet',
+  Boolean                   $watchdog_allow_restart          = true,
+  Integer[1, 1440]          $watchdog_journal_lookback_min   = 10,
 ) {
   # Validate we're on a Puppet Server (check for service existence)
   # Only validate if we're managing the service
@@ -129,17 +163,35 @@ class openvox_webui::enc (
     mode   => '0755',
   }
 
+  # Render the ENC script content once so both the live script and its
+  # sibling .template file (used by the watchdog for offline recovery) stay
+  # byte-identical even if the EPP changes.
+  $enc_script_content = epp('openvox_webui/enc.sh.epp', {
+      webui_url          => $effective_webui_url,
+      ssl_verify         => $ssl_verify,
+      classification_key => $classification_key,
+  })
+
   # Create ENC script
   file { $enc_script_path:
     ensure  => file,
     owner   => 'root',
     group   => 'root',
     mode    => '0755',
-    content => epp('openvox_webui/enc.sh.epp', {
-        webui_url          => $effective_webui_url,
-        ssl_verify         => $ssl_verify,
-        classification_key => $classification_key,
-    }),
+    content => $enc_script_content,
+    require => File[$enc_dir],
+  }
+
+  # Sibling template that the self-healing watchdog uses to restore the ENC
+  # script if it ever goes missing or is replaced with broken content.
+  # Kept byte-identical to the live script via the shared variable above.
+  $enc_template_path = "${enc_script_path}.template"
+  file { $enc_template_path:
+    ensure  => file,
+    owner   => 'root',
+    group   => 'root',
+    mode    => '0644',
+    content => $enc_script_content,
     require => File[$enc_dir],
   }
 
@@ -281,5 +333,82 @@ class openvox_webui::enc (
     refreshonly => true,
     subscribe   => File[$enc_script_path],
     logoutput   => true,
+  }
+
+  # ---------------------------------------------------------------------------
+  # Self-healing watchdog
+  #
+  # Once the ENC is broken, no node (including this puppetserver) can compile
+  # a catalog, so Puppet itself can't repair the ENC — a chicken-and-egg
+  # deadlock seen in production. The watchdog runs out-of-band via a systemd
+  # timer (independent of puppet agent runs) and recovers from two failure
+  # modes: corrupted/missing script (restored from `${enc_script_path}.template`)
+  # and JVM exec wedge (restart of `${puppetserver_service_name}`).
+  # ---------------------------------------------------------------------------
+  if $enable_watchdog {
+    $watchdog_script_path = "${enc_dir}/enc-watchdog.sh"
+
+    file { $watchdog_script_path:
+      ensure  => file,
+      owner   => 'root',
+      group   => 'root',
+      mode    => '0755',
+      content => epp('openvox_webui/enc-watchdog.sh.epp', {
+          enc_script_path             => $enc_script_path,
+          enc_template_path           => $enc_template_path,
+          puppet_user                 => $puppet_user,
+          puppetserver_service        => $puppetserver_service_name,
+          allow_restart_puppetserver  => $watchdog_allow_restart,
+          journal_lookback_minutes    => $watchdog_journal_lookback_min,
+      }),
+      require => [File[$enc_dir], File[$enc_script_path], File[$enc_template_path]],
+    }
+
+    file { '/etc/systemd/system/openvox-enc-watchdog.service':
+      ensure => file,
+      owner  => 'root',
+      group  => 'root',
+      mode   => '0644',
+      source => 'puppet:///modules/openvox_webui/openvox-enc-watchdog.service',
+      notify => Exec['openvox_enc_watchdog_daemon_reload'],
+    }
+
+    file { '/etc/systemd/system/openvox-enc-watchdog.timer':
+      ensure => file,
+      owner  => 'root',
+      group  => 'root',
+      mode   => '0644',
+      source => 'puppet:///modules/openvox_webui/openvox-enc-watchdog.timer',
+      notify => Exec['openvox_enc_watchdog_daemon_reload'],
+    }
+
+    exec { 'openvox_enc_watchdog_daemon_reload':
+      command     => '/bin/systemctl daemon-reload',
+      refreshonly => true,
+    }
+
+    service { 'openvox-enc-watchdog.timer':
+      ensure  => running,
+      enable  => true,
+      require => [
+        File[$watchdog_script_path],
+        File['/etc/systemd/system/openvox-enc-watchdog.service'],
+        File['/etc/systemd/system/openvox-enc-watchdog.timer'],
+        Exec['openvox_enc_watchdog_daemon_reload'],
+      ],
+    }
+  } else {
+    # Operator opted out — make sure any previously installed timer is gone.
+    service { 'openvox-enc-watchdog.timer':
+      ensure => stopped,
+      enable => false,
+    }
+
+    file { ['/etc/systemd/system/openvox-enc-watchdog.timer',
+            '/etc/systemd/system/openvox-enc-watchdog.service',
+            "${enc_dir}/enc-watchdog.sh"]:
+      ensure  => absent,
+      require => Service['openvox-enc-watchdog.timer'],
+    }
   }
 }
