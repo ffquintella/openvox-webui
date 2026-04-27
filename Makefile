@@ -1,7 +1,7 @@
 # OpenVox WebUI Makefile
 # Development convenience targets
 
-.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version version-patch version-minor version-major package package-rpm package-deb package-clean-cache publish-puppet-module release release-dry-run
+.PHONY: help build build-release run dev test test-unit test-bdd lint fmt check clean install-deps setup version bump-patch bump-minor bump-major package package-rpm package-deb package-clean-cache publish-puppet-module release release-dry-run
 
 # Default target
 help:
@@ -41,9 +41,9 @@ help:
 	@echo ""
 	@echo "Versioning:"
 	@echo "  make version        - Show current version"
-	@echo "  make version-patch  - Bump patch version (0.1.0 -> 0.1.1)"
-	@echo "  make version-minor  - Bump minor version, commit, and tag (0.1.0 -> 0.2.0)"
-	@echo "  make version-major  - Bump major version, commit, and tag (0.1.0 -> 1.0.0)"
+	@echo "  make bump-patch     - Bump patch version (0.1.0 -> 0.1.1)"
+	@echo "  make bump-minor     - Bump minor version, commit, and tag (0.1.0 -> 0.2.0)"
+	@echo "  make bump-major     - Bump major version, commit, and tag (0.1.0 -> 1.0.0)"
 	@echo ""
 	@echo "Releasing:"
 	@echo "  make release        - Create and push release tag (triggers GitHub Actions build)"
@@ -218,10 +218,10 @@ version:
 	@echo "  frontend/package.json: $$(grep '"version"' frontend/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')"
 	@echo "  puppet/metadata.json:  $$(grep '"version"' puppet/metadata.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')"
 
-version-patch:
+bump-patch:
 	@./scripts/bump-version.sh patch
 
-version-minor:
+bump-minor:
 	@./scripts/bump-version.sh minor
 	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
 	git add Cargo.toml Cargo.lock frontend/package.json puppet/metadata.json; \
@@ -231,7 +231,7 @@ version-minor:
 	echo "Created git tag: v$$NEW_VERSION"; \
 	echo "Don't forget to push: git push && git push --tags"
 
-version-major:
+bump-major:
 	@./scripts/bump-version.sh major
 	@NEW_VERSION=$$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'); \
 	git add Cargo.toml Cargo.lock frontend/package.json puppet/metadata.json; \
@@ -262,8 +262,8 @@ release:
 		echo "  git push origin :refs/tags/$$RELEASE_TAG"; \
 		echo ""; \
 		echo "Or bump the version first:"; \
-		echo "  make version-patch  # for bug fixes"; \
-		echo "  make version-minor  # for new features"; \
+		echo "  make bump-patch     # for bug fixes"; \
+		echo "  make bump-minor     # for new features"; \
 		exit 1; \
 	fi; \
 	echo "Creating tag: $$RELEASE_TAG"; \

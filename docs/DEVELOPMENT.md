@@ -93,7 +93,7 @@ Notes:
 - Only the API upload path is used; `puppet module upload` is intentionally not called.
 
 ## 7. Versioning
-- Bump versions in both `Cargo.toml` and `frontend/package.json` together (`make version-patch`/`version-minor`/`version-major` can help).
+- Bump versions in both `Cargo.toml` and `frontend/package.json` together (`make bump-patch`/`bump-minor`/`bump-major` can help).
 - Update `CHANGELOG.md` before committing (see CLAUDE.md rules).
 
 ## 8. Coding Standards

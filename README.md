@@ -89,9 +89,9 @@ make test-frontend      # Frontend tests
 ### Version Management
 ```bash
 make version            # Show current version
-make version-patch      # Bump patch version
-make version-minor      # Bump minor version
-make version-major      # Bump major version
+make bump-patch         # Bump patch version
+make bump-minor         # Bump minor version
+make bump-major         # Bump major version
 ```
 
 ### Deployment

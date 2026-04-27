@@ -122,9 +122,9 @@ Check version with: `make version`
 
 ### Bump Commands
 ```bash
-make version-patch    # v1.0.1 → v1.0.2 (bug fixes)
-make version-minor    # v1.0.0 → v1.1.0 (new features)
-make version-major    # v1.0.0 → v2.0.0 (breaking changes)
+make bump-patch       # v1.0.1 → v1.0.2 (bug fixes)
+make bump-minor       # v1.0.0 → v1.1.0 (new features)
+make bump-major       # v1.0.0 → v2.0.0 (breaking changes)
 ```
 
 ---
