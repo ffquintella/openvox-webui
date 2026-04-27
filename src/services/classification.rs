@@ -1481,6 +1481,162 @@ mod tests {
     }
 
     #[test]
+    fn test_unpinned_node_matches_ancestor_group_via_rules() {
+        // Mirror image of the pinning regression: when a node is NOT pinned
+        // anywhere but matches a parent group's rule (kernel=Linux) AND a
+        // child group's rule (clientcert ~ .*ds.*), both groups must show
+        // up via Rules. Catches future refactors that accidentally couple
+        // ancestor evaluation to pinning state.
+        let linux_id = Uuid::new_v4();
+        let linux = NodeGroup {
+            id: linux_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+        let develop_id = Uuid::new_v4();
+        let develop = NodeGroup {
+            id: develop_id,
+            name: "Develop".to_string(),
+            parent_id: Some(linux_id),
+            is_environment_group: true,
+            environment: Some("develop".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*ds.*"),
+            }],
+            ..Default::default()
+        };
+        // A leaf with no pinned nodes — make sure it doesn't accidentally
+        // pull the unpinned node in.
+        let leaf = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "ADM-ESI".to_string(),
+            parent_id: Some(develop_id),
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![linux, develop, leaf]);
+        // `clientcert` and `certname` are injected by build_classification_facts
+        // in the API path; tests have to provide them explicitly.
+        let facts = serde_json::json!({
+            "kernel": "Linux",
+            "clientcert": "webdc1vds0021.fgv.br",
+            "certname": "webdc1vds0021.fgv.br",
+        });
+
+        let matched = service.classify("webdc1vds0021.fgv.br", &facts);
+        let names: Vec<&str> = matched.groups.iter().map(|g| g.name.as_str()).collect();
+        assert!(
+            names.contains(&"Linux") && names.contains(&"Develop"),
+            "expected Linux and Develop via Rules, got {names:?}"
+        );
+        assert!(
+            !names.contains(&"ADM-ESI"),
+            "ADM-ESI has no rules and node is not pinned; should not appear: {names:?}"
+        );
+        assert_eq!(
+            matched.groups.iter().find(|g| g.name == "Develop").unwrap().match_type,
+            MatchType::Rules
+        );
+        assert_eq!(matched.environment.as_deref(), Some("develop"));
+
+        // Negative: a node whose certname does not contain "ds" matches Linux
+        // but not Develop.
+        let other_facts = serde_json::json!({
+            "kernel": "Linux",
+            "clientcert": "notreallyaserver.fgv.br",
+            "certname": "notreallyaserver.fgv.br",
+        });
+        let other = service.classify("notreallyaserver.fgv.br", &other_facts);
+        let other_names: Vec<&str> = other.groups.iter().map(|g| g.name.as_str()).collect();
+        assert!(other_names.contains(&"Linux"), "Linux should still match: {other_names:?}");
+        assert!(
+            !other_names.contains(&"Develop"),
+            "Develop's regex should not match this certname: {other_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_node_pinned_in_one_chain_still_rule_matches_unrelated_chain() {
+        // Cross-chain regression: a node pinned to one branch of the tree
+        // must still pick up rule-based matches in unrelated branches.
+        // Without proper isolation, the `processed_groups` short-circuit
+        // could spill across chains and silence rule evaluation in groups
+        // that aren't ancestors of the pinned group.
+        let linux_id = Uuid::new_v4();
+        let linux = NodeGroup {
+            id: linux_id,
+            name: "Linux".to_string(),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "kernel".to_string(),
+                operator: RuleOperator::Equals,
+                value: serde_json::json!("Linux"),
+            }],
+            ..Default::default()
+        };
+        let develop = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Develop".to_string(),
+            parent_id: Some(linux_id),
+            is_environment_group: true,
+            environment: Some("develop".to_string()),
+            rules: vec![ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: "clientcert".to_string(),
+                operator: RuleOperator::Regex,
+                value: serde_json::json!(".*ds.*"),
+            }],
+            ..Default::default()
+        };
+        // Independent root with no relation to Linux/Develop. The node is
+        // pinned here.
+        let standalone = NodeGroup {
+            id: Uuid::new_v4(),
+            name: "Compliance Audit".to_string(),
+            pinned_nodes: vec!["mysdc1vds0001.fgv.br".to_string()],
+            ..Default::default()
+        };
+
+        let service = ClassificationService::new(vec![linux, develop, standalone]);
+        let facts = serde_json::json!({
+            "kernel": "Linux",
+            "clientcert": "mysdc1vds0001.fgv.br",
+            "certname": "mysdc1vds0001.fgv.br",
+        });
+        let result = service.classify("mysdc1vds0001.fgv.br", &facts);
+        let names: Vec<&str> = result.groups.iter().map(|g| g.name.as_str()).collect();
+
+        // All three should be present: pinned + both rule-matched ancestors.
+        for expected in ["Compliance Audit", "Linux", "Develop"] {
+            assert!(
+                names.contains(&expected),
+                "{expected} missing in {names:?}"
+            );
+        }
+        assert_eq!(
+            result.groups.iter().find(|g| g.name == "Compliance Audit").unwrap().match_type,
+            MatchType::Pinned
+        );
+        assert_eq!(
+            result.groups.iter().find(|g| g.name == "Linux").unwrap().match_type,
+            MatchType::Rules
+        );
+        assert_eq!(
+            result.groups.iter().find(|g| g.name == "Develop").unwrap().match_type,
+            MatchType::Rules
+        );
+    }
+
+    #[test]
     fn test_non_pinned_child_without_parent_match_should_not_match() {
         // Test that a non-pinned child group doesn't match if its parent doesn't match
         let parent_id = Uuid::new_v4();
