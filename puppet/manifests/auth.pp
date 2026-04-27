@@ -11,6 +11,22 @@
 class openvox_webui::auth {
   assert_private()
 
+  # Make the notify targets exist in the catalog even if no other class on
+  # this node manages puppetserver / puppetdb (e.g. a node that pulls in
+  # `::openvox_webui` because it runs the WebUI but doesn't itself run
+  # puppetserver, or vice versa). `ensure_resource` is idempotent: if some
+  # other module already declares the service with explicit parameters those
+  # win; otherwise we declare a stub that can receive refresh events from the
+  # auth-file changes below. Without this, catalog compilation fails with
+  # "Could not find resource 'Service[puppetserver]' in parameter 'notify'"
+  # whenever auth.pp lands on a host outside the puppetserver/puppetdb host.
+  if $openvox_webui::manage_puppetserver_auth or $openvox_webui::manage_puppetserver_ca_conf {
+    ensure_resource('service', $openvox_webui::puppetserver_service, {})
+  }
+  if $openvox_webui::manage_puppetdb_auth {
+    ensure_resource('service', $openvox_webui::puppetdb_service, {})
+  }
+
   # Determine the client certificate CN to authorize
   # Priority: explicit parameter > auto-discovered from puppet_settings > hostname
   if $openvox_webui::auth_client_certname {
