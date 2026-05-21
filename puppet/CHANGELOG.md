@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.3] - 2026-05-21
+
+### Fixed
+- Activity Heatmap rendered all white because Tailwind's JIT compiler purged the `bg-success-*` / `bg-warning-*` / `bg-danger-*` classes that were only referenced via dynamic string interpolation inside `getColorIntensity`. Switched the cells and the legend to inline `backgroundColor` styles with an explicit color ramp, and gave cells a `min-w-[12px]` floor so a sparse grid is still legible.
+
 ## [0.37.2] - 2026-05-21
 
 ### Added

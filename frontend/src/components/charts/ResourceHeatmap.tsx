@@ -11,14 +11,25 @@ interface ResourceHeatmapProps {
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function getColorIntensity(value: number, max: number): string {
-  if (value === 0) return 'bg-gray-100';
-  const intensity = Math.min(value / Math.max(max, 1), 1);
+// Discrete color ramp. Inline styles instead of Tailwind classes because the
+// JIT compiler purges dynamically-interpolated class names — `bg-success-200`
+// etc. weren't reaching the bundle when they only appeared in a string
+// literal inside a function.
+const RAMP = [
+  '#f3f4f6', // zero — Tailwind gray-100
+  '#bbf7d0', // success-200
+  '#4ade80', // success-400
+  '#fb923c', // orange-400 / warning
+  '#ef4444', // danger-500
+];
 
-  if (intensity < 0.25) return 'bg-success-200';
-  if (intensity < 0.5) return 'bg-success-400';
-  if (intensity < 0.75) return 'bg-warning-400';
-  return 'bg-danger-400';
+function getColor(value: number, max: number): string {
+  if (value <= 0) return RAMP[0];
+  const intensity = Math.min(value / Math.max(max, 1), 1);
+  if (intensity < 0.25) return RAMP[1];
+  if (intensity < 0.5) return RAMP[2];
+  if (intensity < 0.75) return RAMP[3];
+  return RAMP[4];
 }
 
 export default function ResourceHeatmap({
@@ -61,11 +72,13 @@ export default function ResourceHeatmap({
       <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
         <span>Less</span>
         <div className="flex gap-0.5">
-          <div className="w-3 h-3 bg-gray-100 rounded-sm" />
-          <div className="w-3 h-3 bg-success-200 rounded-sm" />
-          <div className="w-3 h-3 bg-success-400 rounded-sm" />
-          <div className="w-3 h-3 bg-warning-400 rounded-sm" />
-          <div className="w-3 h-3 bg-danger-400 rounded-sm" />
+          {RAMP.map((color) => (
+            <div
+              key={color}
+              className="w-3 h-3 rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+          ))}
         </div>
         <span>More</span>
       </div>
@@ -93,7 +106,8 @@ export default function ResourceHeatmap({
                   return (
                     <div
                       key={`${day}-${hour}`}
-                      className={`flex-1 h-4 rounded-sm ${getColorIntensity(value, maxValue)} cursor-pointer transition-transform hover:scale-110`}
+                      className="flex-1 min-w-[12px] h-5 rounded-sm cursor-pointer transition-transform hover:scale-110"
+                      style={{ backgroundColor: getColor(value, maxValue) }}
                       title={`${day} ${hour}:00 UTC — ${value} changed report(s)`}
                     />
                   );
