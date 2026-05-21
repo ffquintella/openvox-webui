@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-05-21
+
+### Fixed
+- Replace deprecated `quick_xml::Attribute::unescape_value` with `normalized_value(XmlVersion::Implicit1_0)` in the repository checker to silence quick-xml 0.40 deprecation warnings.
+
 ## [0.37.0] - 2026-05-21
 
 ### Added
