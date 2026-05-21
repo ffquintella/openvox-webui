@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    db::{ReportDailySummary, ReportSummaryRepository},
+    db::{ActivityHeatmapCell, ReportDailySummary, ReportHourlySummary, ReportSummaryRepository},
     models::{Report, ResourceEvent},
     services::puppetdb::{QueryBuilder, QueryParams},
     utils::error::{AppError, AppResult},
@@ -22,6 +22,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(query_reports))
         .route("/daily-summary", get(get_daily_summary))
+        .route("/hourly-summary", get(get_hourly_summary))
+        .route("/activity-heatmap", get(get_activity_heatmap))
         .route("/{hash}", get(get_report))
         .route("/{hash}/events", get(get_report_events))
 }
@@ -167,6 +169,123 @@ async fn query_reports(
         .map_err(|e| AppError::Internal(format!("Failed to query reports: {}", e)))?;
 
     Ok(Json(reports))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HourlySummaryQuery {
+    /// Number of hours back from now (inclusive of the current hour) to
+    /// return. Defaults to 24, capped at 30 days × 24 = 720 to bound the
+    /// payload.
+    pub hours: Option<u32>,
+}
+
+/// GET /api/v1/reports/hourly-summary
+///
+/// Returns one row per UTC hour over the requested window, oldest first.
+/// Missing hours are filled with zeros so the frontend can render a
+/// continuous time series without gap handling.
+async fn get_hourly_summary(
+    State(state): State<AppState>,
+    Query(query): Query<HourlySummaryQuery>,
+) -> AppResult<Json<Vec<ReportHourlySummary>>> {
+    let hours = query.hours.unwrap_or(24).clamp(1, 720);
+    let now = chrono::Utc::now();
+    let end_hour = floor_to_hour(now);
+    let start_hour = end_hour - chrono::Duration::hours((hours - 1) as i64);
+    let start_iso = format_hour(start_hour);
+    let end_iso = format_hour(end_hour);
+
+    let repo = ReportSummaryRepository::new(state.db.clone());
+    let stored = repo
+        .range_hourly(&start_iso, &end_iso)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load hourly summary: {}", e)))?;
+
+    let by_hour: std::collections::HashMap<String, ReportHourlySummary> =
+        stored.into_iter().map(|r| (r.hour.clone(), r)).collect();
+    let mut out = Vec::with_capacity(hours as usize);
+    for i in 0..hours as i64 {
+        let h = start_hour + chrono::Duration::hours(i);
+        let key = format_hour(h);
+        out.push(by_hour.get(&key).cloned().unwrap_or(ReportHourlySummary {
+            hour: key,
+            changed: 0,
+            unchanged: 0,
+            failed: 0,
+            noop: 0,
+            total: 0,
+            updated_at: String::new(),
+        }));
+    }
+    Ok(Json(out))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActivityHeatmapQuery {
+    /// How many days back from today to fold into the heatmap. Defaults
+    /// to 30, capped at the scheduler's lookback window.
+    pub days: Option<u32>,
+}
+
+/// GET /api/v1/reports/activity-heatmap
+///
+/// Returns a dense 7×24 (UTC day-of-week × hour-of-day) grid summarising
+/// report activity across the requested window. Empty cells are still
+/// emitted with zero counts.
+async fn get_activity_heatmap(
+    State(state): State<AppState>,
+    Query(query): Query<ActivityHeatmapQuery>,
+) -> AppResult<Json<Vec<ActivityHeatmapCell>>> {
+    let days = query.days.unwrap_or(30).clamp(1, 31);
+    let now = chrono::Utc::now();
+    let end_hour = floor_to_hour(now);
+    let start_hour = end_hour - chrono::Duration::days(days as i64);
+    let start_iso = format_hour(start_hour);
+    let end_iso = format_hour(end_hour);
+
+    let repo = ReportSummaryRepository::new(state.db.clone());
+    let cells = repo
+        .heatmap_grid(&start_iso, &end_iso)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load activity heatmap: {}", e)))?;
+
+    // Densify the grid so every (dow, hour) is present.
+    let mut by_cell: std::collections::HashMap<(i64, i64), ActivityHeatmapCell> = cells
+        .into_iter()
+        .map(|c| ((c.day_of_week, c.hour_of_day), c))
+        .collect();
+    let mut out = Vec::with_capacity(7 * 24);
+    for dow in 0..7i64 {
+        for hod in 0..24i64 {
+            out.push(by_cell.remove(&(dow, hod)).unwrap_or(ActivityHeatmapCell {
+                day_of_week: dow,
+                hour_of_day: hod,
+                total: 0,
+                changed: 0,
+            }));
+        }
+    }
+    Ok(Json(out))
+}
+
+fn floor_to_hour(ts: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    use chrono::Timelike;
+    ts.with_minute(0)
+        .and_then(|t| t.with_second(0))
+        .and_then(|t| t.with_nanosecond(0))
+        .unwrap_or(ts)
+}
+
+fn format_hour(ts: chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::Datelike;
+    use chrono::Timelike;
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:00:00Z",
+        ts.year(),
+        ts.month(),
+        ts.day(),
+        ts.hour()
+    )
 }
 
 /// Get a specific report by hash

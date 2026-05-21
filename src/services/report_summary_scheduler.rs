@@ -1,15 +1,17 @@
-//! Hourly scheduler that refreshes the `report_daily_summary` table.
+//! Hourly scheduler that refreshes the report summary tables.
 //!
-//! For each day in a rolling lookback window, queries PuppetDB for the count
-//! of reports per status (`changed`, `unchanged`, `failed`, `noop`) and
-//! upserts a single row per day. Counting via PQL `[count()]` keeps the
-//! request payloads tiny — no report bodies are fetched — so the chart
-//! stays cheap to populate regardless of fleet size.
+//! One PQL fetch per cycle pulls `[end_time, status]` projections for every
+//! report in the rolling 31-day window, then we bucket them into
+//! `report_hourly_summary` (UTC hour granularity) and
+//! `report_daily_summary` (UTC day granularity). The Dashboard's weekly
+//! trend, the Analytics time-series chart, and the activity heatmap all
+//! read from those tables instead of hitting PuppetDB.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration as ChronoDuration, NaiveDate, Timelike, Utc};
 use serde::Deserialize;
 use tokio::sync::RwLock;
 use tokio::time::interval;
@@ -18,18 +20,13 @@ use tracing::{debug, error, info, warn};
 use crate::db::{DbPool, ReportSummaryRepository};
 use crate::services::puppetdb::PuppetDbClient;
 
-/// How many days of history to keep up to date. The dashboard chart shows
-/// the last 7 days; we keep a slightly wider window so late-arriving
-/// reports for "yesterday" still land in the summary.
-const LOOKBACK_DAYS: i64 = 14;
+/// How many days of history to keep up to date. The Analytics chart goes
+/// back 30 days; we keep a slightly wider window so late-arriving reports
+/// for the oldest day still land in the summary.
+const LOOKBACK_DAYS: i64 = 31;
 
 /// How often the loop fires.
 const REFRESH_INTERVAL_SECS: u64 = 60 * 60;
-
-/// Statuses we track separately. Anything outside this set is ignored —
-/// PuppetDB occasionally surfaces `unknown` etc., which don't belong in the
-/// chart's stacked totals.
-const TRACKED_STATUSES: &[&str] = &["changed", "unchanged", "failed", "noop"];
 
 #[derive(Debug, Clone)]
 pub struct ReportSummarySchedulerState {
@@ -45,8 +42,9 @@ impl ReportSummarySchedulerState {
 }
 
 #[derive(Debug, Deserialize)]
-struct PqlCountRow {
-    count: i64,
+struct ReportRow {
+    end_time: Option<String>,
+    status: Option<String>,
 }
 
 pub fn start_report_summary_scheduler(
@@ -66,8 +64,7 @@ pub fn start_report_summary_scheduler(
         }
 
         let mut timer = interval(Duration::from_secs(REFRESH_INTERVAL_SECS));
-        // First tick fires immediately; skip it since we just ran.
-        timer.tick().await;
+        timer.tick().await; // First tick fires immediately; skip it.
 
         loop {
             timer.tick().await;
@@ -90,62 +87,109 @@ pub fn start_report_summary_scheduler(
 
 async fn refresh_summary(pool: &DbPool, puppetdb: &PuppetDbClient) -> anyhow::Result<()> {
     let repo = ReportSummaryRepository::new(pool.clone());
-    let today = Utc::now().date_naive();
-    let start = today - ChronoDuration::days(LOOKBACK_DAYS - 1);
+    let now = Utc::now();
+    let window_start = now - ChronoDuration::days(LOOKBACK_DAYS);
+    let window_start_iso = window_start.to_rfc3339();
 
-    let mut days_updated = 0usize;
-    let mut day = start;
+    // One PQL fetch per cycle. PuppetDB projects just the two fields we
+    // need, so the payload is small even for thousands of reports.
+    let pql = format!(
+        r#"reports[end_time, status] {{ end_time >= "{}" }}"#,
+        window_start_iso
+    );
+    let rows: Vec<ReportRow> = puppetdb.query(&pql).await?;
+    debug!(
+        "Report summary refresh: fetched {} report rows over {} days",
+        rows.len(),
+        LOOKBACK_DAYS
+    );
+
+    // Bucket each report into the (hour, status) and (day, status) it
+    // landed in. We keep `unknown`-style statuses out of the counts —
+    // dashboards only stack the four known statuses.
+    let mut hourly: HashMap<String, [i64; 4]> = HashMap::new();
+    let mut daily: HashMap<NaiveDate, [i64; 4]> = HashMap::new();
+
+    for row in &rows {
+        let (end_time, status) = match (&row.end_time, &row.status) {
+            (Some(t), Some(s)) => (t, s),
+            _ => continue,
+        };
+        let Some(idx) = status_index(status) else {
+            continue;
+        };
+        let Ok(ts) = DateTime::parse_from_rfc3339(end_time) else {
+            continue;
+        };
+        let ts = ts.with_timezone(&Utc);
+
+        let hour_key = format!(
+            "{:04}-{:02}-{:02}T{:02}:00:00Z",
+            ts.year(),
+            ts.month(),
+            ts.day(),
+            ts.hour()
+        );
+        hourly.entry(hour_key).or_insert([0; 4])[idx] += 1;
+
+        let day_key = ts.date_naive();
+        daily.entry(day_key).or_insert([0; 4])[idx] += 1;
+    }
+
+    // Touch every hour and day in the window even if it has no reports, so
+    // the API responses are dense and old non-zero buckets get cleared if
+    // the underlying reports are GC'd by PuppetDB.
+    let mut day = (now - ChronoDuration::days(LOOKBACK_DAYS - 1)).date_naive();
+    let today = now.date_naive();
     while day <= today {
-        match refresh_day(&repo, puppetdb, day).await {
-            Ok(()) => days_updated += 1,
-            Err(e) => warn!("Failed to refresh report summary for {}: {}", day, e),
-        }
+        daily.entry(day).or_insert([0; 4]);
         day += ChronoDuration::days(1);
     }
-    debug!(
-        "Report summary refresh complete ({} day(s) updated)",
-        days_updated
-    );
-    Ok(())
-}
-
-async fn refresh_day(
-    repo: &ReportSummaryRepository,
-    puppetdb: &PuppetDbClient,
-    day: NaiveDate,
-) -> anyhow::Result<()> {
-    let next = day + ChronoDuration::days(1);
-    let start_iso = format!("{}T00:00:00.000Z", day);
-    let end_iso = format!("{}T00:00:00.000Z", next);
-
-    let mut counts = [0i64; 4]; // changed, unchanged, failed, noop
-    for (idx, status) in TRACKED_STATUSES.iter().enumerate() {
-        counts[idx] = count_reports(puppetdb, &start_iso, &end_iso, status).await?;
+    let mut hour_cursor = now - ChronoDuration::hours(24 * LOOKBACK_DAYS);
+    let hour_cursor_floor = hour_cursor
+        .with_minute(0)
+        .and_then(|t| t.with_second(0))
+        .and_then(|t| t.with_nanosecond(0))
+        .unwrap_or(hour_cursor);
+    hour_cursor = hour_cursor_floor;
+    while hour_cursor <= now {
+        let key = format!(
+            "{:04}-{:02}-{:02}T{:02}:00:00Z",
+            hour_cursor.year(),
+            hour_cursor.month(),
+            hour_cursor.day(),
+            hour_cursor.hour()
+        );
+        hourly.entry(key).or_insert([0; 4]);
+        hour_cursor += ChronoDuration::hours(1);
     }
 
-    repo.upsert(
-        &day.to_string(),
-        counts[0],
-        counts[1],
-        counts[2],
-        counts[3],
-    )
-    .await?;
+    for (hour, [c, u, f, n]) in &hourly {
+        if let Err(e) = repo.upsert_hourly(hour, *c, *u, *f, *n).await {
+            warn!("Failed to upsert hourly summary for {}: {}", hour, e);
+        }
+    }
+    for (date, [c, u, f, n]) in &daily {
+        if let Err(e) = repo.upsert(&date.to_string(), *c, *u, *f, *n).await {
+            warn!("Failed to upsert daily summary for {}: {}", date, e);
+        }
+    }
+
+    debug!(
+        "Report summary refresh complete: {} hour bucket(s), {} day bucket(s)",
+        hourly.len(),
+        daily.len()
+    );
     Ok(())
 }
 
-async fn count_reports(
-    puppetdb: &PuppetDbClient,
-    start_iso: &str,
-    end_iso: &str,
-    status: &str,
-) -> anyhow::Result<i64> {
-    // PQL: returns [{"count": N}]. `end_time` is the field PuppetDB
-    // indexes most reliably across versions for report-completion time.
-    let pql = format!(
-        r#"reports[count()] {{ end_time >= "{}" and end_time < "{}" and status = "{}" }}"#,
-        start_iso, end_iso, status
-    );
-    let rows: Vec<PqlCountRow> = puppetdb.query(&pql).await?;
-    Ok(rows.first().map(|r| r.count).unwrap_or(0))
+fn status_index(status: &str) -> Option<usize> {
+    match status {
+        "changed" => Some(0),
+        "unchanged" => Some(1),
+        "failed" => Some(2),
+        "noop" => Some(3),
+        _ => None,
+    }
 }
+

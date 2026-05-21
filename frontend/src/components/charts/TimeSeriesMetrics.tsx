@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AreaChart,
   Area,
@@ -9,11 +10,10 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { format, subDays, subHours, startOfDay, startOfHour, eachDayOfInterval, eachHourOfInterval } from 'date-fns';
-import type { Report } from '../../types';
+import { format } from 'date-fns';
+import { api } from '../../services/api';
 
 interface TimeSeriesMetricsProps {
-  reports: Report[];
   title?: string;
 }
 
@@ -32,6 +32,15 @@ const COLORS = {
   changed: '#22c55e',
   unchanged: '#3b82f6',
   failed: '#ef4444',
+};
+
+// Hours requested from the backend for each range. The hourly summary
+// endpoint returns one row per UTC hour; we aggregate to days on the
+// client for the 7d and 30d views.
+const HOURS_FOR_RANGE: Record<TimeRange, number> = {
+  '24h': 24,
+  '7d': 24 * 7,
+  '30d': 24 * 30,
 };
 
 function CustomTooltip({
@@ -71,68 +80,63 @@ function CustomTooltip({
 }
 
 export default function TimeSeriesMetrics({
-  reports,
   title = 'Report Metrics Over Time',
 }: TimeSeriesMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [showStacked, setShowStacked] = useState(true);
 
-  const chartData = useMemo(() => {
-    const now = new Date();
-    let intervals: Date[];
-    let formatStr: string;
+  // Hourly summary is small (24 / 168 / 720 rows max) and is the
+  // pre-aggregated source of truth populated by the backend scheduler.
+  const { data: hourly = [], isLoading } = useQuery({
+    queryKey: ['reports', 'hourly-summary', timeRange],
+    queryFn: () => api.getReportHourlySummary(HOURS_FOR_RANGE[timeRange]),
+  });
 
-    switch (timeRange) {
-      case '24h':
-        intervals = eachHourOfInterval({
-          start: subHours(now, 24),
-          end: now,
-        });
-        formatStr = 'HH:mm';
-        break;
-      case '7d':
-        intervals = eachDayOfInterval({
-          start: subDays(now, 7),
-          end: now,
-        });
-        formatStr = 'EEE';
-        break;
-      case '30d':
-        intervals = eachDayOfInterval({
-          start: subDays(now, 30),
-          end: now,
-        });
-        formatStr = 'MMM d';
-        break;
-      default:
-        intervals = [];
-        formatStr = '';
+  const chartData = useMemo<DataPoint[]>(() => {
+    if (timeRange === '24h') {
+      // One row per hour, label as local HH:mm so the user reads it in
+      // their own timezone even though the bucket is UTC.
+      return hourly.map((row) => {
+        const t = new Date(row.hour);
+        return {
+          timestamp: row.hour,
+          label: format(t, 'HH:mm'),
+          changed: row.changed,
+          unchanged: row.unchanged,
+          failed: row.failed,
+          total: row.total,
+        };
+      });
     }
 
-    const data: DataPoint[] = intervals.map((interval) => {
-      const intervalStart = timeRange === '24h' ? startOfHour(interval) : startOfDay(interval);
-      const intervalEnd = timeRange === '24h'
-        ? startOfHour(new Date(interval.getTime() + 60 * 60 * 1000))
-        : startOfDay(new Date(interval.getTime() + 24 * 60 * 60 * 1000));
-
-      const intervalReports = reports.filter((r) => {
-        if (!r.start_time) return false;
-        const reportTime = new Date(r.start_time);
-        return reportTime >= intervalStart && reportTime < intervalEnd;
-      });
-
-      return {
-        timestamp: interval.toISOString(),
-        label: format(interval, formatStr),
-        changed: intervalReports.filter((r) => r.status === 'changed').length,
-        unchanged: intervalReports.filter((r) => r.status === 'unchanged').length,
-        failed: intervalReports.filter((r) => r.status === 'failed').length,
-        total: intervalReports.length,
-      };
-    });
-
-    return data;
-  }, [reports, timeRange]);
+    // 7d / 30d: collapse hourly rows into UTC day buckets so the X axis
+    // matches what the user thinks of as "a day". We key off the UTC date
+    // portion of the row's hour timestamp.
+    const byDay = new Map<string, DataPoint>();
+    for (const row of hourly) {
+      const dayKey = row.hour.slice(0, 10); // YYYY-MM-DD
+      const existing = byDay.get(dayKey);
+      if (existing) {
+        existing.changed += row.changed;
+        existing.unchanged += row.unchanged;
+        existing.failed += row.failed;
+        existing.total += row.total;
+      } else {
+        byDay.set(dayKey, {
+          timestamp: `${dayKey}T00:00:00Z`,
+          label: '',
+          changed: row.changed,
+          unchanged: row.unchanged,
+          failed: row.failed,
+          total: row.total,
+        });
+      }
+    }
+    const formatStr = timeRange === '7d' ? 'EEE' : 'MMM d';
+    return Array.from(byDay.values())
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+      .map((d) => ({ ...d, label: format(new Date(d.timestamp), formatStr) }));
+  }, [hourly, timeRange]);
 
   const totals = useMemo(() => {
     return chartData.reduce(
@@ -151,7 +155,6 @@ export default function TimeSeriesMetrics({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <div className="flex items-center gap-3">
-          {/* Stacked toggle */}
           <label className="flex items-center gap-2 text-sm text-gray-600">
             <input
               type="checkbox"
@@ -162,7 +165,6 @@ export default function TimeSeriesMetrics({
             Stacked
           </label>
 
-          {/* Time range selector */}
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
             {(['24h', '7d', '30d'] as TimeRange[]).map((range) => (
               <button
@@ -181,7 +183,6 @@ export default function TimeSeriesMetrics({
         </div>
       </div>
 
-      {/* Summary stats */}
       <div className="grid grid-cols-4 gap-4 mb-4">
         <div className="text-center">
           <p className="text-2xl font-bold text-gray-900">{totals.total}</p>
@@ -201,77 +202,76 @@ export default function TimeSeriesMetrics({
         </div>
       </div>
 
-      {/* Chart */}
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="colorChanged" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={COLORS.changed} stopOpacity={0.8} />
-                <stop offset="95%" stopColor={COLORS.changed} stopOpacity={0.1} />
-              </linearGradient>
-              <linearGradient id="colorUnchanged" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={COLORS.unchanged} stopOpacity={0.8} />
-                <stop offset="95%" stopColor={COLORS.unchanged} stopOpacity={0.1} />
-              </linearGradient>
-              <linearGradient id="colorFailed" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={COLORS.failed} stopOpacity={0.8} />
-                <stop offset="95%" stopColor={COLORS.failed} stopOpacity={0.1} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 12 }}
-              tickLine={false}
-            />
-            <YAxis tick={{ fontSize: 12 }} tickLine={false} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
-            <Area
-              type="linear"
-              dataKey="failed"
-              stackId={showStacked ? '1' : undefined}
-              stroke={COLORS.failed}
-              fill="url(#colorFailed)"
-              name="Failed"
-            />
-            <Area
-              type="linear"
-              dataKey="changed"
-              stackId={showStacked ? '1' : undefined}
-              stroke={COLORS.changed}
-              fill="url(#colorChanged)"
-              name="Changed"
-            />
-            <Area
-              type="linear"
-              dataKey="unchanged"
-              stackId={showStacked ? '1' : undefined}
-              stroke={COLORS.unchanged}
-              fill="url(#colorUnchanged)"
-              name="Unchanged"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <div className="h-full flex items-center justify-center text-sm text-gray-500">
+            Loading…
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorChanged" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={COLORS.changed} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.changed} stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="colorUnchanged" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={COLORS.unchanged} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.unchanged} stopOpacity={0.1} />
+                </linearGradient>
+                <linearGradient id="colorFailed" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={COLORS.failed} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.failed} stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} />
+              <YAxis tick={{ fontSize: 12 }} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Area
+                type="linear"
+                dataKey="failed"
+                stackId={showStacked ? '1' : undefined}
+                stroke={COLORS.failed}
+                fill="url(#colorFailed)"
+                name="Failed"
+              />
+              <Area
+                type="linear"
+                dataKey="changed"
+                stackId={showStacked ? '1' : undefined}
+                stroke={COLORS.changed}
+                fill="url(#colorChanged)"
+                name="Changed"
+              />
+              <Area
+                type="linear"
+                dataKey="unchanged"
+                stackId={showStacked ? '1' : undefined}
+                stroke={COLORS.unchanged}
+                fill="url(#colorUnchanged)"
+                name="Unchanged"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
-      {/* Insights */}
       {totals.total > 0 && (
         <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
           <p>
             <span className="font-medium">Success rate:</span>{' '}
             {(((totals.changed + totals.unchanged) / totals.total) * 100).toFixed(1)}%
             {totals.failed > 0 && (
-              <span className="text-danger-600 ml-2">
-                ({totals.failed} failures)
-              </span>
+              <span className="text-danger-600 ml-2">({totals.failed} failures)</span>
             )}
           </p>
           <p>
-            <span className="font-medium">Average reports per{' '}
-            {timeRange === '24h' ? 'hour' : 'day'}:</span>{' '}
-            {(totals.total / chartData.length).toFixed(1)}
+            <span className="font-medium">
+              Average reports per {timeRange === '24h' ? 'hour' : 'day'}:
+            </span>{' '}
+            {(totals.total / Math.max(chartData.length, 1)).toFixed(1)}
           </p>
         </div>
       )}

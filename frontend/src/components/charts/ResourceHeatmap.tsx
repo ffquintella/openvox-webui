@@ -1,17 +1,10 @@
 import { useMemo } from 'react';
-
-interface HeatmapCell {
-  day: string;
-  hour: number;
-  value: number;
-  label: string;
-}
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../services/api';
 
 interface ResourceHeatmapProps {
-  data: Array<{
-    timestamp: string;
-    changes: number;
-  }>;
+  /** How many days of history to fold into the heatmap. Defaults to 30. */
+  days?: number;
   title?: string;
 }
 
@@ -28,9 +21,18 @@ function getColorIntensity(value: number, max: number): string {
   return 'bg-danger-400';
 }
 
-export default function ResourceHeatmap({ data, title = 'Resource Changes Heatmap' }: ResourceHeatmapProps) {
-  const { heatmapData, maxValue } = useMemo(() => {
-    // Initialize grid with zeros
+export default function ResourceHeatmap({
+  days = 30,
+  title = 'Resource Changes Heatmap',
+}: ResourceHeatmapProps) {
+  // Pre-aggregated server-side from report_hourly_summary. The endpoint
+  // always returns a dense 7×24 grid keyed by UTC day-of-week and hour.
+  const { data: cells = [], isLoading } = useQuery({
+    queryKey: ['reports', 'activity-heatmap', days],
+    queryFn: () => api.getActivityHeatmap(days),
+  });
+
+  const { grid, maxValue, totalChanges } = useMemo(() => {
     const grid: Record<string, Record<number, number>> = {};
     DAYS.forEach((day) => {
       grid[day] = {};
@@ -38,38 +40,24 @@ export default function ResourceHeatmap({ data, title = 'Resource Changes Heatma
         grid[day][hour] = 0;
       });
     });
-
-    // Populate grid from data
     let max = 0;
-    data.forEach((item) => {
-      const date = new Date(item.timestamp);
-      const day = DAYS[date.getDay()];
-      const hour = date.getHours();
-      grid[day][hour] += item.changes;
-      max = Math.max(max, grid[day][hour]);
-    });
-
-    // Convert to array format
-    const cells: HeatmapCell[] = [];
-    DAYS.forEach((day) => {
-      HOURS.forEach((hour) => {
-        cells.push({
-          day,
-          hour,
-          value: grid[day][hour],
-          label: `${day} ${hour}:00 - ${grid[day][hour]} changes`,
-        });
-      });
-    });
-
-    return { heatmapData: cells, maxValue: max };
-  }, [data]);
+    let total = 0;
+    for (const cell of cells) {
+      const dayLabel = DAYS[cell.day_of_week] ?? DAYS[0];
+      // `changed` is the activity signal: count of `changed`-status
+      // reports in that (dow, hour) bucket over the window. Resource-
+      // level change counts aren't tracked in the summary tables.
+      grid[dayLabel][cell.hour_of_day] = cell.changed;
+      max = Math.max(max, cell.changed);
+      total += cell.changed;
+    }
+    return { grid, maxValue: max, totalChanges: total };
+  }, [cells]);
 
   return (
     <div className="w-full">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
 
-      {/* Legend */}
       <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
         <span>Less</span>
         <div className="flex gap-0.5">
@@ -82,10 +70,8 @@ export default function ResourceHeatmap({ data, title = 'Resource Changes Heatma
         <span>More</span>
       </div>
 
-      {/* Heatmap Grid */}
       <div className="overflow-x-auto">
         <div className="min-w-[600px]">
-          {/* Hour labels */}
           <div className="flex ml-10 mb-1">
             {HOURS.filter((h) => h % 3 === 0).map((hour) => (
               <div
@@ -98,19 +84,17 @@ export default function ResourceHeatmap({ data, title = 'Resource Changes Heatma
             ))}
           </div>
 
-          {/* Grid rows */}
           {DAYS.map((day) => (
             <div key={day} className="flex items-center gap-1 mb-0.5">
               <div className="w-8 text-xs text-gray-500 text-right pr-1">{day}</div>
               <div className="flex-1 flex gap-0.5">
                 {HOURS.map((hour) => {
-                  const cell = heatmapData.find((c) => c.day === day && c.hour === hour);
-                  const value = cell?.value ?? 0;
+                  const value = grid[day][hour];
                   return (
                     <div
                       key={`${day}-${hour}`}
                       className={`flex-1 h-4 rounded-sm ${getColorIntensity(value, maxValue)} cursor-pointer transition-transform hover:scale-110`}
-                      title={cell?.label}
+                      title={`${day} ${hour}:00 UTC — ${value} changed report(s)`}
                     />
                   );
                 })}
@@ -120,9 +104,10 @@ export default function ResourceHeatmap({ data, title = 'Resource Changes Heatma
         </div>
       </div>
 
-      {/* Summary */}
       <div className="mt-4 text-sm text-gray-500">
-        Total changes: {data.reduce((sum, d) => sum + d.changes, 0)} | Peak: {maxValue} changes/hour
+        {isLoading
+          ? 'Loading…'
+          : `Total changed reports: ${totalChanges} | Peak: ${maxValue} per UTC hour bucket (window: ${days}d)`}
       </div>
     </div>
   );

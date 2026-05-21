@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.2] - 2026-05-21
+
+### Added
+- **Hourly report summary table** (`report_hourly_summary`) with two new endpoints — `GET /api/v1/reports/hourly-summary?hours=N` and `GET /api/v1/reports/activity-heatmap?days=N`. Analytics "Report Metrics Over Time" (24h/7d/30d) and the Activity Heatmap now read from these pre-aggregated tables instead of fetching up to 10,000 reports per page load.
+
+### Changed
+- Report summary scheduler now refreshes both daily and hourly tables in a single PQL fetch per cycle (one `reports[end_time, status]` projection over the rolling 31-day window) instead of issuing one count query per (day, status). Cuts the per-cycle PuppetDB roundtrip count by ~56× and unblocks the heatmap pipeline.
+
 ## [0.37.1] - 2026-05-21
 
 ### Fixed

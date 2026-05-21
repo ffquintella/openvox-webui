@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   RefreshCw,
-  BarChart3,
   FileText,
   ShieldCheck,
   GitCompare,
@@ -260,18 +259,21 @@ export default function Analytics() {
     queryFn: api.getGroups,
   });
 
+  // The Overview "Reports" stat needs a quick count of how many reports
+  // landed recently. Use the hourly summary as the source — it's already
+  // pre-aggregated and avoids the previous 10k-row report fetch.
   const {
-    data: reports = [],
+    data: hourlySummary30d = [],
     isLoading: reportsLoading,
     refetch: refetchReports,
   } = useQuery({
-    queryKey: ['reports', { limit: 10000, since: '30d' }],
-    queryFn: () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 30);
-      return api.getReports({ limit: 10000, since: since.toISOString() });
-    },
+    queryKey: ['reports', 'hourly-summary', 30 * 24],
+    queryFn: () => api.getReportHourlySummary(30 * 24),
   });
+  const reportsCount30d = useMemo(
+    () => hourlySummary30d.reduce((sum, r) => sum + r.total, 0),
+    [hourlySummary30d],
+  );
 
   const {
     data: factNames = [],
@@ -314,34 +316,8 @@ export default function Analytics() {
     [groups],
   );
 
-  // Transform reports to heatmap data
-  const heatmapData = useMemo(() => {
-    return reports
-      .filter((r) => r.start_time)
-      .map((r) => {
-        let changes = 0;
-        const metrics = r.metrics;
-        if (metrics) {
-          if (metrics.changes !== undefined) {
-            // Parsed ReportMetrics format
-            changes = metrics.changes;
-          } else if (Array.isArray(metrics.data)) {
-            // Raw PuppetDB format: data is array of {name, category, value}
-            const changesEntry = metrics.data.find(
-              (d) => d.name === 'total' && d.category === 'changes',
-            );
-            if (changesEntry && typeof changesEntry.value === 'number') {
-              changes = changesEntry.value;
-            }
-          }
-        }
-        return {
-          timestamp: r.start_time!,
-          changes,
-        };
-      })
-      .filter((d) => d.changes > 0 || true); // Include all reports with timestamps
-  }, [reports]);
+  // Heatmap data is now pre-aggregated by the backend; the chart fetches
+  // it directly. No client-side bucketing needed here.
 
   const isLoading = nodesLoading || groupsLoading || reportsLoading;
 
@@ -456,7 +432,7 @@ export default function Analytics() {
               <p className="text-sm text-gray-500">Node Groups</p>
             </div>
             <div className="card text-center">
-              <p className="text-3xl font-bold text-gray-900">{reports.length}</p>
+              <p className="text-3xl font-bold text-gray-900">{reportsCount30d}</p>
               <p className="text-sm text-gray-500">Reports</p>
             </div>
             <div className="card text-center">
@@ -469,7 +445,7 @@ export default function Analytics() {
 
           {/* Time Series Chart */}
           <div className="card">
-            <TimeSeriesMetrics reports={reports} />
+            <TimeSeriesMetrics />
           </div>
 
           {/* Two Column Layout */}
@@ -490,17 +466,7 @@ export default function Analytics() {
 
       {activeTab === 'heatmap' && (
         <div className="card">
-          {heatmapData.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>No activity data available</p>
-                <p className="text-sm mt-1">Reports with change metrics will appear here</p>
-              </div>
-            </div>
-          ) : (
-            <ResourceHeatmap data={heatmapData} />
-          )}
+          <ResourceHeatmap />
         </div>
       )}
 

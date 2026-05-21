@@ -37,7 +37,9 @@ pub use cve_repository::CveRepository;
 pub use inventory_repository::InventoryRepository;
 pub use node_removal_repository::NodeRemovalRepository;
 pub use organization_repository::OrganizationRepository;
-pub use report_summary_repository::{ReportDailySummary, ReportSummaryRepository};
+pub use report_summary_repository::{
+    ActivityHeatmapCell, ReportDailySummary, ReportHourlySummary, ReportSummaryRepository,
+};
 pub use settings_repository::SettingsRepository;
 
 use std::time::Duration;

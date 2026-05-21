@@ -566,6 +566,37 @@ export const api = {
     return response.data;
   },
 
+  getReportHourlySummary: async (
+    hours = 24
+  ): Promise<
+    Array<{
+      hour: string;
+      changed: number;
+      unchanged: number;
+      failed: number;
+      noop: number;
+      total: number;
+      updated_at: string;
+    }>
+  > => {
+    const response = await client.get('/reports/hourly-summary', { params: { hours } });
+    return response.data;
+  },
+
+  getActivityHeatmap: async (
+    days = 30
+  ): Promise<
+    Array<{
+      day_of_week: number;
+      hour_of_day: number;
+      total: number;
+      changed: number;
+    }>
+  > => {
+    const response = await client.get('/reports/activity-heatmap', { params: { days } });
+    return response.data;
+  },
+
   getReport: async (hash: string): Promise<Report | null> => {
     const response = await client.get(`/reports/${hash}`);
     return response.data;
