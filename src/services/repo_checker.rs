@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use flate2::read::GzDecoder;
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -322,13 +322,13 @@ fn parse_repomd_primary_href(xml: &str) -> Option<String> {
                     // Check if type="primary"
                     in_primary_data = e.attributes().filter_map(|a| a.ok()).any(|a| {
                         a.key.local_name().as_ref() == b"type"
-                            && a.unescape_value().map(|v| v == "primary").unwrap_or(false)
+                            && a.normalized_value(XmlVersion::Implicit1_0).map(|v| v == "primary").unwrap_or(false)
                     });
                 }
                 if in_primary_data && local.as_ref() == b"location" {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         if attr.key.local_name().as_ref() == b"href" {
-                            if let Ok(val) = attr.unescape_value() {
+                            if let Ok(val) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 return Some(val.to_string());
                             }
                         }
@@ -364,7 +364,7 @@ fn parse_metalink_url(xml: &str) -> Option<String> {
                     // Check for protocol="https" or protocol="http"
                     let is_http = e.attributes().filter_map(|a| a.ok()).any(|a| {
                         a.key.local_name().as_ref() == b"protocol"
-                            && a.unescape_value()
+                            && a.normalized_value(XmlVersion::Implicit1_0)
                                 .map(|v| v == "https" || v == "http")
                                 .unwrap_or(false)
                     });
@@ -442,17 +442,17 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
                             b"epoch" => {
-                                let val = attr.unescape_value().unwrap_or_default().to_string();
+                                let val = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
                                 if val != "0" && !val.is_empty() {
                                     current_epoch = Some(val);
                                 }
                             }
                             b"ver" => {
                                 current_version =
-                                    attr.unescape_value().unwrap_or_default().to_string();
+                                    attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
                             }
                             b"rel" => {
-                                let val = attr.unescape_value().unwrap_or_default().to_string();
+                                let val = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
                                 if !val.is_empty() {
                                     current_release = Some(val);
                                 }
