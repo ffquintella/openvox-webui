@@ -105,27 +105,30 @@ export default function Dashboard() {
   // Drill-down state for inventory compliance
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
   const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
-  const weeklyTrendSince = useMemo(() => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - 6);
-    return date.toISOString();
-  }, []);
-
   const { data: nodes = [], isLoading: nodesLoading, refetch: refetchNodes } = useQuery({
     queryKey: ['nodes'],
     queryFn: api.getNodes,
   });
 
+  // Recent-reports list at the bottom of the page. Small page size — the
+  // weekly trend chart is now powered by the pre-aggregated daily summary
+  // below, so this no longer needs to pull thousands of reports.
   const { data: reports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery({
-    queryKey: ['reports', 'weekly-trend', { since: weeklyTrendSince, limit: 5000 }],
+    queryKey: ['reports', 'recent'],
     queryFn: () =>
       api.getReports({
-        since: weeklyTrendSince,
-        limit: 5000,
+        limit: 10,
         order_by: 'end_time',
         order_dir: 'desc',
       }),
+  });
+
+  // Pre-aggregated per-day counts that drive the Weekly Activity Trend
+  // chart. Refreshed hourly on the backend so this stays a single tiny
+  // request regardless of fleet size.
+  const { data: dailySummary = [], refetch: refetchDailySummary } = useQuery({
+    queryKey: ['reports', 'daily-summary', 7],
+    queryFn: () => api.getReportDailySummary(7),
   });
 
   const {
@@ -213,33 +216,24 @@ export default function Dashboard() {
     { name: 'Unreported', value: stats.statusCounts.unreported, color: COLORS.unreported },
   ];
 
-  // Generate trend data from reports (last 7 days)
+  // Trend data comes straight from the backend's daily summary. The API
+  // already returns one row per day for the requested window (with zeroes
+  // for days that have no recorded activity), so we just project the day-
+  // of-week label and keep the counts we want to plot.
   const trendData = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const today = new Date();
-    const data: { date: string; changed: number; failed: number }[] = [];
-
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dayName = days[date.getDay()];
-
-      const dayReports = reports.filter((r) => {
-        const reportTimestamp = r.end_time ?? r.start_time;
-        if (!reportTimestamp) return false;
-        const reportDate = new Date(reportTimestamp);
-        return reportDate.toDateString() === date.toDateString();
-      });
-
-      data.push({
-        date: dayName,
-        changed: dayReports.filter((r) => r.status === 'changed').length,
-        failed: dayReports.filter((r) => r.status === 'failed').length,
-      });
-    }
-
-    return data;
-  }, [reports]);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return dailySummary.map((row) => {
+      // `row.date` is a UTC YYYY-MM-DD string. Parsing as local would shift
+      // by the local TZ offset; appending T00:00:00Z keeps the label aligned
+      // with the day the backend aggregated.
+      const d = new Date(`${row.date}T00:00:00Z`);
+      return {
+        date: dayNames[d.getUTCDay()],
+        changed: row.changed,
+        failed: row.failed,
+      };
+    });
+  }, [dailySummary]);
 
   const statsCards = [
     {
@@ -331,6 +325,7 @@ export default function Dashboard() {
   const handleRefresh = () => {
     refetchNodes();
     refetchReports();
+    refetchDailySummary();
     refetchInventory();
   };
 

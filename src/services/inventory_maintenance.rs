@@ -21,21 +21,28 @@ use tracing::{error, info, warn};
 
 use crate::config::InventoryConfig;
 use crate::db::{DbPool, InventoryRepository};
+use crate::services::puppetdb::PuppetDbClient;
 
 /// Handle for starting/stopping the inventory maintenance scheduler.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct InventoryMaintenanceState {
     running: Arc<RwLock<bool>>,
     pool: DbPool,
     config: InventoryConfig,
+    puppetdb: Option<Arc<PuppetDbClient>>,
 }
 
 impl InventoryMaintenanceState {
-    pub fn new(pool: DbPool, config: InventoryConfig) -> Self {
+    pub fn new(
+        pool: DbPool,
+        config: InventoryConfig,
+        puppetdb: Option<Arc<PuppetDbClient>>,
+    ) -> Self {
         Self {
             running: Arc::new(RwLock::new(false)),
             pool,
             config,
+            puppetdb,
         }
     }
 
@@ -56,8 +63,9 @@ impl InventoryMaintenanceState {
 pub fn start_inventory_maintenance(
     pool: DbPool,
     config: InventoryConfig,
+    puppetdb: Option<Arc<PuppetDbClient>>,
 ) -> InventoryMaintenanceState {
-    let state = InventoryMaintenanceState::new(pool, config);
+    let state = InventoryMaintenanceState::new(pool, config, puppetdb);
 
     // Flip the running flag.
     let flag_state = state.clone();
@@ -140,6 +148,17 @@ async fn vacuum_loop(state: InventoryMaintenanceState) {
 async fn run_maintenance_cycle(state: &InventoryMaintenanceState) -> anyhow::Result<()> {
     let repo = InventoryRepository::new(state.pool.clone());
 
+    // Prune inventory rows whose certnames no longer appear in PuppetDB's
+    // active roster (deactivated or expired nodes). Without this the
+    // dashboard's "reporting nodes" count drifts above the live node count.
+    if let Some(ref pdb) = state.puppetdb {
+        match prune_inactive_nodes(&repo, pdb).await {
+            Ok(0) => {}
+            Ok(n) => info!("Pruned inventory for {} inactive node(s)", n),
+            Err(e) => warn!("Failed to prune inactive nodes from inventory: {}", e),
+        }
+    }
+
     let retention = state.config.snapshot_retention_per_node;
     if retention == 0 {
         warn!("Inventory snapshot retention is 0; pruning is disabled");
@@ -166,4 +185,33 @@ async fn run_maintenance_cycle(state: &InventoryMaintenanceState) -> anyhow::Res
     }
 
     Ok(())
+}
+
+/// Drop inventory rows whose certnames are no longer in PuppetDB's active
+/// roster. Returns the number of certnames purged.
+///
+/// Guarded against a PuppetDB outage: if the active roster comes back empty
+/// we treat it as untrusted and skip pruning, otherwise a transient outage
+/// would wipe every inventory row on the first cycle.
+async fn prune_inactive_nodes(
+    repo: &InventoryRepository,
+    puppetdb: &PuppetDbClient,
+) -> anyhow::Result<u64> {
+    let active = puppetdb.get_active_certnames().await?;
+    if active.is_empty() {
+        warn!("PuppetDB returned no active nodes; skipping inventory prune");
+        return Ok(0);
+    }
+
+    let inventory = repo.list_inventory_certnames().await?;
+    let stale: Vec<String> = inventory
+        .into_iter()
+        .filter(|c| !active.contains(c))
+        .collect();
+
+    if stale.is_empty() {
+        return Ok(0);
+    }
+
+    repo.prune_nodes_by_certname(&stale).await
 }

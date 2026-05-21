@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-05-21
+
 ### Added
+- **Pre-aggregated daily report summary** (`report_daily_summary` table) populated hourly from PuppetDB. The Dashboard's "Weekly Activity Trend" chart now reads from a new `GET /api/v1/reports/daily-summary` endpoint instead of fetching up to 5000 reports per page load, so the chart populates instantly and no longer drops days when PuppetDB scans time out.
+- **Inventory prune for inactive nodes.** The inventory maintenance scheduler now deletes inventory rows (snapshots, packages, applications, web/runtime/container/users, update-status, repo configs) for certnames that are no longer active in PuppetDB. Fixes the dashboard mismatch where "Inventory Coverage / reporting nodes" exceeded "Total Nodes" because deactivated/expired hosts lingered in the local inventory DB.
 - **Self-healing ENC watchdog.** `openvox_webui::enc` now deploys `/opt/openvox/enc-watchdog.sh` plus a systemd timer (`openvox-enc-watchdog.timer`) that runs every 5 minutes. It probes the ENC end-to-end and recovers from two failure modes seen in production: (a) corrupted/missing script — restored from a sibling `${enc_script_path}.template` managed by the same class, and (b) puppetserver JVM wedge ("Cannot run program ... error=2") — recovered via `systemctl restart puppetserver`. New parameters: `enable_watchdog`, `puppetserver_service_name`, `puppet_user`, `watchdog_allow_restart`, `watchdog_journal_lookback_min`. Disable with `enable_watchdog => false` if you have external monitoring covering the same failure modes.
 
 ### Changed

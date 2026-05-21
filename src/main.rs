@@ -318,8 +318,24 @@ async fn main() -> Result<()> {
         inventory_config_full.maintenance_interval_secs,
         inventory_config_full.vacuum_interval_secs
     );
-    let _inventory_maintenance =
-        services::start_inventory_maintenance(inventory_db.clone(), inventory_config_full.clone());
+    let _inventory_maintenance = services::start_inventory_maintenance(
+        inventory_db.clone(),
+        inventory_config_full.clone(),
+        puppetdb.clone(),
+    );
+
+    // Hourly aggregator that backs the Dashboard's "Weekly Activity Trend"
+    // chart. Without this the chart has to fetch every report on each load,
+    // which scales poorly and leaves gaps when the request times out.
+    let _report_summary_scheduler = if let Some(ref pdb) = puppetdb {
+        info!("Starting Report summary scheduler");
+        Some(services::start_report_summary_scheduler(
+            db.clone(),
+            pdb.clone(),
+        ))
+    } else {
+        None
+    };
 
     // Initialize notification service
     info!("Initializing notification service");

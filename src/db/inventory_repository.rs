@@ -2310,6 +2310,72 @@ impl InventoryRepository {
         })
     }
 
+    /// Return the set of certnames currently present in `host_os_inventory`.
+    /// This is the population that drives the "reporting nodes" dashboard
+    /// count and is what gets diffed against the live PuppetDB roster to
+    /// decide whose inventory rows are stale.
+    pub async fn list_inventory_certnames(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT certname FROM host_os_inventory",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to list inventory certnames")?;
+        Ok(rows)
+    }
+
+    /// Delete all inventory rows for the given certnames across every
+    /// per-host table. SQLite foreign-key enforcement is off by default in
+    /// this pool, so we cannot rely on `ON DELETE CASCADE` — every table that
+    /// holds a `certname` column is wiped explicitly.
+    ///
+    /// Returns the number of certnames actually purged.
+    pub async fn prune_nodes_by_certname(&self, certnames: &[String]) -> Result<u64> {
+        if certnames.is_empty() {
+            return Ok(0);
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin prune transaction")?;
+
+        // All per-host inventory tables. Order doesn't matter functionally
+        // since each statement targets a single table, but we drop the leaf
+        // detail tables before the parent snapshot rows for clarity.
+        const TABLES: &[&str] = &[
+            "host_package_inventory",
+            "host_application_inventory",
+            "host_web_inventory",
+            "host_runtime_inventory",
+            "host_container_inventory",
+            "host_user_inventory",
+            "host_os_inventory",
+            "host_update_status",
+            "node_repository_configs",
+            "host_inventory_snapshots",
+        ];
+
+        let mut purged: u64 = 0;
+        for certname in certnames {
+            for table in TABLES {
+                sqlx::query(&format!("DELETE FROM {} WHERE certname = ?1", table))
+                    .bind(certname)
+                    .execute(&mut *tx)
+                    .await
+                    .with_context(|| format!("Failed to prune {} for {}", table, certname))?;
+            }
+            purged += 1;
+        }
+
+        tx.commit()
+            .await
+            .context("Failed to commit prune transaction")?;
+
+        Ok(purged)
+    }
+
     /// Force a WAL checkpoint with TRUNCATE mode so the `-wal` sidecar file
     /// shrinks back to zero on disk. Safe to call while other connections
     /// hold shared locks; may block briefly on a writer.

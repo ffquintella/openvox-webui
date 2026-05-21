@@ -10,6 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
+    db::{ReportDailySummary, ReportSummaryRepository},
     models::{Report, ResourceEvent},
     services::puppetdb::{QueryBuilder, QueryParams},
     utils::error::{AppError, AppResult},
@@ -20,8 +21,58 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(query_reports))
+        .route("/daily-summary", get(get_daily_summary))
         .route("/{hash}", get(get_report))
         .route("/{hash}/events", get(get_report_events))
+}
+
+/// Query parameters for the daily summary endpoint.
+#[derive(Debug, Deserialize)]
+pub struct DailySummaryQuery {
+    /// Number of days back from today (UTC) to return. Defaults to 7,
+    /// capped at 90 to bound response size.
+    pub days: Option<u32>,
+}
+
+/// GET /api/v1/reports/daily-summary
+///
+/// Returns per-day report counts (changed/unchanged/failed/noop/total) for
+/// the last `days` UTC days, oldest first. Backed by the
+/// `report_daily_summary` table populated hourly by the summary scheduler.
+/// Days with no recorded summary yet are returned as zero rows so the
+/// frontend can render a continuous time series without gap handling.
+async fn get_daily_summary(
+    State(state): State<AppState>,
+    Query(query): Query<DailySummaryQuery>,
+) -> AppResult<Json<Vec<ReportDailySummary>>> {
+    let days = query.days.unwrap_or(7).clamp(1, 90);
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days((days - 1) as i64);
+
+    let repo = ReportSummaryRepository::new(state.db.clone());
+    let stored = repo
+        .range(&start.to_string(), &today.to_string())
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load daily summary: {}", e)))?;
+
+    // Fill missing days with zeroes so callers get a dense series.
+    let by_date: std::collections::HashMap<String, ReportDailySummary> =
+        stored.into_iter().map(|r| (r.date.clone(), r)).collect();
+    let mut out = Vec::with_capacity(days as usize);
+    for i in 0..days as i64 {
+        let d = start + chrono::Duration::days(i);
+        let key = d.to_string();
+        out.push(by_date.get(&key).cloned().unwrap_or(ReportDailySummary {
+            date: key,
+            changed: 0,
+            unchanged: 0,
+            failed: 0,
+            noop: 0,
+            total: 0,
+            updated_at: String::new(),
+        }));
+    }
+    Ok(Json(out))
 }
 
 /// Query parameters for reports query

@@ -24,6 +24,7 @@ pub mod rbac;
 pub mod rbac_db;
 pub mod repo_checker;
 pub mod repo_checker_scheduler;
+pub mod report_summary_scheduler;
 pub mod reporting;
 pub mod saml;
 pub mod scheduler;
@@ -58,6 +59,9 @@ pub use rbac::RbacService;
 pub use rbac_db::DbRbacService;
 pub use repo_checker::RepoCheckerService;
 pub use repo_checker_scheduler::{start_repo_checker_scheduler, RepoCheckerSchedulerState};
+pub use report_summary_scheduler::{
+    start_report_summary_scheduler, ReportSummarySchedulerState,
+};
 pub use reporting::ReportingService;
 pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};

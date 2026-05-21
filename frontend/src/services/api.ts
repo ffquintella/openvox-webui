@@ -549,6 +549,23 @@ export const api = {
     return response.data;
   },
 
+  getReportDailySummary: async (
+    days = 7
+  ): Promise<
+    Array<{
+      date: string;
+      changed: number;
+      unchanged: number;
+      failed: number;
+      noop: number;
+      total: number;
+      updated_at: string;
+    }>
+  > => {
+    const response = await client.get('/reports/daily-summary', { params: { days } });
+    return response.data;
+  },
+
   getReport: async (hash: string): Promise<Report | null> => {
     const response = await client.get(`/reports/${hash}`);
     return response.data;

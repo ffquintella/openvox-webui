@@ -582,6 +582,14 @@ impl PuppetDbClient {
         self.get(&url).await
     }
 
+    /// Get the set of currently active certnames (excludes deactivated and
+    /// expired nodes). The default `/pdb/query/v4/nodes` endpoint already
+    /// filters those out, so this is just a projection to certname.
+    pub async fn get_active_certnames(&self) -> Result<std::collections::HashSet<String>> {
+        let nodes = self.get_nodes().await?;
+        Ok(nodes.into_iter().map(|n| n.certname).collect())
+    }
+
     /// Get a specific node by certname
     pub async fn get_node(&self, certname: &str) -> Result<Option<Node>> {
         let url = format!(

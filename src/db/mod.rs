@@ -18,6 +18,7 @@ pub mod inventory_repository;
 pub mod migrations;
 pub mod node_removal_repository;
 pub mod organization_repository;
+pub mod report_summary_repository;
 pub mod repository;
 pub mod settings_repository;
 
@@ -36,6 +37,7 @@ pub use cve_repository::CveRepository;
 pub use inventory_repository::InventoryRepository;
 pub use node_removal_repository::NodeRemovalRepository;
 pub use organization_repository::OrganizationRepository;
+pub use report_summary_repository::{ReportDailySummary, ReportSummaryRepository};
 pub use settings_repository::SettingsRepository;
 
 use std::time::Duration;
