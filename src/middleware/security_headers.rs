@@ -28,9 +28,11 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     // SAMEORIGIN allows embedding only from the same origin
     headers.insert("X-Frame-Options", "SAMEORIGIN".parse().unwrap());
 
-    // X-XSS-Protection
-    // Enables the browser's built-in XSS filter (legacy, but still useful for older browsers)
-    headers.insert("X-XSS-Protection", "1; mode=block".parse().unwrap());
+    // X-XSS-Protection is intentionally NOT set.
+    // The header is deprecated: modern browsers ignore it (Chrome/Edge removed the
+    // XSS Auditor, Firefox never implemented it), and the legacy filter could itself
+    // be abused to introduce vulnerabilities. XSS protection is provided by the
+    // Content-Security-Policy below and React's default output escaping.
 
     // Referrer-Policy
     // Controls how much referrer information is included with requests
@@ -117,10 +119,12 @@ mod tests {
         assert!(response.headers().contains_key("strict-transport-security"));
         assert!(response.headers().contains_key("x-content-type-options"));
         assert!(response.headers().contains_key("x-frame-options"));
-        assert!(response.headers().contains_key("x-xss-protection"));
         assert!(response.headers().contains_key("referrer-policy"));
         assert!(response.headers().contains_key("permissions-policy"));
         assert!(response.headers().contains_key("content-security-policy"));
+
+        // The deprecated X-XSS-Protection header must NOT be sent
+        assert!(!response.headers().contains_key("x-xss-protection"));
 
         // Verify specific values
         assert_eq!(
