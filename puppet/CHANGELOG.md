@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.4] - 2026-05-29
+
 ### Security
 - Removed the deprecated `X-XSS-Protection` response header. Modern browsers ignore it (Chrome/Edge removed the XSS Auditor and Firefox never implemented it), and the legacy filter could itself be abused; XSS protection is provided by the Content-Security-Policy and React's default output escaping.
 
