@@ -20,7 +20,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip",
 
 # Rate limiting
 governor = "0.10"
-hyper = { version = "1.9", features = ["full"] }
+hyper = { version = "1.10", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 
 # TLS support
