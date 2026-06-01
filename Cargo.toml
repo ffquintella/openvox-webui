@@ -86,7 +86,7 @@ printpdf = "0.9"
 cron = "0.16"
 
 # Git operations for code deploy
-git2 = "0.20"
+git2 = "0.21"
 
 # SSH key parsing for public key extraction
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "std"] }
