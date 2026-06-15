@@ -645,6 +645,15 @@ impl AlertingService {
         value: &'a serde_json::Value,
         path: &str,
     ) -> Option<&'a serde_json::Value> {
+        // The evaluation contexts are built with flat keys that contain dots
+        // (e.g. "node.status"), so try the literal full path as a key first
+        // before falling back to nested dot-notation traversal.
+        if let serde_json::Value::Object(map) = value {
+            if let Some(found) = map.get(path) {
+                return Some(found);
+            }
+        }
+
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = value;
 

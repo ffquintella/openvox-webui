@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.7] - 2026-06-15
+
+### Fixed
+- Alert rules with simple-format conditions (e.g. Node Status connection state, Compliance status, Report Failure status) never matched and never triggered. The field lookup split keys like `node.status` on the dot and looked for a nested object, but the evaluation context stores them as flat keys, so the field value always resolved to nothing. Field lookups now match the literal key first before falling back to nested traversal.
+
 ## [0.37.6] - 2026-06-15
 
 ### Added
