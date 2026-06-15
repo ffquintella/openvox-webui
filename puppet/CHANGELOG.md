@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.6] - 2026-06-15
+
+### Added
+- Patch Age chart on the dashboard is now interactive: clicking a bucket opens a drill-down listing the nodes in that bucket, with each node's age and last-patched time.
+- Node Groups tree remembers which groups are expanded or collapsed across visits (stored in a cookie), and the "All Groups" header has collapse-all / expand-all controls.
+
+### Fixed
+- "Evaluate Rules" on the Alerting page now shows feedback (a result banner reporting how many alerts were triggered, a hint when there are no enabled rules, and an error message on failure) instead of silently doing nothing.
+- Restored a compiling backend after the `sqlx` 0.8.6 → 0.9.0 and `git2` 0.20 → 0.21 dependency bumps: dynamic SQL strings are now wrapped with `AssertSqlSafe`, and git2 accessors that changed from `Option` to `Result` (`Remote::url`, `Signature::name`/`email`, `Commit::message`, `Reference::shorthand`) are handled with `.ok()`.
+
 ## [0.37.5] - 2026-06-15
 
 ### Changed

@@ -238,7 +238,7 @@ impl GitService {
         let remote_url = repo
             .find_remote("origin")
             .ok()
-            .and_then(|r| r.url().map(|s| s.to_string()))
+            .and_then(|r| r.url().ok().map(|s| s.to_string()))
             .unwrap_or_else(|| "unknown".to_string());
 
         info!(
@@ -296,7 +296,7 @@ impl GitService {
         let remote_url = repo
             .find_remote("origin")
             .ok()
-            .and_then(|r| r.url().map(|s| s.to_string()))
+            .and_then(|r| r.url().ok().map(|s| s.to_string()))
             .unwrap_or_else(|| "unknown".to_string());
 
         info!(
@@ -349,7 +349,7 @@ impl GitService {
         let head_ref = repo.head().ok();
         let default_branch = head_ref
             .as_ref()
-            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+            .and_then(|h| h.shorthand().ok().map(|s| s.to_string()));
 
         // Iterate through remote branches
         for branch_result in repo.branches(Some(BranchType::Remote))? {
@@ -521,9 +521,10 @@ fn commit_to_info(commit: &git2::Commit) -> CommitInfo {
         sha: commit.id().to_string(),
         message: commit
             .message()
+            .ok()
             .map(|m| m.lines().next().unwrap_or(m).to_string()),
-        author: author.name().map(|s| s.to_string()),
-        author_email: author.email().map(|s| s.to_string()),
+        author: author.name().ok().map(|s| s.to_string()),
+        author_email: author.email().ok().map(|s| s.to_string()),
         date: {
             let time = commit.time();
             Utc.timestamp_opt(time.seconds(), 0).single()

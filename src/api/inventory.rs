@@ -15,7 +15,8 @@ use crate::{
     models::{
         ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
         FleetRepositoryConfig, InventoryDashboardReport, InventoryFleetStatusSummary,
-        OutdatedSoftwareNodeDetail, RepositoryVersionCatalogEntry, UpdateJob, UpdateOperationType,
+        OutdatedSoftwareNodeDetail, PatchAgeBucketNode, RepositoryVersionCatalogEntry, UpdateJob,
+        UpdateOperationType,
         UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
@@ -37,6 +38,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/dashboard/compliance/{category}",
             get(get_compliance_category_nodes),
+        )
+        .route(
+            "/dashboard/patch-age/{bucket}",
+            get(get_patch_age_bucket_nodes),
         )
         .route("/summary", get(get_inventory_summary))
         .route("/catalog", get(list_version_catalog))
@@ -145,6 +150,20 @@ async fn get_compliance_category_nodes(
         .map_err(|e| {
             AppError::Internal(format!("Failed to fetch compliance category nodes: {}", e))
         })?;
+    Ok(Json(nodes))
+}
+
+async fn get_patch_age_bucket_nodes(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(bucket): Path<String>,
+) -> AppResult<Json<Vec<PatchAgeBucketNode>>> {
+    require_inventory_update_read(&auth_user)?;
+    let repo = state.inventory_repository();
+    let nodes = repo
+        .get_nodes_for_patch_age_bucket(&bucket)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch patch age bucket nodes: {}", e)))?;
     Ok(Json(nodes))
 }
 

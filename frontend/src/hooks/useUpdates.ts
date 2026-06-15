@@ -11,6 +11,7 @@ import type {
   RepositoryVersionCatalogEntry,
   OutdatedSoftwareNodeDetail,
   ComplianceCategoryNode,
+  PatchAgeBucketNode,
 } from '../types';
 
 export function useUpdateJobs(limit?: number) {
@@ -104,5 +105,13 @@ export function useComplianceCategoryNodes(category: string | null) {
     queryKey: ['compliance-category-nodes', category],
     queryFn: () => api.getComplianceCategoryNodes(category!),
     enabled: !!category,
+  });
+}
+
+export function usePatchAgeBucketNodes(bucket: string | null) {
+  return useQuery<PatchAgeBucketNode[]>({
+    queryKey: ['patch-age-bucket-nodes', bucket],
+    queryFn: () => api.getPatchAgeBucketNodes(bucket!),
+    enabled: !!bucket,
   });
 }

@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
   FolderTree,
   ChevronRight,
   ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Trash2,
   X,
   Loader2,
@@ -45,6 +47,34 @@ const RULE_OPERATORS: { value: RuleOperator; label: string; description: string 
   { value: 'in', label: 'in', description: 'Value is in list' },
   { value: 'not_in', label: 'not_in', description: 'Value is not in list' },
 ];
+
+// Cookie used to remember which groups the user has collapsed in the tree, so
+// the expand/collapse state survives navigating away and back.
+const COLLAPSED_GROUPS_COOKIE = 'openvox_collapsed_groups';
+
+function readCollapsedGroupsCookie(): Set<string> {
+  if (typeof document === 'undefined') return new Set();
+  const match = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith(`${COLLAPSED_GROUPS_COOKIE}=`));
+  if (!match) return new Set();
+  try {
+    const parsed = JSON.parse(decodeURIComponent(match.slice(COLLAPSED_GROUPS_COOKIE.length + 1)));
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+    }
+  } catch {
+    // Ignore a malformed cookie and fall back to everything expanded.
+  }
+  return new Set();
+}
+
+function writeCollapsedGroupsCookie(ids: Set<string>): void {
+  if (typeof document === 'undefined') return;
+  const value = encodeURIComponent(JSON.stringify([...ids]));
+  const maxAge = 60 * 60 * 24 * 365; // 1 year
+  document.cookie = `${COLLAPSED_GROUPS_COOKIE}=${value}; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
 
 export default function Groups() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -103,8 +133,16 @@ export default function Groups() {
   const [newSchedulePackageNames, setNewSchedulePackageNames] = useState('');
   const [newScheduleRequiresApproval, setNewScheduleRequiresApproval] = useState(false);
 
-  // Collapsed state for group tree (store IDs of collapsed groups)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Collapsed state for group tree (store IDs of collapsed groups). Seeded from
+  // a cookie so the expand/collapse layout persists across visits.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
+    readCollapsedGroupsCookie()
+  );
+
+  // Persist collapse state whenever it changes.
+  useEffect(() => {
+    writeCollapsedGroupsCookie(collapsedGroups);
+  }, [collapsedGroups]);
 
   const toggleGroupCollapse = (groupId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent selecting the group when clicking the collapse toggle
@@ -154,6 +192,14 @@ export default function Groups() {
 
     return { rootGroups, childrenMap };
   }, [groups]);
+
+  // Collapse every group that has children; expand all clears the set.
+  const collapseAllGroups = () => {
+    setCollapsedGroups(new Set(groupHierarchy.childrenMap.keys()));
+  };
+  const expandAllGroups = () => {
+    setCollapsedGroups(new Set());
+  };
 
   const createMutation = useMutation({
     mutationFn: api.createGroup,
@@ -840,8 +886,24 @@ export default function Groups() {
         {/* Groups List */}
         <div className="lg:col-span-1">
           <div className="card p-0">
-            <div className="p-4 border-b border-gray-200">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">All Groups ({groups.length})</h2>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={collapseAllGroups}
+                  className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700"
+                  title="Collapse all groups"
+                >
+                  <ChevronsDownUp className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={expandAllGroups}
+                  className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700"
+                  title="Expand all groups"
+                >
+                  <ChevronsUpDown className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div className="divide-y divide-gray-100 max-h-[calc(100vh-280px)] overflow-y-auto">
               {groupHierarchy.rootGroups.map(group => renderGroupItem(group))}

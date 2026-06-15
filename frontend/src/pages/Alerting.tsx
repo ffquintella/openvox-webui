@@ -235,7 +235,7 @@ export default function Alerting() {
             className="flex items-center space-x-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
           >
             <Play className="h-4 w-4" />
-            <span>Evaluate Rules</span>
+            <span>{evaluateMutation.isPending ? 'Evaluating…' : 'Evaluate Rules'}</span>
           </button>
           <button
             onClick={() => refetchAlerts()}
@@ -246,6 +246,24 @@ export default function Alerting() {
           </button>
         </div>
       </div>
+
+      {/* Evaluate Rules feedback */}
+      {evaluateMutation.isSuccess && (
+        <div className="rounded-md bg-green-50 p-3 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-200">
+          {evaluateMutation.data.alerts_triggered > 0
+            ? `Evaluation complete — ${evaluateMutation.data.alerts_triggered} alert${
+                evaluateMutation.data.alerts_triggered === 1 ? '' : 's'
+              } triggered.`
+            : rules.filter((r) => r.is_enabled).length === 0
+              ? 'Evaluation complete — no enabled alert rules to evaluate. Create a rule under the “Alert Rules” tab.'
+              : 'Evaluation complete — no alerts triggered. All systems are operating normally.'}
+        </div>
+      )}
+      {evaluateMutation.isError && (
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-200">
+          Failed to evaluate rules. Please try again.
+        </div>
+      )}
 
       {/* Stats Cards */}
       {alertStats && (

@@ -1,7 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { useOutdatedSoftwareNodes, useComplianceCategoryNodes } from '../hooks/useUpdates';
+import {
+  useOutdatedSoftwareNodes,
+  useComplianceCategoryNodes,
+  usePatchAgeBucketNodes,
+} from '../hooks/useUpdates';
 import {
   PieChart,
   Pie,
@@ -105,6 +109,7 @@ export default function Dashboard() {
   // Drill-down state for inventory compliance
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
   const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
+  const [selectedPatchAgeBucket, setSelectedPatchAgeBucket] = useState<string | null>(null);
   const { data: nodes = [], isLoading: nodesLoading, refetch: refetchNodes } = useQuery({
     queryKey: ['nodes'],
     queryFn: api.getNodes,
@@ -148,6 +153,8 @@ export default function Dashboard() {
     useComplianceCategoryNodes(selectedCompliance);
   const { data: softwareNodes = [], isLoading: softwareNodesLoading } =
     useOutdatedSoftwareNodes(selectedSoftware?.name ?? null, selectedSoftware?.softwareType);
+  const { data: patchAgeNodes = [], isLoading: patchAgeNodesLoading } =
+    usePatchAgeBucketNodes(selectedPatchAgeBucket);
 
   // Calculate stats from real node data
   const stats = useMemo(() => {
@@ -550,7 +557,18 @@ export default function Dashboard() {
                   <XAxis dataKey="label" />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                  <Bar
+                    dataKey="value"
+                    fill="#3b82f6"
+                    radius={[6, 6, 0, 0]}
+                    cursor="pointer"
+                    onClick={(data) => {
+                      const entry = data as unknown as { label?: string; value?: number };
+                      if (entry?.label && (entry.value ?? 0) > 0) {
+                        setSelectedPatchAgeBucket(entry.label);
+                      }
+                    }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -941,6 +959,73 @@ export default function Dashboard() {
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-green-600">
                           {node.latest_version}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Patch Age Drill-Down Modal */}
+      {selectedPatchAgeBucket && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelectedPatchAgeBucket(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {selectedPatchAgeBucket === 'Unknown'
+                  ? 'Nodes with unknown patch age'
+                  : `Nodes last patched ${selectedPatchAgeBucket}`}
+              </h3>
+              <button
+                onClick={() => setSelectedPatchAgeBucket(null)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6">
+              {patchAgeNodesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+                </div>
+              ) : patchAgeNodes.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No nodes in this bucket</p>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Age</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Patched</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {patchAgeNodes.map((node) => (
+                      <tr key={node.certname} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <Link
+                            to={`/nodes/${encodeURIComponent(node.certname)}`}
+                            className="text-primary-600 hover:underline font-mono text-sm"
+                            onClick={() => setSelectedPatchAgeBucket(null)}
+                          >
+                            {node.certname}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-700">
+                          {node.age_days === null ? '—' : `${node.age_days}d`}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {formatTimeAgo(node.last_patched_at)}
                         </td>
                       </tr>
                     ))}

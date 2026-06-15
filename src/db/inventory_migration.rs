@@ -127,10 +127,10 @@ pub async fn migrate_if_needed(
         .await
         .context("Failed to acquire main DB connection for inventory migration")?;
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "ATTACH DATABASE '{}' AS inv",
         inventory_path.replace('\'', "''")
-    ))
+    )))
     .execute(&mut *conn)
     .await
     .context("Failed to ATTACH inventory database")?;
@@ -174,7 +174,7 @@ pub async fn migrate_if_needed(
                 t = table,
                 cols = col_list
             );
-            let copied = sqlx::query(&sql)
+            let copied = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .execute(&mut *conn)
                 .await
                 .with_context(|| format!("Failed to copy main.{} → inv.{}", table, table))?
@@ -193,7 +193,7 @@ pub async fn migrate_if_needed(
             if !table_exists_on_conn(&mut *conn, "main", table).await? {
                 continue;
             }
-            let deleted = sqlx::query(&format!("DELETE FROM main.{}", table))
+            let deleted = sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM main.{}", table)))
                 .execute(&mut *conn)
                 .await
                 .with_context(|| format!("Failed to truncate main.{}", table))?
@@ -273,7 +273,7 @@ async fn main_has_inventory_rows(main: &DbPool) -> Result<bool> {
         if exists_row.is_none() {
             continue;
         }
-        let row = sqlx::query(&format!("SELECT COUNT(*) AS c FROM {}", table))
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS c FROM {}", table)))
             .fetch_one(main)
             .await
             .with_context(|| format!("Failed to count rows in main.{}", table))?;
@@ -291,7 +291,7 @@ where
 {
     let sql =
         format!("SELECT name FROM {schema}.sqlite_master WHERE type='table' AND name = ?1 LIMIT 1");
-    let row = sqlx::query(&sql)
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(table)
         .fetch_optional(exec)
         .await
@@ -303,7 +303,7 @@ async fn fetch_columns<'e, E>(exec: E, schema: &str, table: &str) -> Result<Vec<
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
 {
-    let rows = sqlx::query(&format!("PRAGMA {}.table_info({})", schema, table))
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA {}.table_info({})", schema, table)))
         .fetch_all(exec)
         .await
         .with_context(|| format!("Failed to read schema for {}.{}", schema, table))?;

@@ -105,7 +105,8 @@ impl<'a> AuditRepository<'a> {
             sql.push_str(" OFFSET ?");
         }
 
-        let mut q = sqlx::query_as::<_, AuditRow>(&sql).bind(organization_id.to_string());
+        let mut q = sqlx::query_as::<_, AuditRow>(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(organization_id.to_string());
         if let Some(user_id) = query.user_id {
             q = q.bind(user_id.to_string());
         }

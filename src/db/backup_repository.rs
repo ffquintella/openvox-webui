@@ -177,7 +177,7 @@ impl BackupRepository {
 
         query.push_str(" ORDER BY created_at DESC LIMIT ?3 OFFSET ?4");
 
-        let rows = sqlx::query_as::<_, BackupRow>(&query)
+        let rows = sqlx::query_as::<_, BackupRow>(sqlx::AssertSqlSafe(query.as_str()))
             .bind(status.unwrap_or(""))
             .bind(trigger_type.unwrap_or(""))
             .bind(limit)

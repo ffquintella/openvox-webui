@@ -554,7 +554,7 @@ impl<'a> AlertRepository<'a> {
 
         query.push_str(" ORDER BY triggered_at DESC LIMIT ?");
 
-        let mut q = sqlx::query_as::<_, AlertRow>(&query);
+        let mut q = sqlx::query_as::<_, AlertRow>(sqlx::AssertSqlSafe(query.as_str()));
 
         if let Some(s) = status {
             q = q.bind(s.as_str());

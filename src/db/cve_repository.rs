@@ -306,7 +306,7 @@ impl CveRepository {
             limit.min(500)
         ));
 
-        let mut q = sqlx::query_as::<_, CveEntryRow>(&sql);
+        let mut q = sqlx::query_as::<_, CveEntryRow>(sqlx::AssertSqlSafe(sql.as_str()));
         for b in &binds {
             q = q.bind(b);
         }
@@ -642,7 +642,7 @@ impl CveRepository {
             placeholders.join(", ")
         );
 
-        let mut q = sqlx::query(&sql);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
         for cn in certnames {
             q = q.bind(cn);
         }

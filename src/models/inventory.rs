@@ -319,6 +319,15 @@ pub struct ComplianceCategoryNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchAgeBucketNode {
+    pub certname: String,
+    /// Days since the node was last patched, or `None` when no timestamp is known.
+    pub age_days: Option<i64>,
+    /// Resolved "last patched" timestamp (RFC 3339), or `None` for the Unknown bucket.
+    pub last_patched_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeInventory {
     pub snapshot: InventorySnapshotSummary,
     pub summary: InventorySummary,

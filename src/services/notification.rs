@@ -237,7 +237,7 @@ impl NotificationService {
             placeholders
         );
 
-        let mut query = sqlx::query(&sql)
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(req.read)
             .bind(&read_at)
             .bind(user_id);

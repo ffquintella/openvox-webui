@@ -141,6 +141,7 @@ import type {
   UpdateGroupUpdateScheduleRequest,
   OutdatedSoftwareNodeDetail,
   ComplianceCategoryNode,
+  PatchAgeBucketNode,
   FleetRepositoryConfig,
   // CVE types
   CveFeedSource,
@@ -386,6 +387,15 @@ export const api = {
   ): Promise<ComplianceCategoryNode[]> => {
     const response = await client.get(
       `/inventory/dashboard/compliance/${encodeURIComponent(category)}`
+    );
+    return response.data;
+  },
+
+  getPatchAgeBucketNodes: async (
+    bucket: string
+  ): Promise<PatchAgeBucketNode[]> => {
+    const response = await client.get(
+      `/inventory/dashboard/patch-age/${encodeURIComponent(bucket)}`
     );
     return response.data;
   },

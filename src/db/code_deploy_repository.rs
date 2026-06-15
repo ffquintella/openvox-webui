@@ -293,7 +293,7 @@ impl<'a> CodePatTokenRepository<'a> {
             updates.join(", ")
         );
 
-        let mut query = sqlx::query(&query_str);
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(query_str.as_str()));
         for param in params {
             query = query.bind(param);
         }
@@ -736,7 +736,7 @@ impl<'a> CodeEnvironmentRepository<'a> {
 
         sql.push_str(" ORDER BY name");
 
-        let mut query_builder = sqlx::query_as::<_, EnvironmentRow>(&sql);
+        let mut query_builder = sqlx::query_as::<_, EnvironmentRow>(sqlx::AssertSqlSafe(sql.as_str()));
 
         if let Some(repo_id) = query.repository_id {
             query_builder = query_builder.bind(repo_id.to_string());
@@ -949,7 +949,7 @@ impl<'a> CodeEnvironmentRepository<'a> {
             placeholders.join(", ")
         );
 
-        let mut query = sqlx::query(&sql).bind(repository_id.to_string());
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str())).bind(repository_id.to_string());
         for name in existing_names {
             query = query.bind(name);
         }
@@ -1051,7 +1051,7 @@ impl<'a> CodeDeploymentRepository<'a> {
             sql.push_str(&format!(" OFFSET {}", offset));
         }
 
-        let mut query_builder = sqlx::query_as::<_, DeploymentRow>(&sql);
+        let mut query_builder = sqlx::query_as::<_, DeploymentRow>(sqlx::AssertSqlSafe(sql.as_str()));
 
         if let Some(env_id) = query.environment_id {
             query_builder = query_builder.bind(env_id.to_string());

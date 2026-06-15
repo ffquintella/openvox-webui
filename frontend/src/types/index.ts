@@ -317,6 +317,12 @@ export interface ComplianceCategoryNode {
   checked_at: string;
 }
 
+export interface PatchAgeBucketNode {
+  certname: string;
+  age_days: number | null;
+  last_patched_at: string | null;
+}
+
 export type UpdateJobStatus =
   | 'pending_approval'
   | 'approved'

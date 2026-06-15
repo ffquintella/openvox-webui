@@ -15,7 +15,7 @@ use crate::models::{
     HostUserInventoryItem, HostWebInventoryItem, InventoryDashboardReport,
     InventoryDistributionPoint, InventoryFleetStatusSummary, InventoryPayload,
     InventorySnapshotSummary, InventorySummary, NodeInventory, NodePendingUpdateJob,
-    OutdatedInventoryItem, OutdatedSoftwareNodeDetail, PatchAgeBucket,
+    OutdatedInventoryItem, OutdatedSoftwareNodeDetail, PatchAgeBucket, PatchAgeBucketNode,
     RepositoryVersionCatalogEntry, SubmitUpdateJobResultRequest, TopOutdatedSoftwareItem,
     UpdateGroupUpdateScheduleRequest, UpdateJob, UpdateJobResult, UpdateJobStatus, UpdateJobTarget,
     UpdateOperationType, UpdateTargetStatus,
@@ -839,7 +839,7 @@ impl InventoryRepository {
             condition
         );
 
-        let rows = sqlx::query_as::<_, ComplianceCategoryRow>(&query)
+        let rows = sqlx::query_as::<_, ComplianceCategoryRow>(sqlx::AssertSqlSafe(query.as_str()))
             .fetch_all(&self.pool)
             .await
             .context("Failed to load compliance category nodes")?;
@@ -854,6 +854,62 @@ impl InventoryRepository {
                 checked_at: r.checked_at,
             })
             .collect())
+    }
+
+    pub async fn get_nodes_for_patch_age_bucket(
+        &self,
+        bucket: &str,
+    ) -> Result<Vec<PatchAgeBucketNode>> {
+        if !PATCH_AGE_BUCKET_LABELS.contains(&bucket) {
+            return Err(anyhow::anyhow!("Invalid patch age bucket: {}", bucket));
+        }
+
+        let rows = sqlx::query_as::<_, PatchAgeNodeRow>(
+            r#"
+            SELECT
+                o.certname,
+                o.last_successful_update_at,
+                o.last_inventory_at,
+                (
+                    SELECT MAX(p.install_time)
+                    FROM host_package_inventory p
+                    WHERE p.certname = o.certname
+                      AND TRIM(COALESCE(p.install_time, '')) <> ''
+                ) AS latest_package_install_at,
+                (
+                    SELECT MAX(a.install_date)
+                    FROM host_application_inventory a
+                    WHERE a.certname = o.certname
+                      AND TRIM(COALESCE(a.install_date, '')) <> ''
+                ) AS latest_application_install_at
+            FROM host_os_inventory o
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to load patch age nodes for drill-down")?;
+
+        let now = Utc::now();
+        let mut results: Vec<PatchAgeBucketNode> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let timestamp = resolve_patch_age_timestamp_from(
+                    row.last_successful_update_at.as_deref(),
+                    row.latest_package_install_at.as_deref(),
+                    row.latest_application_install_at.as_deref(),
+                    row.last_inventory_at.as_deref(),
+                );
+                let age_days = timestamp.map(|ts| (now - ts).num_days().max(0));
+                (patch_age_bucket_label(age_days) == bucket).then(|| PatchAgeBucketNode {
+                    certname: row.certname,
+                    age_days,
+                    last_patched_at: timestamp.map(|ts| ts.to_rfc3339()),
+                })
+            })
+            .collect();
+
+        results.sort_by(|a, b| a.certname.cmp(&b.certname));
+        Ok(results)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2360,7 +2416,7 @@ impl InventoryRepository {
         let mut purged: u64 = 0;
         for certname in certnames {
             for table in TABLES {
-                sqlx::query(&format!("DELETE FROM {} WHERE certname = ?1", table))
+                sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {} WHERE certname = ?1", table)))
                     .bind(certname)
                     .execute(&mut *tx)
                     .await
@@ -2986,6 +3042,15 @@ struct PatchAgeSourceRow {
 }
 
 #[derive(Debug, FromRow)]
+struct PatchAgeNodeRow {
+    certname: String,
+    last_successful_update_at: Option<String>,
+    last_inventory_at: Option<String>,
+    latest_package_install_at: Option<String>,
+    latest_application_install_at: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
 struct DashboardOutdatedItemsRow {
     certname: String,
     outdated_items_json: Option<String>,
@@ -3345,53 +3410,60 @@ fn map_distribution(rows: Vec<DashboardDistributionRow>) -> Vec<InventoryDistrib
         .collect()
 }
 
+/// All patch-age bucket labels, in display order. Shared between the dashboard
+/// aggregation and the per-bucket node drill-down so the two stay in sync.
+const PATCH_AGE_BUCKET_LABELS: [&str; 5] = ["0-7d", "8-30d", "31-90d", "91d+", "Unknown"];
+
+/// Classify a node into a patch-age bucket from its age in days. `None` (no
+/// resolvable timestamp) maps to the "Unknown" bucket.
+fn patch_age_bucket_label(age_days: Option<i64>) -> &'static str {
+    match age_days {
+        None => "Unknown",
+        Some(days) if days <= 7 => "0-7d",
+        Some(days) if days <= 30 => "8-30d",
+        Some(days) if days <= 90 => "31-90d",
+        Some(_) => "91d+",
+    }
+}
+
 fn map_buckets(rows: Vec<PatchAgeSourceRow>) -> Vec<PatchAgeBucket> {
     let now = Utc::now();
-    let mut zero_to_seven = 0usize;
-    let mut eight_to_thirty = 0usize;
-    let mut thirty_one_to_ninety = 0usize;
-    let mut ninety_plus = 0usize;
-    let mut unknown = 0usize;
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
 
     for row in rows {
-        let Some(timestamp) = resolve_patch_age_timestamp(&row) else {
-            unknown += 1;
-            continue;
-        };
-
-        let age_days = (now - timestamp).num_days().max(0);
-        if age_days <= 7 {
-            zero_to_seven += 1;
-        } else if age_days <= 30 {
-            eight_to_thirty += 1;
-        } else if age_days <= 90 {
-            thirty_one_to_ninety += 1;
-        } else {
-            ninety_plus += 1;
-        }
+        let age_days = resolve_patch_age_timestamp(&row).map(|ts| (now - ts).num_days().max(0));
+        *counts.entry(patch_age_bucket_label(age_days)).or_default() += 1;
     }
 
-    [
-        ("0-7d", zero_to_seven),
-        ("8-30d", eight_to_thirty),
-        ("31-90d", thirty_one_to_ninety),
-        ("91d+", ninety_plus),
-        ("Unknown", unknown),
-    ]
-    .into_iter()
-    .map(|(label, value)| PatchAgeBucket {
-        label: label.to_string(),
-        value,
-    })
-    .collect()
+    PATCH_AGE_BUCKET_LABELS
+        .into_iter()
+        .map(|label| PatchAgeBucket {
+            label: label.to_string(),
+            value: counts.get(label).copied().unwrap_or(0),
+        })
+        .collect()
 }
 
 fn resolve_patch_age_timestamp(row: &PatchAgeSourceRow) -> Option<DateTime<Utc>> {
-    [
+    resolve_patch_age_timestamp_from(
         row.last_successful_update_at.as_deref(),
         row.latest_package_install_at.as_deref(),
         row.latest_application_install_at.as_deref(),
         row.last_inventory_at.as_deref(),
+    )
+}
+
+fn resolve_patch_age_timestamp_from(
+    last_successful_update_at: Option<&str>,
+    latest_package_install_at: Option<&str>,
+    latest_application_install_at: Option<&str>,
+    last_inventory_at: Option<&str>,
+) -> Option<DateTime<Utc>> {
+    [
+        last_successful_update_at,
+        latest_package_install_at,
+        latest_application_install_at,
+        last_inventory_at,
     ]
     .into_iter()
     .flatten()
