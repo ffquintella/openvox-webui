@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.5] - 2026-06-15
+
+### Changed
+- When creating a new node group while a group is selected, the "Parent Group" field is now pre-populated with the selected group.
+
 ## [0.37.4] - 2026-05-29
 
 ### Security

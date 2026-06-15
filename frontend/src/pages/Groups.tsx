@@ -670,6 +670,9 @@ export default function Groups() {
         <button
           onClick={() => {
             resetForm();
+            if (selectedGroup) {
+              setFormParentId(selectedGroup.id);
+            }
             setIsCreateOpen(true);
           }}
           className="btn btn-primary flex items-center"
