@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.8] - 2026-06-16
+
+### Fixed
+- Code Deploy "Failed to fetch from remote" over HTTPS. The release binary's bundled libgit2 was compiled without a TLS backend (`there is no TLS stream available; class=Ssl (16)`), so every HTTPS fetch failed before authentication regardless of a valid PAT or certificate. `git2` now builds with `vendored-libgit2` and `vendored-openssl`, guaranteeing an HTTPS-capable libgit2 on every build target.
+
 ## [0.37.7] - 2026-06-15
 
 ### Fixed
