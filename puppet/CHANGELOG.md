@@ -15,10 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.9] - 2026-06-16
+
+### Fixed
+- Code Deploy "Failed to fetch from remote" over HTTPS (completes the 0.37.8 fix). `git2` 0.21 ships `default = []`, so the `https` and `ssh` transports were never compiled into libgit2 after the 0.20→0.21 bump, producing `there is no TLS stream available; class=Ssl (16)` on every HTTPS fetch. The `git2` dependency now explicitly enables the `https` and `ssh` features (alongside `vendored-libgit2`/`vendored-openssl`), so libgit2 is built with the OpenSSL TLS and SSH transports. The RPM/DEB builder images also install `perl-core`, required to compile the vendored OpenSSL from source.
+
 ## [0.37.8] - 2026-06-16
 
 ### Fixed
-- Code Deploy "Failed to fetch from remote" over HTTPS. The release binary's bundled libgit2 was compiled without a TLS backend (`there is no TLS stream available; class=Ssl (16)`), so every HTTPS fetch failed before authentication regardless of a valid PAT or certificate. `git2` now builds with `vendored-libgit2` and `vendored-openssl`, guaranteeing an HTTPS-capable libgit2 on every build target.
+- Code Deploy "Failed to fetch from remote" over HTTPS. The release binary's bundled libgit2 was compiled without a TLS backend (`there is no TLS stream available; class=Ssl (16)`), so every HTTPS fetch failed before authentication regardless of a valid PAT or certificate. `git2` now builds with `vendored-libgit2` and `vendored-openssl`, guaranteeing an HTTPS-capable libgit2 on every build target. (Incomplete — the `https`/`ssh` transports still needed to be enabled; see 0.37.9.)
 
 ## [0.37.7] - 2026-06-15
 

@@ -436,6 +436,7 @@ RUN dnf install -y \
     openssl-devel \
     sqlite-devel \
     git \
+    perl-core \
     && dnf clean all
 
 # Install Node.js 20 from NodeSource
@@ -569,6 +570,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     git \
+    perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 from NodeSource

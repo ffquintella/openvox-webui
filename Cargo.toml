@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.37.8"
+version = "0.37.9"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -85,11 +85,18 @@ printpdf = "0.9"
 # Cron scheduling
 cron = "0.16"
 
-# Git operations for code deploy
-# Vendor libgit2 and OpenSSL so HTTPS/TLS is always compiled in, regardless of
-# the build host (avoids "there is no TLS stream available" when the build
-# environment lacks system OpenSSL, e.g. static/musl targets).
-git2 = { version = "0.21", features = ["vendored-libgit2", "vendored-openssl"] }
+# Git operations for code deploy.
+# git2 0.21 ships `default = []`, so HTTPS and SSH transports are NOT compiled
+# in unless explicitly enabled — omitting them yields libgit2's runtime error
+# "there is no TLS stream available; class=Ssl (16)" on every HTTPS fetch.
+# `https`/`ssh` enable the transports; the `vendored-*` features build libgit2
+# and OpenSSL from source so TLS is present regardless of the build host.
+git2 = { version = "0.21", default-features = false, features = [
+    "https",
+    "ssh",
+    "vendored-libgit2",
+    "vendored-openssl",
+] }
 
 # SSH key parsing for public key extraction
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "std"] }
