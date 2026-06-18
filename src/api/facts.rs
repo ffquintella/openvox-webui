@@ -68,6 +68,10 @@ async fn query_facts(
         .as_ref()
         .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
 
+    // Resolve the effective page size: the client-requested limit clamped to
+    // the configured maximum, or the configured default when unspecified.
+    let limit = state.config.pagination.resolve_limit(query.limit);
+
     // Helper function to query fact-contents endpoint and convert to Fact format
     // Tries multiple query strategies: by path first, then by name if no results
     async fn query_fact_contents_as_facts(
@@ -142,7 +146,7 @@ async fn query_facts(
                 query.certname.as_deref(),
                 query.value.as_deref(),
                 query.environment.as_deref(),
-                query.limit,
+                Some(limit),
             )
             .await?;
 
@@ -172,13 +176,8 @@ async fn query_facts(
         qb = qb.equals("environment", env);
     }
 
-    // Build pagination params
-    let mut params = QueryParams::new();
-    if let Some(limit) = query.limit {
-        params = params.limit(limit);
-    } else {
-        params = params.limit(100); // Default limit
-    }
+    // Build pagination params (limit resolved against config above)
+    let mut params = QueryParams::new().limit(limit);
     if let Some(offset) = query.offset {
         params = params.offset(offset);
     }
@@ -199,7 +198,7 @@ async fn query_facts(
                 query.certname.as_deref(),
                 query.value.as_deref(),
                 query.environment.as_deref(),
-                query.limit,
+                Some(limit),
             )
             .await?;
 

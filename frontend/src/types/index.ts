@@ -16,6 +16,30 @@ export interface Node {
   cached_catalog_status?: string | null;
 }
 
+// Query parameters for the paginated node list
+export interface NodesQueryParams {
+  environment?: string;
+  status?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+  order_by?: string;
+  order_dir?: 'asc' | 'desc';
+}
+
+// Paginated node list result (data plus total count from X-Total-Count header)
+export interface PaginatedNodes {
+  nodes: Node[];
+  total: number;
+}
+
+// Aggregate node statistics (from GET /nodes/stats)
+export interface NodeStats {
+  total: number;
+  by_status: Record<string, number>;
+  by_environment: Record<string, number>;
+}
+
 // Node deletion response
 export interface DeleteNodeResponse {
   success: boolean;

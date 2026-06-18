@@ -83,6 +83,11 @@ cache:
   max_entries: 10000
   sync_interval_secs: 0   # 0 = disabled, set to positive value for background sync
 
+# Pagination defaults for list endpoints (/nodes, /facts)
+pagination:
+  default_limit: 100   # Page size used when a client does not specify ?limit=
+  max_limit: 5000      # Upper bound on ?limit= to keep responses bounded
+
 # Dashboard layout and display preferences
 dashboard:
   default_time_range: "24h"  # 1h, 6h, 12h, 24h, 7d, 30d

@@ -57,6 +57,55 @@ pub struct AppConfig {
     /// CVE vulnerability feed configuration
     #[serde(default)]
     pub cve: Option<CveConfig>,
+    /// Pagination defaults for list endpoints (nodes, facts)
+    #[serde(default)]
+    pub pagination: PaginationConfig,
+}
+
+/// Pagination configuration for list endpoints
+///
+/// Controls the default and maximum number of results returned by paginated
+/// endpoints such as `/nodes` and `/facts`. Clients may request a different
+/// page size via the `limit` query parameter, but requests are clamped to
+/// `max_limit` to protect PuppetDB and the server from oversized responses.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PaginationConfig {
+    /// Default page size when a client does not specify `limit`
+    #[serde(default = "default_page_limit")]
+    pub default_limit: u32,
+    /// Maximum page size a client may request via `limit`
+    #[serde(default = "default_max_page_limit")]
+    pub max_limit: u32,
+}
+
+impl Default for PaginationConfig {
+    fn default() -> Self {
+        Self {
+            default_limit: default_page_limit(),
+            max_limit: default_max_page_limit(),
+        }
+    }
+}
+
+impl PaginationConfig {
+    /// Resolve a client-requested limit against the configured default/max.
+    ///
+    /// - `None` -> `default_limit`
+    /// - `Some(n)` -> `n` clamped to `1..=max_limit`
+    pub fn resolve_limit(&self, requested: Option<u32>) -> u32 {
+        match requested {
+            Some(n) => n.clamp(1, self.max_limit),
+            None => self.default_limit.min(self.max_limit).max(1),
+        }
+    }
+}
+
+fn default_page_limit() -> u32 {
+    100
+}
+
+fn default_max_page_limit() -> u32 {
+    5000
 }
 
 /// Server configuration
@@ -1500,6 +1549,7 @@ impl Default for AppConfig {
             classification: None,
             inventory: None,
             cve: None,
+            pagination: PaginationConfig::default(),
         }
     }
 }

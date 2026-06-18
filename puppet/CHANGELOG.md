@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.10] - 2026-06-18
+
+### Added
+- Server-side pagination for the Nodes page with Previous/Next controls. The list now shows the true fleet-wide node count (via a new `X-Total-Count` response header) instead of being silently capped at 100, and search/status filtering is performed by PuppetDB rather than over a truncated client-side list. (#142)
+- `GET /api/v1/nodes/stats` endpoint returning aggregate node counts (total, by status, by environment) computed by PuppetDB. The Analytics overview now uses it so the "Total Nodes" and "Environments" cards stay accurate and cheap regardless of fleet size, instead of deriving counts from a 100-node sample.
+- `pagination` configuration section (`default_limit`, `max_limit`) to override the default and maximum page size for the `/nodes` and `/facts` endpoints.
+
+### Changed
+- The `/nodes` and `/facts` list endpoints now use the configurable `pagination.default_limit` (default 100) and clamp client-requested `limit` values to `pagination.max_limit` (default 5000), keeping responses bounded while allowing larger fleets to be queried.
+
 ## [0.37.9] - 2026-06-16
 
 ### Fixed

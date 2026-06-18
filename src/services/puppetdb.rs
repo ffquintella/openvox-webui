@@ -202,6 +202,19 @@ pub struct PaginatedResponse<T> {
     pub total: Option<u64>,
 }
 
+/// Aggregate node counts for dashboards/analytics, computed by PuppetDB
+/// without transferring full node records.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NodeStats {
+    /// Total number of active nodes.
+    pub total: u64,
+    /// Node count grouped by `latest_report_status`
+    /// (e.g. `changed`, `unchanged`, `failed`, `unknown`).
+    pub by_status: std::collections::HashMap<String, u64>,
+    /// Node count grouped by `catalog_environment`.
+    pub by_environment: std::collections::HashMap<String, u64>,
+}
+
 /// Resource from PuppetDB
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resource {
@@ -573,13 +586,76 @@ impl PuppetDbClient {
         query: &QueryBuilder,
         params: QueryParams,
     ) -> Result<Vec<Node>> {
+        Ok(self.query_nodes_paginated(query, params).await?.data)
+    }
+
+    /// Get nodes matching a query with pagination, including the total record
+    /// count reported by PuppetDB via the `X-Records` header.
+    ///
+    /// The total is only populated when the query was issued with
+    /// `QueryParams::include_total()`. This lets callers paginate without
+    /// fetching every node just to know how many exist.
+    pub async fn query_nodes_paginated(
+        &self,
+        query: &QueryBuilder,
+        params: QueryParams,
+    ) -> Result<PaginatedResponse<Node>> {
         let mut url = format!("{}/pdb/query/v4/nodes", self.base_url);
         if let Some(q) = query.build() {
             url = format!("{}?{}", url, params.append_to_query_string(&q));
         } else {
             url = format!("{}{}", url, params.to_query_string());
         }
-        self.get(&url).await
+        self.get_paginated(&url).await
+    }
+
+    /// Aggregate node counts without transferring full node records.
+    ///
+    /// Uses PuppetDB PQL aggregate (`count()` + `group by`) queries so the
+    /// dashboard/analytics views can show fleet-wide totals and breakdowns
+    /// regardless of fleet size — instead of pulling every node into memory.
+    pub async fn get_node_stats(&self) -> Result<NodeStats> {
+        let by_status = self
+            .grouped_node_counts("latest_report_status")
+            .await
+            .unwrap_or_default();
+        let by_environment = self
+            .grouped_node_counts("catalog_environment")
+            .await
+            .unwrap_or_default();
+
+        // Total is the sum of the status breakdown (every active node has a
+        // row, including those with a null/"unreported" status).
+        let total = by_status.values().sum();
+
+        Ok(NodeStats {
+            total,
+            by_status,
+            by_environment,
+        })
+    }
+
+    /// Run a `nodes[count(), <field>] { group by <field> }` PQL aggregate and
+    /// return a map of field-value -> count. A null group key is reported as
+    /// the literal string `"unknown"`.
+    async fn grouped_node_counts(
+        &self,
+        field: &str,
+    ) -> Result<std::collections::HashMap<String, u64>> {
+        let pql = format!("nodes[count(), {field}] {{ group by {field} }}");
+        let rows: Vec<serde_json::Value> = self.query(&pql).await?;
+
+        let mut counts = std::collections::HashMap::new();
+        for row in rows {
+            let key = row
+                .get(field)
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let count = row.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+            counts.insert(key, count);
+        }
+        Ok(counts)
     }
 
     /// Get the set of currently active certnames (excludes deactivated and
@@ -1272,6 +1348,27 @@ impl PuppetDbClient {
         })?;
 
         self.handle_response(response).await
+    }
+
+    /// Like [`get`], but also captures the `X-Records` total-count header that
+    /// PuppetDB returns when a query is issued with `include_total=true`.
+    async fn get_paginated<T: DeserializeOwned>(&self, url: &str) -> Result<PaginatedResponse<T>> {
+        debug!("PuppetDB: Sending paginated GET request to {}", url);
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to send request to {}: {}", url, e))?;
+
+        let total = response
+            .headers()
+            .get("X-Records")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
+
+        let data = self.handle_response(response).await?;
+        Ok(PaginatedResponse { data, total })
     }
 
     /// Handle HTTP response and parse JSON

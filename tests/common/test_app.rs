@@ -3,10 +3,7 @@
 //! Provides utilities for setting up test instances of the application
 //! with in-memory databases and mock services.
 
-use std::sync::{
-    atomic::AtomicBool,
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
 use axum::{body::Body, http::Request, Router};
 use chrono::Utc;
@@ -331,6 +328,7 @@ pub fn test_config() -> AppConfig {
         node_removal: None,
         node_bootstrap: None,
         cve: None,
+        pagination: Default::default(),
     }
 }
 

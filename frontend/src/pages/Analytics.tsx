@@ -241,13 +241,26 @@ export default function Analytics() {
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
 
   // Existing analytics queries
+  // Aggregate fleet counts (total, by environment) — computed server-side so
+  // the Overview cards stay accurate and cheap regardless of fleet size.
+  const {
+    data: nodeStats,
+    isLoading: nodeStatsLoading,
+    refetch: refetchNodeStats,
+  } = useQuery({
+    queryKey: ['nodeStats'],
+    queryFn: api.getNodeStats,
+  });
+
+  // The full node list is only needed by the topology visualization, so it is
+  // fetched lazily when that tab is active rather than on every page load.
   const {
     data: nodes = [],
-    isLoading: nodesLoading,
     refetch: refetchNodes,
   } = useQuery({
-    queryKey: ['nodes'],
-    queryFn: api.getNodes,
+    queryKey: ['nodes', 'all'],
+    queryFn: () => api.getNodesPaginated({ limit: 5000 }).then((r) => r.nodes),
+    enabled: activeTab === 'topology',
   });
 
   const {
@@ -319,9 +332,10 @@ export default function Analytics() {
   // Heatmap data is now pre-aggregated by the backend; the chart fetches
   // it directly. No client-side bucketing needed here.
 
-  const isLoading = nodesLoading || groupsLoading || reportsLoading;
+  const isLoading = nodeStatsLoading || groupsLoading || reportsLoading;
 
   const handleRefresh = () => {
+    refetchNodeStats();
     refetchNodes();
     refetchGroups();
     refetchReports();
@@ -424,7 +438,7 @@ export default function Analytics() {
           {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card text-center">
-              <p className="text-3xl font-bold text-gray-900">{nodes.length}</p>
+              <p className="text-3xl font-bold text-gray-900">{(nodeStats?.total ?? 0).toLocaleString()}</p>
               <p className="text-sm text-gray-500">Total Nodes</p>
             </div>
             <div className="card text-center">
@@ -437,7 +451,7 @@ export default function Analytics() {
             </div>
             <div className="card text-center">
               <p className="text-3xl font-bold text-gray-900">
-                {new Set(nodes.map((n) => n.catalog_environment || 'production')).size}
+                {Object.keys(nodeStats?.by_environment ?? {}).length}
               </p>
               <p className="text-sm text-gray-500">Environments</p>
             </div>

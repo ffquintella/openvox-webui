@@ -21,7 +21,7 @@ use crate::{
     },
     services::{
         classification::{build_classification_facts, ClassificationService},
-        puppetdb::{QueryBuilder, QueryParams, Resource},
+        puppetdb::{NodeStats, QueryBuilder, QueryParams, Resource},
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -33,6 +33,7 @@ const POST_INGEST_CATALOG_REFRESH_DEBOUNCE_SECS: i64 = 120;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_nodes))
+        .route("/stats", get(get_node_stats))
         .route("/{certname}", get(get_node).delete(delete_node))
         .route("/{certname}/facts", get(get_node_facts))
         .route("/{certname}/reports", get(get_node_reports))
@@ -96,17 +97,22 @@ pub struct NodesQuery {
 /// - `environment`: Filter by environment
 /// - `status`: Filter by status (changed, unchanged, failed, unreported)
 /// - `search`: Search by certname pattern (regex)
-/// - `limit`: Maximum number of results (default: 100)
+/// - `limit`: Maximum number of results (defaults to `pagination.default_limit`,
+///   clamped to `pagination.max_limit`)
 /// - `offset`: Number of results to skip
 /// - `order_by`: Field to order by (default: certname)
 /// - `order_dir`: Order direction (asc/desc, default: asc)
+///
+/// The total number of matching nodes (independent of pagination) is returned
+/// in the `X-Total-Count` response header so the UI can render correct counts
+/// and page controls without fetching the whole fleet.
 async fn list_nodes(
     State(state): State<AppState>,
     Query(query): Query<NodesQuery>,
-) -> AppResult<Json<Vec<Node>>> {
+) -> AppResult<(HeaderMap, Json<Vec<Node>>)> {
     // If PuppetDB is not configured, return empty list (stub behavior expected by tests)
     let Some(puppetdb) = state.puppetdb.as_ref() else {
-        return Ok(Json(vec![]));
+        return Ok((HeaderMap::new(), Json(vec![])));
     };
 
     // Build query
@@ -124,13 +130,10 @@ async fn list_nodes(
         qb = qb.matches("certname", search);
     }
 
-    // Build pagination params
-    let mut params = QueryParams::new();
-    if let Some(limit) = query.limit {
-        params = params.limit(limit);
-    } else {
-        params = params.limit(100); // Default limit
-    }
+    // Build pagination params. The limit defaults to the configured page size
+    // and is clamped to the configured maximum to keep responses bounded.
+    let limit = state.config.pagination.resolve_limit(query.limit);
+    let mut params = QueryParams::new().limit(limit);
     if let Some(offset) = query.offset {
         params = params.offset(offset);
     }
@@ -141,12 +144,39 @@ async fn list_nodes(
     params = params.order_by(order_field, ascending).include_total();
 
     // Execute query
-    let nodes = puppetdb
-        .query_nodes_with_params(&qb, params)
+    let result = puppetdb
+        .query_nodes_paginated(&qb, params)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to query nodes: {}", e)))?;
 
-    Ok(Json(nodes))
+    let mut headers = HeaderMap::new();
+    if let Some(total) = result.total {
+        if let Ok(value) = total.to_string().parse() {
+            headers.insert("X-Total-Count", value);
+        }
+    }
+
+    Ok((headers, Json(result.data)))
+}
+
+/// Get aggregate node statistics
+///
+/// GET /api/v1/nodes/stats
+///
+/// Returns fleet-wide counts (total, by status, by environment) computed by
+/// PuppetDB aggregate queries. This lets dashboards show accurate counts
+/// without fetching every node record.
+async fn get_node_stats(State(state): State<AppState>) -> AppResult<Json<NodeStats>> {
+    let Some(puppetdb) = state.puppetdb.as_ref() else {
+        return Ok(Json(NodeStats::default()));
+    };
+
+    let stats = puppetdb
+        .get_node_stats()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to query node stats: {}", e)))?;
+
+    Ok(Json(stats))
 }
 
 /// Get a specific node by certname

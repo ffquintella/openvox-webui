@@ -7,6 +7,9 @@ import type {
 } from '../types/notification';
 import type {
   Node,
+  NodesQueryParams,
+  PaginatedNodes,
+  NodeStats,
   NodeGroup,
   Report,
   ResourceEvent,
@@ -332,6 +335,28 @@ export const api = {
   // Nodes
   getNodes: async (): Promise<Node[]> => {
     const response = await client.get('/nodes');
+    return response.data;
+  },
+
+  // Paginated node list. Filtering, sorting and pagination are performed
+  // server-side (by PuppetDB) so the whole fleet is never pulled at once.
+  // The total matching count comes from the X-Total-Count response header.
+  getNodesPaginated: async (
+    params: NodesQueryParams = {}
+  ): Promise<PaginatedNodes> => {
+    const response = await client.get('/nodes', { params });
+    const totalHeader = response.headers['x-total-count'];
+    const parsedTotal = totalHeader !== undefined ? Number(totalHeader) : NaN;
+    const total = Number.isFinite(parsedTotal)
+      ? parsedTotal
+      : response.data.length;
+    return { nodes: response.data, total };
+  },
+
+  // Aggregate fleet statistics (total, by status, by environment) computed
+  // server-side without transferring full node records.
+  getNodeStats: async (): Promise<NodeStats> => {
+    const response = await client.get('/nodes/stats');
     return response.data;
   },
 
