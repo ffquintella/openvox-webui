@@ -2371,12 +2371,10 @@ impl InventoryRepository {
     /// count and is what gets diffed against the live PuppetDB roster to
     /// decide whose inventory rows are stale.
     pub async fn list_inventory_certnames(&self) -> Result<Vec<String>> {
-        let rows = sqlx::query_scalar::<_, String>(
-            "SELECT certname FROM host_os_inventory",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to list inventory certnames")?;
+        let rows = sqlx::query_scalar::<_, String>("SELECT certname FROM host_os_inventory")
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to list inventory certnames")?;
         Ok(rows)
     }
 
@@ -2416,11 +2414,14 @@ impl InventoryRepository {
         let mut purged: u64 = 0;
         for certname in certnames {
             for table in TABLES {
-                sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {} WHERE certname = ?1", table)))
-                    .bind(certname)
-                    .execute(&mut *tx)
-                    .await
-                    .with_context(|| format!("Failed to prune {} for {}", table, certname))?;
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "DELETE FROM {} WHERE certname = ?1",
+                    table
+                )))
+                .bind(certname)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| format!("Failed to prune {} for {}", table, certname))?;
             }
             purged += 1;
         }

@@ -79,6 +79,9 @@
   String $node_bootstrap_agent_package_name,
   # Classification parameters
   Optional[String] $classification_key,
+  # Pagination parameters
+  Integer $pagination_default_limit,
+  Integer $pagination_max_limit,
 | -%>
 # OpenVox WebUI Configuration
 # Managed by Puppet - DO NOT EDIT MANUALLY
@@ -196,6 +199,10 @@ classification:
 <% if $classification_key { -%>
   shared_key: "<%= $classification_key %>"
 <% } -%>
+
+pagination:
+  default_limit: <%= $pagination_default_limit %>
+  max_limit: <%= $pagination_max_limit %>
 
 facter:
   templates_dir: "/etc/openvox-webui/templates"

@@ -192,4 +192,3 @@ fn status_index(status: &str) -> Option<usize> {
         _ => None,
     }
 }
-

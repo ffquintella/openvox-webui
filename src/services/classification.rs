@@ -1461,8 +1461,14 @@ mod tests {
         let result = service.classify("apldc1vds0044.fgv.br", &facts);
 
         let names: Vec<&str> = result.groups.iter().map(|g| g.name.as_str()).collect();
-        assert!(names.contains(&"Linux"), "Linux ancestor missing: {names:?}");
-        assert!(names.contains(&"Develop"), "Develop ancestor missing: {names:?}");
+        assert!(
+            names.contains(&"Linux"),
+            "Linux ancestor missing: {names:?}"
+        );
+        assert!(
+            names.contains(&"Develop"),
+            "Develop ancestor missing: {names:?}"
+        );
         assert!(names.contains(&"ADM-ESI"), "Pinned leaf missing: {names:?}");
 
         let leaf_match = result.groups.iter().find(|g| g.name == "ADM-ESI").unwrap();
@@ -1543,7 +1549,12 @@ mod tests {
             "ADM-ESI has no rules and node is not pinned; should not appear: {names:?}"
         );
         assert_eq!(
-            matched.groups.iter().find(|g| g.name == "Develop").unwrap().match_type,
+            matched
+                .groups
+                .iter()
+                .find(|g| g.name == "Develop")
+                .unwrap()
+                .match_type,
             MatchType::Rules
         );
         assert_eq!(matched.environment.as_deref(), Some("develop"));
@@ -1557,7 +1568,10 @@ mod tests {
         });
         let other = service.classify("notreallyaserver.fgv.br", &other_facts);
         let other_names: Vec<&str> = other.groups.iter().map(|g| g.name.as_str()).collect();
-        assert!(other_names.contains(&"Linux"), "Linux should still match: {other_names:?}");
+        assert!(
+            other_names.contains(&"Linux"),
+            "Linux should still match: {other_names:?}"
+        );
         assert!(
             !other_names.contains(&"Develop"),
             "Develop's regex should not match this certname: {other_names:?}"
@@ -1617,21 +1631,33 @@ mod tests {
 
         // All three should be present: pinned + both rule-matched ancestors.
         for expected in ["Compliance Audit", "Linux", "Develop"] {
-            assert!(
-                names.contains(&expected),
-                "{expected} missing in {names:?}"
-            );
+            assert!(names.contains(&expected), "{expected} missing in {names:?}");
         }
         assert_eq!(
-            result.groups.iter().find(|g| g.name == "Compliance Audit").unwrap().match_type,
+            result
+                .groups
+                .iter()
+                .find(|g| g.name == "Compliance Audit")
+                .unwrap()
+                .match_type,
             MatchType::Pinned
         );
         assert_eq!(
-            result.groups.iter().find(|g| g.name == "Linux").unwrap().match_type,
+            result
+                .groups
+                .iter()
+                .find(|g| g.name == "Linux")
+                .unwrap()
+                .match_type,
             MatchType::Rules
         );
         assert_eq!(
-            result.groups.iter().find(|g| g.name == "Develop").unwrap().match_type,
+            result
+                .groups
+                .iter()
+                .find(|g| g.name == "Develop")
+                .unwrap()
+                .match_type,
             MatchType::Rules
         );
     }

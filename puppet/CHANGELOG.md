@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.11] - 2026-06-18
+
+### Added
+- `pagination_default_limit` and `pagination_max_limit` class parameters that render the `pagination` section of `config.yaml`, allowing the default and maximum page size for the `/nodes` and `/facts` endpoints to be managed via Puppet/Hiera.
+
 ## [0.37.10] - 2026-06-18
 
 ### Added

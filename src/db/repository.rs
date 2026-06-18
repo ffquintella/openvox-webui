@@ -562,7 +562,8 @@ impl<'a> GroupRepository<'a> {
             placeholders.join(", ")
         );
 
-        let mut query_builder = sqlx::query_as::<_, RuleRowWithGroup>(sqlx::AssertSqlSafe(query.as_str()));
+        let mut query_builder =
+            sqlx::query_as::<_, RuleRowWithGroup>(sqlx::AssertSqlSafe(query.as_str()));
         for id in group_ids {
             query_builder = query_builder.bind(id);
         }
@@ -613,7 +614,8 @@ impl<'a> GroupRepository<'a> {
             placeholders.join(", ")
         );
 
-        let mut query_builder = sqlx::query_as::<_, PinnedNodeRowWithGroup>(sqlx::AssertSqlSafe(query.as_str()));
+        let mut query_builder =
+            sqlx::query_as::<_, PinnedNodeRowWithGroup>(sqlx::AssertSqlSafe(query.as_str()));
         for id in group_ids {
             query_builder = query_builder.bind(id);
         }

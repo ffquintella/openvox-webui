@@ -199,11 +199,7 @@ impl ReportSummaryRepository {
 
     /// Fetch summaries for dates in `[start_date, end_date]` inclusive,
     /// ordered ascending.
-    pub async fn range(
-        &self,
-        start_date: &str,
-        end_date: &str,
-    ) -> Result<Vec<ReportDailySummary>> {
+    pub async fn range(&self, start_date: &str, end_date: &str) -> Result<Vec<ReportDailySummary>> {
         let rows = sqlx::query_as::<_, ReportDailySummary>(
             r#"
             SELECT date, changed, unchanged, failed, noop, total, updated_at

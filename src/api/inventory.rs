@@ -16,8 +16,8 @@ use crate::{
         ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
         FleetRepositoryConfig, InventoryDashboardReport, InventoryFleetStatusSummary,
         OutdatedSoftwareNodeDetail, PatchAgeBucketNode, RepositoryVersionCatalogEntry, UpdateJob,
-        UpdateOperationType,
-        UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse, UpdatePreviewTarget,
+        UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
+        UpdatePreviewTarget,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -163,7 +163,9 @@ async fn get_patch_age_bucket_nodes(
     let nodes = repo
         .get_nodes_for_patch_age_bucket(&bucket)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch patch age bucket nodes: {}", e)))?;
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to fetch patch age bucket nodes: {}", e))
+        })?;
     Ok(Json(nodes))
 }
 

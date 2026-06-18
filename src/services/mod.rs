@@ -59,9 +59,7 @@ pub use rbac::RbacService;
 pub use rbac_db::DbRbacService;
 pub use repo_checker::RepoCheckerService;
 pub use repo_checker_scheduler::{start_repo_checker_scheduler, RepoCheckerSchedulerState};
-pub use report_summary_scheduler::{
-    start_report_summary_scheduler, ReportSummarySchedulerState,
-};
+pub use report_summary_scheduler::{start_report_summary_scheduler, ReportSummarySchedulerState};
 pub use reporting::ReportingService;
 pub use saml::{SamlAssertion, SamlService};
 pub use scheduler::{ReportScheduler, ScheduleExecutionResult};

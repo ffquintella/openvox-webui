@@ -164,6 +164,9 @@ class openvox_webui::config {
         node_bootstrap_agent_package_name  => $openvox_webui::node_bootstrap_agent_package_name,
         # Classification settings
         classification_key                 => $openvox_webui::classification_key,
+        # Pagination settings
+        pagination_default_limit           => $openvox_webui::pagination_default_limit,
+        pagination_max_limit               => $openvox_webui::pagination_max_limit,
       }),
     }
 

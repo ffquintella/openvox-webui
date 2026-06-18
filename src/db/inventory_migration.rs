@@ -273,10 +273,13 @@ async fn main_has_inventory_rows(main: &DbPool) -> Result<bool> {
         if exists_row.is_none() {
             continue;
         }
-        let row = sqlx::query(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS c FROM {}", table)))
-            .fetch_one(main)
-            .await
-            .with_context(|| format!("Failed to count rows in main.{}", table))?;
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) AS c FROM {}",
+            table
+        )))
+        .fetch_one(main)
+        .await
+        .with_context(|| format!("Failed to count rows in main.{}", table))?;
         let count: i64 = row.try_get("c").unwrap_or(0);
         if count > 0 {
             return Ok(true);
@@ -303,10 +306,13 @@ async fn fetch_columns<'e, E>(exec: E, schema: &str, table: &str) -> Result<Vec<
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
 {
-    let rows = sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA {}.table_info({})", schema, table)))
-        .fetch_all(exec)
-        .await
-        .with_context(|| format!("Failed to read schema for {}.{}", schema, table))?;
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA {}.table_info({})",
+        schema, table
+    )))
+    .fetch_all(exec)
+    .await
+    .with_context(|| format!("Failed to read schema for {}.{}", schema, table))?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         if let Ok(name) = row.try_get::<String, _>("name") {

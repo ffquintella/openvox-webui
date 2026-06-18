@@ -255,6 +255,15 @@
 #   Must match the CLASSIFICATION_SHARED_KEY configured on the OpenVox WebUI server.
 #   This key is passed to the ENC script and facter client for authentication.
 #
+# @param pagination_default_limit
+#   Default page size returned by list endpoints (e.g. nodes, facts) when a
+#   client does not specify a `limit` query parameter.
+#
+# @param pagination_max_limit
+#   Maximum page size a client may request via the `limit` query parameter.
+#   Requests above this value are clamped to protect PuppetDB and the server
+#   from oversized responses.
+#
 # @example Basic usage with defaults
 #   include openvox_webui
 #
@@ -388,6 +397,10 @@ class openvox_webui (
 
   # Classification settings
   Integer[1, 500]                     $max_rules_per_group    = 100,
+
+  # Pagination settings
+  Integer[1, 100000]                  $pagination_default_limit = 100,
+  Integer[1, 100000]                  $pagination_max_limit     = 5000,
 
   # Management options
   Boolean                             $manage_package         = true,

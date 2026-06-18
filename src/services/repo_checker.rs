@@ -322,7 +322,9 @@ fn parse_repomd_primary_href(xml: &str) -> Option<String> {
                     // Check if type="primary"
                     in_primary_data = e.attributes().filter_map(|a| a.ok()).any(|a| {
                         a.key.local_name().as_ref() == b"type"
-                            && a.normalized_value(XmlVersion::Implicit1_0).map(|v| v == "primary").unwrap_or(false)
+                            && a.normalized_value(XmlVersion::Implicit1_0)
+                                .map(|v| v == "primary")
+                                .unwrap_or(false)
                     });
                 }
                 if in_primary_data && local.as_ref() == b"location" {
@@ -442,17 +444,25 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
                             b"epoch" => {
-                                let val = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
+                                let val = attr
+                                    .normalized_value(XmlVersion::Implicit1_0)
+                                    .unwrap_or_default()
+                                    .to_string();
                                 if val != "0" && !val.is_empty() {
                                     current_epoch = Some(val);
                                 }
                             }
                             b"ver" => {
-                                current_version =
-                                    attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
+                                current_version = attr
+                                    .normalized_value(XmlVersion::Implicit1_0)
+                                    .unwrap_or_default()
+                                    .to_string();
                             }
                             b"rel" => {
-                                let val = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().to_string();
+                                let val = attr
+                                    .normalized_value(XmlVersion::Implicit1_0)
+                                    .unwrap_or_default()
+                                    .to_string();
                                 if !val.is_empty() {
                                     current_release = Some(val);
                                 }
