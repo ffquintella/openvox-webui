@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.13] - 2026-06-26
+
+### Fixed
+- Repaired the backend test suite: alert rule integration tests now seed an active auth session so they pass the session-validation middleware, and the `require_permission_middleware` doctest was updated to match the current `AppState`/`AppConfig` shape.
+- Pinned `samael` back to 0.0.19; 0.0.21 fails to compile without the `xmlsec` feature (its `quick_xml` imports are feature-gated while the code uses them unconditionally), breaking the default build.
+
 ## [0.37.12] - 2026-06-26
 
 ### Fixed

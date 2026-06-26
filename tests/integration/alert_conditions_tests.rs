@@ -53,12 +53,13 @@ async fn test_list_alert_rules_includes_created_rule() {
     )
     .await;
 
-    let token = generate_test_token(
-        &app.state.config,
-        Uuid::new_v4(),
+    let token = generate_test_token_with_session(
+        &app,
+        Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("admin uuid"),
         "admin",
         vec!["admin".to_string()],
-    );
+    )
+    .await;
     let request = axum::http::Request::builder()
         .method("GET")
         .uri("/api/v1/alerting/rules")
@@ -97,12 +98,13 @@ async fn test_get_alert_rule_returns_created_rule() {
     )
     .await;
 
-    let token = generate_test_token(
-        &app.state.config,
-        Uuid::new_v4(),
+    let token = generate_test_token_with_session(
+        &app,
+        Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("admin uuid"),
         "admin",
         vec!["admin".to_string()],
-    );
+    )
+    .await;
     let request = axum::http::Request::builder()
         .method("GET")
         .uri(format!("/api/v1/alerting/rules/{}", created.id))

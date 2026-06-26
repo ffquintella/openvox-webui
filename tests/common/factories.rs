@@ -531,7 +531,7 @@ mod tests {
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::common::{generate_test_token, TestApp};
+use crate::common::{generate_test_token_with_session, TestApp};
 
 #[derive(Debug, Deserialize)]
 struct AlertingResponse<T> {
@@ -546,12 +546,13 @@ pub struct AlertRule {
 
 /// Create an alert rule for testing using the current in-process test app.
 pub async fn create_alert_rule(app: &TestApp, config: Value) -> AlertRule {
-    let token = generate_test_token(
-        &app.state.config,
+    let token = generate_test_token_with_session(
+        app,
         Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("admin uuid"),
         "admin",
         vec!["admin".to_string()],
-    );
+    )
+    .await;
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/api/v1/alerting/rules")

@@ -367,6 +367,7 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
     package_names: updateScope === 'select' ? selectedPackages : [],
     certnames: targetMode === 'single' ? [selectedCertname] : [],
     group_id: targetMode === 'group' ? selectedGroupId : undefined,
+    target_all_outdated: targetMode === 'all_outdated',
     requires_approval: requiresApproval,
     scheduled_for: scheduleMode === 'later' ? scheduledFor : undefined,
   });
@@ -378,6 +379,7 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
         package_names: updateScope === 'select' ? selectedPackages : [],
         certnames: targetMode === 'single' ? [selectedCertname] : [],
         group_id: targetMode === 'group' ? selectedGroupId : undefined,
+        target_all_outdated: targetMode === 'all_outdated',
       });
       setPreview(result);
     } catch { /* error handled by mutation */ }

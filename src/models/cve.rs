@@ -270,6 +270,10 @@ pub struct UpdatePreviewRequest {
     #[serde(default)]
     pub certnames: Vec<String>,
     pub group_id: Option<String>,
+    /// When true, target every node that currently has outdated packages or
+    /// applications (the "All outdated nodes" option in the UI).
+    #[serde(default)]
+    pub target_all_outdated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

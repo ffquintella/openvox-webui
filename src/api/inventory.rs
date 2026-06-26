@@ -244,6 +244,18 @@ async fn create_update_job(
         certnames.append(&mut group_nodes);
     }
 
+    if payload.target_all_outdated {
+        let inv_repo = state.inventory_repository();
+        let mut outdated_nodes: Vec<String> = inv_repo
+            .get_nodes_for_compliance_category("outdated")
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to resolve outdated nodes: {}", e)))?
+            .into_iter()
+            .map(|node| node.certname)
+            .collect();
+        certnames.append(&mut outdated_nodes);
+    }
+
     certnames.sort();
     certnames.dedup();
     certnames.retain(|certname| !certname.trim().is_empty());
@@ -359,11 +371,24 @@ async fn preview_update_job(
             .map_err(|e| AppError::Internal(format!("Failed to resolve target group: {}", e)))?;
         certnames.append(&mut group_nodes);
     }
+
+    let inv_repo = state.inventory_repository();
+
+    if payload.target_all_outdated {
+        let mut outdated_nodes: Vec<String> = inv_repo
+            .get_nodes_for_compliance_category("outdated")
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to resolve outdated nodes: {}", e)))?
+            .into_iter()
+            .map(|node| node.certname)
+            .collect();
+        certnames.append(&mut outdated_nodes);
+    }
+
     certnames.sort();
     certnames.dedup();
     certnames.retain(|c| !c.trim().is_empty());
 
-    let inv_repo = state.inventory_repository();
     let cve_repo = CveRepository::new(state.db.clone());
 
     let mut targets: Vec<UpdatePreviewTarget> = Vec::new();

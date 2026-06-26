@@ -167,9 +167,10 @@ pub fn check_permission(
 /// Usage:
 /// ```
 /// use std::sync::Arc;
+/// use std::sync::atomic::AtomicBool;
 /// use axum::{Router, routing::get};
 /// use openvox_webui::{AppState, require_permission_middleware};
-/// use openvox_webui::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig, CacheConfig, LoggingConfig, DashboardConfig, RbacConfig};
+/// use openvox_webui::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig, CacheConfig, LoggingConfig, DashboardConfig, RbacConfig, InventoryConfig, PaginationConfig};
 /// use openvox_webui::models::Resource;
 /// use openvox_webui::middleware::rbac::RequirePermission;
 /// use openvox_webui::{DbRbacService, RbacService};
@@ -206,12 +207,16 @@ pub fn check_permission(
 ///     node_removal: None,
 ///     node_bootstrap: None,
 ///     cve: None,
+///     pagination: PaginationConfig::default(),
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
 /// let state = AppState {
 ///     config,
 ///     db: db.clone(),
+///     inventory_db: db.clone(),
+///     inventory_config: InventoryConfig::default(),
+///     inventory_ready: Arc::new(AtomicBool::new(true)),
 ///     puppetdb: None,
 ///     puppet_ca: None,
 ///     rbac: Arc::new(RbacService::new()),

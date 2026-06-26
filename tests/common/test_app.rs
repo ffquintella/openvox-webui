@@ -373,6 +373,49 @@ pub fn generate_test_token(
     .expect("Failed to generate test token")
 }
 
+/// Generate a test JWT token backed by an active auth session.
+///
+/// The auth middleware requires the token's `jti` to map to an active row in
+/// `auth_sessions`, so this helper inserts that session before returning the
+/// token. Use it for any request that must pass `auth_middleware`.
+pub async fn generate_test_token_with_session(
+    app: &TestApp,
+    user_id: Uuid,
+    username: &str,
+    roles: Vec<String>,
+) -> String {
+    let session_id = Uuid::new_v4();
+    let now = Utc::now().timestamp();
+    let claims = Claims {
+        sub: user_id.to_string(),
+        username: username.to_string(),
+        email: format!("{}@example.com", username),
+        roles,
+        iat: now,
+        exp: now + 3600,
+        nbf: now,
+        jti: session_id.to_string(),
+        token_type: TokenType::Access,
+        organization_id: Some(default_organization_uuid().to_string()),
+    };
+
+    openvox_webui::middleware::auth::create_auth_session(
+        &app.state.db,
+        &session_id,
+        &user_id,
+        Utc::now() + chrono::Duration::hours(1),
+    )
+    .await
+    .expect("Failed to create test auth session");
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(app.state.config.auth.jwt_secret.as_bytes()),
+    )
+    .expect("Failed to generate test token")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

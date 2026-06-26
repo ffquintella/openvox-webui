@@ -418,6 +418,7 @@ export interface CreateUpdateJobRequest {
   package_names?: string[];
   certnames?: string[];
   group_id?: string | null;
+  target_all_outdated?: boolean;
   requires_approval?: boolean;
   scheduled_for?: string | null;
   maintenance_window_start?: string | null;
@@ -2188,6 +2189,7 @@ export interface UpdatePreviewRequest {
   package_names?: string[];
   certnames?: string[];
   group_id?: string | null;
+  target_all_outdated?: boolean;
 }
 
 export interface UpdatePreviewResponse {
