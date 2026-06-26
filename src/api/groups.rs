@@ -18,6 +18,7 @@ use crate::{
         Resource, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest, UpdateJob,
     },
     services::classification::{build_classification_facts, ClassificationService},
+    services::puppetdb::PuppetDbClient,
     utils::AppError,
     AppState,
 };
@@ -212,50 +213,32 @@ async fn delete_group(
     Ok(Json(deleted))
 }
 
-/// Get nodes in a specific group (pinned + classified by rules)
-async fn get_group_nodes(
-    State(state): State<AppState>,
-    auth_user: AuthUser,
-    Query(query): Query<OrgQuery>,
-    Path(id): Path<String>,
-) -> Result<Json<Vec<String>>, AppError> {
-    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
-    let org_id = resolve_org(&auth_user, query.organization_id)?;
-
-    let repo = GroupRepository::new(&state.db);
-
-    // Get the group to verify it exists
-    let group = repo.get_by_id(org_id, uuid).await.map_err(|e| {
-        tracing::error!("Failed to get group: {}", e);
-        AppError::internal("Failed to get group")
-    })?;
-
-    if group.is_none() {
-        return Err(AppError::not_found("Group not found"));
-    }
-
+/// Core group membership resolver: returns pinned nodes plus any nodes that
+/// match the group's classification rules.
+///
+/// This does NOT verify the group exists (callers that need a 404 should check
+/// separately). It is AppState-free so background services (e.g. the update
+/// schedule scheduler) can reuse the exact same logic with just a DB pool and
+/// an optional PuppetDB client.
+pub(crate) async fn classify_group_members(
+    repo: &GroupRepository<'_>,
+    puppetdb: Option<&PuppetDbClient>,
+    org_id: Uuid,
+    group_id: Uuid,
+) -> anyhow::Result<Vec<String>> {
     // Start with pinned nodes
-    let mut matched_nodes: Vec<String> = repo.get_pinned_nodes(uuid).await.map_err(|e| {
-        tracing::error!("Failed to get pinned nodes: {}", e);
-        AppError::internal("Failed to get pinned nodes")
-    })?;
+    let mut matched_nodes: Vec<String> = repo.get_pinned_nodes(group_id).await?;
 
     // If PuppetDB is configured, also classify nodes by rules
-    if let Some(ref puppetdb) = state.puppetdb {
+    if let Some(puppetdb) = puppetdb {
         // Get all groups for classification
-        let all_groups = repo.get_all(org_id).await.map_err(|e| {
-            tracing::error!("Failed to get groups: {}", e);
-            AppError::internal("Failed to get groups")
-        })?;
+        let all_groups = repo.get_all(org_id).await?;
 
         // Create classification service
         let classification_service = ClassificationService::new(all_groups);
 
         // Get all nodes from PuppetDB
-        let nodes = puppetdb.get_nodes().await.map_err(|e| {
-            tracing::error!("Failed to get nodes from PuppetDB: {}", e);
-            AppError::internal("Failed to get nodes from PuppetDB")
-        })?;
+        let nodes = puppetdb.get_nodes().await?;
 
         // Classify each node and check if it matches the target group
         for node in nodes {
@@ -281,11 +264,11 @@ async fn get_group_nodes(
             let classification = classification_service.classify(&node.certname, &facts);
 
             // Check if this node was classified into the target group
-            let matches_group = classification.groups.iter().any(|g| g.id == uuid);
+            let matches_group = classification.groups.iter().any(|g| g.id == group_id);
             tracing::debug!(
                 "Node '{}' classification for group {}: matched={}, matched_groups={:?}",
                 node.certname,
-                uuid,
+                group_id,
                 matches_group,
                 classification
                     .groups
@@ -302,6 +285,53 @@ async fn get_group_nodes(
     // Remove duplicates (in case of edge cases)
     matched_nodes.sort();
     matched_nodes.dedup();
+
+    Ok(matched_nodes)
+}
+
+/// Resolve the full set of certnames belonging to a group: pinned nodes plus
+/// any nodes that match the group's classification rules (via PuppetDB).
+///
+/// This is the canonical group membership resolver for API request handlers. It
+/// must be used anywhere a group needs to be expanded into its actual node
+/// targets (UI listing, update jobs, scheduled runs) so that rule-matched nodes
+/// are never dropped.
+pub(crate) async fn resolve_group_member_certnames(
+    state: &AppState,
+    org_id: Uuid,
+    group_id: Uuid,
+) -> Result<Vec<String>, AppError> {
+    let repo = GroupRepository::new(&state.db);
+
+    // Get the group to verify it exists
+    let group = repo.get_by_id(org_id, group_id).await.map_err(|e| {
+        tracing::error!("Failed to get group: {}", e);
+        AppError::internal("Failed to get group")
+    })?;
+
+    if group.is_none() {
+        return Err(AppError::not_found("Group not found"));
+    }
+
+    classify_group_members(&repo, state.puppetdb.as_deref(), org_id, group_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to resolve group members: {}", e);
+            AppError::internal("Failed to resolve group members")
+        })
+}
+
+/// Get nodes in a specific group (pinned + classified by rules)
+async fn get_group_nodes(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<String>>, AppError> {
+    let uuid = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
+
+    let matched_nodes = resolve_group_member_certnames(&state, org_id, uuid).await?;
 
     Ok(Json(matched_nodes))
 }
@@ -603,12 +633,9 @@ async fn run_update_schedule(
         .map_err(|e| AppError::internal(&format!("Failed to fetch schedule: {}", e)))?
         .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
 
-    // Resolve group members
-    let group_repo = GroupRepository::new(&state.db);
-    let certnames = group_repo
-        .get_group_nodes(uuid)
-        .await
-        .map_err(|e| AppError::internal(&format!("Failed to resolve group nodes: {}", e)))?;
+    // Resolve group members (pinned + rule-matched)
+    let org_id = resolve_org(&auth_user, None)?;
+    let certnames = resolve_group_member_certnames(&state, org_id, uuid).await?;
 
     if certnames.is_empty() {
         return Err(AppError::bad_request(

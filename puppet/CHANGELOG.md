@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.15] - 2026-06-26
+
+### Fixed
+- Update jobs dispatched to a node group now target all of the group's matched nodes, not just its pinned nodes. Previously, group membership for update jobs (manual dispatch, preview, manual schedule run, and the background schedule scheduler) resolved only pinned nodes and silently dropped rule-matched nodes, so a group showing "5 nodes matched" would only dispatch to its 3 pinned nodes. All update paths now use the same classification-aware resolver as the UI.
+
 ## [0.37.14] - 2026-06-26
 
 ### Fixed

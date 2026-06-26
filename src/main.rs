@@ -365,8 +365,11 @@ async fn main() -> Result<()> {
     // both databases: reads `node_groups` from the main DB and creates
     // `update_jobs` in the inventory DB.
     info!("Starting Update Schedule scheduler");
-    let _update_schedule_scheduler =
-        services::start_update_schedule_scheduler(db.clone(), inventory_db.clone());
+    let _update_schedule_scheduler = services::start_update_schedule_scheduler(
+        db.clone(),
+        inventory_db.clone(),
+        puppetdb.clone(),
+    );
 
     // Create application state
     let state = AppState {

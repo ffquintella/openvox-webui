@@ -12,6 +12,7 @@ use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 use crate::db::{repository::GroupRepository, InventoryRepository};
+use crate::services::puppetdb::PuppetDbClient;
 use crate::services::scheduler::calculate_next_run;
 
 type DbPool = SqlitePool;
@@ -24,14 +25,22 @@ pub struct UpdateScheduleSchedulerState {
     /// Dedicated inventory DB (update_jobs, update_job_targets,
     /// update_job_results, group_update_schedules).
     inventory_pool: DbPool,
+    /// PuppetDB client used to classify rule-matched group members. When
+    /// absent, only pinned nodes are resolved.
+    puppetdb: Option<Arc<PuppetDbClient>>,
 }
 
 impl UpdateScheduleSchedulerState {
-    pub fn new(main_pool: DbPool, inventory_pool: DbPool) -> Self {
+    pub fn new(
+        main_pool: DbPool,
+        inventory_pool: DbPool,
+        puppetdb: Option<Arc<PuppetDbClient>>,
+    ) -> Self {
         Self {
             running: Arc::new(RwLock::new(false)),
             main_pool,
             inventory_pool,
+            puppetdb,
         }
     }
 
@@ -46,8 +55,9 @@ impl UpdateScheduleSchedulerState {
 pub fn start_update_schedule_scheduler(
     main_pool: DbPool,
     inventory_pool: DbPool,
+    puppetdb: Option<Arc<PuppetDbClient>>,
 ) -> UpdateScheduleSchedulerState {
-    let state = UpdateScheduleSchedulerState::new(main_pool, inventory_pool);
+    let state = UpdateScheduleSchedulerState::new(main_pool, inventory_pool, puppetdb);
     let state_clone = state.clone();
 
     tokio::spawn(async move {
@@ -81,7 +91,13 @@ async fn schedule_check_task(state: UpdateScheduleSchedulerState) {
         }
         drop(running);
 
-        if let Err(e) = process_due_schedules(&state.main_pool, &state.inventory_pool).await {
+        if let Err(e) = process_due_schedules(
+            &state.main_pool,
+            &state.inventory_pool,
+            state.puppetdb.as_deref(),
+        )
+        .await
+        {
             error!("Update schedule check failed: {}", e);
         }
 
@@ -94,6 +110,7 @@ async fn schedule_check_task(state: UpdateScheduleSchedulerState) {
 async fn process_due_schedules(
     main_pool: &SqlitePool,
     inventory_pool: &SqlitePool,
+    puppetdb: Option<&PuppetDbClient>,
 ) -> anyhow::Result<()> {
     let inv_repo = InventoryRepository::new(inventory_pool.clone());
     let due_schedules = inv_repo.get_due_update_schedules().await?;
@@ -118,7 +135,34 @@ async fn process_due_schedules(
             }
         };
 
-        let certnames = match group_repo.get_group_nodes(group_id).await {
+        // Resolve the group's organization so classification can consider the
+        // full group hierarchy in that org.
+        let org_id = match group_repo.get_group_organization_id(group_id).await {
+            Ok(Some(org_id)) => org_id,
+            Ok(None) => {
+                warn!(
+                    "Group '{}' in schedule '{}' no longer exists, skipping",
+                    schedule.group_id, schedule.id
+                );
+                continue;
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to resolve organization for group '{}' in schedule '{}': {}",
+                    schedule.group_id, schedule.id, e
+                );
+                continue;
+            }
+        };
+
+        let certnames = match crate::api::groups::classify_group_members(
+            &group_repo,
+            puppetdb,
+            org_id,
+            group_id,
+        )
+        .await
+        {
             Ok(nodes) => nodes,
             Err(e) => {
                 warn!(

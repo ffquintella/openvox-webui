@@ -10,7 +10,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    db::{repository::GroupRepository, CveRepository},
+    db::CveRepository,
     middleware::AuthUser,
     models::{
         ApproveUpdateJobRequest, ComplianceCategoryNode, CreateUpdateJobRequest,
@@ -236,11 +236,13 @@ async fn create_update_job(
     if let Some(group_id) = payload.group_id.as_deref() {
         let group_uuid = Uuid::parse_str(group_id)
             .map_err(|_| AppError::bad_request("group_id must be a valid UUID"))?;
-        let group_repo = GroupRepository::new(&state.db);
-        let mut group_nodes = group_repo
-            .get_group_nodes(group_uuid)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to resolve target group: {}", e)))?;
+        let mut group_nodes = crate::api::groups::resolve_group_member_certnames(
+            &state,
+            auth_user.organization_id,
+            group_uuid,
+        )
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to resolve target group: {}", e)))?;
         certnames.append(&mut group_nodes);
     }
 
@@ -364,11 +366,13 @@ async fn preview_update_job(
     if let Some(group_id) = payload.group_id.as_deref() {
         let group_uuid = Uuid::parse_str(group_id)
             .map_err(|_| AppError::bad_request("group_id must be a valid UUID"))?;
-        let group_repo = GroupRepository::new(&state.db);
-        let mut group_nodes = group_repo
-            .get_group_nodes(group_uuid)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to resolve target group: {}", e)))?;
+        let mut group_nodes = crate::api::groups::resolve_group_member_certnames(
+            &state,
+            auth_user.organization_id,
+            group_uuid,
+        )
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to resolve target group: {}", e)))?;
         certnames.append(&mut group_nodes);
     }
 

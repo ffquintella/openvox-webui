@@ -432,12 +432,23 @@ impl<'a> GroupRepository<'a> {
         Ok(result.rows_affected())
     }
 
-    /// Get nodes that match a group (pinned + classified by rules)
-    /// For now, returns only pinned nodes. Full classification requires PuppetDB integration.
-    pub async fn get_group_nodes(&self, group_id: Uuid) -> Result<Vec<String>> {
-        // For now, just return pinned nodes
-        // Full implementation would query PuppetDB and run classification
-        self.get_pinned_nodes(group_id).await
+    /// Look up the organization a group belongs to, without needing to know the
+    /// organization up front. Used by background services (e.g. the update
+    /// schedule scheduler) that only have a group id.
+    pub async fn get_group_organization_id(&self, group_id: Uuid) -> Result<Option<Uuid>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT organization_id FROM node_groups WHERE id = ?")
+                .bind(group_id.to_string())
+                .fetch_optional(self.pool)
+                .await
+                .context("Failed to fetch group organization")?;
+
+        match row {
+            Some((org_id,)) => Ok(Some(
+                Uuid::parse_str(&org_id).context("Invalid organization ID")?,
+            )),
+            None => Ok(None),
+        }
     }
 
     /// Convert a database row to a NodeGroup with rules and pinned nodes

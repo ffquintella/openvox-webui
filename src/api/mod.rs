@@ -18,7 +18,7 @@ mod code_deploy;
 mod cve;
 mod facter;
 mod facts;
-mod groups;
+pub(crate) mod groups;
 mod health;
 mod inventory;
 mod node_removal;
