@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.14] - 2026-06-26
+
+### Fixed
+- Dispatching updates to "All outdated nodes" no longer fails with a 400 error. The update dispatcher now sends a `target_all_outdated` flag, and the backend resolves it to every currently outdated node when creating or previewing an update job. (#151)
+
 ## [0.37.13] - 2026-06-26
 
 ### Fixed

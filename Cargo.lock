@@ -3217,7 +3217,7 @@ dependencies = [
 
 [[package]]
 name = "openvox-webui"
-version = "0.37.13"
+version = "0.37.14"
 dependencies = [
  "anyhow",
  "argon2",
