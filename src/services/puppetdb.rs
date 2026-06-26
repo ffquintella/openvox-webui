@@ -213,6 +213,12 @@ pub struct NodeStats {
     pub by_status: std::collections::HashMap<String, u64>,
     /// Node count grouped by `catalog_environment`.
     pub by_environment: std::collections::HashMap<String, u64>,
+    /// Node count grouped by health bucket (`healthy`, `warning`, `critical`,
+    /// `unknown`). Health combines report recency and status the same way the
+    /// dashboard's per-node health logic does, computed fleet-wide so the
+    /// counts stay accurate regardless of pagination.
+    #[serde(default)]
+    pub by_health: std::collections::HashMap<String, u64>,
 }
 
 /// Resource from PuppetDB
@@ -624,6 +630,8 @@ impl PuppetDbClient {
             .await
             .unwrap_or_default();
 
+        let by_health = self.get_node_health_counts().await;
+
         // Total is the sum of the status breakdown (every active node has a
         // row, including those with a null/"unreported" status).
         let total = by_status.values().sum();
@@ -632,7 +640,75 @@ impl PuppetDbClient {
             total,
             by_status,
             by_environment,
+            by_health,
         })
+    }
+
+    /// Compute fleet-wide node health counts (`healthy`, `warning`, `critical`,
+    /// `unknown`) using the same precedence as the dashboard's per-node health
+    /// logic: no report timestamp -> `unknown`; report older than 24h ->
+    /// `critical`; report 6-24h old -> `warning`; otherwise classified by
+    /// `latest_report_status` (`failed` -> `critical`, `changed`/`unchanged`
+    /// -> `healthy`, anything else -> `unknown`).
+    ///
+    /// Implemented with PuppetDB aggregate count queries so it scales to any
+    /// fleet size. On error the affected bucket simply stays at zero rather
+    /// than failing the whole stats request.
+    async fn get_node_health_counts(&self) -> std::collections::HashMap<String, u64> {
+        let now = chrono::Utc::now();
+        let t6 = (now - chrono::Duration::hours(6)).to_rfc3339();
+        let t24 = (now - chrono::Duration::hours(24)).to_rfc3339();
+
+        // Stale buckets are purely time-based and override status.
+        let no_report = self
+            .count_nodes_where("report_timestamp is null")
+            .await
+            .unwrap_or(0);
+        let critical_old = self
+            .count_nodes_where(&format!("report_timestamp < \"{t24}\""))
+            .await
+            .unwrap_or(0);
+        let warning = self
+            .count_nodes_where(&format!(
+                "report_timestamp >= \"{t24}\" and report_timestamp < \"{t6}\""
+            ))
+            .await
+            .unwrap_or(0);
+
+        // Recently-reporting nodes are classified by their latest status.
+        let recent_by_status = self
+            .grouped_node_counts_filtered(
+                "latest_report_status",
+                Some(&format!("report_timestamp >= \"{t6}\"")),
+            )
+            .await
+            .unwrap_or_default();
+
+        let recent_total: u64 = recent_by_status.values().sum();
+        let recent_healthy = recent_by_status.get("changed").copied().unwrap_or(0)
+            + recent_by_status.get("unchanged").copied().unwrap_or(0);
+        let recent_failed = recent_by_status.get("failed").copied().unwrap_or(0);
+        let recent_unknown = recent_total
+            .saturating_sub(recent_healthy)
+            .saturating_sub(recent_failed);
+
+        let mut counts = std::collections::HashMap::new();
+        counts.insert("healthy".to_string(), recent_healthy);
+        counts.insert("warning".to_string(), warning);
+        counts.insert("critical".to_string(), critical_old + recent_failed);
+        counts.insert("unknown".to_string(), no_report + recent_unknown);
+        counts
+    }
+
+    /// Count the number of nodes matching a raw PQL filter expression.
+    async fn count_nodes_where(&self, filter: &str) -> Result<u64> {
+        let pql = format!("nodes[count()] {{ {filter} }}");
+        let rows: Vec<serde_json::Value> = self.query(&pql).await?;
+        Ok(rows
+            .first()
+            .and_then(|r| r.get("count"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0))
     }
 
     /// Run a `nodes[count(), <field>] { group by <field> }` PQL aggregate and
@@ -642,7 +718,20 @@ impl PuppetDbClient {
         &self,
         field: &str,
     ) -> Result<std::collections::HashMap<String, u64>> {
-        let pql = format!("nodes[count(), {field}] {{ group by {field} }}");
+        self.grouped_node_counts_filtered(field, None).await
+    }
+
+    /// Same as [`Self::grouped_node_counts`] but restricted to nodes matching
+    /// the given raw PQL filter expression.
+    async fn grouped_node_counts_filtered(
+        &self,
+        field: &str,
+        filter: Option<&str>,
+    ) -> Result<std::collections::HashMap<String, u64>> {
+        let pql = match filter {
+            Some(f) => format!("nodes[count(), {field}] {{ {f} group by {field} }}"),
+            None => format!("nodes[count(), {field}] {{ group by {field} }}"),
+        };
         let rows: Vec<serde_json::Value> = self.query(&pql).await?;
 
         let mut counts = std::collections::HashMap::new();

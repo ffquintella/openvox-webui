@@ -38,6 +38,7 @@ export interface NodeStats {
   total: number;
   by_status: Record<string, number>;
   by_environment: Record<string, number>;
+  by_health: Record<string, number>;
 }
 
 // Node deletion response

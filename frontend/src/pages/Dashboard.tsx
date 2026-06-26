@@ -115,6 +115,15 @@ export default function Dashboard() {
     queryFn: api.getNodes,
   });
 
+  // Fleet-wide aggregate counts computed server-side. The plain node list
+  // above is capped at the configured page size (default 100), so the stat
+  // cards and status-distribution chart are driven by these aggregates
+  // instead to stay accurate on large fleets.
+  const { data: nodeStats, refetch: refetchNodeStats } = useQuery({
+    queryKey: ['nodeStats'],
+    queryFn: api.getNodeStats,
+  });
+
   // Recent-reports list at the bottom of the page. Small page size — the
   // weekly trend chart is now powered by the pre-aggregated daily summary
   // below, so this no longer needs to pull thousands of reports.
@@ -156,7 +165,9 @@ export default function Dashboard() {
   const { data: patchAgeNodes = [], isLoading: patchAgeNodesLoading } =
     usePatchAgeBucketNodes(selectedPatchAgeBucket);
 
-  // Calculate stats from real node data
+  // Fleet-wide stats. Prefer the server-side aggregates (accurate regardless
+  // of fleet size); fall back to counting the loaded node sample when the
+  // stats endpoint is unavailable (e.g. PuppetDB not configured).
   const stats = useMemo(() => {
     const statusCounts = {
       changed: 0,
@@ -172,6 +183,23 @@ export default function Dashboard() {
       unknown: 0,
     };
 
+    if (nodeStats) {
+      const byStatus = nodeStats.by_status ?? {};
+      statusCounts.changed = byStatus.changed ?? 0;
+      statusCounts.unchanged = byStatus.unchanged ?? 0;
+      statusCounts.failed = byStatus.failed ?? 0;
+      // Nodes with no latest_report_status are grouped under "unknown".
+      statusCounts.unreported = byStatus.unknown ?? 0;
+
+      const byHealth = nodeStats.by_health ?? {};
+      healthCounts.healthy = byHealth.healthy ?? 0;
+      healthCounts.warning = byHealth.warning ?? 0;
+      healthCounts.critical = byHealth.critical ?? 0;
+      healthCounts.unknown = byHealth.unknown ?? 0;
+
+      return { statusCounts, healthCounts };
+    }
+
     nodes.forEach((node) => {
       // Count by status
       const status = node.latest_report_status;
@@ -186,7 +214,7 @@ export default function Dashboard() {
     });
 
     return { statusCounts, healthCounts };
-  }, [nodes]);
+  }, [nodes, nodeStats]);
 
   // Filter nodes for search
   const filteredNodes = useMemo(() => {
@@ -245,7 +273,7 @@ export default function Dashboard() {
   const statsCards = [
     {
       name: 'Total Nodes',
-      value: nodes.length,
+      value: nodeStats?.total ?? nodes.length,
       icon: Server,
       color: 'text-primary-600',
       bg: 'bg-primary-50',
@@ -331,6 +359,7 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     refetchNodes();
+    refetchNodeStats();
     refetchReports();
     refetchDailySummary();
     refetchInventory();

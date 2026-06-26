@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.12] - 2026-06-26
+
+### Fixed
+- Dashboard status overview cards and the Node Status Distribution chart were capped at 100 nodes because they were computed from the (paginated) node list. They now use fleet-wide server-side aggregates so the totals match the real node count on large deployments. (#150)
+
+### Added
+- `GET /api/v1/nodes/stats` now also returns a `by_health` breakdown (healthy/warning/critical/unknown) computed fleet-wide by PuppetDB, mirroring the dashboard's per-node health logic.
+
 ## [0.37.11] - 2026-06-18
 
 ### Added
