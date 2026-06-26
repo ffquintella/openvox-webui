@@ -83,7 +83,7 @@ validator = { version = "0.20", features = ["derive"] }
 printpdf = "0.9"
 
 # Cron scheduling
-cron = "0.16"
+cron = "0.17"
 
 # Git operations for code deploy.
 # git2 0.21 ships `default = []`, so HTTPS and SSH transports are NOT compiled
