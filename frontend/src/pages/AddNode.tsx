@@ -10,6 +10,7 @@ export default function AddNode() {
   const [copiedWindows, setCopiedWindows] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ignoreSsl, setIgnoreSsl] = useState(false);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -30,9 +31,15 @@ export default function AddNode() {
   // This assumes the WebUI is accessible on the same hostname as the OpenVox server
   const protocol = window.location.protocol;
   const serverHost = config?.openvox_server_url || window.location.host;
-  const curlCommand = `curl -sSL ${protocol}//${serverHost}/api/v1/bootstrap/script | sudo bash`;
+  // When SSL validation is disabled, use curl's -k (insecure) flag on Linux
+  // and a permissive certificate validation callback on Windows.
+  const curlFlags = ignoreSsl ? '-ksSL' : '-sSL';
+  const curlCommand = `curl ${curlFlags} ${protocol}//${serverHost}/api/v1/bootstrap/script | sudo bash`;
 
-  const windowsCommand = `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content`;
+  const winCertSkip = ignoreSsl
+    ? '[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; '
+    : '';
+  const windowsCommand = `${winCertSkip}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(curlCommand);
@@ -136,6 +143,27 @@ export default function AddNode() {
         </div>
       </div>
 
+      {/* Bootstrap Options */}
+      <div className="card mb-6">
+        <h2 className="text-lg font-semibold mb-4">Options</h2>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={ignoreSsl}
+            onChange={(e) => setIgnoreSsl(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span>
+            <span className="font-medium text-gray-900">Ignore SSL certificates *</span>
+            <span className="block text-sm text-gray-500 mt-0.5">
+              Disables TLS certificate validation when downloading the bootstrap script
+              (adds <code className="bg-gray-100 px-1 rounded">-k</code> on Linux and a permissive
+              certificate callback on Windows). Use only with trusted self-signed servers.
+            </span>
+          </span>
+        </label>
+      </div>
+
       {/* Bootstrap Command */}
       <div className="card mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -233,7 +261,7 @@ export default function AddNode() {
               For automated deployments:
             </p>
             <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
-              {`$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
+              {`${winCertSkip}$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
             </pre>
           </div>
           <div>
@@ -242,7 +270,7 @@ export default function AddNode() {
               To see what the script will do without making changes:
             </p>
             <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
-              {`$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -DryRun`}
+              {`${winCertSkip}$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -DryRun`}
             </pre>
           </div>
         </div>

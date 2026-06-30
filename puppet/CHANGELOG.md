@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.16] - 2026-06-30
+
+### Added
+- "Ignore SSL certificates" checkbox on the Add Node page (default unchecked). When enabled, the generated Linux bootstrap command uses `curl -k` and the Windows bootstrap command adds a permissive TLS certificate validation callback, so nodes can enroll against servers with self-signed certificates.
+
 ## [0.37.15] - 2026-06-26
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "openvox-webui-frontend",
-  "version": "0.37.15",
+  "version": "0.37.16",
   "private": true,
   "type": "module",
   "scripts": {
