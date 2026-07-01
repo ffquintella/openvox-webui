@@ -36,10 +36,14 @@ export default function AddNode() {
   const curlFlags = ignoreSsl ? '-ksSL' : '-sSL';
   const curlCommand = `curl ${curlFlags} ${protocol}//${serverHost}/api/v1/bootstrap/script | sudo bash`;
 
-  const winCertSkip = ignoreSsl
-    ? '[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; '
-    : '';
-  const windowsCommand = `${winCertSkip}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; iex (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content`;
+  // When SSL validation is disabled, use Invoke-WebRequest's -SkipCertificateCheck
+  // flag (works better than the ServicePointManager callback). Otherwise ensure a
+  // modern TLS protocol is negotiated for older Windows PowerShell defaults.
+  const winIwrFlags = ignoreSsl ? '-SkipCertificateCheck ' : '';
+  const winTlsPrefix = ignoreSsl
+    ? ''
+    : '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ';
+  const windowsCommand = `${winTlsPrefix}iex (iwr ${winIwrFlags}'${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(curlCommand);
@@ -157,8 +161,9 @@ export default function AddNode() {
             <span className="font-medium text-gray-900">Ignore SSL certificates *</span>
             <span className="block text-sm text-gray-500 mt-0.5">
               Disables TLS certificate validation when downloading the bootstrap script
-              (adds <code className="bg-gray-100 px-1 rounded">-k</code> on Linux and a permissive
-              certificate callback on Windows). Use only with trusted self-signed servers.
+              (adds <code className="bg-gray-100 px-1 rounded">-k</code> on Linux and
+              <code className="bg-gray-100 px-1 rounded">-SkipCertificateCheck</code> on Windows).
+              Use only with trusted self-signed servers.
             </span>
           </span>
         </label>
@@ -231,6 +236,16 @@ export default function AddNode() {
         <p className="text-gray-600 mb-4">
           Run this command in an <strong>elevated PowerShell</strong> (Run as Administrator) on the Windows node:
         </p>
+        {ignoreSsl && (
+          <p className="text-sm text-amber-600 mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              Run this with <strong>PowerShell 7</strong> (<code className="bg-gray-100 px-1 rounded">pwsh</code>).
+              The <code className="bg-gray-100 px-1 rounded">-SkipCertificateCheck</code> flag is not available
+              in Windows PowerShell 5.1.
+            </span>
+          </p>
+        )}
         <div className="relative">
           <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto font-mono text-sm">
             {windowsCommand}
@@ -261,7 +276,7 @@ export default function AddNode() {
               For automated deployments:
             </p>
             <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
-              {`${winCertSkip}$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
+              {`${winTlsPrefix}$script = (iwr ${winIwrFlags}'${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
             </pre>
           </div>
           <div>
@@ -270,7 +285,7 @@ export default function AddNode() {
               To see what the script will do without making changes:
             </p>
             <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
-              {`${winCertSkip}$script = (iwr '${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -DryRun`}
+              {`${winTlsPrefix}$script = (iwr ${winIwrFlags}'${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -DryRun`}
             </pre>
           </div>
         </div>

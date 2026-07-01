@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.18] - 2026-07-01
+
+### Changed
+- When "Ignore SSL certificates" is enabled, the Windows bootstrap commands now pass `-SkipCertificateCheck` to `Invoke-WebRequest` instead of setting a permissive `ServerCertificateValidationCallback`. This works more reliably for downloading the bootstrap script from servers with self-signed certificates. A reminder to run the command with PowerShell 7 (`pwsh`) is shown, since `-SkipCertificateCheck` is not available in Windows PowerShell 5.1.
+
 ## [0.37.17] - 2026-07-01
 
 ### Fixed
