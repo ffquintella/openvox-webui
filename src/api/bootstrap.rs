@@ -181,4 +181,18 @@ mod tests {
         assert!(!script.contains("{{OPENVOX_SERVER}}"));
         assert!(!script.contains("{{PACKAGE_NAME}}"));
     }
+
+    #[test]
+    fn test_windows_script_config_guard_survives_substitution() {
+        // Regression: the "not configured" guard must use a sentinel that is NOT
+        // itself rewritten by placeholder substitution. Otherwise a configured
+        // server turns the guard into `$OPENVOX_SERVER -eq "<server>"`, which is
+        // always true and falsely reports the server as unconfigured.
+        let script = generate_windows_bootstrap_script("openvox.example.com", "openvox-agent");
+
+        // The split sentinel must survive substitution intact.
+        assert!(script.contains(r#""{{OPENVOX_SERVER" + "}}""#));
+        // The guard must not compare against the injected server value.
+        assert!(!script.contains(r#"-eq "openvox.example.com""#));
+    }
 }

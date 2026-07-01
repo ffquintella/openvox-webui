@@ -344,7 +344,10 @@ function Main {
     Write-Banner
 
     # Validate configuration
-    if ([string]::IsNullOrWhiteSpace($OPENVOX_SERVER) -or $OPENVOX_SERVER -eq "{{OPENVOX_SERVER}}") {
+    # Note: the sentinel is split so it is not itself replaced by the WebUI's
+    # placeholder substitution (which rewrites every "{{OPENVOX_SERVER}}").
+    $placeholder = "{{OPENVOX_SERVER" + "}}"
+    if ([string]::IsNullOrWhiteSpace($OPENVOX_SERVER) -or $OPENVOX_SERVER -eq $placeholder) {
         Write-Err "OpenVox Server URL is not configured!"
         Write-Err "Please configure 'openvox_server_url' in your OpenVox WebUI settings."
         exit 1

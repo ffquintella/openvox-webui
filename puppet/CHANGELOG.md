@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.17] - 2026-07-01
+
+### Fixed
+- Windows bootstrap script no longer reports "OpenVox Server URL is not configured" when the server URL *is* configured. The "not configured" guard used the literal `{{OPENVOX_SERVER}}` placeholder as its sentinel, but placeholder substitution rewrote every occurrence — including the guard — turning the check into a self-comparison that always failed. The sentinel is now split so it survives substitution, matching how the Linux script already handles it.
+
 ## [0.37.16] - 2026-06-30
 
 ### Added
