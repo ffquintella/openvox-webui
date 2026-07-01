@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.19] - 2026-07-01
+
+### Added
+- Windows to the module's `operatingsystem_support` metadata (Server 2019/2022).
+- Unit tests for `openvox_webui::client` covering the Windows, Linux, and macOS
+  code paths (config dir, SSL dir, and file ownership defaults).
+
+### Changed
+- Migrated the module's dev tooling from PDK to Regent. Removed `pdk.yaml` and
+  the `pdk-version`/`template-url`/`template-ref` keys from `metadata.json`.
+- `openvox_webui::enc` now renders the ENC fact file from a plain interpolated
+  string instead of a heredoc (identical output); the heredoc form was not
+  parseable by Regent's manifest parser.
+
+### Fixed
+- `openvox_webui::client` now supports Windows agents. The `config_dir` parameter no longer hardcodes the *nix path `/etc/puppetlabs/facter`; when left unset it defaults to `C:/ProgramData/PuppetLabs/facter` on Windows and `/etc/puppetlabs/facter` elsewhere. The Puppet SSL directory default and the managed `File` resources' owner/group/mode are likewise resolved per platform — POSIX ownership and modes are left unmanaged on Windows, which has no `root` user.
+
 ## [0.37.18] - 2026-07-01
 
 ### Changed

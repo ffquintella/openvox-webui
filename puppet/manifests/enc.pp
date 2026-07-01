@@ -318,12 +318,7 @@ class openvox_webui::enc (
     owner   => 'root',
     group   => 'root',
     mode    => '0644',
-    content => @("YAML"),
-      ---
-      openvox_enc_enabled: true
-      openvox_enc_script: ${enc_script_path}
-      openvox_enc_webui_url: ${effective_webui_url}
-      | YAML
+    content => "---\nopenvox_enc_enabled: true\nopenvox_enc_script: ${enc_script_path}\nopenvox_enc_webui_url: ${effective_webui_url}\n",
     require => File['/etc/facter/facts.d'],
   }
 

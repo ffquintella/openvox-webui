@@ -1,0 +1,10 @@
+# Downloaded test fixtures (managed by `regent fixtures` / .fixtures.yml)
+/spec/fixtures/modules/
+/spec/fixtures/manifests/
+
+# Test/coverage artifacts
+/coverage/
+/.resource_types/
+
+# Regent local runtime state
+/.regent/
