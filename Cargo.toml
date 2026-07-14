@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.37.19"
+version = "0.37.20"
 edition = "2021"
 authors = ["OpenVox Contributors"]
 description = "Web interface for OpenVox infrastructure management"
@@ -113,7 +113,10 @@ tar = "0.4"
 # SAML 2.0 authentication
 # Without xmlsec feature, no signature verification (development mode)
 # For production with signature verification, install libxml2, xmlsec1 and enable xmlsec feature
-samael = { version = "0.0.21", default-features = false }
+# Pinned to 0.0.19: samael 0.0.21+ gate their quick-xml imports behind the xmlsec
+# feature while using those types in non-gated code, so they fail to compile with
+# default-features = false. See samael upstream. Do not bump past 0.0.19 until fixed.
+samael = { version = "=0.0.19", default-features = false }
 flate2 = "1.1"
 
 # Email sending

@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.20] - 2026-07-14
+
+### Fixed
+- Restored a compiling build after dependency updates broke it:
+  - Pinned `samael` to `=0.0.19`. Versions 0.0.21+ gate their `quick-xml` imports
+    behind the `xmlsec` feature while using those types in non-gated code, so they
+    fail to compile with `default-features = false` (37 errors).
+  - Migrated `services::backup_encryption` to the `chacha20poly1305` 0.11 /
+    `aead` 0.6 API (`Nonce::generate()` and `Generate`/`From` in place of the
+    removed `generate_nonce(&mut OsRng)` and deprecated `Array::from_slice`).
+- Verified the full backend (Rust) and frontend (Vitest) test suites pass and the
+  frontend production build succeeds.
+
 ## [0.37.19] - 2026-07-01
 
 ### Added

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, Generate, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
 
@@ -88,18 +88,17 @@ pub fn encrypt(data: &[u8], password: &str) -> Result<EncryptedData> {
     let key = derive_key(password, &salt)?;
 
     // Generate random nonce
-    let nonce_array = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let nonce = Nonce::generate();
 
     // Create cipher and encrypt
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
-    let nonce = Nonce::from_slice(&nonce_array);
+    let cipher = ChaCha20Poly1305::new(&Key::from(key));
 
     let ciphertext = cipher
-        .encrypt(nonce, data)
+        .encrypt(&nonce, data)
         .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
 
     let mut nonce_bytes = [0u8; 12];
-    nonce_bytes.copy_from_slice(&nonce_array);
+    nonce_bytes.copy_from_slice(&nonce);
 
     Ok(EncryptedData {
         salt,
@@ -126,11 +125,11 @@ pub fn decrypt(encrypted: &EncryptedData, password: &str) -> Result<Vec<u8>> {
     let key = derive_key(password, &encrypted.salt)?;
 
     // Create cipher and decrypt
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
-    let nonce = Nonce::from_slice(&encrypted.nonce);
+    let cipher = ChaCha20Poly1305::new(&Key::from(key));
+    let nonce = Nonce::from(encrypted.nonce);
 
     let plaintext = cipher
-        .decrypt(nonce, encrypted.ciphertext.as_ref())
+        .decrypt(&nonce, encrypted.ciphertext.as_ref())
         .map_err(|_| anyhow::anyhow!("Decryption failed - incorrect password or corrupted data"))?;
 
     Ok(plaintext)
