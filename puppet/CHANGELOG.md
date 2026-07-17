@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-07-17
+
+### Added
+- Node Groups: added a clickable list icon next to the matched-nodes summary that
+  opens a modal showing the full list of matched nodes, each linking to its node
+  detail page.
+
 ## [0.37.20] - 2026-07-14
 
 ### Fixed

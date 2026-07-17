@@ -11,6 +11,7 @@ import {
   X,
   Loader2,
   Server,
+  List,
   Filter,
   Pin,
   Settings,
@@ -81,6 +82,7 @@ export default function Groups() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<NodeGroup | null>(null);
   const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'variables' | 'schedules'>('rules');
+  const [showMatchedNodes, setShowMatchedNodes] = useState(false);
 
   // Create/Edit form state
   const [formName, setFormName] = useState('');
@@ -728,6 +730,53 @@ export default function Groups() {
         </button>
       </div>
 
+      {/* Matched Nodes Modal */}
+      {showMatchedNodes && selectedGroup && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowMatchedNodes(false)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Server className="w-5 h-5 text-primary-600" />
+                Matched Nodes ({matchedNodes.length})
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowMatchedNodes(false)}
+                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {matchedNodes.length === 0 ? (
+                <p className="text-sm text-gray-500 p-4 text-center">No nodes matched.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {matchedNodes.map((node) => (
+                    <li key={node}>
+                      <a
+                        href={`/nodes/${encodeURIComponent(node)}`}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 rounded hover:bg-gray-50 hover:text-primary-600"
+                      >
+                        <Server className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="truncate">{node}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create/Edit Modal */}
       {(isCreateOpen || isEditOpen) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1003,10 +1052,21 @@ export default function Groups() {
                     </span>
                   </div>
                   {matchedNodes.length > 0 && (
-                    <span className="text-sm text-primary-600">
-                      {matchedNodes.slice(0, 3).join(', ')}
-                      {matchedNodes.length > 3 && ` +${matchedNodes.length - 3} more`}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-primary-600">
+                        {matchedNodes.slice(0, 3).join(', ')}
+                        {matchedNodes.length > 3 && ` +${matchedNodes.length - 3} more`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowMatchedNodes(true)}
+                        className="p-1 rounded text-primary-600 hover:text-primary-800 hover:bg-primary-100"
+                        title="View all matched nodes"
+                        aria-label="View all matched nodes"
+                      >
+                        <List className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
