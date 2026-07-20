@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { DashboardConfig, UpdateSmtpSettingsRequest } from '../types';
+import type {
+  DashboardConfig,
+  UpdateSmtpSettingsRequest,
+  UpdateUpdateJobSettingsRequest,
+} from '../types';
 
 export function useSettings() {
   return useQuery({
@@ -90,6 +94,24 @@ export function useUpdateSmtpSettings() {
     mutationFn: (config: UpdateSmtpSettingsRequest) => api.updateSmtpSettings(config),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'smtp'] });
+    },
+  });
+}
+
+export function useUpdateJobSettings() {
+  return useQuery({
+    queryKey: ['settings', 'update-jobs'],
+    queryFn: api.getUpdateJobSettings,
+  });
+}
+
+export function useUpdateUpdateJobSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (config: UpdateUpdateJobSettingsRequest) => api.updateUpdateJobSettings(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'update-jobs'] });
     },
   });
 }

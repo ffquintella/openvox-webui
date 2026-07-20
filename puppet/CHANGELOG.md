@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-07-20
+
+### Added
+- Alerting: new `Update Job` alert rule type that fires when update jobs fail or
+  time out. Rules match on job fields (`job.status`, `job.operation_type`,
+  `job.timed_out`, `job.failed_targets`, `job.total_targets`,
+  `job.runtime_minutes`) and are evaluated automatically by the update scheduler,
+  surfacing in Active Alerts and the notification bell. A `job.runtime_minutes`
+  condition can reference the configured maximum runtime from Settings ("Use
+  configured max runtime") instead of a hard-coded number, so the two stay in sync.
+- Settings: new "Update Jobs" tab with a configurable maximum update-job runtime
+  (minutes). Jobs still running past this limit are automatically failed. Default
+  is 240 minutes (previously a hard-coded 120-minute per-target timeout).
+
+### Fixed
+- Alerting: triggered alerts now appear in the notification bell for every user,
+  not just the rule's creator. Previously alerts from rules without a creator
+  (system/seeded rules) were filed under a `"system"` user that no one could see,
+  and alerts from another user's rule never reached other users' bells.
+
 ## [0.38.0] - 2026-07-17
 
 ### Added

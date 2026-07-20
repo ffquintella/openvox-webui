@@ -369,6 +369,7 @@ async fn main() -> Result<()> {
         db.clone(),
         inventory_db.clone(),
         puppetdb.clone(),
+        notification_service.clone(),
     );
 
     // Create application state

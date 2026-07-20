@@ -47,6 +47,8 @@ import type {
   ServerInfoResponse,
   SmtpSettings,
   UpdateSmtpSettingsRequest,
+  UpdateJobSettings,
+  UpdateUpdateJobSettingsRequest,
   CAStatus,
   CertificateRequest,
   Certificate,
@@ -850,6 +852,18 @@ export const api = {
 
   updateSmtpSettings: async (config: UpdateSmtpSettingsRequest): Promise<SmtpSettings> => {
     const response = await client.put('/settings/smtp', config);
+    return response.data;
+  },
+
+  getUpdateJobSettings: async (): Promise<UpdateJobSettings> => {
+    const response = await client.get('/settings/update-jobs');
+    return response.data;
+  },
+
+  updateUpdateJobSettings: async (
+    config: UpdateUpdateJobSettingsRequest
+  ): Promise<UpdateJobSettings> => {
+    const response = await client.put('/settings/update-jobs', config);
     return response.data;
   },
 

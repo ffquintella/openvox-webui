@@ -38,6 +38,8 @@ import {
   useServerInfo,
   useSmtpSettings,
   useUpdateSmtpSettings,
+  useUpdateJobSettings,
+  useUpdateUpdateJobSettings,
 } from '../hooks/useSettings';
 import { api } from '../services/api';
 import {
@@ -57,7 +59,15 @@ import type {
   PermissionDefinition,
 } from '../types';
 
-type TabId = 'general' | 'dashboard' | 'rbac' | 'import-export' | 'smtp' | 'server' | 'cve-feeds';
+type TabId =
+  | 'general'
+  | 'dashboard'
+  | 'rbac'
+  | 'import-export'
+  | 'smtp'
+  | 'update-jobs'
+  | 'server'
+  | 'cve-feeds';
 
 interface Tab {
   id: TabId;
@@ -70,6 +80,7 @@ const tabs: Tab[] = [
   { id: 'dashboard', name: 'Dashboard', icon: Layout },
   { id: 'rbac', name: 'RBAC', icon: Shield },
   { id: 'smtp', name: 'Email/SMTP', icon: Mail },
+  { id: 'update-jobs', name: 'Update Jobs', icon: Clock },
   { id: 'import-export', name: 'Import/Export', icon: FileCode },
   { id: 'server', name: 'Server Info', icon: Server },
   { id: 'cve-feeds', name: 'CVE Feeds', icon: ShieldAlert },
@@ -114,6 +125,7 @@ export default function Settings() {
         {activeTab === 'dashboard' && <DashboardSettingsTab />}
         {activeTab === 'rbac' && <RbacSettingsTab />}
         {activeTab === 'smtp' && <SmtpSettingsTab />}
+        {activeTab === 'update-jobs' && <UpdateJobSettingsTab />}
         {activeTab === 'import-export' && <ImportExportTab />}
         {activeTab === 'server' && <ServerInfoTab />}
         {activeTab === 'cve-feeds' && <CveFeedsTab />}
@@ -1075,6 +1087,79 @@ function ErrorState({ message }: { message: string }) {
     <div className="flex items-center justify-center py-12">
       <XCircle className="w-6 h-6 text-red-500 mr-3" />
       <span className="text-red-600">{message}</span>
+    </div>
+  );
+}
+
+function UpdateJobSettingsTab() {
+  const { data: settings, isLoading, error } = useUpdateJobSettings();
+  const updateMutation = useUpdateUpdateJobSettings();
+
+  const [maxRuntimeMinutes, setMaxRuntimeMinutes] = useState(240);
+
+  useEffect(() => {
+    if (settings) {
+      setMaxRuntimeMinutes(settings.max_runtime_minutes);
+    }
+  }, [settings]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateMutation.mutate({ max_runtime_minutes: maxRuntimeMinutes });
+  };
+
+  if (isLoading) {
+    return <LoadingState message="Loading update job settings..." />;
+  }
+
+  if (error) {
+    return <ErrorState message="Failed to load update job settings" />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="card">
+        <div className="flex items-center mb-4">
+          <Clock className="w-5 h-5 text-primary-600 mr-2" />
+          <h2 className="text-lg font-semibold">Update Jobs</h2>
+        </div>
+
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Configure how long an update job may run before it is automatically failed. When a job
+          exceeds this limit, its outstanding targets are marked as failed and any matching
+          &ldquo;Update Job&rdquo; alert rules will fire.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="max-w-xs">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum runtime (minutes)
+            </label>
+            <input
+              type="number"
+              value={maxRuntimeMinutes}
+              onChange={(e) => setMaxRuntimeMinutes(parseInt(e.target.value) || 0)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+              placeholder="240"
+              min="1"
+              required
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Jobs still running after this many minutes are failed. Default: 240 (4 hours).
+            </p>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={updateMutation.isPending}
+              className="btn btn-primary disabled:opacity-50"
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

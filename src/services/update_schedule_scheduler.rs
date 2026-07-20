@@ -11,11 +11,16 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
-use crate::db::{repository::GroupRepository, InventoryRepository};
+use crate::db::{repository::GroupRepository, InventoryRepository, SettingsRepository};
+use crate::services::notification::NotificationService;
 use crate::services::puppetdb::PuppetDbClient;
 use crate::services::scheduler::calculate_next_run;
+use crate::services::AlertingService;
 
 type DbPool = SqlitePool;
+
+/// Default maximum update-job runtime (minutes) when the setting is unset.
+const DEFAULT_MAX_RUNTIME_MINUTES: i64 = 240;
 
 #[derive(Clone)]
 pub struct UpdateScheduleSchedulerState {
@@ -28,6 +33,8 @@ pub struct UpdateScheduleSchedulerState {
     /// PuppetDB client used to classify rule-matched group members. When
     /// absent, only pinned nodes are resolved.
     puppetdb: Option<Arc<PuppetDbClient>>,
+    /// Notification service used to deliver update-job alerts.
+    notification_service: Arc<NotificationService>,
 }
 
 impl UpdateScheduleSchedulerState {
@@ -35,12 +42,14 @@ impl UpdateScheduleSchedulerState {
         main_pool: DbPool,
         inventory_pool: DbPool,
         puppetdb: Option<Arc<PuppetDbClient>>,
+        notification_service: Arc<NotificationService>,
     ) -> Self {
         Self {
             running: Arc::new(RwLock::new(false)),
             main_pool,
             inventory_pool,
             puppetdb,
+            notification_service,
         }
     }
 
@@ -56,8 +65,14 @@ pub fn start_update_schedule_scheduler(
     main_pool: DbPool,
     inventory_pool: DbPool,
     puppetdb: Option<Arc<PuppetDbClient>>,
+    notification_service: Arc<NotificationService>,
 ) -> UpdateScheduleSchedulerState {
-    let state = UpdateScheduleSchedulerState::new(main_pool, inventory_pool, puppetdb);
+    let state = UpdateScheduleSchedulerState::new(
+        main_pool,
+        inventory_pool,
+        puppetdb,
+        notification_service,
+    );
     let state_clone = state.clone();
 
     tokio::spawn(async move {
@@ -101,8 +116,8 @@ async fn schedule_check_task(state: UpdateScheduleSchedulerState) {
             error!("Update schedule check failed: {}", e);
         }
 
-        if let Err(e) = timeout_stale_jobs(&state.inventory_pool).await {
-            error!("Stale job timeout check failed: {}", e);
+        if let Err(e) = enforce_update_job_limits_and_alerts(&state).await {
+            error!("Update job limit/alert check failed: {}", e);
         }
     }
 }
@@ -259,15 +274,62 @@ fn compute_next_run(
     }
 }
 
-/// Times out dispatched targets that haven't reported back within 2 hours.
-async fn timeout_stale_jobs(pool: &SqlitePool) -> anyhow::Result<()> {
-    let inv_repo = InventoryRepository::new(pool.clone());
-    let timed_out = inv_repo.timeout_stale_dispatched_targets(120).await?;
-    if timed_out > 0 {
+/// Reads the configured maximum update-job runtime (minutes) from settings,
+/// defaulting to [`DEFAULT_MAX_RUNTIME_MINUTES`].
+async fn read_max_runtime_minutes(main_pool: &SqlitePool) -> i64 {
+    let settings_repo = SettingsRepository::new(main_pool.clone());
+    match settings_repo.get_setting("update_jobs.max_runtime_minutes").await {
+        Ok(Some(setting)) => setting
+            .value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .filter(|m| *m > 0)
+            .unwrap_or(DEFAULT_MAX_RUNTIME_MINUTES),
+        Ok(None) => DEFAULT_MAX_RUNTIME_MINUTES,
+        Err(e) => {
+            warn!(
+                "Failed to read update_jobs.max_runtime_minutes setting, using default {}: {}",
+                DEFAULT_MAX_RUNTIME_MINUTES, e
+            );
+            DEFAULT_MAX_RUNTIME_MINUTES
+        }
+    }
+}
+
+/// Fails update jobs that exceed the configured maximum runtime and then
+/// evaluates user-defined `update_job` alert rules against recent jobs.
+async fn enforce_update_job_limits_and_alerts(
+    state: &UpdateScheduleSchedulerState,
+) -> anyhow::Result<()> {
+    let max_minutes = read_max_runtime_minutes(&state.main_pool).await;
+
+    // Fail jobs that have been running longer than the configured limit.
+    let inv_repo = InventoryRepository::new(state.inventory_pool.clone());
+    let failed = inv_repo.fail_overrunning_jobs(max_minutes).await?;
+    if !failed.is_empty() {
         warn!(
-            "Timed out {} stale dispatched update target(s) (no agent response within 2 hours)",
-            timed_out
+            "Failed {} update job(s) exceeding the maximum runtime of {} minutes",
+            failed.len(),
+            max_minutes
         );
     }
+
+    // Evaluate update-job alert rules (failures and timeouts).
+    let alerting = AlertingService::new(
+        state.main_pool.clone(),
+        state.puppetdb.clone(),
+        Some(state.notification_service.clone()),
+    )
+    .with_inventory_pool(state.inventory_pool.clone());
+
+    match alerting.evaluate_update_job_rules().await {
+        Ok(alerts) if !alerts.is_empty() => {
+            info!("Triggered {} update job alert(s)", alerts.len());
+        }
+        Ok(_) => {}
+        Err(e) => error!("Failed to evaluate update job alert rules: {}", e),
+    }
+
     Ok(())
 }

@@ -951,6 +951,14 @@ export interface UpdateSmtpSettingsRequest {
   use_tls: boolean;
 }
 
+export interface UpdateJobSettings {
+  max_runtime_minutes: number;
+}
+
+export interface UpdateUpdateJobSettingsRequest {
+  max_runtime_minutes: number;
+}
+
 export interface SettingsResponse {
   server: ServerSettings;
   puppetdb?: PuppetDbSettings | null;
@@ -1425,7 +1433,13 @@ export interface GenerateReportRequest {
 // ============================================================================
 
 export type ChannelType = 'webhook' | 'email' | 'slack' | 'teams';
-export type AlertRuleType = 'node_status' | 'compliance' | 'drift' | 'report_failure' | 'custom';
+export type AlertRuleType =
+  | 'node_status'
+  | 'compliance'
+  | 'drift'
+  | 'report_failure'
+  | 'update_job'
+  | 'custom';
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 export type ConditionOperator = 'all' | 'any';
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved' | 'silenced';

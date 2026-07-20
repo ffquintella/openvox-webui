@@ -1,6 +1,9 @@
 //! Settings repository - database operations for settings
 
-use crate::models::{Setting, SmtpSettings, UpdateSmtpSettingsRequest};
+use crate::models::{
+    Setting, SmtpSettings, UpdateJobSettings, UpdateSmtpSettingsRequest,
+    UpdateUpdateJobSettingsRequest, DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES,
+};
 use crate::utils::AppError;
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
@@ -108,5 +111,37 @@ impl SettingsRepository {
         }
 
         Ok(smtp_settings)
+    }
+
+    /// Get update-job settings
+    pub async fn get_update_job_settings(&self) -> Result<UpdateJobSettings, AppError> {
+        let settings = self.get_settings_by_prefix("update_jobs.").await?;
+        let settings_vec: Vec<(String, String)> =
+            settings.into_iter().map(|s| (s.key, s.value)).collect();
+
+        Ok(UpdateJobSettings::from_settings(&settings_vec))
+    }
+
+    /// Update update-job settings
+    pub async fn update_update_job_settings(
+        &self,
+        req: &UpdateUpdateJobSettingsRequest,
+    ) -> Result<UpdateJobSettings, AppError> {
+        let max_runtime_minutes = if req.max_runtime_minutes > 0 {
+            req.max_runtime_minutes
+        } else {
+            DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES
+        };
+
+        self.set_setting(
+            UpdateJobSettings::MAX_RUNTIME_KEY,
+            &max_runtime_minutes.to_string(),
+            Some("Maximum time (in minutes) an update job may run before it is failed"),
+        )
+        .await?;
+
+        Ok(UpdateJobSettings {
+            max_runtime_minutes,
+        })
     }
 }

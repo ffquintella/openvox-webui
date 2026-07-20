@@ -1170,6 +1170,92 @@ impl InventoryRepository {
         Ok(timed_out)
     }
 
+    /// Fails update jobs that have exceeded the maximum allowed runtime.
+    ///
+    /// Any job still executing (status `approved` or `in_progress`) whose start
+    /// reference (`scheduled_for`, falling back to `created_at`) is older than
+    /// `max_runtime_minutes` and that still has at least one non-terminal target
+    /// (`queued`/`dispatched`) has those targets marked `failed` and its status
+    /// rolled up accordingly. Returns the ids of the jobs that were failed so
+    /// callers can raise alerts for them.
+    pub async fn fail_overrunning_jobs(&self, max_runtime_minutes: i64) -> Result<Vec<String>> {
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::minutes(max_runtime_minutes);
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin overrunning job timeout transaction")?;
+
+        let overrunning_job_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT j.id
+            FROM update_jobs j
+            WHERE j.status IN ('approved', 'in_progress')
+              AND datetime(COALESCE(j.scheduled_for, j.created_at)) <= datetime(?1)
+              AND EXISTS (
+                  SELECT 1 FROM update_job_targets t
+                  WHERE t.job_id = j.id AND t.status IN ('queued', 'dispatched')
+              )
+            "#,
+        )
+        .bind(cutoff.to_rfc3339())
+        .fetch_all(&mut *tx)
+        .await
+        .context("Failed to query overrunning jobs")?;
+
+        if overrunning_job_ids.is_empty() {
+            tx.commit().await.ok();
+            return Ok(Vec::new());
+        }
+
+        let error_message =
+            format!("Job exceeded maximum runtime of {max_runtime_minutes} minutes");
+
+        for job_id in &overrunning_job_ids {
+            sqlx::query(
+                r#"
+                UPDATE update_job_targets
+                SET status = 'failed',
+                    completed_at = ?1,
+                    last_error = ?2,
+                    updated_at = ?1
+                WHERE job_id = ?3 AND status IN ('queued', 'dispatched')
+                "#,
+            )
+            .bind(now.to_rfc3339())
+            .bind(&error_message)
+            .bind(job_id)
+            .execute(&mut *tx)
+            .await
+            .with_context(|| format!("Failed to fail overrunning targets for job '{job_id}'"))?;
+
+            let target_rows = sqlx::query_as::<_, UpdateJobTargetStateRow>(
+                "SELECT id, job_id, certname, status FROM update_job_targets WHERE job_id = ?1",
+            )
+            .bind(job_id)
+            .fetch_all(&mut *tx)
+            .await
+            .with_context(|| format!("Failed to fetch targets for rollup on job '{job_id}'"))?;
+
+            let rolled_up = roll_up_update_job_status(&target_rows);
+            sqlx::query("UPDATE update_jobs SET status = ?1, updated_at = ?2 WHERE id = ?3")
+                .bind(rolled_up.as_str())
+                .bind(now.to_rfc3339())
+                .bind(job_id)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| format!("Failed to rollup job status for '{job_id}'"))?;
+        }
+
+        tx.commit()
+            .await
+            .context("Failed to commit overrunning job timeout transaction")?;
+
+        Ok(overrunning_job_ids)
+    }
+
     pub async fn approve_update_job(
         &self,
         job_id: &str,

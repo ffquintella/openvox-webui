@@ -47,6 +47,11 @@ pub fn routes() -> Router<AppState> {
         .route("/history", get(get_config_history))
         // SMTP settings
         .route("/smtp", get(get_smtp_settings).put(update_smtp_settings))
+        // Update job settings
+        .route(
+            "/update-jobs",
+            get(get_update_job_settings).put(update_update_job_settings),
+        )
     // Note: /server is in public_routes() to allow login page to check SAML config
 }
 
@@ -941,6 +946,61 @@ async fn update_smtp_settings(
                 Json(ErrorResponse::new(
                     "internal_error",
                     "Failed to update SMTP settings",
+                )),
+            ))
+        }
+    }
+}
+
+// ============================================================================
+// Update Job Settings Endpoints
+// ============================================================================
+
+/// Get update-job settings
+///
+/// GET /api/v1/settings/update-jobs
+async fn get_update_job_settings(
+    State(state): State<AppState>,
+) -> Result<Json<crate::models::UpdateJobSettings>, (StatusCode, Json<ErrorResponse>)> {
+    use crate::db::SettingsRepository;
+
+    let repo = SettingsRepository::new(state.db.clone());
+
+    match repo.get_update_job_settings().await {
+        Ok(settings) => Ok(Json(settings)),
+        Err(e) => {
+            tracing::error!("Failed to get update job settings: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error",
+                    "Failed to retrieve update job settings",
+                )),
+            ))
+        }
+    }
+}
+
+/// Update update-job settings
+///
+/// PUT /api/v1/settings/update-jobs
+async fn update_update_job_settings(
+    State(state): State<AppState>,
+    Json(req): Json<crate::models::UpdateUpdateJobSettingsRequest>,
+) -> Result<Json<crate::models::UpdateJobSettings>, (StatusCode, Json<ErrorResponse>)> {
+    use crate::db::SettingsRepository;
+
+    let repo = SettingsRepository::new(state.db.clone());
+
+    match repo.update_update_job_settings(&req).await {
+        Ok(settings) => Ok(Json(settings)),
+        Err(e) => {
+            tracing::error!("Failed to update update job settings: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::new(
+                    "internal_error",
+                    "Failed to update update job settings",
                 )),
             ))
         }

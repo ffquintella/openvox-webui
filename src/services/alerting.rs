@@ -17,8 +17,11 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::db::{
-    AlertRepository, AlertRuleRepository, AlertSilenceRepository, NotificationChannelRepository,
-    NotificationHistoryRepository,
+    AlertRepository, AlertRuleRepository, AlertSilenceRepository, InventoryRepository,
+    NotificationChannelRepository, NotificationHistoryRepository, SettingsRepository,
+};
+use crate::models::{
+    UpdateTargetStatus, DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES, UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER,
 };
 use crate::models::{
     Alert, AlertCondition, AlertRule, AlertRuleType, AlertSeverity, AlertStats, AlertStatus,
@@ -37,6 +40,9 @@ pub struct AlertingService {
     http_client: Client,
     puppetdb: Option<Arc<PuppetDbClient>>,
     notification_service: Option<Arc<NotificationService>>,
+    /// Dedicated inventory DB pool (update_jobs live here). Required to evaluate
+    /// `update_job` rules; when absent those rules are skipped.
+    inventory_pool: Option<SqlitePool>,
 }
 
 impl AlertingService {
@@ -56,7 +62,14 @@ impl AlertingService {
             http_client,
             puppetdb,
             notification_service,
+            inventory_pool: None,
         }
+    }
+
+    /// Attach the inventory DB pool so `update_job` rules can be evaluated.
+    pub fn with_inventory_pool(mut self, inventory_pool: SqlitePool) -> Self {
+        self.inventory_pool = Some(inventory_pool);
+        self
     }
 
     // ========================================================================
@@ -387,6 +400,12 @@ impl AlertingService {
                 // Vulnerability alerts are triggered by the CVE scheduler, not rule evaluation
                 Ok(None)
             }
+            AlertRuleType::UpdateJob => {
+                // Update-job rules are primarily driven by the update scheduler via
+                // `evaluate_update_job_rules`; return the first triggered alert here so the
+                // on-demand `/evaluate` path also works when an inventory pool is attached.
+                Ok(self.evaluate_update_job_rule(rule).await?.into_iter().next())
+            }
             AlertRuleType::Custom => self.evaluate_custom_rule(rule).await,
         }
     }
@@ -548,6 +567,161 @@ impl AlertingService {
         Ok(None)
     }
 
+    /// Evaluate all enabled `update_job` rules against recent update jobs.
+    ///
+    /// This is driven periodically by the update scheduler. Unlike the generic
+    /// `evaluate_rules` loop it does not apply the per-rule cooldown, because
+    /// alerts are de-duplicated per (rule, job) instead — every distinct failing
+    /// or timed-out job is alerted exactly once per rule.
+    pub async fn evaluate_update_job_rules(&self) -> Result<Vec<Alert>> {
+        let rules = self.get_rules_by_type(AlertRuleType::UpdateJob).await?;
+        let enabled: Vec<AlertRule> = rules.into_iter().filter(|r| r.is_enabled).collect();
+        if enabled.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let silence_repo = AlertSilenceRepository::new(&self.pool);
+        let mut triggered = Vec::new();
+        for rule in &enabled {
+            if silence_repo.is_rule_silenced(rule.id).await.unwrap_or(false) {
+                debug!("Update job rule {} is silenced, skipping", rule.name);
+                continue;
+            }
+            match self.evaluate_update_job_rule(rule).await {
+                Ok(alerts) => triggered.extend(alerts),
+                Err(e) => error!("Error evaluating update job rule {}: {}", rule.name, e),
+            }
+        }
+        Ok(triggered)
+    }
+
+    /// Evaluate a single `update_job` rule against recent update jobs, returning
+    /// one alert per newly matched job.
+    async fn evaluate_update_job_rule(&self, rule: &AlertRule) -> Result<Vec<Alert>> {
+        let Some(inventory_pool) = &self.inventory_pool else {
+            warn!("Inventory DB not configured, cannot evaluate update job rule");
+            return Ok(Vec::new());
+        };
+
+        let inv_repo = InventoryRepository::new(inventory_pool.clone());
+        let jobs = inv_repo.list_update_jobs(50).await?;
+        let now = Utc::now();
+
+        // Resolve any condition value referencing the configured maximum runtime
+        // so rules can reuse the Settings value instead of a hard-coded number.
+        let max_runtime = SettingsRepository::new(self.pool.clone())
+            .get_update_job_settings()
+            .await
+            .map(|s| s.max_runtime_minutes)
+            .unwrap_or(DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES);
+        let resolved_conditions: Vec<AlertCondition> = rule
+            .conditions
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                if let Some(serde_json::Value::String(s)) = &c.value {
+                    if s == UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER {
+                        c.value = Some(serde_json::json!(max_runtime));
+                    }
+                }
+                c
+            })
+            .collect();
+
+        let mut alerts = Vec::new();
+
+        for job in jobs {
+            let failed_targets = job
+                .targets
+                .iter()
+                .filter(|t| matches!(t.status, UpdateTargetStatus::Failed))
+                .count();
+            let total_targets = job.targets.len();
+            let timed_out = job.targets.iter().any(|t| {
+                t.last_error
+                    .as_deref()
+                    .map(|e| e.contains("Timed out") || e.contains("exceeded maximum runtime"))
+                    .unwrap_or(false)
+            });
+            let runtime_minutes = (now - job.created_at).num_minutes().max(0);
+
+            // Booleans are stored as strings so equality against the string value
+            // entered in the rule condition ("true"/"false") works as expected.
+            let context = json!({
+                "job.status": job.status.as_str(),
+                "job.operation_type": job.operation_type.as_str(),
+                "job.failed_targets": failed_targets,
+                "job.total_targets": total_targets,
+                "job.timed_out": timed_out.to_string(),
+                "job.runtime_minutes": runtime_minutes,
+            });
+
+            if !self.evaluate_conditions(&resolved_conditions, &context, rule.condition_operator) {
+                continue;
+            }
+
+            // De-duplicate: alert each job at most once per rule.
+            if self.update_job_alert_exists(rule.id, &job.id).await? {
+                continue;
+            }
+
+            let failed_nodes: Vec<String> = job
+                .targets
+                .iter()
+                .filter(|t| matches!(t.status, UpdateTargetStatus::Failed))
+                .map(|t| t.certname.clone())
+                .collect();
+
+            let title = if timed_out {
+                format!("Update Job Timed Out: {}", job.operation_type.as_str())
+            } else {
+                format!("Update Job Failed: {}", job.operation_type.as_str())
+            };
+            let message = format!(
+                "Update job {} ({}) is in state '{}'. {}/{} target(s) failed{}.",
+                job.id,
+                job.operation_type.as_str(),
+                job.status.as_str(),
+                failed_targets,
+                total_targets,
+                if failed_nodes.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", failed_nodes.join(", "))
+                }
+            );
+
+            let ctx = json!({
+                "job_id": job.id,
+                "operation_type": job.operation_type.as_str(),
+                "status": job.status.as_str(),
+                "failed_targets": failed_targets,
+                "total_targets": total_targets,
+                "timed_out": timed_out,
+                "failed_nodes": failed_nodes,
+            });
+
+            let alert = self.trigger_alert(rule, &title, &message, Some(ctx)).await?;
+            alerts.push(alert);
+        }
+
+        Ok(alerts)
+    }
+
+    /// Whether an alert already exists for the given rule + update job (used to
+    /// avoid re-alerting the same job on every scheduler tick).
+    async fn update_job_alert_exists(&self, rule_id: Uuid, job_id: &str) -> Result<bool> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM alerts WHERE rule_id = ?1 AND json_extract(context, '$.job_id') = ?2",
+        )
+        .bind(rule_id.to_string())
+        .bind(job_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("Failed to check for existing update job alert")?;
+        Ok(count > 0)
+    }
+
     /// Evaluate conditions against a context
     fn evaluate_conditions(
         &self,
@@ -589,30 +763,26 @@ impl AlertingService {
         match condition.operator.as_str() {
             "eq" | "=" | "==" => field_value == Some(value),
             "ne" | "!=" => field_value != Some(value),
-            "gt" | ">" => match (field_value, value) {
-                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                    a.as_f64().unwrap_or(0.0) > b.as_f64().unwrap_or(0.0)
-                }
+            "gt" | ">" => match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                (Some(a), Some(b)) => a > b,
                 _ => false,
             },
-            "gte" | ">=" => match (field_value, value) {
-                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                    a.as_f64().unwrap_or(0.0) >= b.as_f64().unwrap_or(0.0)
+            "gte" | ">=" => {
+                match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                    (Some(a), Some(b)) => a >= b,
+                    _ => false,
                 }
+            }
+            "lt" | "<" => match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                (Some(a), Some(b)) => a < b,
                 _ => false,
             },
-            "lt" | "<" => match (field_value, value) {
-                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                    a.as_f64().unwrap_or(0.0) < b.as_f64().unwrap_or(0.0)
+            "lte" | "<=" => {
+                match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                    (Some(a), Some(b)) => a <= b,
+                    _ => false,
                 }
-                _ => false,
-            },
-            "lte" | "<=" => match (field_value, value) {
-                (Some(serde_json::Value::Number(a)), serde_json::Value::Number(b)) => {
-                    a.as_f64().unwrap_or(0.0) <= b.as_f64().unwrap_or(0.0)
-                }
-                _ => false,
-            },
+            }
             "contains" => match (field_value, value) {
                 (Some(serde_json::Value::String(haystack)), serde_json::Value::String(needle)) => {
                     haystack.contains(needle)
@@ -636,6 +806,16 @@ impl AlertingService {
                 warn!("Unknown condition operator: {}", condition.operator);
                 false
             }
+        }
+    }
+
+    /// Coerce a JSON value to f64 for numeric comparisons, accepting both JSON
+    /// numbers and numeric strings (the rule form submits values as strings).
+    fn coerce_f64(value: &serde_json::Value) -> Option<f64> {
+        match value {
+            serde_json::Value::Number(n) => n.as_f64(),
+            serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+            _ => None,
         }
     }
 
@@ -692,19 +872,14 @@ impl AlertingService {
         // Send notifications to all associated channels
         self.send_alert_notifications(&alert, rule).await?;
 
-        // Create a system notification for the alert
+        // Create an in-app notification for every user so the alert appears in
+        // each user's notification bell (not only the rule creator).
         if let Some(notification_service) = &self.notification_service {
             let notification_type = match rule.severity {
                 AlertSeverity::Critical => NotificationType::Error,
                 AlertSeverity::Warning => NotificationType::Warning,
                 AlertSeverity::Info => NotificationType::Info,
             };
-
-            // Get the rule creator or use default user
-            let user_id = rule
-                .created_by
-                .map(|id| id.to_string())
-                .unwrap_or_else(|| "system".to_string());
 
             let metadata = json!({
                 "alert_id": alert.id.to_string(),
@@ -713,29 +888,47 @@ impl AlertingService {
                 "severity": rule.severity.as_str(),
             });
 
-            let notification_req = CreateNotificationRequest {
-                user_id,
-                organization_id: None,
-                title: format!("Alert: {}", title),
-                message: message.to_string(),
-                r#type: notification_type,
-                category: Some("alert".to_string()),
-                link: Some(format!("/alerting?alert_id={}", alert.id)),
-                expires_at: None,
-                metadata: Some(metadata),
-            };
-
-            if let Err(e) = notification_service
-                .create_notification(notification_req)
+            // Fetch all user ids so the alert reaches everyone's notification bell.
+            let user_ids: Vec<String> = sqlx::query_scalar::<_, String>("SELECT id FROM users")
+                .fetch_all(&self.pool)
                 .await
-            {
-                error!(
-                    "Failed to create system notification for alert {}: {}",
-                    alert.id, e
+                .unwrap_or_else(|e| {
+                    error!("Failed to list users for alert notification: {}", e);
+                    Vec::new()
+                });
+
+            if user_ids.is_empty() {
+                warn!(
+                    "No users found to notify for alert {} - skipping in-app notification",
+                    alert.id
                 );
-            } else {
-                info!("Created system notification for alert {}", alert.id);
             }
+
+            for user_id in user_ids {
+                let notification_req = CreateNotificationRequest {
+                    user_id,
+                    organization_id: None,
+                    title: format!("Alert: {}", title),
+                    message: message.to_string(),
+                    r#type: notification_type.clone(),
+                    category: Some("alert".to_string()),
+                    link: Some(format!("/alerting?alert_id={}", alert.id)),
+                    expires_at: None,
+                    metadata: Some(metadata.clone()),
+                };
+
+                if let Err(e) = notification_service
+                    .create_notification(notification_req)
+                    .await
+                {
+                    error!(
+                        "Failed to create in-app notification for alert {}: {}",
+                        alert.id, e
+                    );
+                }
+            }
+
+            info!("Created in-app notifications for alert {}", alert.id);
         }
 
         Ok(alert)

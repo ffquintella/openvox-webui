@@ -51,6 +51,7 @@ pub enum AlertRuleType {
     Drift,
     ReportFailure,
     Vulnerability,
+    UpdateJob,
     Custom,
 }
 
@@ -62,6 +63,7 @@ impl AlertRuleType {
             AlertRuleType::Drift => "drift",
             AlertRuleType::ReportFailure => "report_failure",
             AlertRuleType::Vulnerability => "vulnerability",
+            AlertRuleType::UpdateJob => "update_job",
             AlertRuleType::Custom => "custom",
         }
     }
@@ -73,6 +75,7 @@ impl AlertRuleType {
             "drift" => Some(AlertRuleType::Drift),
             "report_failure" => Some(AlertRuleType::ReportFailure),
             "vulnerability" => Some(AlertRuleType::Vulnerability),
+            "update_job" => Some(AlertRuleType::UpdateJob),
             "custom" => Some(AlertRuleType::Custom),
             _ => None,
         }

@@ -63,8 +63,14 @@ const RULE_TYPE_LABELS: Record<AlertRuleType, string> = {
   compliance: 'Compliance',
   drift: 'Drift Detection',
   report_failure: 'Report Failure',
+  update_job: 'Update Job',
   custom: 'Custom',
 };
+
+// Placeholder token that resolves to the configured "maximum update-job runtime"
+// setting at evaluation time. Must match the backend constant
+// (UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER in src/models/settings.rs).
+const MAX_RUNTIME_PLACEHOLDER = '{max_runtime_minutes}';
 
 const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   webhook: 'Webhook',
@@ -1223,15 +1229,28 @@ function RuleModal({
                           required
                         >
                           <option value="">Select Field...</option>
-                          <option value="node.status">Node Status - Node connection state (online/offline/failed)</option>
-                          <option value="node.name">Node Name - Hostname of the node</option>
-                          <option value="node.environment">Node Environment - Puppet environment (production, development)</option>
-                          <option value="node.group">Node Group - Node group assignment</option>
-                          <option value="node.last_report">Last Report - Time of last Puppet run</option>
-                          <option value="report.status">Report Status - Status of last Puppet run (success/failed)</option>
-                          <option value="report.changed">Resources Changed - Number of resources changed</option>
-                          <option value="report.failed">Resources Failed - Number of resources failed</option>
-                          <option value="facts">Facts - Custom fact values</option>
+                          {ruleType === 'update_job' ? (
+                            <>
+                              <option value="job.status">Job Status - e.g. completed_with_failures, in_progress</option>
+                              <option value="job.operation_type">Operation Type - e.g. system_patch, security_patch</option>
+                              <option value="job.timed_out">Timed Out - true/false (exceeded max runtime or agent silent)</option>
+                              <option value="job.failed_targets">Failed Targets - number of nodes that failed</option>
+                              <option value="job.total_targets">Total Targets - number of nodes in the job</option>
+                              <option value="job.runtime_minutes">Runtime (minutes) - minutes since the job was created</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value="node.status">Node Status - Node connection state (online/offline/failed)</option>
+                              <option value="node.name">Node Name - Hostname of the node</option>
+                              <option value="node.environment">Node Environment - Puppet environment (production, development)</option>
+                              <option value="node.group">Node Group - Node group assignment</option>
+                              <option value="node.last_report">Last Report - Time of last Puppet run</option>
+                              <option value="report.status">Report Status - Status of last Puppet run (success/failed)</option>
+                              <option value="report.changed">Resources Changed - Number of resources changed</option>
+                              <option value="report.failed">Resources Failed - Number of resources failed</option>
+                              <option value="facts">Facts - Custom fact values</option>
+                            </>
+                          )}
                         </select>
                         <select
                           value={condition.operator || ''}
@@ -1257,18 +1276,60 @@ function RuleModal({
                           <option value="exists">exists - Field exists</option>
                           <option value="not_exists">not exists - Field does not exist</option>
                         </select>
-                        <input
-                          type="text"
-                          placeholder="Value (e.g., failed, 24, 2024-01-22)"
-                          value={String(condition.value || '')}
-                          onChange={(e) => {
-                            const newConditions = [...conditions];
-                            newConditions[index] = { ...condition, value: e.target.value };
-                            setConditions(newConditions);
-                          }}
-                          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
-                          required
-                        />
+                        {ruleType === 'update_job' &&
+                        condition.field === 'job.runtime_minutes' ? (
+                          <div className="flex flex-col gap-1">
+                            <input
+                              type="number"
+                              placeholder={
+                                condition.value === MAX_RUNTIME_PLACEHOLDER
+                                  ? 'Configured max runtime'
+                                  : 'Minutes'
+                              }
+                              disabled={condition.value === MAX_RUNTIME_PLACEHOLDER}
+                              value={
+                                condition.value === MAX_RUNTIME_PLACEHOLDER
+                                  ? ''
+                                  : String(condition.value ?? '')
+                              }
+                              onChange={(e) => {
+                                const newConditions = [...conditions];
+                                newConditions[index] = { ...condition, value: e.target.value };
+                                setConditions(newConditions);
+                              }}
+                              className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                            />
+                            <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                              <input
+                                type="checkbox"
+                                checked={condition.value === MAX_RUNTIME_PLACEHOLDER}
+                                onChange={(e) => {
+                                  const newConditions = [...conditions];
+                                  newConditions[index] = {
+                                    ...condition,
+                                    value: e.target.checked ? MAX_RUNTIME_PLACEHOLDER : '',
+                                  };
+                                  setConditions(newConditions);
+                                }}
+                                className="rounded border-gray-300"
+                              />
+                              Use configured max runtime (Settings)
+                            </label>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Value (e.g., failed, 24, 2024-01-22)"
+                            value={String(condition.value || '')}
+                            onChange={(e) => {
+                              const newConditions = [...conditions];
+                              newConditions[index] = { ...condition, value: e.target.value };
+                              setConditions(newConditions);
+                            }}
+                            className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
+                            required
+                          />
+                        )}
                       </>
                     )}
                   </div>
@@ -1315,7 +1376,17 @@ function RuleModal({
               </label>
               <select
                 value={ruleType}
-                onChange={(e) => setRuleType(e.target.value as AlertRuleType)}
+                onChange={(e) => {
+                  const newType = e.target.value as AlertRuleType;
+                  setRuleType(newType);
+                  // Reset to a sensible default condition for the selected type so
+                  // fields from a different type don't linger (and silently never match).
+                  setConditions(
+                    newType === 'update_job'
+                      ? [{ field: 'job.status', operator: 'eq', value: 'completed_with_failures' }]
+                      : [{ field: 'node.status', operator: 'eq', value: 'failed' }]
+                  );
+                }}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
                 disabled={isEditing}
               >
@@ -1323,6 +1394,7 @@ function RuleModal({
                 <option value="compliance">Compliance - Track configuration compliance</option>
                 <option value="drift">Drift Detection - Detect configuration drift</option>
                 <option value="report_failure">Report Failure - Alert on failed Puppet runs</option>
+                <option value="update_job">Update Job - Alert on failed or timed-out update jobs</option>
                 <option value="custom">Custom - Custom alert conditions</option>
               </select>
             </div>
