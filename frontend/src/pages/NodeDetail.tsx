@@ -722,15 +722,40 @@ function GroupMembership({
   certname: string;
   groups: NodeGroup[];
 }) {
+  const {
+    data: classification,
+    isLoading: classificationLoading,
+    isError: classificationError,
+  } = useQuery({
+    queryKey: ['node-classification', certname],
+    queryFn: () => api.getNodeClassification(certname),
+    retry: false,
+  });
+
   const matchedGroups = useMemo(() => {
     return groups.filter((group) => group.pinned_nodes.includes(certname));
   }, [certname, groups]);
 
-  const potentialGroups = useMemo(() => {
-    return groups.filter(
-      (group) => !group.pinned_nodes.includes(certname) && group.rules.length > 0
+  // Group IDs the node actually matches via classification rules, as evaluated
+  // by the backend against the node's facts.
+  const ruleMatchedGroupIds = useMemo(() => {
+    if (!classification) return null;
+    return new Set(
+      classification.groups
+        .filter((g) => g.match_type === 'rules')
+        .map((g) => g.id)
     );
-  }, [certname, groups]);
+  }, [classification]);
+
+  const potentialGroups = useMemo(() => {
+    if (!ruleMatchedGroupIds) return [];
+    return groups.filter(
+      (group) =>
+        !group.pinned_nodes.includes(certname) &&
+        group.rules.length > 0 &&
+        ruleMatchedGroupIds.has(group.id)
+    );
+  }, [certname, groups, ruleMatchedGroupIds]);
 
   return (
     <div className="space-y-6">
@@ -779,13 +804,21 @@ function GroupMembership({
       <div>
         <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
           <Database className="w-4 h-4" />
-          Groups with Classification Rules ({potentialGroups.length})
+          Matched by Classification Rules ({potentialGroups.length})
         </h3>
         <p className="text-xs text-gray-500 mb-3">
-          These groups have rules that may match this node based on its facts.
+          These groups match this node based on its facts.
         </p>
-        {potentialGroups.length === 0 ? (
-          <p className="text-sm text-gray-500">No groups with classification rules.</p>
+        {classificationLoading ? (
+          <p className="text-sm text-gray-500">Evaluating classification rules…</p>
+        ) : classificationError ? (
+          <p className="text-sm text-gray-500">
+            Unable to evaluate classification rules for this node.
+          </p>
+        ) : potentialGroups.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No groups match this node via classification rules.
+          </p>
         ) : (
           <div className="space-y-2">
             {potentialGroups.slice(0, 5).map((group) => (

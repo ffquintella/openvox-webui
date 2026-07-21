@@ -162,7 +162,7 @@ export default function NodeAutocomplete({
           }}
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
-          className="input pl-9 pr-9"
+          className="input pl-9! pr-9!"
           autoComplete="off"
           role="combobox"
           aria-expanded={isOpen}

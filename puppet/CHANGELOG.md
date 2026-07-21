@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-07-21
+
+### Changed
+- The node detail Groups tab now lists only the groups whose classification
+  rules actually match the node's facts, instead of every group that has any
+  rule. The section evaluates rules server-side via the node classification
+  endpoint (`GET /nodes/{certname}/classification`) rather than filtering
+  client-side on rule count.
+
+### Fixed
+- Node autocomplete search box no longer renders its placeholder text
+  underneath the search icon. The `.input` padding shorthand was overriding
+  the icon-clearing left padding.
+
 ## [0.39.1] - 2026-07-21
 
 ### Changed

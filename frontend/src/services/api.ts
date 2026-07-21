@@ -17,6 +17,7 @@ import type {
   UpdateGroupRequest,
   CreateRuleRequest,
   ClassificationRule,
+  ClassificationResult,
   Role,
   Permission,
   CreateRoleRequest,
@@ -384,6 +385,11 @@ export const api = {
 
   getNodeInventoryHistory: async (certname: string): Promise<InventorySnapshotSummary[]> => {
     const response = await client.get(`/nodes/${certname}/inventory/history`);
+    return response.data;
+  },
+
+  getNodeClassification: async (certname: string): Promise<ClassificationResult> => {
+    const response = await client.get(`/nodes/${certname}/classification`);
     return response.data;
   },
 
