@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-07-21
+
+### Added
+- The node detail Facts tab now highlights facts that originate from the node's
+  classification groups. Group-sourced facts (the combined group `variables`
+  exported as external facts) are sorted to the top of the list, styled with an
+  accent background, and tagged with a "Group fact" badge. A count of
+  group-sourced facts is shown in the footer stats.
+
 ## [0.40.0] - 2026-07-21
 
 ### Changed

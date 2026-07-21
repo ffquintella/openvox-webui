@@ -129,19 +129,45 @@ interface PuppetDBFact {
 }
 
 // Facts Browser Component
-function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
+function FactsBrowser({
+  facts,
+  groupFactNames,
+}: {
+  facts: Record<string, unknown>;
+  groupFactNames?: Set<string>;
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['']));
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const flattenedFacts = useMemo(() => {
-    const result: Array<{ path: string; value: unknown; depth: number }> = [];
+    const result: Array<{
+      path: string;
+      value: unknown;
+      depth: number;
+      isGroupFact: boolean;
+    }> = [];
+    const groupNames = groupFactNames ?? new Set<string>();
 
     const flatten = (obj: unknown, path: string, depth: number) => {
       if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-        Object.entries(obj as Record<string, unknown>).forEach(([key, value]) => {
+        let entries = Object.entries(obj as Record<string, unknown>);
+        // At the top level, sort group-sourced facts first (stable within each bucket).
+        if (depth === 0) {
+          entries = [...entries].sort(([a], [b]) => {
+            const aGroup = groupNames.has(a) ? 0 : 1;
+            const bGroup = groupNames.has(b) ? 0 : 1;
+            return aGroup - bGroup;
+          });
+        }
+        entries.forEach(([key, value]) => {
           const newPath = path ? `${path}.${key}` : key;
-          result.push({ path: newPath, value, depth });
+          result.push({
+            path: newPath,
+            value,
+            depth,
+            isGroupFact: depth === 0 && groupNames.has(key),
+          });
           if (value && typeof value === 'object') {
             flatten(value, newPath, depth + 1);
           }
@@ -149,7 +175,7 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
       } else if (Array.isArray(obj)) {
         obj.forEach((item, index) => {
           const newPath = `${path}[${index}]`;
-          result.push({ path: newPath, value: item, depth });
+          result.push({ path: newPath, value: item, depth, isGroupFact: false });
           if (item && typeof item === 'object') {
             flatten(item, newPath, depth + 1);
           }
@@ -159,7 +185,12 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
 
     flatten(facts, '', 0);
     return result;
-  }, [facts]);
+  }, [facts, groupFactNames]);
+
+  const groupFactCount = useMemo(
+    () => flattenedFacts.filter((f) => f.isGroupFact).length,
+    [flattenedFacts]
+  );
 
   const filteredFacts = useMemo(() => {
     if (!searchQuery.trim()) return flattenedFacts;
@@ -258,7 +289,11 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
                   return (
                     <div
                       key={fact.path}
-                      className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 group"
+                      className={`flex items-center gap-2 px-3 py-2 group ${
+                        fact.isGroupFact
+                          ? 'bg-primary-50/60 hover:bg-primary-50'
+                          : 'hover:bg-gray-50'
+                      }`}
                       style={{ paddingLeft: `${fact.depth * 16 + 12}px` }}
                     >
                       {/* Expand button */}
@@ -280,7 +315,24 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
                       </button>
 
                       {/* Key */}
-                      <span className="font-medium text-gray-700 text-sm">{key}</span>
+                      <span
+                        className={`font-medium text-sm ${
+                          fact.isGroupFact ? 'text-primary-800' : 'text-gray-700'
+                        }`}
+                      >
+                        {key}
+                      </span>
+
+                      {/* Group fact badge */}
+                      {fact.isGroupFact && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-primary-100 text-primary-700"
+                          title="This fact is provided by a classification group"
+                        >
+                          <FolderTree className="w-3 h-3" />
+                          Group fact
+                        </span>
+                      )}
 
                       {/* Value */}
                       {!expandable && (
@@ -332,6 +384,7 @@ function FactsBrowser({ facts }: { facts: Record<string, unknown> }) {
       {/* Stats */}
       <div className="mt-3 text-sm text-gray-500">
         {flattenedFacts.length} facts total
+        {groupFactCount > 0 && ` | ${groupFactCount} from groups`}
         {searchQuery && ` | ${filteredFacts.length} matching`}
       </div>
     </div>
@@ -1831,6 +1884,20 @@ export default function NodeDetail() {
     queryFn: api.getGroups,
   });
 
+  // Classification result: its `variables` are the facts the node inherits from
+  // its groups (exported as external facts). Shared cache with GroupMembership.
+  const { data: classification } = useQuery({
+    queryKey: ['node-classification', certname],
+    queryFn: () => api.getNodeClassification(certname!),
+    enabled: !!certname,
+    retry: false,
+  });
+
+  const groupFactNames = useMemo(
+    () => new Set(Object.keys(classification?.variables ?? {})),
+    [classification]
+  );
+
   const {
     data: inventory,
     isLoading: inventoryLoading,
@@ -2300,7 +2367,9 @@ export default function NodeDetail() {
           </div>
         )}
 
-        {activeTab === 'facts' && <FactsBrowser facts={normalizedFacts} />}
+        {activeTab === 'facts' && (
+          <FactsBrowser facts={normalizedFacts} groupFactNames={groupFactNames} />
+        )}
 
         {activeTab === 'inventory' && (
           inventoryLoading ? (

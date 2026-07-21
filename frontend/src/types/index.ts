@@ -602,6 +602,8 @@ export interface ClassificationResult {
   groups: GroupMatch[];
   classes: string[];
   parameters: Record<string, unknown>;
+  /** Combined variables from all matched groups, exported to the node as external facts */
+  variables?: Record<string, unknown>;
   environment?: string | null;
 }
 
