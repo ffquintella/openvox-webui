@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
+import NodeAutocomplete from '../components/NodeAutocomplete';
 import type {
   NodeGroup,
   ClassificationRule,
@@ -164,11 +165,6 @@ export default function Groups() {
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['groups'],
     queryFn: api.getGroups,
-  });
-
-  const { data: nodes = [] } = useQuery({
-    queryKey: ['nodes'],
-    queryFn: api.getNodes,
   });
 
   const { data: matchedNodes = [] } = useQuery({
@@ -1342,21 +1338,12 @@ export default function Groups() {
                         }
                       }} className="flex gap-4">
                         <div className="flex-1">
-                          <select
+                          <NodeAutocomplete
                             value={newPinnedNode}
-                            onChange={(e) => setNewPinnedNode(e.target.value)}
-                            className="input"
-                            required
-                          >
-                            <option value="">Select a node...</option>
-                            {nodes
-                              .filter(n => !selectedGroup.pinned_nodes?.includes(n.certname))
-                              .map(node => (
-                                <option key={node.certname} value={node.certname}>
-                                  {node.certname}
-                                </option>
-                              ))}
-                          </select>
+                            onChange={setNewPinnedNode}
+                            excluded={selectedGroup.pinned_nodes ?? []}
+                            placeholder="Search for a node to pin..."
+                          />
                         </div>
                         <button
                           type="button"

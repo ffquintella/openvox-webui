@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-07-21
+
+### Changed
+- Node selectors are now searchable autocompletes backed by server-side search
+  instead of fixed dropdowns. Previously the list was capped at the configured
+  page size, so nodes beyond that limit could not be selected.
+  - Groups → Pin Node: queries matching nodes as you type, excludes
+    already-pinned nodes, and only allows selecting a node that actually exists.
+  - Facter Templates → Generate: search existing nodes as you type while still
+    allowing any certname to be entered manually.
+
 ## [0.39.0] - 2026-07-20
 
 ### Added

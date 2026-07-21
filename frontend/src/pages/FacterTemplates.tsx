@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, FileCode2, Trash2, X, Copy, Play, Download } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
+import NodeAutocomplete from '../components/NodeAutocomplete';
 import type {
   FactTemplate,
   FactDefinition,
   FactValueSource,
   FactValueSourceType,
   ExportFormat,
-  Node,
 } from '../types';
 
 const VALUE_SOURCE_TYPES: { value: FactValueSourceType; label: string; description: string }[] = [
@@ -40,11 +40,6 @@ export default function FacterTemplates() {
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ['factTemplates'],
     queryFn: api.getFactTemplates,
-  });
-
-  const { data: nodes = [] } = useQuery<Node[]>({
-    queryKey: ['nodes'],
-    queryFn: api.getNodes,
   });
 
   const createMutation = useMutation({
@@ -310,29 +305,15 @@ export default function FacterTemplates() {
               <form onSubmit={handleGenerate}>
                 <div className="mb-4">
                   <label className="label">Node (certname)</label>
-                  <select
+                  <NodeAutocomplete
                     value={generateCertname}
-                    onChange={(e) => setGenerateCertname(e.target.value)}
-                    className="input"
-                    required
-                  >
-                    <option value="">Select a node...</option>
-                    {nodes.map((node) => (
-                      <option key={node.certname} value={node.certname}>
-                        {node.certname}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Or enter a certname manually:
-                  </p>
-                  <input
-                    type="text"
-                    value={generateCertname}
-                    onChange={(e) => setGenerateCertname(e.target.value)}
-                    className="input mt-2"
-                    placeholder="node.example.com"
+                    onChange={setGenerateCertname}
+                    allowFreeText
+                    placeholder="Search or type a certname (e.g. node.example.com)"
                   />
+                  <p className="text-sm text-gray-500 mt-1">
+                    Search existing nodes, or type any certname manually.
+                  </p>
                 </div>
                 <div className="mb-4">
                   <label className="label">Export Format</label>
