@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.2] - 2026-07-28
+
+### Changed
+- Dependency maintenance release: bumped the Rust minor dependency group (14
+  crates), the npm minor dependency group (17 packages), and TypeScript from
+  6.0.3 to 7.0.2. No functional changes.
+
 ## [0.40.1] - 2026-07-21
 
 ### Added
