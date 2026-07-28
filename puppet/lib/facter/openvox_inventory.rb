@@ -11,62 +11,20 @@ require 'uri'
 require 'shellwords'
 require 'yaml'
 
+# Pluginsynced to $vardir/lib/puppet_x/openvox_webui/paths.rb alongside this
+# file, so resolve it relative to our own location rather than via $LOAD_PATH.
+require_relative '../puppet_x/openvox_webui/paths'
+
 module OpenVoxInventory
+  # windows?, program_data, config_paths, puppet_conf_paths, puppet_ssl_dirs
+  extend PuppetX::OpenVoxWebui::Paths
+
   module_function
 
-  UNIX_CONFIG_PATHS = [
-    '/etc/openvox-webui/client.yaml',
-    '/etc/puppetlabs/facter/openvox-client.yaml',
-    '/etc/puppetlabs/puppet/openvox-client.yaml'
-  ].freeze
+  UNIX_CONFIG_PATHS = PuppetX::OpenVoxWebui::Paths::UNIX_CONFIG_PATHS
 
   # Kept for backwards compatibility with anything referencing the old constant.
   CONFIG_PATHS = UNIX_CONFIG_PATHS
-
-  def windows?
-    !(RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/i).nil?
-  end
-
-  # %PROGRAMDATA% with forward slashes so it can be joined with literal paths.
-  def program_data
-    root = ENV['PROGRAMDATA'] || ENV['ProgramData'] || 'C:/ProgramData'
-    root.tr('\\', '/').chomp('/')
-  end
-
-  # Windows agents keep their configuration under %PROGRAMDATA%, so the Unix
-  # paths never match and the fact would silently never run there.
-  def config_paths
-    return UNIX_CONFIG_PATHS unless windows?
-
-    # openvox_webui::client defaults config_dir to a literal C:/ProgramData, so
-    # check that too in case %PROGRAMDATA% has been relocated.
-    [program_data, 'C:/ProgramData'].uniq.flat_map do |root|
-      [
-        "#{root}/PuppetLabs/facter/openvox-client.yaml",
-        "#{root}/PuppetLabs/puppet/etc/openvox-client.yaml",
-        "#{root}/OpenVox-WebUI/client.yaml"
-      ]
-    end
-  end
-
-  def puppet_conf_paths
-    return ["#{program_data}/PuppetLabs/puppet/etc/puppet.conf"] if windows?
-
-    [
-      '/etc/puppetlabs/puppet/puppet.conf',
-      '/etc/puppet/puppet.conf'
-    ]
-  end
-
-  def puppet_ssl_dirs
-    return ["#{program_data}/PuppetLabs/puppet/etc/ssl"] if windows?
-
-    [
-      '/etc/puppetlabs/puppet/ssl',
-      '/etc/puppet/ssl',
-      '/var/lib/puppet/ssl'
-    ]
-  end
 
   def load_config
     config_file = config_paths.find { |path| File.exist?(path) }

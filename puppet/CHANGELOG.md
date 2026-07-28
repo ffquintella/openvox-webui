@@ -15,7 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.6] - 2026-07-28
+
 ### Fixed
+- Node classification now actually runs on Windows nodes. The
+  `openvox_classification` fact looked for its configuration only under Unix
+  paths (`/etc/openvox-webui`, `/etc/puppetlabs/facter`,
+  `/etc/puppetlabs/puppet`), so its `confine` block never matched and
+  `openvox_classification`, `openvox_groups`, `openvox_classes`,
+  `openvox_variables`, `openvox_environment` and the per-variable top-level
+  facts all came back empty there. It now reads
+  `%PROGRAMDATA%\PuppetLabs\facter\openvox-client.yaml` — the location
+  `openvox_webui::client` writes on Windows — with a literal `C:\ProgramData`
+  fallback.
+- Classification `certname` discovery and the mTLS certificate/CA fallbacks
+  resolve the Windows Puppet confdir
+  (`%PROGRAMDATA%\PuppetLabs\puppet\etc`) instead of only
+  `/etc/puppetlabs/puppet`, so Windows nodes can authenticate when `ssl_cert`
+  and `ssl_key` are not set explicitly.
+- `auto_generate_classification_key` works on Windows: the key is stored at
+  `%PROGRAMDATA%\PuppetLabs\facter\openvox-classification-key` instead of the
+  unwritable `/etc/openvox-webui/classification_key`. Unix agents keep using
+  the existing path, so keys already on disk are reused rather than rotated.
+  Key generation also `require`s `fileutils`, which it used but never loaded —
+  so generation could fail with `uninitialized constant FileUtils` and leave
+  the node unauthenticated.
+- The client certificate is now offered on every HTTPS classification request
+  rather than only when `ssl_verify` is enabled. Nodes combining
+  `ssl_verify => false` with certificate authentication were sending
+  unauthenticated requests and getting `401`.
 - Inventory collection now actually runs on Windows nodes. The
   `openvox_inventory_status` fact only looked for its configuration under Unix
   paths (`/etc/openvox-webui`, `/etc/puppetlabs/facter`), so its `confine` block
@@ -63,6 +91,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HKEY_USERS` profile hive. The agent runs as `LocalSystem`, so the previous
   `HKCU` lookup only ever saw the service account's own profile. System
   components and update/hotfix registry entries are now filtered out.
+
+### Changed
+- Platform path resolution used by the custom facts (config file, `puppet.conf`,
+  the agent SSL directory and the classification key) moved into a single
+  pluginsynced helper, `lib/puppet_x/openvox_webui/paths.rb`, shared by
+  `openvox_inventory` and `openvox_classification` instead of being duplicated.
+- `openvox_classification.rb` no longer repeats its configuration, certname and
+  TLS lookups in each of its four fact definitions; they go through one
+  `OpenVoxClassification` module, which is covered by unit tests in
+  `test/openvox_classification_test.rb`.
 
 ## [0.40.5] - 2026-07-28
 

@@ -119,6 +119,18 @@ After configuring the client, these facts become available:
 - `$facts['openvox_inventory_status']` - Inventory collection/submission summary when inventory is enabled
 - Top-level facts for each variable (e.g., `$facts['role']`, `$facts['datacenter']`)
 
+##### Windows notes
+
+The classification facts read the same configuration file as the inventory
+collector: `%PROGRAMDATA%\PuppetLabs\facter\openvox-client.yaml` (written by
+`openvox_webui::client`), falling back to a literal `C:\ProgramData` if
+`%PROGRAMDATA%` has been relocated. `certname` discovery and the mTLS
+certificate/CA fallbacks use the Windows confdir,
+`%PROGRAMDATA%\PuppetLabs\puppet\etc`. With
+`auto_generate_classification_key`, the generated key is stored at
+`%PROGRAMDATA%\PuppetLabs\facter\openvox-classification-key` (Unix agents keep
+using `/etc/openvox-webui/classification_key`).
+
 #### Inventory Collection
 
 Phase 10.2 adds opt-in inventory collectors to the Puppet client class. When enabled, the agent gathers:
