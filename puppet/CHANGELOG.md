@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.4] - 2026-07-28
+
+### Fixed
+- RPM package builds no longer fail with `nothing provides openssl-libs(x86-64)
+  = ...`. The build container now pulls BaseOS/AppStream/Extras from the
+  canonical `dl.rockylinux.org` instead of the mirrorlist. Mirrors sync
+  independently, so a build could land on an AppStream mirror carrying a newer
+  `openssl-devel` than the `openssl-libs` on the BaseOS mirror it picked, making
+  the dnf transaction unsolvable. This is the actual cause of the failure 0.40.3
+  attempted to fix.
+
 ## [0.40.3] - 2026-07-28
 
 ### Fixed

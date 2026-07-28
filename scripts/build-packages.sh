@@ -464,11 +464,20 @@ build_rpm_docker() {
     local dockerfile="${BUILD_DIR}/Dockerfile.rpm"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
 # Use the maintained rockylinux/rockylinux image; the old docker-library
-# "rockylinux" image is deprecated/frozen and its baked-in packages no longer
-# resolve against the current el9 repos (openssl-libs version mismatch).
+# "rockylinux" image is deprecated and frozen.
 FROM rockylinux/rockylinux:9
 
-RUN dnf install -y \
+# Pin BaseOS/AppStream/Extras to the canonical dl.rockylinux.org instead of the
+# mirrorlist. Mirrors sync independently, so a build can land on an AppStream
+# mirror that already has openssl-devel-N while the BaseOS mirror it picked still
+# only has openssl-libs-(N-1), which makes the dnf transaction unsolvable:
+#   nothing provides openssl-libs(x86-64) = 1:3.5.5-6.el9_8
+#   needed by openssl-devel-1:3.5.5-6.el9_8.x86_64
+# Serving every repo from one origin keeps the versions consistent.
+RUN sed -i -e 's/^mirrorlist=/#mirrorlist=/' -e 's/^#baseurl=/baseurl=/' /etc/yum.repos.d/rocky*.repo \
+    && dnf clean all
+
+RUN dnf install -y --refresh \
     rpm-build \
     rpmdevtools \
     gcc \
