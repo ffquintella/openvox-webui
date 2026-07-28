@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require 'English'
+require 'base64'
 require 'json'
 require 'net/http'
 require 'openssl'
+require 'rbconfig'
 require 'time'
 require 'uri'
 require 'shellwords'
@@ -12,14 +14,62 @@ require 'yaml'
 module OpenVoxInventory
   module_function
 
-  CONFIG_PATHS = [
+  UNIX_CONFIG_PATHS = [
     '/etc/openvox-webui/client.yaml',
     '/etc/puppetlabs/facter/openvox-client.yaml',
     '/etc/puppetlabs/puppet/openvox-client.yaml'
   ].freeze
 
+  # Kept for backwards compatibility with anything referencing the old constant.
+  CONFIG_PATHS = UNIX_CONFIG_PATHS
+
+  def windows?
+    !(RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/i).nil?
+  end
+
+  # %PROGRAMDATA% with forward slashes so it can be joined with literal paths.
+  def program_data
+    root = ENV['PROGRAMDATA'] || ENV['ProgramData'] || 'C:/ProgramData'
+    root.tr('\\', '/').chomp('/')
+  end
+
+  # Windows agents keep their configuration under %PROGRAMDATA%, so the Unix
+  # paths never match and the fact would silently never run there.
+  def config_paths
+    return UNIX_CONFIG_PATHS unless windows?
+
+    # openvox_webui::client defaults config_dir to a literal C:/ProgramData, so
+    # check that too in case %PROGRAMDATA% has been relocated.
+    [program_data, 'C:/ProgramData'].uniq.flat_map do |root|
+      [
+        "#{root}/PuppetLabs/facter/openvox-client.yaml",
+        "#{root}/PuppetLabs/puppet/etc/openvox-client.yaml",
+        "#{root}/OpenVox-WebUI/client.yaml"
+      ]
+    end
+  end
+
+  def puppet_conf_paths
+    return ["#{program_data}/PuppetLabs/puppet/etc/puppet.conf"] if windows?
+
+    [
+      '/etc/puppetlabs/puppet/puppet.conf',
+      '/etc/puppet/puppet.conf'
+    ]
+  end
+
+  def puppet_ssl_dirs
+    return ["#{program_data}/PuppetLabs/puppet/etc/ssl"] if windows?
+
+    [
+      '/etc/puppetlabs/puppet/ssl',
+      '/etc/puppet/ssl',
+      '/var/lib/puppet/ssl'
+    ]
+  end
+
   def load_config
-    config_file = CONFIG_PATHS.find { |path| File.exist?(path) }
+    config_file = config_paths.find { |path| File.exist?(path) }
     return nil unless config_file
 
     YAML.load_file(config_file)
@@ -36,10 +86,7 @@ module OpenVoxInventory
     certname = config['certname'] || Facter.value(:clientcert)
     return certname unless certname.nil? || certname.empty?
 
-    [
-      '/etc/puppetlabs/puppet/puppet.conf',
-      '/etc/puppet/puppet.conf'
-    ].each do |conf_path|
+    puppet_conf_paths.each do |conf_path|
       next unless File.exist?(conf_path)
 
       begin
@@ -71,7 +118,7 @@ module OpenVoxInventory
                when 'Darwin'
                  collect_macos_homebrew_packages(config)
                when 'windows', 'Windows'
-                 []
+                 collect_windows_packages(config)
                else
                  []
                end
@@ -100,6 +147,8 @@ module OpenVoxInventory
       case family
       when 'RedHat', 'Suse', 'Debian'
         collect_linux_runtimes(config)
+      when 'windows', 'Windows'
+        collect_windows_runtimes(config)
       else
         []
       end
@@ -123,7 +172,7 @@ module OpenVoxInventory
                    when 'Debian'
                      collect_apt_repos
                    when 'windows', 'Windows'
-                     collect_winget_repos
+                     collect_windows_repos
                    else
                      []
                    end
@@ -147,19 +196,64 @@ module OpenVoxInventory
   end
 
   def collect_os_inventory(os_fact, collected_at)
+    windows = %w[windows Windows].include?(os_fact['family'])
+    build = windows ? collect_windows_build_info : {}
+
     {
       'os_family' => os_fact['family'] || 'Unknown',
       'distribution' => os_fact['name'] || 'Unknown',
-      'edition' => os_fact['distro'] && os_fact['distro']['description'],
+      'edition' => windows ? windows_edition(os_fact, build) : (os_fact['distro'] && os_fact['distro']['description']),
       'architecture' => Facter.value(:architecture),
       'kernel_version' => Facter.value(:kernelrelease),
       'os_version' => os_fact.dig('release', 'full') || os_fact.dig('release', 'major') || 'Unknown',
-      'patch_level' => os_fact.dig('release', 'minor'),
+      'patch_level' => windows ? windows_patch_level(os_fact, build) : os_fact.dig('release', 'minor'),
       'package_manager' => detect_package_manager(os_fact),
-      'update_channel' => nil,
+      'update_channel' => windows ? blank_to_nil(build['display_version']) : nil,
       'last_inventory_at' => collected_at,
       'last_successful_update_at' => detect_last_successful_update(os_fact)
     }
+  end
+
+  # Windows has no distro description; the product name is the closest analogue.
+  def windows_edition(os_fact, build)
+    blank_to_nil(os_fact.dig('windows', 'product_name')) ||
+      blank_to_nil(build['product_name']) ||
+      blank_to_nil(os_fact.dig('windows', 'edition_id')) ||
+      blank_to_nil(build['edition_id'])
+  end
+
+  # On Windows the meaningful "patch level" is the Update Build Revision, e.g.
+  # 10.0.20348.2582 -> "2582". Fall back to the release minor when unavailable.
+  def windows_patch_level(os_fact, build)
+    ubr = build['ubr']
+    return ubr.to_s unless blankish?(ubr)
+
+    full = os_fact.dig('release', 'full').to_s
+    revision = full.split('.')[3]
+    blank_to_nil(revision) || os_fact.dig('release', 'minor')
+  end
+
+  def collect_windows_build_info
+    script = <<~'POWERSHELL'
+      $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+      $v = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+      [pscustomobject]@{
+        product_name    = $v.ProductName
+        edition_id      = $v.EditionID
+        display_version = if ($v.DisplayVersion) { $v.DisplayVersion } else { $v.ReleaseId }
+        ubr             = $v.UBR
+        build           = $v.CurrentBuildNumber
+      } | ConvertTo-Json -Compress
+    POWERSHELL
+
+    output = run_powershell(script)
+    return {} if blankish?(output)
+
+    parsed = JSON.parse(output)
+    parsed.is_a?(Hash) ? parsed : {}
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to read Windows build info: #{e.message}")
+    {}
   end
 
   def detect_package_manager(os_fact)
@@ -173,10 +267,19 @@ module OpenVoxInventory
     when 'Darwin'
       brew_installed? ? 'brew' : 'softwareupdate'
     when 'windows', 'Windows'
-      'choco'
+      detect_windows_package_manager
     else
       nil
     end
+  end
+
+  # Report what is actually installed rather than assuming Chocolatey. Many
+  # Windows Servers only ever get patched through Windows Update.
+  def detect_windows_package_manager
+    return 'choco' if command_available?('choco')
+    return 'winget' if command_available?('winget')
+
+    'windowsupdate'
   end
 
   def detect_last_successful_update(os_fact)
@@ -188,6 +291,8 @@ module OpenVoxInventory
                   detect_last_update_apt
                 when 'Suse'
                   detect_last_update_zypper
+                when 'windows', 'Windows'
+                  detect_last_update_windows
                 else
                   nil
                 end
@@ -299,6 +404,47 @@ module OpenVoxInventory
     nil
   end
 
+  # Prefer the Windows Update agent history (covers cumulative updates that
+  # never show up as hotfixes) and fall back to Win32_QuickFixEngineering.
+  def detect_last_update_windows
+    script = <<~'POWERSHELL'
+      $result = $null
+      try {
+        $session = New-Object -ComObject 'Microsoft.Update.Session'
+        $searcher = $session.CreateUpdateSearcher()
+        $count = $searcher.GetTotalHistoryCount()
+        if ($count -gt 0) {
+          $latest = $null
+          foreach ($entry in $searcher.QueryHistory(0, $count)) {
+            # Operation 1 = Installation, ResultCode 2/3 = Succeeded(WithErrors)
+            if ($entry.Operation -eq 1 -and ($entry.ResultCode -eq 2 -or $entry.ResultCode -eq 3)) {
+              if ($null -eq $latest -or $entry.Date -gt $latest) { $latest = $entry.Date }
+            }
+          }
+          # IUpdateHistoryEntry.Date is already UTC.
+          if ($latest) { $result = $latest.ToString('yyyy-MM-ddTHH:mm:ss') + 'Z' }
+        }
+      } catch { }
+      if (-not $result) {
+        $hotfix = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction SilentlyContinue |
+          Where-Object { $_.InstalledOn } |
+          Sort-Object InstalledOn -Descending |
+          Select-Object -First 1
+        if ($hotfix) {
+          $result = ([datetime]$hotfix.InstalledOn).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss') + 'Z'
+        }
+      }
+      if ($result) { Write-Output $result }
+    POWERSHELL
+
+    output = run_powershell(script)
+    return nil if blankish?(output)
+
+    Time.parse(output.strip)
+  rescue StandardError
+    nil
+  end
+
   def collect_linux_rpm_packages(_config)
     output = run_command(
       "rpm -qa --queryformat '%{NAME}\\t%|EPOCH?{%{EPOCH}}:{}|\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t%{VENDOR}\\t%{INSTALLTIME}\\n'"
@@ -393,6 +539,92 @@ module OpenVoxInventory
     trim(packages, config)
   rescue StandardError => e
     Facter.debug("openvox_inventory: Failed to collect Homebrew inventory: #{e.message}")
+    []
+  end
+
+  # Windows package managers are the analogue of rpm/dpkg here: things installed
+  # from a known source with a resolvable upstream version. Everything else
+  # surfaces through collect_windows_applications (the uninstall registry).
+  def collect_windows_packages(config)
+    trim(collect_chocolatey_packages + collect_winget_packages, config)
+  end
+
+  def collect_chocolatey_packages
+    return [] unless command_available?('choco')
+
+    # Chocolatey 2.x removed --local-only (it lists local packages by default),
+    # so try the 1.x form first and fall back.
+    output = run_command('choco list --local-only --limit-output 2>NUL') ||
+             run_command('choco list --limit-output 2>NUL')
+    return [] if blankish?(output)
+
+    architecture = Facter.value(:architecture)
+
+    output.each_line.map do |line|
+      name, version = line.strip.split('|', 2)
+      next if blankish?(name) || blankish?(version)
+
+      {
+        'name' => name,
+        'epoch' => nil,
+        'version' => version,
+        'release' => nil,
+        'architecture' => architecture,
+        'repository_source' => 'chocolatey',
+        'install_path' => nil,
+        'install_time' => nil
+      }
+    end.compact
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect Chocolatey packages: #{e.message}")
+    []
+  end
+
+  # `winget export` emits machine-readable JSON, unlike `winget list` which is a
+  # fixed-width table. Note that winget is a per-user MSIX app and is frequently
+  # unavailable when the Puppet agent runs as LocalSystem; that degrades to an
+  # empty list rather than an error.
+  def collect_winget_packages
+    return [] unless command_available?('winget')
+
+    script = <<~'POWERSHELL'
+      $tmp = Join-Path $env:TEMP ('openvox-winget-' + [guid]::NewGuid().ToString() + '.json')
+      try {
+        $null = & winget export --output $tmp --include-versions --accept-source-agreements --disable-interactivity
+        if (Test-Path $tmp) { Get-Content -Raw -Path $tmp }
+      } catch {
+      } finally {
+        if (Test-Path $tmp) { Remove-Item -Force -Path $tmp -ErrorAction SilentlyContinue }
+      }
+    POWERSHELL
+
+    output = run_powershell(script)
+    return [] if blankish?(output)
+
+    architecture = Facter.value(:architecture)
+    data = JSON.parse(output)
+
+    Array(data['Sources']).flat_map do |source|
+      source_name = blank_to_nil(source.dig('SourceDetails', 'Name')) || 'winget'
+
+      Array(source['Packages']).map do |pkg|
+        name = pkg['PackageIdentifier']
+        next if blankish?(name)
+
+        {
+          'name' => name,
+          'epoch' => nil,
+          'version' => blank_to_nil(pkg['Version']) || 'unknown',
+          'release' => nil,
+          'architecture' => architecture,
+          'repository_source' => source_name,
+          'install_path' => nil,
+          'install_time' => nil
+        }
+      end.compact
+    end
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect winget packages: #{e.message}")
     []
   end
 
@@ -585,20 +817,52 @@ module OpenVoxInventory
     end
   end
 
+  def collect_windows_repos
+    collect_winget_repos + collect_chocolatey_repos
+  end
+
   def collect_winget_repos
-    repos = []
+    return [] unless command_available?('winget')
 
-    # Query winget sources
-    output = run_command('winget source list')
-    return repos if output.nil? || output.empty?
+    repos = parse_winget_source_export || parse_winget_source_table
+    repos || []
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect winget repos: #{e.message}")
+    []
+  end
 
-    # Parse winget source list output (table format with Name and Argument columns)
-    lines = output.lines.map(&:strip).reject(&:empty?)
-    # Skip header lines (name, dashes)
+  # winget >= 1.6 can emit its source list as JSON, which avoids guessing at
+  # column widths in the localised table output.
+  def parse_winget_source_export
+    output = run_powershell('& winget source export --disable-interactivity')
+    return nil if blankish?(output)
+
+    json = output[/\[.*\]/m] || output[/\{.*\}/m]
+    return nil if json.nil?
+
+    parsed = JSON.parse(json)
+    parsed = [parsed] if parsed.is_a?(Hash)
+    architecture = Facter.value(:architecture)
+
+    parsed.map do |source|
+      name = blank_to_nil(source['Name'])
+      next unless name
+
+      winget_repo_entry(name, blank_to_nil(source['Arg']) || blank_to_nil(source['Argument']), architecture)
+    end.compact
+  rescue StandardError
+    nil
+  end
+
+  def parse_winget_source_table
+    output = run_command('winget source list 2>NUL')
+    return [] if blankish?(output)
+
+    architecture = Facter.value(:architecture)
     data_started = false
 
-    lines.each do |line|
-      if line =~ /^-+/
+    output.lines.map(&:strip).reject(&:empty?).map do |line|
+      if line.start_with?('-')
         data_started = true
         next
       end
@@ -607,26 +871,53 @@ module OpenVoxInventory
       parts = line.split(/\s{2,}/)
       next if parts.size < 2
 
-      name = parts[0].strip
-      url = parts[1].strip
+      winget_repo_entry(parts[0].strip, parts[1].strip, architecture)
+    end.compact
+  end
 
-      repos << {
-        'repo_id' => name,
-        'repo_name' => name,
-        'repo_type' => 'winget',
-        'base_url' => url,
+  def winget_repo_entry(name, url, architecture)
+    {
+      'repo_id' => name,
+      'repo_name' => name,
+      'repo_type' => 'winget',
+      'base_url' => url,
+      'mirror_list_url' => nil,
+      'distribution_path' => nil,
+      'components' => nil,
+      'architectures' => architecture,
+      'enabled' => true,
+      'gpg_check' => nil
+    }
+  end
+
+  def collect_chocolatey_repos
+    return [] unless command_available?('choco')
+
+    output = run_command('choco source list --limit-output 2>NUL')
+    return [] if blankish?(output)
+
+    architecture = Facter.value(:architecture)
+
+    output.each_line.map do |line|
+      # name|url|disabled|username|certificate|priority|bypassproxy|...
+      parts = line.strip.split('|')
+      next if parts.size < 2 || blankish?(parts[0])
+
+      {
+        'repo_id' => parts[0],
+        'repo_name' => parts[0],
+        'repo_type' => 'chocolatey',
+        'base_url' => blank_to_nil(parts[1]),
         'mirror_list_url' => nil,
         'distribution_path' => nil,
         'components' => nil,
-        'architectures' => Facter.value(:architecture),
-        'enabled' => true,
+        'architectures' => architecture,
+        'enabled' => parts[2].to_s.strip.downcase != 'true',
         'gpg_check' => nil
       }
-    end
-
-    repos
+    end.compact
   rescue StandardError => e
-    Facter.debug("openvox_inventory: Failed to collect winget repos: #{e.message}")
+    Facter.debug("openvox_inventory: Failed to collect Chocolatey sources: #{e.message}")
     []
   end
 
@@ -672,15 +963,33 @@ module OpenVoxInventory
   end
 
   def collect_windows_applications(config)
-    script = <<~POWERSHELL
-      $paths = @(
-        @{ path = 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; scope = 'system'; arch = 'x64' },
-        @{ path = 'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; scope = 'system'; arch = 'x86' },
-        @{ path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; scope = 'user'; arch = $env:PROCESSOR_ARCHITECTURE }
-      )
-      $apps = foreach ($entry in $paths) {
-        Get-ItemProperty $entry.path -ErrorAction SilentlyContinue |
-          Where-Object { $_.DisplayName -and $_.DisplayVersion } |
+    # The Puppet agent runs as LocalSystem, so HKCU is the service profile and
+    # is effectively always empty. Walking the loaded HKEY_USERS hives is what
+    # actually surfaces per-user installs (Chrome, Teams, VS Code, ...).
+    script = <<~'POWERSHELL'
+      $arch = $env:PROCESSOR_ARCHITEW6432
+      if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+      if ($arch -eq 'AMD64') { $arch = 'x64' }
+      $suffix = 'Microsoft\Windows\CurrentVersion\Uninstall\*'
+      $targets = [System.Collections.ArrayList]::new()
+      [void]$targets.Add(@{ Path = "HKLM:\Software\$suffix"; Scope = 'system'; Arch = $arch })
+      [void]$targets.Add(@{ Path = "HKLM:\Software\WOW6432Node\$suffix"; Scope = 'system'; Arch = 'x86' })
+      Get-ChildItem -Path 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue | ForEach-Object {
+        $sid = $_.PSChildName
+        if ($sid -match '^S-1-5-21-[\d-]+$') {
+          [void]$targets.Add(@{ Path = "Registry::HKEY_USERS\$sid\Software\$suffix"; Scope = 'user'; Arch = $arch })
+          [void]$targets.Add(@{ Path = "Registry::HKEY_USERS\$sid\Software\WOW6432Node\$suffix"; Scope = 'user'; Arch = 'x86' })
+        }
+      }
+      $updateTypes = @('Security Update', 'Update Rollup', 'Hotfix', 'ServicePack')
+      $apps = foreach ($entry in $targets) {
+        Get-ItemProperty -Path $entry.Path -ErrorAction SilentlyContinue |
+          Where-Object {
+            $_.DisplayName -and $_.DisplayVersion -and
+            $_.SystemComponent -ne 1 -and
+            -not $_.ParentKeyName -and
+            ($updateTypes -notcontains $_.ReleaseType)
+          } |
           ForEach-Object {
             [pscustomobject]@{
               DisplayName = $_.DisplayName
@@ -689,15 +998,15 @@ module OpenVoxInventory
               InstallDate = $_.InstallDate
               UninstallString = $_.UninstallString
               InstallLocation = $_.InstallLocation
-              Scope = $entry.scope
-              Architecture = $entry.arch
+              Scope = $entry.Scope
+              Architecture = $entry.Arch
             }
           }
       }
       $apps | ConvertTo-Json -Depth 4
     POWERSHELL
-    output = run_command(%(powershell.exe -NoProfile -NonInteractive -Command "#{escape_powershell(script)}"))
-    return [] if output.nil? || output.empty?
+    output = run_powershell(script)
+    return [] if blankish?(output)
 
     parsed = JSON.parse(output)
     parsed = [parsed] if parsed.is_a?(Hash)
@@ -859,23 +1168,25 @@ module OpenVoxInventory
   end
 
   def collect_windows_iis_sites(_config)
-    script = <<~POWERSHELL
+    script = <<~'POWERSHELL'
       Import-Module WebAdministration -ErrorAction SilentlyContinue
       if (Get-Command Get-Website -ErrorAction SilentlyContinue) {
-        Get-Website | ForEach-Object {
+        $sites = @(Get-Website | ForEach-Object {
           $certs = @($_.Bindings.Collection | Where-Object { $_.protocol -eq 'https' } | ForEach-Object { $_.certificateHash })
           [pscustomobject]@{
             site_name = $_.Name
             bindings = @($_.Bindings.Collection | ForEach-Object { $_.bindingInformation })
             document_root = $_.PhysicalPath
             app_pool = $_.applicationPool
+            state = $_.State
             certs = $certs
           }
-        } | ConvertTo-Json -Depth 5
+        })
+        if ($sites.Count -gt 0) { $sites | ConvertTo-Json -Depth 5 }
       }
     POWERSHELL
-    output = run_command(%(powershell.exe -NoProfile -NonInteractive -Command "#{escape_powershell(script)}"))
-    return [] if output.nil? || output.empty?
+    output = run_powershell(script)
+    return [] if blankish?(output)
 
     parsed = JSON.parse(output)
     parsed = [parsed] if parsed.is_a?(Hash)
@@ -888,7 +1199,8 @@ module OpenVoxInventory
         'application_pool' => blank_to_nil(site['app_pool']),
         'tls_certificate_reference' => Array(site['certs']).compact.first,
         'metadata' => compact_hash({
-          'certificate_hashes' => Array(site['certs']).compact
+          'certificate_hashes' => Array(site['certs']).compact,
+          'state' => blank_to_nil(site['state'])
         })
       }
     end
@@ -937,6 +1249,121 @@ module OpenVoxInventory
     end
 
     trim(runtimes, config)
+  end
+
+  def collect_windows_runtimes(config)
+    trim(collect_iis_app_pools + collect_windows_framework_runtimes, config)
+  end
+
+  def collect_iis_app_pools
+    script = <<~'POWERSHELL'
+      Import-Module WebAdministration -ErrorAction SilentlyContinue
+      if (Test-Path 'IIS:\AppPools') {
+        $sites = @()
+        if (Get-Command Get-Website -ErrorAction SilentlyContinue) { $sites = @(Get-Website) }
+        $apps = @()
+        if (Get-Command Get-WebApplication -ErrorAction SilentlyContinue) { $apps = @(Get-WebApplication) }
+        $pools = @(Get-ChildItem 'IIS:\AppPools' -ErrorAction SilentlyContinue | ForEach-Object {
+          $pool = $_
+          $deployed = @(
+            ($sites | Where-Object { $_.applicationPool -eq $pool.Name } | ForEach-Object { $_.Name }) +
+            ($apps  | Where-Object { $_.applicationPool -eq $pool.Name } | ForEach-Object { $_.path })
+          )
+          [pscustomobject]@{
+            name = $pool.Name
+            runtime_version = $pool.managedRuntimeVersion
+            pipeline_mode = [string]$pool.managedPipelineMode
+            state = [string]$pool.state
+            enable_32bit = [bool]$pool.enable32BitAppOnWin64
+            identity = [string]$pool.processModel.identityType
+            deployed = $deployed
+          }
+        })
+        if ($pools.Count -gt 0) { $pools | ConvertTo-Json -Depth 4 }
+      }
+    POWERSHELL
+
+    output = run_powershell(script)
+    return [] if blankish?(output)
+
+    parsed = JSON.parse(output)
+    parsed = [parsed] if parsed.is_a?(Hash)
+
+    parsed.map do |pool|
+      next if blankish?(pool['name'])
+
+      # An empty managedRuntimeVersion means "No Managed Code" in IIS.
+      version = blank_to_nil(pool['runtime_version']) || 'nomanagedcode'
+
+      {
+        'runtime_type' => 'iis_app_pool',
+        'runtime_name' => pool['name'],
+        'runtime_version' => version,
+        'install_path' => nil,
+        'management_endpoint' => nil,
+        'deployed_units' => Array(pool['deployed']),
+        'metadata' => compact_hash({
+          'pipeline_mode' => blank_to_nil(pool['pipeline_mode']),
+          'state' => blank_to_nil(pool['state']),
+          'identity_type' => blank_to_nil(pool['identity']),
+          'enable_32bit' => pool['enable_32bit'].to_s
+        })
+      }
+    end.compact
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect IIS application pools: #{e.message}")
+    []
+  end
+
+  def collect_windows_framework_runtimes
+    script = <<~'POWERSHELL'
+      $result = [System.Collections.ArrayList]::new()
+      $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+      if ($dotnet) {
+        & $dotnet.Source --list-runtimes 2>$null | ForEach-Object {
+          if ($_ -match '^(\S+)\s+(\S+)\s+\[(.+)\]$') {
+            [void]$result.Add([pscustomobject]@{ type = 'dotnet'; name = $Matches[1]; version = $Matches[2]; path = $Matches[3] })
+          }
+        }
+      }
+      $ndp = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction SilentlyContinue
+      if ($ndp -and $ndp.Version) {
+        [void]$result.Add([pscustomobject]@{ type = 'dotnet_framework'; name = '.NET Framework'; version = $ndp.Version; path = $null })
+      }
+      foreach ($root in @('HKLM:\SOFTWARE\JavaSoft', 'HKLM:\SOFTWARE\WOW6432Node\JavaSoft')) {
+        foreach ($kind in @('JDK', 'JRE', 'Java Development Kit', 'Java Runtime Environment')) {
+          Get-ChildItem -Path (Join-Path $root $kind) -ErrorAction SilentlyContinue | ForEach-Object {
+            $javaHome = (Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue).JavaHome
+            [void]$result.Add([pscustomobject]@{ type = 'java'; name = $kind; version = $_.PSChildName; path = $javaHome })
+          }
+        }
+      }
+      if ($result.Count -gt 0) { $result | ConvertTo-Json -Depth 4 }
+    POWERSHELL
+
+    output = run_powershell(script)
+    return [] if blankish?(output)
+
+    parsed = JSON.parse(output)
+    parsed = [parsed] if parsed.is_a?(Hash)
+
+    parsed.map do |entry|
+      name = blank_to_nil(entry['name'])
+      next unless name
+
+      {
+        'runtime_type' => blank_to_nil(entry['type']) || 'unknown',
+        'runtime_name' => name,
+        'runtime_version' => blank_to_nil(entry['version']) || 'unknown',
+        'install_path' => blank_to_nil(entry['path']),
+        'management_endpoint' => nil,
+        'deployed_units' => [],
+        'metadata' => nil
+      }
+    end.compact
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect Windows framework runtimes: #{e.message}")
+    []
   end
 
   def collect_containers(config)
@@ -1119,35 +1546,113 @@ module OpenVoxInventory
     users
   end
 
-  def collect_windows_users(config)
-    users = []
-    ps_script = 'Get-LocalUser | Select-Object Name, SID, Enabled, Description, LastLogon, PasswordRequired | ConvertTo-Json -Compress'
-    output = run_command("powershell.exe -NoProfile -Command \"#{ps_script}\"")
-    return users unless output
-
-    begin
-      parsed = JSON.parse(output)
-      parsed = [parsed] unless parsed.is_a?(Array)
-      parsed.each do |u|
-        users << {
-          'username' => u['Name'],
-          'uid' => nil,
-          'sid' => u['SID'].is_a?(Hash) ? u['SID']['Value'] : u['SID'].to_s,
-          'gid' => nil,
-          'home_directory' => nil,
-          'shell' => nil,
-          'user_type' => u['Enabled'] ? 'regular' : 'system',
-          'groups' => [],
-          'last_login' => u['LastLogon'],
-          'locked' => u['Enabled'] == false,
-          'gecos' => u['Description'],
-        }
-      end
-    rescue JSON::ParserError
-      # Skip if output can't be parsed
-    end
-
+  def collect_windows_users(_config)
+    users = collect_windows_local_users
+    users = collect_windows_cim_users if users.empty?
     users
+  end
+
+  def collect_windows_local_users
+    script = <<~'POWERSHELL'
+      if (-not (Get-Command Get-LocalUser -ErrorAction SilentlyContinue)) { return }
+      $groupMap = @{}
+      Get-LocalGroup -ErrorAction SilentlyContinue | ForEach-Object {
+        $groupName = $_.Name
+        Get-LocalGroupMember -Group $groupName -ErrorAction SilentlyContinue | ForEach-Object {
+          $memberSid = $_.SID.Value
+          if ($memberSid) {
+            if (-not $groupMap.ContainsKey($memberSid)) { $groupMap[$memberSid] = [System.Collections.ArrayList]::new() }
+            [void]$groupMap[$memberSid].Add($groupName)
+          }
+        }
+      }
+      $profiles = @{}
+      Get-CimInstance -ClassName Win32_UserProfile -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.SID) { $profiles[$_.SID] = $_.LocalPath }
+      }
+      $users = @(Get-LocalUser -ErrorAction SilentlyContinue | ForEach-Object {
+        $sid = $_.SID.Value
+        [pscustomobject]@{
+          Name = $_.Name
+          SID = $sid
+          Enabled = [bool]$_.Enabled
+          Description = $_.Description
+          LastLogon = if ($_.LastLogon) { $_.LastLogon.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss') + 'Z' } else { $null }
+          Groups = @($groupMap[$sid])
+          ProfilePath = $profiles[$sid]
+        }
+      })
+      if ($users.Count -gt 0) { $users | ConvertTo-Json -Depth 4 }
+    POWERSHELL
+
+    parse_windows_users(run_powershell(script))
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect Windows local users: #{e.message}")
+    []
+  end
+
+  # Fallback for hosts without the LocalAccounts PowerShell module.
+  def collect_windows_cim_users
+    script = <<~'POWERSHELL'
+      $users = @(Get-CimInstance -ClassName Win32_UserAccount -Filter 'LocalAccount=True' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+          [pscustomobject]@{
+            Name = $_.Name
+            SID = $_.SID
+            Enabled = (-not $_.Disabled)
+            Description = $_.Description
+            LastLogon = $null
+            Groups = @()
+            ProfilePath = $null
+          }
+        })
+      if ($users.Count -gt 0) { $users | ConvertTo-Json -Depth 4 }
+    POWERSHELL
+
+    parse_windows_users(run_powershell(script))
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: Failed to collect Windows users via CIM: #{e.message}")
+    []
+  end
+
+  def parse_windows_users(output)
+    return [] if blankish?(output)
+
+    parsed = JSON.parse(output)
+    parsed = [parsed] if parsed.is_a?(Hash)
+
+    parsed.map do |user|
+      username = blank_to_nil(user['Name'])
+      next unless username
+
+      sid = user['SID'].is_a?(Hash) ? user['SID']['Value'] : blank_to_nil(user['SID'])
+      enabled = user['Enabled']
+
+      {
+        'username' => username,
+        'uid' => nil,
+        'sid' => sid,
+        'gid' => nil,
+        'home_directory' => blank_to_nil(user['ProfilePath']),
+        'shell' => nil,
+        'user_type' => classify_windows_user_type(sid),
+        'groups' => Array(user['Groups']).compact,
+        'last_login' => blank_to_nil(user['LastLogon']),
+        'locked' => enabled.nil? ? nil : enabled == false,
+        'gecos' => blank_to_nil(user['Description'])
+      }
+    end.compact
+  rescue JSON::ParserError
+    []
+  end
+
+  # Built-in accounts are identified by their well-known RID, not by whether
+  # they happen to be disabled.
+  WINDOWS_BUILTIN_RIDS = %w[500 501 502 503 504].freeze
+
+  def classify_windows_user_type(sid)
+    rid = sid.to_s.split('-').last
+    WINDOWS_BUILTIN_RIDS.include?(rid) ? 'system' : 'regular'
   end
 
   def classify_user_type(uid, shell)
@@ -1226,11 +1731,7 @@ module OpenVoxInventory
       http.verify_mode = OpenSSL::SSL::VERIFY_PEER
       ca_file = config['ssl_ca']
       if ca_file.nil? || !File.exist?(ca_file)
-        ca_file = [
-          '/etc/puppetlabs/puppet/ssl/certs/ca.pem',
-          '/etc/puppet/ssl/certs/ca.pem',
-          '/var/lib/puppet/ssl/certs/ca.pem'
-        ].find { |path| File.exist?(path) }
+        ca_file = puppet_ssl_dirs.map { |dir| "#{dir}/certs/ca.pem" }.find { |path| File.exist?(path) }
       end
       http.ca_file = ca_file if ca_file && File.exist?(ca_file)
     end
@@ -1238,14 +1739,8 @@ module OpenVoxInventory
     ssl_cert = config['ssl_cert']
     ssl_key = config['ssl_key']
     if ssl_cert.nil? || ssl_key.nil?
-      ssl_cert ||= [
-        "/etc/puppetlabs/puppet/ssl/certs/#{certname}.pem",
-        "/etc/puppet/ssl/certs/#{certname}.pem"
-      ].find { |path| File.exist?(path) }
-      ssl_key ||= [
-        "/etc/puppetlabs/puppet/ssl/private_keys/#{certname}.pem",
-        "/etc/puppet/ssl/private_keys/#{certname}.pem"
-      ].find { |path| File.exist?(path) }
+      ssl_cert ||= puppet_ssl_dirs.map { |dir| "#{dir}/certs/#{certname}.pem" }.find { |path| File.exist?(path) }
+      ssl_key ||= puppet_ssl_dirs.map { |dir| "#{dir}/private_keys/#{certname}.pem" }.find { |path| File.exist?(path) }
     end
 
     if ssl_cert && ssl_key && File.exist?(ssl_cert) && File.exist?(ssl_key)
@@ -1315,6 +1810,8 @@ module OpenVoxInventory
             'dnf update -y 2>&1 || yum update -y 2>&1'
           when 'Debian'
             'apt-get update -q && apt-get upgrade -y 2>&1'
+          when 'windows', 'Windows'
+            return execute_windows_updates(false)
           else
             return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
           end
@@ -1328,11 +1825,119 @@ module OpenVoxInventory
             'dnf update --security -y 2>&1 || yum update --security -y 2>&1'
           when 'Debian'
             'apt-get update -q && apt-get upgrade -y --only-upgrade 2>&1'
+          when 'windows', 'Windows'
+            return execute_windows_updates(true)
           else
             return { 'status' => 'failed', 'summary' => "Unsupported OS family: #{family}", 'output' => '' }
           end
 
     run_update_command(cmd)
+  end
+
+  # Drives the Windows Update agent through COM so that no third-party module
+  # (PSWindowsUpdate) has to be present on the node.
+  def execute_windows_updates(security_only)
+    unless windows?
+      return { 'status' => 'failed', 'summary' => 'Windows update operations require a Windows host', 'output' => '' }
+    end
+
+    script = <<~POWERSHELL
+      $ErrorActionPreference = 'Stop'
+      $securityOnly = $#{security_only}
+      try {
+        $session = New-Object -ComObject 'Microsoft.Update.Session'
+        $searcher = $session.CreateUpdateSearcher()
+        $found = $searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
+        $selected = New-Object -ComObject 'Microsoft.Update.UpdateColl'
+        foreach ($update in $found.Updates) {
+          if ($securityOnly) {
+            $isSecurity = $false
+            foreach ($category in $update.Categories) {
+              if ($category.Name -match 'Security') { $isSecurity = $true }
+            }
+            if (-not $isSecurity) { continue }
+          }
+          if (-not $update.EulaAccepted) { $update.AcceptEula() }
+          [void]$selected.Add($update)
+        }
+        if ($selected.Count -eq 0) {
+          Write-Output 'No applicable updates found.'
+          exit 0
+        }
+        foreach ($update in $selected) { Write-Output ('Pending: ' + $update.Title) }
+        $downloader = $session.CreateUpdateDownloader()
+        $downloader.Updates = $selected
+        $null = $downloader.Download()
+        $installer = $session.CreateUpdateInstaller()
+        $installer.Updates = $selected
+        $outcome = $installer.Install()
+        Write-Output ('ResultCode: ' + $outcome.ResultCode)
+        Write-Output ('RebootRequired: ' + $outcome.RebootRequired)
+        if ($outcome.ResultCode -eq 2 -or $outcome.ResultCode -eq 3) { exit 0 }
+        exit 1
+      } catch {
+        Write-Output ('ERROR: ' + $_.Exception.Message)
+        exit 1
+      }
+    POWERSHELL
+
+    run_update_command(powershell_command(script))
+  end
+
+  def powershell_command(script)
+    encoded = Base64.strict_encode64(script.encode('UTF-16LE'))
+    %("#{powershell_executable}" #{POWERSHELL_ARGS} #{encoded} 2>&1)
+  end
+
+  # Chocolatey is preferred because it works under the LocalSystem account the
+  # Puppet agent runs as; winget is a per-user MSIX app and often is not
+  # resolvable there.
+  def windows_package_tool
+    return 'choco' if command_available?('choco')
+    return 'winget' if command_available?('winget')
+
+    nil
+  end
+
+  WINGET_FLAGS = '--silent --accept-package-agreements --accept-source-agreements --disable-interactivity'
+
+  def execute_windows_package_operation(operation, packages)
+    tool = windows_package_tool
+    unless tool
+      return {
+        'status' => 'failed',
+        'summary' => 'No supported Windows package manager found (chocolatey or winget)',
+        'output' => ''
+      }
+    end
+
+    if tool == 'choco'
+      subcommand = { update: 'upgrade', install: 'install', remove: 'uninstall' }[operation]
+      return run_update_command("choco #{subcommand} -y #{packages.join(' ')} 2>&1")
+    end
+
+    subcommand = { update: 'upgrade', install: 'install', remove: 'uninstall' }[operation]
+    # winget handles one package identifier per invocation.
+    results = packages.map do |package|
+      run_update_command("winget #{subcommand} --id #{package} --exact #{WINGET_FLAGS} 2>&1")
+    end
+
+    merge_update_results(results)
+  end
+
+  def merge_update_results(results)
+    return { 'status' => 'failed', 'summary' => 'No packages processed', 'output' => '' } if results.empty?
+
+    failed = results.reject { |result| result['status'] == 'succeeded' }
+    {
+      'status' => failed.empty? ? 'succeeded' : 'failed',
+      'summary' => if failed.empty?
+                     "#{results.size} package operation(s) completed successfully"
+                   else
+                     "#{failed.size} of #{results.size} package operation(s) failed"
+                   end,
+      'output' => results.map { |result| result['output'] }.join("\n").slice(0, 10_000)
+    }
   end
 
   def sanitize_package_names(packages)
@@ -1342,6 +1947,8 @@ module OpenVoxInventory
   def execute_package_update(family, packages, _config)
     safe_packages = sanitize_package_names(packages)
     return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
+
+    return execute_windows_package_operation(:update, safe_packages) if %w[windows Windows].include?(family)
 
     pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
     cmd = case family
@@ -1360,6 +1967,8 @@ module OpenVoxInventory
     safe_packages = sanitize_package_names(packages)
     return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
 
+    return execute_windows_package_operation(:install, safe_packages) if %w[windows Windows].include?(family)
+
     pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
     cmd = case family
           when 'RedHat', 'Suse'
@@ -1376,6 +1985,8 @@ module OpenVoxInventory
   def execute_package_remove(family, packages, _config)
     safe_packages = sanitize_package_names(packages)
     return { 'status' => 'failed', 'summary' => 'No valid packages specified', 'output' => '' } if safe_packages.empty?
+
+    return execute_windows_package_operation(:remove, safe_packages) if %w[windows Windows].include?(family)
 
     pkg_list = safe_packages.map { |p| Shellwords.shellescape(p) }.join(' ')
     cmd = case family
@@ -1510,7 +2121,44 @@ module OpenVoxInventory
   end
 
   def command_available?(command)
-    system("command -v #{command} >/dev/null 2>&1")
+    if windows?
+      system("where #{command} >NUL 2>NUL")
+    else
+      system("command -v #{command} >/dev/null 2>&1")
+    end
+  end
+
+  POWERSHELL_ARGS = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand'
+
+  def powershell_executable
+    return @powershell_executable if defined?(@powershell_executable)
+
+    system_root = ENV['SystemRoot'] || 'C:/Windows'
+    # Sysnative only resolves from a 32-bit process on 64-bit Windows, and it is
+    # checked first on purpose: a 32-bit Ruby launching the System32 (i.e.
+    # SysWOW64) PowerShell would read the WOW6432Node registry view and miss
+    # every 64-bit application.
+    candidates = [
+      File.join(system_root, 'Sysnative', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      File.join(system_root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    ]
+
+    @powershell_executable = candidates.find { |path| File.exist?(path) } || 'powershell.exe'
+  end
+
+  # Scripts are passed as base64-encoded UTF-16LE so that quoting, newlines and
+  # backslashes survive the trip through cmd.exe untouched. Exit status is not
+  # checked because native tools invoked from the script (winget, choco) return
+  # non-zero for warnings; callers validate the payload instead.
+  def run_powershell(script)
+    return nil unless windows?
+
+    encoded = Base64.strict_encode64(script.encode('UTF-16LE'))
+    output = `"#{powershell_executable}" #{POWERSHELL_ARGS} #{encoded} 2>NUL`
+    blankish?(output) ? nil : output
+  rescue StandardError => e
+    Facter.debug("openvox_inventory: PowerShell invocation failed: #{e.message}")
+    nil
   end
 
   def run_command(command)
@@ -1547,10 +2195,6 @@ module OpenVoxInventory
     return nil unless value.to_s.match?(/^\d{8}$/)
 
     "#{value[0, 4]}-#{value[4, 2]}-#{value[6, 2]}T00:00:00Z"
-  end
-
-  def escape_powershell(script)
-    script.gsub('"', '\"').gsub(/\r?\n/, '; ')
   end
 end
 

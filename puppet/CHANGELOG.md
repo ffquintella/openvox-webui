@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Inventory collection now actually runs on Windows nodes. The
+  `openvox_inventory_status` fact only looked for its configuration under Unix
+  paths (`/etc/openvox-webui`, `/etc/puppetlabs/facter`), so its `confine` block
+  never matched on Windows and the collector silently never executed even with
+  `inventory_enabled => true`. It now reads
+  `%PROGRAMDATA%\PuppetLabs\facter\openvox-client.yaml` — the location
+  `openvox_webui::client` writes on Windows — with a literal `C:\ProgramData`
+  fallback.
+- Certname discovery and the mTLS certificate/CA fallbacks resolve the Windows
+  Puppet confdir (`%PROGRAMDATA%\PuppetLabs\puppet\etc`) instead of only
+  `/etc/puppetlabs/puppet`, so Windows nodes can authenticate when `ssl_cert`
+  and `ssl_key` are not set explicitly.
+- PowerShell is now invoked with `-EncodedCommand` instead of having its script
+  flattened by replacing every newline with `; `. That transformation produced
+  invalid PowerShell for any multi-line construct, which broke the Windows
+  application and IIS site collectors outright.
+- `command_available?` used the POSIX `command -v`, which always fails on
+  Windows. It now uses `where`, so Docker/Podman container discovery and
+  package-manager detection work there.
+- Windows local user records now carry group membership, profile paths and an
+  ISO 8601 last-logon timestamp. Previously groups were always empty and
+  `LastLogon` was serialised as a raw .NET date. Account type is derived from
+  the well-known RID rather than treating every disabled account as a system
+  account.
+
+### Added
+- Windows package inventory via Chocolatey (`choco list`) and winget
+  (`winget export`); previously the package list was hardcoded to empty.
+- Windows repository inventory now covers Chocolatey sources alongside winget,
+  and reads `winget source export` JSON instead of parsing the localised
+  fixed-width table.
+- Windows runtime inventory: IIS application pools (with runtime version,
+  pipeline mode, identity and the sites/applications assigned to them),
+  .NET and .NET Core shared runtimes, .NET Framework, and registered JDK/JRE
+  installations.
+- Windows OS inventory now reports the product name as the edition, the Update
+  Build Revision as the patch level, `DisplayVersion` (e.g. `23H2`) as the
+  update channel, and the last successful update taken from the Windows Update
+  agent history with a `Win32_QuickFixEngineering` fallback.
+- Windows update jobs are now executed rather than rejected with "Unsupported
+  OS family": system and security patching drive the Windows Update agent over
+  COM (no PSWindowsUpdate dependency), and package install/update/remove run
+  through Chocolatey or winget.
+- Per-user installed applications are collected from every loaded
+  `HKEY_USERS` profile hive. The agent runs as `LocalSystem`, so the previous
+  `HKCU` lookup only ever saw the service account's own profile. System
+  components and update/hotfix registry entries are now filtered out.
+
 ## [0.40.5] - 2026-07-28
 
 ### Fixed

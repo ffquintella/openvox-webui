@@ -124,10 +124,11 @@ After configuring the client, these facts become available:
 Phase 10.2 adds opt-in inventory collectors to the Puppet client class. When enabled, the agent gathers:
 
 - Linux RPM/DEB package inventory
-- Windows installed applications and IIS sites
+- Windows installed applications, packages, IIS sites and runtimes
 - macOS app bundles and Homebrew inventory
 - Apache and NGINX website discovery
 - Tomcat and JBoss/WildFly runtime discovery
+- Local user accounts and Docker/Podman containers
 
 Example:
 
@@ -142,6 +143,32 @@ class { 'openvox_webui::client':
 ```
 
 The client posts inventory snapshots to `/api/v1/nodes/{certname}/inventory` using the same authentication model as classification.
+
+##### Windows notes
+
+On Windows the collector reads its configuration from
+`%PROGRAMDATA%\PuppetLabs\facter\openvox-client.yaml` (written by this class) and
+falls back to a literal `C:\ProgramData` if `%PROGRAMDATA%` has been relocated.
+Certificates default to `%PROGRAMDATA%\PuppetLabs\puppet\etc\ssl`.
+
+What gets collected:
+
+| Category | Source |
+| --- | --- |
+| Applications | Uninstall registry across `HKLM`, `WOW6432Node` and every loaded `HKEY_USERS` profile hive. System components and update/hotfix entries are excluded. |
+| Packages | Chocolatey (`choco list`) and winget (`winget export`) |
+| Repositories | `winget source export` (falling back to `winget source list`) and `choco source list` |
+| Websites | IIS sites via the `WebAdministration` module |
+| Runtimes | IIS application pools, .NET/.NET Core shared runtimes, .NET Framework, registered JDK/JRE installs |
+| Users | `Get-LocalUser` with local group membership and profile paths, falling back to `Win32_UserAccount` |
+| OS | Product name, Update Build Revision as the patch level, `DisplayVersion` (e.g. `23H2`) as the update channel, last successful update from the Windows Update agent history |
+
+Update jobs dispatched from the WebUI run through the Windows Update agent
+(system and security patching) and through Chocolatey or winget (package
+install/update/remove). Chocolatey is preferred because winget is a per-user
+MSIX application and is frequently not resolvable under the `LocalSystem`
+account the Puppet agent runs as — on hosts without Chocolatey, winget-based
+package collection and update jobs may return nothing.
 
 #### Classification Options
 
