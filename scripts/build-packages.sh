@@ -43,6 +43,11 @@ RPM_ARCH="x86_64"
 DOCKER_PLATFORM="linux/amd64"
 RUST_TARGET="x86_64-unknown-linux-gnu"
 
+# Force amd64 for every docker invocation, including any implicit pull. This is
+# what makes the build correct on Apple Silicon / ARM hosts, where the daemon
+# would otherwise default to the host architecture.
+export DOCKER_DEFAULT_PLATFORM="${DOCKER_PLATFORM}"
+
 # Cache directories for incremental builds
 CACHE_DIR="${CACHE_DIR:-${HOME}/.cache/openvox-webui-build}"
 CARGO_CACHE_DIR="${CACHE_DIR}/cargo"
@@ -135,7 +140,11 @@ check_dependencies() {
 
     # Docker dependency
     if [[ "$USE_DOCKER" == "true" ]]; then
-        command -v docker >/dev/null 2>&1 || missing+=("docker")
+        if command -v docker >/dev/null 2>&1; then
+            docker buildx version >/dev/null 2>&1 || missing+=("docker buildx plugin")
+        else
+            missing+=("docker")
+        fi
     fi
 
     # Signing dependency
@@ -153,6 +162,34 @@ check_dependencies() {
         done
         exit 1
     fi
+}
+
+# Confirm a freshly built builder image really is linux/amd64 and that the host
+# can execute it. On Apple Silicon / ARM hosts a missing emulation layer would
+# otherwise surface as a confusing failure deep inside the cargo build, or - if
+# the platform request were ignored - produce arm64 binaries in an x86_64 package.
+verify_image_platform() {
+    local image="$1"
+    local os arch machine
+
+    os="$(docker image inspect --format '{{.Os}}' "$image" 2>/dev/null || echo unknown)"
+    arch="$(docker image inspect --format '{{.Architecture}}' "$image" 2>/dev/null || echo unknown)"
+
+    if [[ "${os}/${arch}" != "${DOCKER_PLATFORM}" ]]; then
+        log_error "Builder image ${image} is ${os}/${arch}, expected ${DOCKER_PLATFORM}."
+        log_error "Packages built from it would not be ${RPM_ARCH}. Aborting."
+        exit 1
+    fi
+
+    machine="$(docker run --rm --platform "${DOCKER_PLATFORM}" "$image" uname -m 2>/dev/null || echo unknown)"
+    if [[ "$machine" != "x86_64" ]]; then
+        log_error "Container on ${DOCKER_PLATFORM} reports 'uname -m' = ${machine}, expected x86_64."
+        log_error "The host cannot run amd64 containers. On Apple Silicon, enable Rosetta"
+        log_error "or QEMU emulation in Docker Desktop (Settings > General / Features in development)."
+        exit 1
+    fi
+
+    log_info "Builder image verified: ${os}/${arch} (uname -m: ${machine})"
 }
 
 clean_build_dir() {
@@ -426,7 +463,10 @@ build_rpm_docker() {
     # Create Dockerfile for RPM build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.rpm"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
-FROM --platform=linux/amd64 rockylinux:9
+# Use the maintained rockylinux/rockylinux image; the old docker-library
+# "rockylinux" image is deprecated/frozen and its baked-in packages no longer
+# resolve against the current el9 repos (openssl-libs version mismatch).
+FROM rockylinux/rockylinux:9
 
 RUN dnf install -y \
     rpm-build \
@@ -454,6 +494,7 @@ DOCKERFILE_EOF
     # Build image with platform specification
     log_info "Building Docker image for RPM (this may take a while on first run)..."
     docker buildx build --platform "${DOCKER_PLATFORM}" --load -t openvox-webui-rpm-builder -f "$dockerfile" "${BUILD_DIR}"
+    verify_image_platform openvox-webui-rpm-builder
 
     # Run build and packaging in Docker container with cached volumes
     log_info "Running RPM build in Docker container (with incremental build cache)..."
@@ -554,7 +595,7 @@ build_deb_docker() {
     # Create Dockerfile for DEB build (includes Rust and Node.js for compilation)
     local dockerfile="${BUILD_DIR}/Dockerfile.deb"
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
-FROM --platform=linux/amd64 debian:bookworm
+FROM debian:bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -588,6 +629,7 @@ DOCKERFILE_EOF
     # Build image with platform specification
     log_info "Building Docker image for DEB (this may take a while on first run)..."
     docker buildx build --platform "${DOCKER_PLATFORM}" --load -t openvox-webui-deb-builder -f "$dockerfile" "${BUILD_DIR}"
+    verify_image_platform openvox-webui-deb-builder
 
     # Run build and packaging in Docker container with cached volumes
     log_info "Running DEB build in Docker container (with incremental build cache)..."

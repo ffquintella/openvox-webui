@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.3] - 2026-07-28
+
+### Fixed
+- RPM package builds no longer fail with an `openssl-libs` dependency error.
+  The build container now uses the maintained `rockylinux/rockylinux:9` image
+  instead of the deprecated docker-library `rockylinux:9` image, whose frozen
+  package set can no longer be resolved against the current el9 repositories.
+- The package build now verifies that the builder images really are
+  `linux/amd64` and that the host can execute them, so building on an Apple
+  Silicon / ARM host fails fast with an actionable message instead of producing
+  wrong-architecture binaries or failing deep inside the cargo build.
+- `frontend/tsconfig.json`: dropped `baseUrl` in favour of a `./src/*` path
+  mapping, which TypeScript 7 requires.
+
 ## [0.40.2] - 2026-07-28
 
 ### Changed
