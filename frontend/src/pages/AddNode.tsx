@@ -302,8 +302,8 @@ export default function AddNode() {
           <li>Configures the package repository for OpenVox/Puppet packages</li>
           <li>Installs the <code className="bg-gray-100 px-1 rounded">{config?.agent_package_name || 'openvox-agent'}</code> package</li>
           <li>Configures <code className="bg-gray-100 px-1 rounded">puppet.conf</code> with the Puppet Server URL</li>
-          <li>Enables the Puppet agent service</li>
           <li>Runs the Puppet agent to submit a certificate signing request</li>
+          <li>Enables and starts the Puppet agent service so the node checks in unattended</li>
         </ol>
 
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">

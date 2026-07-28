@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.5] - 2026-07-28
+
+### Fixed
+- Windows bootstrap now reliably registers and starts the OpenVox agent as a
+  service, so bootstrapped Windows nodes keep checking in unattended:
+  - `puppet.conf` is written to the real Windows confdir
+    (`%PROGRAMDATA%\PuppetLabs\puppet\etc`) instead of the install directory,
+    where the agent never read it. It now also sets `runinterval = 30m`, matching
+    the Linux bootstrap, and backs up any existing config.
+  - The service startup type is re-asserted as Automatic with `sc.exe config`
+    after install. Installing over an existing agent does not reset a service
+    left on Manual or Disabled.
+  - The script waits for the service to actually reach `Running` and reports the
+    state, startup mode, and exit code when it does not, instead of assuming
+    `Start-Service` succeeded.
+  - A missing service triggers a repair install
+    (`REINSTALL=ALL PUPPET_AGENT_STARTUP_MODE=Automatic`) rather than printing a
+    warning and continuing as if the bootstrap had succeeded.
+  - msiexec exit codes 3010 and 1641 (reboot pending) are treated as success.
+    Previously they aborted the script before the service was ever configured.
+  - The initial `puppet agent --test` runs with the service stopped, so it can
+    acquire the agent lock and actually submit the certificate request. Its exit
+    code is now checked, so failed runs are reported rather than swallowed.
+  - The bootstrap exits non-zero and prints remediation steps when the agent is
+    installed but its service is not running.
+- Windows bootstrap no longer clobbers unrelated `*_server` settings (such as
+  `ca_server`) in an existing `puppet.conf`.
+
 ## [0.40.4] - 2026-07-28
 
 ### Fixed

@@ -195,4 +195,35 @@ mod tests {
         // The guard must not compare against the injected server value.
         assert!(!script.contains(r#"-eq "openvox.example.com""#));
     }
+
+    #[test]
+    fn test_windows_script_registers_agent_as_automatic_service() {
+        // Regression: the Windows bootstrap must leave the node checking in
+        // unattended. That requires the service to be registered, set to start
+        // automatically, actually started, and verified as Running.
+        let script = generate_windows_bootstrap_script("openvox.example.com", "openvox-agent");
+
+        assert!(script.contains("PUPPET_AGENT_STARTUP_MODE=Automatic"));
+        // Startup type is re-asserted after install, since an upgrade over an
+        // existing install does not reset a Manual/Disabled service.
+        assert!(script.contains("sc.exe config $ServiceName start= auto"));
+        assert!(script.contains("Start-PuppetServiceAndWait"));
+        // A missing service must be repaired rather than silently skipped.
+        assert!(script.contains("Repair-PuppetServiceRegistration"));
+        // Reboot-pending exit codes are successes, not aborts.
+        assert!(script.contains("3010"));
+        assert!(script.contains("1641"));
+    }
+
+    #[test]
+    fn test_windows_script_writes_conf_to_programdata_confdir() {
+        // Regression: on Windows the confdir is %PROGRAMDATA%\PuppetLabs\puppet\etc.
+        // Writing under the install directory produced a puppet.conf the agent
+        // never read, so the server and runinterval had no effect.
+        let script = generate_windows_bootstrap_script("openvox.example.com", "openvox-agent");
+
+        assert!(script.contains(r#"Join-Path $env:ProgramData "PuppetLabs\puppet\etc""#));
+        // The unattended run interval must be configured, like the Linux script.
+        assert!(script.contains("runinterval = $PUPPET_RUNINTERVAL"));
+    }
 }
