@@ -1244,7 +1244,9 @@ function RuleModal({
                               <option value="node.name">Node Name - Hostname of the node</option>
                               <option value="node.environment">Node Environment - Puppet environment (production, development)</option>
                               <option value="node.group">Node Group - Node group assignment</option>
-                              <option value="node.last_report">Last Report - Time of last Puppet run</option>
+                              <option value="node.last_report">Last Report (hours ago) - Hours since the last Puppet run, e.g. &gt; 24</option>
+                              <option value="node.last_report_minutes">Last Report (minutes ago) - Minutes since the last Puppet run</option>
+                              <option value="node.never_reported">Never Reported - true/false (node has no report at all)</option>
                               <option value="report.status">Report Status - Status of last Puppet run (success/failed)</option>
                               <option value="report.changed">Resources Changed - Number of resources changed</option>
                               <option value="report.failed">Resources Failed - Number of resources failed</option>

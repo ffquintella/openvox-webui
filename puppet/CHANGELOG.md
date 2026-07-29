@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.7] - 2026-07-29
+
+### Fixed
+- Node status alert rules can now detect stale nodes. The `node.last_report`
+  field offered in the rule form was never populated in the evaluation context,
+  so a condition such as `node.last_report > 24` compared against nothing. The
+  node status evaluator now exposes `node.last_report` (hours since the last
+  Puppet run, recomputed against the current time on every evaluation),
+  `node.last_report_minutes`, `node.last_report_at`, `node.never_reported`,
+  `node.name`, `node.deactivated` and `node.expired`. Triggered alerts also
+  record each node's last report time and age in the alert context.
+- Alert conditions using a field that does not exist for the subject being
+  evaluated no longer match with the `!=` operator, which previously made such
+  rules fire for every node. A JSON `null` field value (for example the report
+  age of a node that has never reported) is treated as absent.
+- The `not_in`, `exists` and `not_exists` condition operators offered in the
+  alert rule form are now implemented; they previously evaluated to false and
+  were logged as unknown operators.
+
 ## [0.40.6] - 2026-07-28
 
 ### Fixed

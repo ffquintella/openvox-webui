@@ -21,9 +21,6 @@ use crate::db::{
     NotificationChannelRepository, NotificationHistoryRepository, SettingsRepository,
 };
 use crate::models::{
-    UpdateTargetStatus, DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES, UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER,
-};
-use crate::models::{
     Alert, AlertCondition, AlertRule, AlertRuleType, AlertSeverity, AlertStats, AlertStatus,
     AlertWebhookData, ChannelType, CreateAlertRuleRequest, CreateChannelRequest,
     CreateSilenceRequest, EmailConfig, NotificationChannel, SlackConfig, TeamsConfig,
@@ -31,6 +28,9 @@ use crate::models::{
     WebhookConfig, WebhookPayload,
 };
 use crate::models::{CreateNotificationRequest, NotificationType};
+use crate::models::{
+    UpdateTargetStatus, DEFAULT_UPDATE_JOB_MAX_RUNTIME_MINUTES, UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER,
+};
 use crate::services::notification::NotificationService;
 use crate::services::PuppetDbClient;
 
@@ -404,7 +404,11 @@ impl AlertingService {
                 // Update-job rules are primarily driven by the update scheduler via
                 // `evaluate_update_job_rules`; return the first triggered alert here so the
                 // on-demand `/evaluate` path also works when an inventory pool is attached.
-                Ok(self.evaluate_update_job_rule(rule).await?.into_iter().next())
+                Ok(self
+                    .evaluate_update_job_rule(rule)
+                    .await?
+                    .into_iter()
+                    .next())
             }
             AlertRuleType::Custom => self.evaluate_custom_rule(rule).await,
         }
@@ -419,22 +423,49 @@ impl AlertingService {
 
         // Get nodes from PuppetDB
         let nodes = puppetdb.get_nodes().await?;
+        let now = Utc::now();
 
         let mut failed_nodes = Vec::new();
+        let mut details = Vec::new();
         for node in &nodes {
+            // Age of the last Puppet run, measured against *now* on every
+            // evaluation. `node.last_report` is therefore a relative duration
+            // (hours), not an absolute timestamp: `node.last_report > 24`
+            // means "hasn't reported in the last 24 hours".
+            let last_report_minutes = node.report_timestamp.map(|ts| (now - ts).num_minutes());
+            let last_report_hours = last_report_minutes.map(|m| (m as f64) / 60.0);
+
             // Check if node matches any condition
-            let matches = self.evaluate_conditions(
-                &rule.conditions,
-                &json!({
-                    "node.certname": node.certname,
-                    "node.status": node.latest_report_status.as_deref().unwrap_or("unknown"),
-                    "node.environment": node.report_environment.as_deref().unwrap_or(""),
-                }),
-                rule.condition_operator,
-            );
+            let context = json!({
+                "node.certname": node.certname,
+                "node.name": node.certname,
+                "node.status": node.latest_report_status.as_deref().unwrap_or("unknown"),
+                "node.environment": node.report_environment.as_deref()
+                    .or(node.catalog_environment.as_deref())
+                    .or(node.facts_environment.as_deref())
+                    .unwrap_or(""),
+                "node.last_report": last_report_hours,
+                "node.last_report_hours": last_report_hours,
+                "node.last_report_minutes": last_report_minutes,
+                "node.last_report_at": node.report_timestamp.map(|ts| ts.to_rfc3339()),
+                // Booleans are stored as strings so equality against the text
+                // value entered in the rule form ("true"/"false") works.
+                "node.never_reported": node.report_timestamp.is_none().to_string(),
+                "node.deactivated": node.deactivated.is_some().to_string(),
+                "node.expired": node.expired.is_some().to_string(),
+            });
+
+            let matches =
+                self.evaluate_conditions(&rule.conditions, &context, rule.condition_operator);
 
             if matches {
                 failed_nodes.push(node.certname.clone());
+                details.push(json!({
+                    "certname": node.certname,
+                    "status": node.latest_report_status.as_deref().unwrap_or("unknown"),
+                    "last_report_at": node.report_timestamp.map(|ts| ts.to_rfc3339()),
+                    "last_report_hours": last_report_hours,
+                }));
             }
         }
 
@@ -447,7 +478,11 @@ impl AlertingService {
                         "The following nodes have triggered the alert: {}",
                         failed_nodes.join(", ")
                     ),
-                    Some(json!({ "affected_nodes": failed_nodes })),
+                    Some(json!({
+                        "affected_nodes": failed_nodes,
+                        "node_details": details,
+                        "evaluated_at": now.to_rfc3339(),
+                    })),
                 )
                 .await?;
             return Ok(Some(alert));
@@ -583,7 +618,11 @@ impl AlertingService {
         let silence_repo = AlertSilenceRepository::new(&self.pool);
         let mut triggered = Vec::new();
         for rule in &enabled {
-            if silence_repo.is_rule_silenced(rule.id).await.unwrap_or(false) {
+            if silence_repo
+                .is_rule_silenced(rule.id)
+                .await
+                .unwrap_or(false)
+            {
                 debug!("Update job rule {} is silenced, skipping", rule.name);
                 continue;
             }
@@ -701,7 +740,9 @@ impl AlertingService {
                 "failed_nodes": failed_nodes,
             });
 
-            let alert = self.trigger_alert(rule, &title, &message, Some(ctx)).await?;
+            let alert = self
+                .trigger_alert(rule, &title, &message, Some(ctx))
+                .await?;
             alerts.push(alert);
         }
 
@@ -735,7 +776,7 @@ impl AlertingService {
 
         let results: Vec<bool> = conditions
             .iter()
-            .map(|c| self.evaluate_condition(c, context))
+            .map(|c| Self::evaluate_condition(c, context))
             .collect();
 
         match operator {
@@ -745,40 +786,65 @@ impl AlertingService {
     }
 
     /// Evaluate a single condition
-    fn evaluate_condition(&self, condition: &AlertCondition, context: &serde_json::Value) -> bool {
+    fn evaluate_condition(condition: &AlertCondition, context: &serde_json::Value) -> bool {
         // Get field and value, handling both old and new formats
         let field = match &condition.field {
             Some(f) => f.as_str(),
             None => return false, // Can't evaluate without field in legacy format
         };
 
+        // Get the field value from context using dot notation. A JSON `null`
+        // means "not applicable for this subject" (e.g. a node that has never
+        // reported has no last-report age) and is treated as absent so it can
+        // never satisfy a comparison.
+        let field_value = Self::get_field_value(context, field).filter(|v| !v.is_null());
+
+        // These two operators are about presence only, so they are evaluated
+        // before requiring a comparison value.
+        match condition.operator.as_str() {
+            "exists" => return field_value.is_some(),
+            "not_exists" => return field_value.is_none(),
+            _ => {}
+        }
+
         let value = match &condition.value {
             Some(v) => v,
             None => return false, // Can't evaluate without value in legacy format
         };
 
-        // Get the field value from context using dot notation
-        let field_value = self.get_field_value(context, field);
-
         match condition.operator.as_str() {
             "eq" | "=" | "==" => field_value == Some(value),
-            "ne" | "!=" => field_value != Some(value),
-            "gt" | ">" => match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+            // An absent field must not satisfy `!=` — otherwise a rule using a
+            // field that does not exist for this subject matches everything.
+            "ne" | "!=" => field_value.is_some() && field_value != Some(value),
+            "gt" | ">" => match (
+                field_value.and_then(Self::coerce_f64),
+                Self::coerce_f64(value),
+            ) {
                 (Some(a), Some(b)) => a > b,
                 _ => false,
             },
             "gte" | ">=" => {
-                match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                match (
+                    field_value.and_then(Self::coerce_f64),
+                    Self::coerce_f64(value),
+                ) {
                     (Some(a), Some(b)) => a >= b,
                     _ => false,
                 }
             }
-            "lt" | "<" => match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+            "lt" | "<" => match (
+                field_value.and_then(Self::coerce_f64),
+                Self::coerce_f64(value),
+            ) {
                 (Some(a), Some(b)) => a < b,
                 _ => false,
             },
             "lte" | "<=" => {
-                match (field_value.and_then(Self::coerce_f64), Self::coerce_f64(value)) {
+                match (
+                    field_value.and_then(Self::coerce_f64),
+                    Self::coerce_f64(value),
+                ) {
                     (Some(a), Some(b)) => a <= b,
                     _ => false,
                 }
@@ -802,6 +868,10 @@ impl AlertingService {
                 (serde_json::Value::Array(arr), Some(val)) => arr.contains(val),
                 _ => false,
             },
+            "not_in" => match (value, field_value) {
+                (serde_json::Value::Array(arr), Some(val)) => !arr.contains(val),
+                _ => false,
+            },
             _ => {
                 warn!("Unknown condition operator: {}", condition.operator);
                 false
@@ -821,7 +891,6 @@ impl AlertingService {
 
     /// Get a field value from JSON using dot notation (e.g., "node.status")
     fn get_field_value<'a>(
-        &self,
         value: &'a serde_json::Value,
         path: &str,
     ) -> Option<&'a serde_json::Value> {
@@ -1426,51 +1495,113 @@ impl AlertingService {
 mod tests {
     use super::*;
 
-    // Helper function to get a field value from JSON using dot notation
+    // Exercise the real evaluator rather than a re-implementation, so tests
+    // catch operators and fields that silently never match.
+    fn evaluate_condition(condition: &AlertCondition, context: &serde_json::Value) -> bool {
+        AlertingService::evaluate_condition(condition, context)
+    }
+
     fn get_field_value<'a>(
         value: &'a serde_json::Value,
         path: &str,
     ) -> Option<&'a serde_json::Value> {
-        let parts: Vec<&str> = path.split('.').collect();
-        let mut current = value;
-
-        for part in parts {
-            match current {
-                serde_json::Value::Object(map) => {
-                    current = map.get(part)?;
-                }
-                serde_json::Value::Array(arr) => {
-                    let index: usize = part.parse().ok()?;
-                    current = arr.get(index)?;
-                }
-                _ => return None,
-            }
-        }
-
-        Some(current)
+        AlertingService::get_field_value(value, path)
     }
 
-    // Helper function to evaluate a condition
-    fn evaluate_condition(condition: &AlertCondition, context: &serde_json::Value) -> bool {
-        let Some(field) = condition.field.as_deref() else {
-            return false;
-        };
-        let field_value = get_field_value(context, field);
-        let expected_value = condition.value.as_ref();
-
-        match condition.operator.as_str() {
-            "eq" | "=" | "==" => field_value == expected_value,
-            "ne" | "!=" => field_value != expected_value,
-            "contains" => match (field_value, expected_value) {
-                (
-                    Some(serde_json::Value::String(haystack)),
-                    Some(serde_json::Value::String(needle)),
-                ) => haystack.contains(needle),
-                (Some(serde_json::Value::Array(arr)), Some(val)) => arr.contains(val),
-                _ => false,
-            },
-            _ => false,
+    /// Build a condition in the simple (field/operator/value) format, with the
+    /// value stored as a string exactly as the rule form submits it.
+    fn cond(field: &str, operator: &str, value: &str) -> AlertCondition {
+        AlertCondition {
+            condition_type: None,
+            operator: operator.to_string(),
+            value: Some(json!(value)),
+            enabled: true,
+            field: Some(field.to_string()),
         }
+    }
+
+    /// The node-status context, mirroring `evaluate_node_status_rule`.
+    fn node_context(status: &str, last_report_hours: Option<f64>) -> serde_json::Value {
+        json!({
+            "node.certname": "node1.example.com",
+            "node.name": "node1.example.com",
+            "node.status": status,
+            "node.environment": "production",
+            "node.last_report": last_report_hours,
+            "node.last_report_minutes": last_report_hours.map(|h| (h * 60.0) as i64),
+            "node.never_reported": last_report_hours.is_none().to_string(),
+            "node.deactivated": "false",
+        })
+    }
+
+    #[test]
+    fn test_last_report_age_is_compared_against_threshold() {
+        let condition = cond("node.last_report", ">", "24");
+
+        // 30h since the last run -> stale, alert.
+        assert!(evaluate_condition(
+            &condition,
+            &node_context("changed", Some(30.0))
+        ));
+
+        // 2h since the last run -> healthy, must not alert.
+        assert!(!evaluate_condition(
+            &condition,
+            &node_context("changed", Some(2.0))
+        ));
+
+        // Exactly at the threshold is not "older than".
+        assert!(!evaluate_condition(
+            &condition,
+            &node_context("changed", Some(24.0))
+        ));
+    }
+
+    #[test]
+    fn test_missing_field_never_matches() {
+        // A node that never reported has no last-report age, so numeric
+        // comparisons must not match; `never_reported` covers that case.
+        let context = node_context("unknown", None);
+        assert!(!evaluate_condition(
+            &cond("node.last_report", ">", "24"),
+            &context
+        ));
+        assert!(!evaluate_condition(
+            &cond("node.last_report", "!=", "24"),
+            &context
+        ));
+        assert!(evaluate_condition(
+            &cond("node.never_reported", "eq", "true"),
+            &context
+        ));
+        assert!(evaluate_condition(
+            &cond("node.last_report", "not_exists", ""),
+            &context
+        ));
+        assert!(evaluate_condition(
+            &cond("node.last_report_minutes", "exists", ""),
+            &node_context("changed", Some(1.0))
+        ));
+    }
+
+    #[test]
+    fn test_not_in_operator() {
+        let condition = AlertCondition {
+            condition_type: None,
+            operator: "not_in".to_string(),
+            value: Some(json!(["changed", "unchanged"])),
+            enabled: true,
+            field: Some("node.status".to_string()),
+        };
+
+        assert!(evaluate_condition(
+            &condition,
+            &node_context("failed", Some(1.0))
+        ));
+        assert!(!evaluate_condition(
+            &condition,
+            &node_context("changed", Some(1.0))
+        ));
     }
 
     #[test]
