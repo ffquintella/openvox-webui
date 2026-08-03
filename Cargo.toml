@@ -77,7 +77,7 @@ async-trait = "0.1"
 libc = "0.2"
 
 # Validation
-validator = { version = "0.20", features = ["derive"] }
+validator = { version = "0.21", features = ["derive"] }
 
 # PDF generation
 printpdf = "0.9"
