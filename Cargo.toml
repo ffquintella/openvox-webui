@@ -50,7 +50,7 @@ sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "migrate"] }
 jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 argon2 = { version = "0.5", features = ["std"] }
 rand = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 
 # Configuration
 config = "0.15"
