@@ -73,9 +73,20 @@ export default function CA() {
     if (!status?.ca_expires_at) return null;
     const expiresAt = new Date(status.ca_expires_at);
     const daysUntilExpiry = (expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    if (daysUntilExpiry <= 0) return { level: 'critical', days: 0, message: 'CA certificate has expired!' };
-    if (daysUntilExpiry <= 30) return { level: 'warning', days: Math.floor(daysUntilExpiry), message: `CA certificate expires in ${Math.floor(daysUntilExpiry)} days` };
-    if (daysUntilExpiry <= 90) return { level: 'info', days: Math.floor(daysUntilExpiry), message: `CA certificate expires in ${Math.floor(daysUntilExpiry)} days` };
+    if (daysUntilExpiry <= 0)
+      return { level: 'critical', days: 0, message: 'CA certificate has expired!' };
+    if (daysUntilExpiry <= 30)
+      return {
+        level: 'warning',
+        days: Math.floor(daysUntilExpiry),
+        message: `CA certificate expires in ${Math.floor(daysUntilExpiry)} days`,
+      };
+    if (daysUntilExpiry <= 90)
+      return {
+        level: 'info',
+        days: Math.floor(daysUntilExpiry),
+        message: `CA certificate expires in ${Math.floor(daysUntilExpiry)} days`,
+      };
     return null;
   })();
 
@@ -232,8 +243,8 @@ export default function CA() {
               {confirmAction.type === 'revoke' && (
                 <>
                   Are you sure you want to revoke the certificate for{' '}
-                  <span className="font-mono font-medium">{confirmAction.certname}</span>? This
-                  will immediately invalidate the certificate.
+                  <span className="font-mono font-medium">{confirmAction.certname}</span>? This will
+                  immediately invalidate the certificate.
                 </>
               )}
             </p>
@@ -333,9 +344,7 @@ function OverviewTab({
             </div>
             <FileClock className="w-10 h-10 text-yellow-300" />
           </div>
-          {requests.length > 0 && (
-            <p className="mt-2 text-sm text-yellow-600">Click to review</p>
-          )}
+          {requests.length > 0 && <p className="mt-2 text-sm text-yellow-600">Click to review</p>}
         </div>
 
         {/* Signed Certificates */}
@@ -579,9 +588,7 @@ function CertificatesTab({
       <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
         <FileCheck className="w-12 h-12 text-gray-300 mx-auto" />
         <h3 className="mt-4 text-lg font-medium text-gray-900">No Certificates</h3>
-        <p className="mt-2 text-sm text-gray-500">
-          There are no signed certificates in the CA.
-        </p>
+        <p className="mt-2 text-sm text-gray-500">There are no signed certificates in the CA.</p>
       </div>
     );
   }

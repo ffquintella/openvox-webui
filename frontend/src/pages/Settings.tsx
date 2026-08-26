@@ -236,8 +236,14 @@ function GeneralSettingsTab() {
         </div>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <SettingRow label="URL" value={settings.database.url_masked} mono />
-          <SettingRow label="Max Connections" value={settings.database.max_connections.toString()} />
-          <SettingRow label="Min Connections" value={settings.database.min_connections.toString()} />
+          <SettingRow
+            label="Max Connections"
+            value={settings.database.max_connections.toString()}
+          />
+          <SettingRow
+            label="Min Connections"
+            value={settings.database.min_connections.toString()}
+          />
         </div>
       </div>
 
@@ -286,10 +292,7 @@ function GeneralSettingsTab() {
               value={settings.node_bootstrap.openvox_server_url || 'Not configured'}
               variant={settings.node_bootstrap.openvox_server_url ? 'neutral' : 'warning'}
             />
-            <SettingRow
-              label="Agent Package"
-              value={settings.node_bootstrap.agent_package_name}
-            />
+            <SettingRow label="Agent Package" value={settings.node_bootstrap.agent_package_name} />
             {settings.node_bootstrap.repository_base_url && (
               <div className="col-span-2">
                 <SettingRow
@@ -302,11 +305,14 @@ function GeneralSettingsTab() {
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            Node bootstrap not configured. Add <code className="bg-gray-100 px-1 rounded">node_bootstrap</code> to your config.yaml to enable.
+            Node bootstrap not configured. Add{' '}
+            <code className="bg-gray-100 px-1 rounded">node_bootstrap</code> to your config.yaml to
+            enable.
           </p>
         )}
         <p className="mt-4 text-xs text-gray-500">
-          These settings are used when bootstrapping new nodes. Configure them to enable the Add Node feature.
+          These settings are used when bootstrapping new nodes. Configure them to enable the Add
+          Node feature.
         </p>
       </div>
     </div>
@@ -694,12 +700,7 @@ function ImportExportTab() {
           <label className="btn btn-secondary flex items-center cursor-pointer">
             <Upload className="w-4 h-4 mr-2" />
             Upload YAML File
-            <input
-              type="file"
-              accept=".yaml,.yml"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
+            <input type="file" accept=".yaml,.yml" onChange={handleFileUpload} className="hidden" />
           </label>
 
           {yamlContent && (
@@ -871,7 +872,10 @@ function ImportExportTab() {
         ) : history && history.length > 0 ? (
           <div className="space-y-2">
             {history.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div
+                key={entry.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              >
                 <div className="flex items-center">
                   <Clock className="w-4 h-4 text-gray-400 mr-2" />
                   <div>
@@ -993,12 +997,16 @@ function ServerInfoTab() {
               {serverInfo.saml.configured ? (
                 <>
                   <CheckCircle className="w-5 h-5 text-green-500 mr-2" />
-                  <span className="text-green-700 font-medium">SAML SSO is enabled and configured</span>
+                  <span className="text-green-700 font-medium">
+                    SAML SSO is enabled and configured
+                  </span>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-5 h-5 text-amber-500 mr-2" />
-                  <span className="text-amber-700 font-medium">SAML SSO is enabled but not fully configured</span>
+                  <span className="text-amber-700 font-medium">
+                    SAML SSO is enabled but not fully configured
+                  </span>
                 </>
               )}
             </div>
@@ -1398,7 +1406,9 @@ function CveFeedsTab() {
       setShowAdd(false);
       setNewName('');
       setNewUrl('');
-    } catch { /* handled by mutation */ }
+    } catch {
+      /* handled by mutation */
+    }
   };
 
   return (
@@ -1408,7 +1418,8 @@ function CveFeedsTab() {
           <div>
             <h3 className="text-lg font-medium text-gray-900">CVE Feed Sources</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Configure vulnerability feed sources for CVE detection. Feeds are synced automatically when enabled.
+              Configure vulnerability feed sources for CVE detection. Feeds are synced automatically
+              when enabled.
             </p>
           </div>
           <div className="flex gap-2">
@@ -1417,7 +1428,9 @@ function CveFeedsTab() {
               disabled={refreshMatches.isPending}
               className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshMatches.isPending ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${refreshMatches.isPending ? 'animate-spin' : ''}`}
+              />
               Refresh Matches
             </button>
             <button
@@ -1436,15 +1449,20 @@ function CveFeedsTab() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Name</label>
                 <input
-                  type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                   placeholder="Feed name..."
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Type</label>
-                <select value={newType} onChange={e => setNewType(e.target.value as CveFeedType)}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm">
+                <select
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value as CveFeedType)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                >
                   <option value="nvd_json">NVD JSON</option>
                   <option value="cisa_kev">CISA KEV</option>
                   <option value="custom">Custom</option>
@@ -1454,25 +1472,37 @@ function CveFeedsTab() {
             <div>
               <label className="block text-sm font-medium text-gray-700">Feed URL</label>
               <input
-                type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)}
+                type="url"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
                 placeholder="https://..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Sync Interval (seconds)</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Sync Interval (seconds)
+              </label>
               <input
-                type="number" value={newInterval} onChange={e => setNewInterval(Number(e.target.value))}
+                type="number"
+                value={newInterval}
+                onChange={(e) => setNewInterval(Number(e.target.value))}
                 min={300}
                 className="mt-1 block w-32 rounded-md border-gray-300 shadow-sm text-sm"
               />
             </div>
             <div className="flex gap-2">
-              <button onClick={handleAdd} disabled={!newName || !newUrl || createFeed.isPending}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700 disabled:opacity-50">
+              <button
+                onClick={handleAdd}
+                disabled={!newName || !newUrl || createFeed.isPending}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700 disabled:opacity-50"
+              >
                 {createFeed.isPending ? 'Adding...' : 'Add Feed'}
               </button>
-              <button onClick={() => setShowAdd(false)} className="px-4 py-2 border rounded-md text-sm text-gray-700 hover:bg-gray-50">
+              <button
+                onClick={() => setShowAdd(false)}
+                className="px-4 py-2 border rounded-md text-sm text-gray-700 hover:bg-gray-50"
+              >
                 Cancel
               </button>
             </div>
@@ -1480,37 +1510,50 @@ function CveFeedsTab() {
         )}
 
         {isLoading ? (
-          <div className="flex justify-center py-8"><RefreshCw className="h-6 w-6 animate-spin text-gray-400" /></div>
+          <div className="flex justify-center py-8">
+            <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+          </div>
         ) : !feeds || feeds.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">No CVE feeds configured. Add a feed to start vulnerability detection.</p>
+            <p className="text-sm">
+              No CVE feeds configured. Add a feed to start vulnerability detection.
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {feeds.map(feed => (
+            {feeds.map((feed) => (
               <div key={feed.id} className="border rounded-lg p-4">
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-medium text-gray-900">{feed.name}</h4>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        feed.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          feed.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
                         {feed.enabled ? 'Enabled' : 'Disabled'}
                       </span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{feed.feed_type}</span>
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                        {feed.feed_type}
+                      </span>
                     </div>
                     <p className="text-xs text-gray-500 mt-1 font-mono">{feed.feed_url}</p>
                     <div className="text-xs text-gray-500 mt-1">
-                      Last sync: {feed.last_sync_at ? new Date(feed.last_sync_at).toLocaleString() : 'Never'}
+                      Last sync:{' '}
+                      {feed.last_sync_at ? new Date(feed.last_sync_at).toLocaleString() : 'Never'}
                       {feed.last_sync_status !== 'never' && (
-                        <span className={`ml-2 ${feed.last_sync_status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        <span
+                          className={`ml-2 ${feed.last_sync_status === 'success' ? 'text-green-600' : 'text-red-600'}`}
+                        >
                           ({feed.last_sync_status})
                         </span>
                       )}
                       {feed.last_sync_error && (
-                        <span className="ml-2 text-red-500" title={feed.last_sync_error}>Error</span>
+                        <span className="ml-2 text-red-500" title={feed.last_sync_error}>
+                          Error
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1521,17 +1564,23 @@ function CveFeedsTab() {
                       className="inline-flex items-center px-2 py-1 text-xs border rounded text-gray-700 hover:bg-gray-50"
                       title="Sync now"
                     >
-                      <Play className={`h-3 w-3 mr-1 ${syncFeed.isPending ? 'animate-spin' : ''}`} />
+                      <Play
+                        className={`h-3 w-3 mr-1 ${syncFeed.isPending ? 'animate-spin' : ''}`}
+                      />
                       Sync
                     </button>
                     <button
-                      onClick={() => updateFeed.mutate({ id: feed.id, request: { enabled: !feed.enabled } })}
+                      onClick={() =>
+                        updateFeed.mutate({ id: feed.id, request: { enabled: !feed.enabled } })
+                      }
                       className="px-2 py-1 text-xs border rounded text-gray-700 hover:bg-gray-50"
                     >
                       {feed.enabled ? 'Disable' : 'Enable'}
                     </button>
                     <button
-                      onClick={() => { if (confirm('Delete this feed?')) deleteFeed.mutate(feed.id); }}
+                      onClick={() => {
+                        if (confirm('Delete this feed?')) deleteFeed.mutate(feed.id);
+                      }}
                       className="px-2 py-1 text-xs border border-red-200 rounded text-red-600 hover:bg-red-50"
                     >
                       <Trash2 className="h-3 w-3" />

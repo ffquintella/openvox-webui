@@ -82,7 +82,9 @@ export default function Groups() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<NodeGroup | null>(null);
-  const [activeTab, setActiveTab] = useState<'rules' | 'pinned' | 'classes' | 'variables' | 'schedules'>('rules');
+  const [activeTab, setActiveTab] = useState<
+    'rules' | 'pinned' | 'classes' | 'variables' | 'schedules'
+  >('rules');
   const [showMatchedNodes, setShowMatchedNodes] = useState(false);
 
   // Create/Edit form state
@@ -132,7 +134,8 @@ export default function Groups() {
   const [newScheduleType, setNewScheduleType] = useState<'one_time' | 'recurring'>('recurring');
   const [newScheduleCron, setNewScheduleCron] = useState('');
   const [newScheduleDate, setNewScheduleDate] = useState('');
-  const [newScheduleOperationType, setNewScheduleOperationType] = useState<UpdateOperationType>('system_patch');
+  const [newScheduleOperationType, setNewScheduleOperationType] =
+    useState<UpdateOperationType>('system_patch');
   const [newSchedulePackageNames, setNewSchedulePackageNames] = useState('');
   const [newScheduleRequiresApproval, setNewScheduleRequiresApproval] = useState(false);
 
@@ -149,7 +152,7 @@ export default function Groups() {
 
   const toggleGroupCollapse = (groupId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent selecting the group when clicking the collapse toggle
-    setCollapsedGroups(prev => {
+    setCollapsedGroups((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(groupId)) {
         newSet.delete(groupId);
@@ -304,8 +307,15 @@ export default function Groups() {
   });
 
   const updateScheduleMutation = useMutation({
-    mutationFn: ({ groupId, scheduleId, data }: { groupId: string; scheduleId: string; data: { enabled?: boolean } }) =>
-      api.updateGroupUpdateSchedule(groupId, scheduleId, data),
+    mutationFn: ({
+      groupId,
+      scheduleId,
+      data,
+    }: {
+      groupId: string;
+      scheduleId: string;
+      data: { enabled?: boolean };
+    }) => api.updateGroupUpdateSchedule(groupId, scheduleId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group-schedules'] });
     },
@@ -390,7 +400,10 @@ export default function Groups() {
       data.scheduled_for = new Date(newScheduleDate).toISOString();
     }
     if (newScheduleOperationType === 'package_update' && newSchedulePackageNames.trim()) {
-      data.package_names = newSchedulePackageNames.split(',').map(s => s.trim()).filter(Boolean);
+      data.package_names = newSchedulePackageNames
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
 
     createScheduleMutation.mutate({ groupId: selectedGroup.id, data });
@@ -667,9 +680,7 @@ export default function Groups() {
             ) : (
               <span className="w-5 mr-1 flex-shrink-0" /> /* Spacer for alignment */
             )}
-            {depth > 0 && (
-              <GitBranch className="w-4 h-4 text-gray-300 mr-2 flex-shrink-0" />
-            )}
+            {depth > 0 && <GitBranch className="w-4 h-4 text-gray-300 mr-2 flex-shrink-0" />}
             <FolderTree
               className={clsx(
                 'w-5 h-5 mr-3 flex-shrink-0',
@@ -677,7 +688,12 @@ export default function Groups() {
               )}
             />
             <div className="min-w-0">
-              <p className={clsx('font-medium truncate', isSelected ? 'text-primary-900' : 'text-gray-900')}>
+              <p
+                className={clsx(
+                  'font-medium truncate',
+                  isSelected ? 'text-primary-900' : 'text-gray-900'
+                )}
+              >
                 {group.name}
               </p>
               {group.description && (
@@ -691,7 +707,7 @@ export default function Groups() {
           </div>
         </button>
         {/* Only render children if not collapsed */}
-        {!isCollapsed && children.map(child => renderGroupItem(child, depth + 1))}
+        {!isCollapsed && children.map((child) => renderGroupItem(child, depth + 1))}
       </div>
     );
   };
@@ -851,7 +867,8 @@ export default function Groups() {
                       <div>
                         <span className="text-sm font-medium text-gray-700">Environment Group</span>
                         <p className="text-xs text-gray-500">
-                          When enabled, this group assigns its environment to matching nodes instead of filtering by the node's current environment
+                          When enabled, this group assigns its environment to matching nodes instead
+                          of filtering by the node's current environment
                         </p>
                       </div>
                     </label>
@@ -868,7 +885,9 @@ export default function Groups() {
                     <div>
                       <span className="text-sm font-medium text-gray-700">Match All Nodes</span>
                       <p className="text-xs text-gray-500">
-                        When enabled, this group matches all nodes (within parent context) when no rules are defined. When disabled (default), groups with no rules match no nodes.
+                        When enabled, this group matches all nodes (within parent context) when no
+                        rules are defined. When disabled (default), groups with no rules match no
+                        nodes.
                       </p>
                     </div>
                   </label>
@@ -916,7 +935,7 @@ export default function Groups() {
                   disabled={createMutation.isPending || updateMutation.isPending}
                   className="btn btn-primary"
                 >
-                  {(createMutation.isPending || updateMutation.isPending) ? (
+                  {createMutation.isPending || updateMutation.isPending ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : null}
                   {isCreateOpen ? 'Create' : 'Save Changes'}
@@ -951,7 +970,7 @@ export default function Groups() {
               </div>
             </div>
             <div className="divide-y divide-gray-100 max-h-[calc(100vh-280px)] overflow-y-auto">
-              {groupHierarchy.rootGroups.map(group => renderGroupItem(group))}
+              {groupHierarchy.rootGroups.map((group) => renderGroupItem(group))}
               {groups.length === 0 && (
                 <div className="p-8 text-center text-gray-500">
                   <FolderTree className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -979,10 +998,7 @@ export default function Groups() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={openEditModal}
-                    className="btn btn-secondary flex items-center"
-                  >
+                  <button onClick={openEditModal} className="btn btn-secondary flex items-center">
                     <Edit2 className="w-4 h-4 mr-2" />
                     Edit
                   </button>
@@ -1076,7 +1092,7 @@ export default function Groups() {
                     { id: 'classes', label: 'Classes', icon: Settings },
                     { id: 'variables', label: 'Variables', icon: Variable },
                     { id: 'schedules', label: 'Update Schedules', icon: CalendarClock },
-                  ].map(tab => (
+                  ].map((tab) => (
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as typeof activeTab)}
@@ -1161,7 +1177,7 @@ export default function Groups() {
                               onChange={(e) => setNewRuleOperator(e.target.value as RuleOperator)}
                               className="input"
                             >
-                              {RULE_OPERATORS.map(op => (
+                              {RULE_OPERATORS.map((op) => (
                                 <option key={op.value} value={op.value}>
                                   {op.label} ({op.description})
                                 </option>
@@ -1175,9 +1191,11 @@ export default function Groups() {
                               value={newRuleValue}
                               onChange={(e) => setNewRuleValue(e.target.value)}
                               className="input"
-                              placeholder={newRuleOperator === 'in' || newRuleOperator === 'not_in'
-                                ? 'value1, value2, ...'
-                                : 'e.g., RedHat'}
+                              placeholder={
+                                newRuleOperator === 'in' || newRuleOperator === 'not_in'
+                                  ? 'value1, value2, ...'
+                                  : 'e.g., RedHat'
+                              }
                               required
                             />
                           </div>
@@ -1225,7 +1243,9 @@ export default function Groups() {
                               />
                               <select
                                 value={editingRuleOperator}
-                                onChange={(e) => setEditingRuleOperator(e.target.value as RuleOperator)}
+                                onChange={(e) =>
+                                  setEditingRuleOperator(e.target.value as RuleOperator)
+                                }
                                 className="input w-28 shrink-0 text-sm"
                               >
                                 {RULE_OPERATORS.map((op) => (
@@ -1328,15 +1348,18 @@ export default function Groups() {
                   {/* Add Pinned Form */}
                   {isAddPinnedOpen && (
                     <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
-                      <form onSubmit={(e) => {
-                        e.preventDefault();
-                        if (selectedGroup && newPinnedNode) {
-                          addPinnedMutation.mutate({
-                            groupId: selectedGroup.id,
-                            certname: newPinnedNode,
-                          });
-                        }
-                      }} className="flex gap-4">
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (selectedGroup && newPinnedNode) {
+                            addPinnedMutation.mutate({
+                              groupId: selectedGroup.id,
+                              certname: newPinnedNode,
+                            });
+                          }
+                        }}
+                        className="flex gap-4"
+                      >
                         <div className="flex-1">
                           <NodeAutocomplete
                             value={newPinnedNode}
@@ -1379,10 +1402,12 @@ export default function Groups() {
                             <span className="font-medium text-gray-900">{certname}</span>
                           </div>
                           <button
-                            onClick={() => removePinnedMutation.mutate({
-                              groupId: selectedGroup.id,
-                              certname,
-                            })}
+                            onClick={() =>
+                              removePinnedMutation.mutate({
+                                groupId: selectedGroup.id,
+                                certname,
+                              })
+                            }
                             disabled={removePinnedMutation.isPending}
                             className="text-gray-400 hover:text-red-600 transition-colors"
                           >
@@ -1460,7 +1485,9 @@ export default function Groups() {
                           {/* Class Header */}
                           <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-medium text-gray-900">{className}</span>
+                              <span className="font-mono font-medium text-gray-900">
+                                {className}
+                              </span>
                               {Object.keys(params as Record<string, unknown>).length > 0 && (
                                 <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
                                   {Object.keys(params as Record<string, unknown>).length} params
@@ -1470,7 +1497,9 @@ export default function Groups() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => {
-                                  setEditingClassParams(editingClassParams === className ? null : className);
+                                  setEditingClassParams(
+                                    editingClassParams === className ? null : className
+                                  );
                                   setNewClassParamKey('');
                                   setNewClassParamValue('');
                                 }}
@@ -1496,7 +1525,11 @@ export default function Groups() {
                                 <form
                                   onSubmit={(e) => {
                                     e.preventDefault();
-                                    handleAddClassParameter(className, newClassParamKey, newClassParamValue);
+                                    handleAddClassParameter(
+                                      className,
+                                      newClassParamKey,
+                                      newClassParamValue
+                                    );
                                     setNewClassParamKey('');
                                     setNewClassParamValue('');
                                     setEditingClassParams(null);
@@ -1542,26 +1575,30 @@ export default function Groups() {
                             {/* Parameter List */}
                             {Object.keys(params as Record<string, unknown>).length > 0 ? (
                               <div className="space-y-1">
-                                {Object.entries(params as Record<string, unknown>).map(([key, value]) => (
-                                  <div
-                                    key={key}
-                                    className="flex items-center justify-between py-1.5 px-2 hover:bg-gray-50 rounded group"
-                                  >
-                                    <div className="flex items-center gap-2 font-mono text-sm">
-                                      <span className="text-gray-600">{key}</span>
-                                      <span className="text-gray-400">=</span>
-                                      <span className="text-primary-600">
-                                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                      </span>
-                                    </div>
-                                    <button
-                                      onClick={() => handleRemoveClassParameter(className, key)}
-                                      className="text-gray-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                {Object.entries(params as Record<string, unknown>).map(
+                                  ([key, value]) => (
+                                    <div
+                                      key={key}
+                                      className="flex items-center justify-between py-1.5 px-2 hover:bg-gray-50 rounded group"
                                     >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ))}
+                                      <div className="flex items-center gap-2 font-mono text-sm">
+                                        <span className="text-gray-600">{key}</span>
+                                        <span className="text-gray-400">=</span>
+                                        <span className="text-primary-600">
+                                          {typeof value === 'object'
+                                            ? JSON.stringify(value)
+                                            : String(value)}
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={() => handleRemoveClassParameter(className, key)}
+                                        className="text-gray-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )
+                                )}
                               </div>
                             ) : (
                               <p className="text-gray-400 text-sm py-2">No parameters</p>
@@ -1670,7 +1707,9 @@ export default function Groups() {
                               placeholder="e.g., 0 0 2 * * *"
                               required
                             />
-                            <p className="text-xs text-gray-500 mt-1">6-field cron: sec min hour dom month dow</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              6-field cron: sec min hour dom month dow
+                            </p>
                             <div className="flex gap-2 mt-2">
                               <button
                                 type="button"
@@ -1700,7 +1739,9 @@ export default function Groups() {
                           <label className="label">Operation Type</label>
                           <select
                             value={newScheduleOperationType}
-                            onChange={(e) => setNewScheduleOperationType(e.target.value as UpdateOperationType)}
+                            onChange={(e) =>
+                              setNewScheduleOperationType(e.target.value as UpdateOperationType)
+                            }
                             className="input"
                           >
                             <option value="system_patch">System Patch</option>
@@ -1728,7 +1769,9 @@ export default function Groups() {
                               onChange={(e) => setNewScheduleRequiresApproval(e.target.checked)}
                               className="mr-2"
                             />
-                            <span className="text-sm font-medium text-gray-700">Requires Approval</span>
+                            <span className="text-sm font-medium text-gray-700">
+                              Requires Approval
+                            </span>
                           </label>
                         </div>
                         <div className="flex justify-end gap-2">
@@ -1767,8 +1810,11 @@ export default function Groups() {
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="font-medium text-gray-900">{schedule.name}</span>
                                 <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
-                                  {schedule.operation_type === 'system_patch' ? 'System Patch' :
-                                   schedule.operation_type === 'security_patch' ? 'Security Patch' : 'Package Update'}
+                                  {schedule.operation_type === 'system_patch'
+                                    ? 'System Patch'
+                                    : schedule.operation_type === 'security_patch'
+                                      ? 'Security Patch'
+                                      : 'Package Update'}
                                 </span>
                               </div>
                               {schedule.description && (
@@ -1852,7 +1898,9 @@ export default function Groups() {
                       <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
                         <CalendarClock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                         <p>No update schedules defined</p>
-                        <p className="text-sm mt-1">Create one to automate updates for this group's nodes.</p>
+                        <p className="text-sm mt-1">
+                          Create one to automate updates for this group's nodes.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1928,77 +1976,84 @@ export default function Groups() {
                   )}
 
                   <div className="space-y-2">
-                    {selectedGroup.variables && Object.keys(selectedGroup.variables as Record<string, unknown>).length > 0 ? (
-                      Object.entries(selectedGroup.variables as Record<string, unknown>).map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
-                        >
-                          {editingVariableKey === key ? (
-                            <div className="flex-1 flex items-center gap-2">
-                              <Variable className="w-4 h-4 text-green-500 flex-shrink-0" />
-                              <input
-                                type="text"
-                                value={editingVarKey}
-                                onChange={(e) => setEditingVarKey(e.target.value)}
-                                className="input flex-1 text-sm font-mono"
-                                placeholder="Variable key"
-                              />
-                              <input
-                                type="text"
-                                value={editingVarValue}
-                                onChange={(e) => setEditingVarValue(e.target.value)}
-                                className="input flex-1 text-sm font-mono"
-                                placeholder="Variable value"
-                              />
-                              <button
-                                onClick={handleSaveEditedVariable}
-                                className="btn btn-primary text-sm"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => resetEditingVariableForm()}
-                                className="btn btn-secondary text-sm"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="flex items-center gap-3 font-mono text-sm">
-                                <Variable className="w-4 h-4 text-green-500" />
-                                <span className="font-medium text-gray-900">{key}</span>
-                                <span className="text-gray-400">=&gt;</span>
-                                <span className="text-green-600">
-                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
+                    {selectedGroup.variables &&
+                    Object.keys(selectedGroup.variables as Record<string, unknown>).length > 0 ? (
+                      Object.entries(selectedGroup.variables as Record<string, unknown>).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3"
+                          >
+                            {editingVariableKey === key ? (
+                              <div className="flex-1 flex items-center gap-2">
+                                <Variable className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                <input
+                                  type="text"
+                                  value={editingVarKey}
+                                  onChange={(e) => setEditingVarKey(e.target.value)}
+                                  className="input flex-1 text-sm font-mono"
+                                  placeholder="Variable key"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingVarValue}
+                                  onChange={(e) => setEditingVarValue(e.target.value)}
+                                  className="input flex-1 text-sm font-mono"
+                                  placeholder="Variable value"
+                                />
                                 <button
-                                  onClick={() => startEditingVariable(key, value)}
-                                  className="text-gray-400 hover:text-blue-600 transition-colors"
-                                  title="Edit variable"
+                                  onClick={handleSaveEditedVariable}
+                                  className="btn btn-primary text-sm"
                                 >
-                                  <Edit2 className="w-4 h-4" />
+                                  Save
                                 </button>
                                 <button
-                                  onClick={() => handleRemoveVariable(key)}
-                                  className="text-gray-400 hover:text-red-600 transition-colors"
-                                  title="Delete variable"
+                                  onClick={() => resetEditingVariableForm()}
+                                  className="btn btn-secondary text-sm"
                                 >
-                                  <X className="w-4 h-4" />
+                                  Cancel
                                 </button>
                               </div>
-                            </>
-                          )}
-                        </div>
-                      ))
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-3 font-mono text-sm">
+                                  <Variable className="w-4 h-4 text-green-500" />
+                                  <span className="font-medium text-gray-900">{key}</span>
+                                  <span className="text-gray-400">=&gt;</span>
+                                  <span className="text-green-600">
+                                    {typeof value === 'object'
+                                      ? JSON.stringify(value)
+                                      : String(value)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => startEditingVariable(key, value)}
+                                    className="text-gray-400 hover:text-blue-600 transition-colors"
+                                    title="Edit variable"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveVariable(key)}
+                                    className="text-gray-400 hover:text-red-600 transition-colors"
+                                    title="Delete variable"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      )
                     ) : (
                       <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
                         <Variable className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                         <p>No variables defined</p>
-                        <p className="text-sm mt-1">Add variables to export as external facts via Facter</p>
+                        <p className="text-sm mt-1">
+                          Add variables to export as external facts via Facter
+                        </p>
                       </div>
                     )}
                   </div>

@@ -67,10 +67,7 @@ export default function Permissions() {
             <p className="text-red-800 font-medium">Error</p>
             <p className="text-red-600 text-sm">{error}</p>
           </div>
-          <button
-            onClick={() => setError(null)}
-            className="text-red-400 hover:text-red-600"
-          >
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
             &times;
           </button>
         </div>
@@ -130,10 +127,7 @@ export default function Permissions() {
             </h2>
             <div className="space-y-4">
               {actions.map((action) => (
-                <div
-                  key={action.name}
-                  className="p-4 bg-gray-50 rounded-lg border border-gray-200"
-                >
+                <div key={action.name} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="font-medium text-gray-900">{action.display_name}</h3>
                     <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded">

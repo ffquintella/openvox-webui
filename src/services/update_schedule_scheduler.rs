@@ -278,7 +278,10 @@ fn compute_next_run(
 /// defaulting to [`DEFAULT_MAX_RUNTIME_MINUTES`].
 async fn read_max_runtime_minutes(main_pool: &SqlitePool) -> i64 {
     let settings_repo = SettingsRepository::new(main_pool.clone());
-    match settings_repo.get_setting("update_jobs.max_runtime_minutes").await {
+    match settings_repo
+        .get_setting("update_jobs.max_runtime_minutes")
+        .await
+    {
         Ok(Some(setting)) => setting
             .value
             .trim()

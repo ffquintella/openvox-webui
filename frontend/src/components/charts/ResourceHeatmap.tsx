@@ -73,11 +73,7 @@ export default function ResourceHeatmap({
         <span>Less</span>
         <div className="flex gap-0.5">
           {RAMP.map((color) => (
-            <div
-              key={color}
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: color }}
-            />
+            <div key={color} className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
           ))}
         </div>
         <span>More</span>

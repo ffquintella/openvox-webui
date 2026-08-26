@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Enable class-based dark mode (like Tailwind v3's darkMode: 'class') */
 @variant dark (&:where(.dark, .dark *));
@@ -173,13 +173,13 @@ body {
 }
 
 /* Global form element styling for better contrast */
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="number"],
-input[type="search"],
-input[type="tel"],
-input[type="url"],
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='number'],
+input[type='search'],
+input[type='tel'],
+input[type='url'],
 textarea,
 select {
   background-color: #ffffff;
@@ -187,24 +187,24 @@ select {
   border-color: #d1d5db;
 }
 
-input[type="text"]::placeholder,
-input[type="email"]::placeholder,
-input[type="password"]::placeholder,
-input[type="number"]::placeholder,
-input[type="search"]::placeholder,
-input[type="tel"]::placeholder,
-input[type="url"]::placeholder,
+input[type='text']::placeholder,
+input[type='email']::placeholder,
+input[type='password']::placeholder,
+input[type='number']::placeholder,
+input[type='search']::placeholder,
+input[type='tel']::placeholder,
+input[type='url']::placeholder,
 textarea::placeholder {
   color: #9ca3af;
 }
 
-.dark input[type="text"],
-.dark input[type="email"],
-.dark input[type="password"],
-.dark input[type="number"],
-.dark input[type="search"],
-.dark input[type="tel"],
-.dark input[type="url"],
+.dark input[type='text'],
+.dark input[type='email'],
+.dark input[type='password'],
+.dark input[type='number'],
+.dark input[type='search'],
+.dark input[type='tel'],
+.dark input[type='url'],
 .dark textarea,
 .dark select {
   background-color: #1f2937;
@@ -212,13 +212,13 @@ textarea::placeholder {
   border-color: #4b5563;
 }
 
-.dark input[type="text"]::placeholder,
-.dark input[type="email"]::placeholder,
-.dark input[type="password"]::placeholder,
-.dark input[type="number"]::placeholder,
-.dark input[type="search"]::placeholder,
-.dark input[type="tel"]::placeholder,
-.dark input[type="url"]::placeholder,
+.dark input[type='text']::placeholder,
+.dark input[type='email']::placeholder,
+.dark input[type='password']::placeholder,
+.dark input[type='number']::placeholder,
+.dark input[type='search']::placeholder,
+.dark input[type='tel']::placeholder,
+.dark input[type='url']::placeholder,
 .dark textarea::placeholder {
   color: #6b7280;
 }

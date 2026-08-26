@@ -380,7 +380,7 @@ impl GitService {
             let commit = branch.get().peel_to_commit()?;
             let commit_info = commit_to_info(&commit);
 
-            let is_default = default_branch.as_ref().map_or(false, |d| d == &branch_name);
+            let is_default = default_branch.as_ref() == Some(&branch_name);
 
             branches.push(BranchInfo {
                 name: branch_name,
@@ -539,11 +539,9 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
     }
 
     // Simple glob matching
-    if pattern.ends_with('*') {
-        let prefix = &pattern[..pattern.len() - 1];
+    if let Some(prefix) = pattern.strip_suffix('*') {
         name.starts_with(prefix)
-    } else if pattern.starts_with('*') {
-        let suffix = &pattern[1..];
+    } else if let Some(suffix) = pattern.strip_prefix('*') {
         name.ends_with(suffix)
     } else if pattern.contains('*') {
         // Handle patterns like "feature/*/test"

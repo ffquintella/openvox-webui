@@ -828,75 +828,6 @@ fn check_config_warnings(content: &str) -> Vec<String> {
     warnings
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mask_database_url_postgres() {
-        let url = "postgres://admin:secretpassword@localhost:5432/openvox";
-        let masked = mask_database_url(url);
-        assert_eq!(masked, "postgres://admin:********@localhost:5432/openvox");
-    }
-
-    #[test]
-    fn test_mask_database_url_sqlite() {
-        let url = "sqlite://./data/openvox.db";
-        let masked = mask_database_url(url);
-        assert_eq!(masked, url);
-    }
-
-    #[test]
-    fn test_validate_yaml_config_valid() {
-        let config = r#"
-auth:
-  jwt_secret: "this-is-a-valid-secret-that-is-at-least-32-characters"
-database:
-  url: "sqlite://./test.db"
-"#;
-        let errors = validate_yaml_config(config);
-        assert!(errors.is_empty());
-    }
-
-    #[test]
-    fn test_validate_yaml_config_missing_auth() {
-        let config = r#"
-database:
-  url: "sqlite://./test.db"
-"#;
-        let errors = validate_yaml_config(config);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("Missing required section: 'auth'")));
-    }
-
-    #[test]
-    fn test_validate_yaml_config_invalid_port() {
-        let config = r#"
-auth:
-  jwt_secret: "this-is-a-valid-secret-that-is-at-least-32-characters"
-database:
-  url: "sqlite://./test.db"
-server:
-  port: 0
-"#;
-        let errors = validate_yaml_config(config);
-        assert!(errors.iter().any(|e| e.contains("port must be between")));
-    }
-
-    #[test]
-    fn test_check_config_warnings_default_secret() {
-        let config = r#"
-auth:
-  jwt_secret: "change-me-in-production"
-database:
-  url: "sqlite://./test.db"
-"#;
-        let warnings = check_config_warnings(config);
-        assert!(warnings.iter().any(|w| w.contains("default value")));
-    }
-}
-
 // ============================================================================
 // SMTP Settings Endpoints
 // ============================================================================
@@ -1004,5 +935,74 @@ async fn update_update_job_settings(
                 )),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mask_database_url_postgres() {
+        let url = "postgres://admin:secretpassword@localhost:5432/openvox";
+        let masked = mask_database_url(url);
+        assert_eq!(masked, "postgres://admin:********@localhost:5432/openvox");
+    }
+
+    #[test]
+    fn test_mask_database_url_sqlite() {
+        let url = "sqlite://./data/openvox.db";
+        let masked = mask_database_url(url);
+        assert_eq!(masked, url);
+    }
+
+    #[test]
+    fn test_validate_yaml_config_valid() {
+        let config = r#"
+auth:
+  jwt_secret: "this-is-a-valid-secret-that-is-at-least-32-characters"
+database:
+  url: "sqlite://./test.db"
+"#;
+        let errors = validate_yaml_config(config);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_yaml_config_missing_auth() {
+        let config = r#"
+database:
+  url: "sqlite://./test.db"
+"#;
+        let errors = validate_yaml_config(config);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Missing required section: 'auth'")));
+    }
+
+    #[test]
+    fn test_validate_yaml_config_invalid_port() {
+        let config = r#"
+auth:
+  jwt_secret: "this-is-a-valid-secret-that-is-at-least-32-characters"
+database:
+  url: "sqlite://./test.db"
+server:
+  port: 0
+"#;
+        let errors = validate_yaml_config(config);
+        assert!(errors.iter().any(|e| e.contains("port must be between")));
+    }
+
+    #[test]
+    fn test_check_config_warnings_default_secret() {
+        let config = r#"
+auth:
+  jwt_secret: "change-me-in-production"
+database:
+  url: "sqlite://./test.db"
+"#;
+        let warnings = check_config_warnings(config);
+        assert!(warnings.iter().any(|w| w.contains("default value")));
     }
 }

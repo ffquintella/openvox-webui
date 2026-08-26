@@ -3,6 +3,9 @@
 //! This module defines the data structures for the alerting system including
 //! alert rules, notification channels, and alert instances.
 
+// These database-facing parsers intentionally return `Option` for fallback handling.
+#![allow(clippy::should_implement_trait)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -85,8 +88,10 @@ impl AlertRuleType {
 /// Alert severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AlertSeverity {
     Info,
+    #[default]
     Warning,
     Critical,
 }
@@ -110,16 +115,12 @@ impl AlertSeverity {
     }
 }
 
-impl Default for AlertSeverity {
-    fn default() -> Self {
-        AlertSeverity::Warning
-    }
-}
-
 /// Condition operator for combining multiple conditions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ConditionOperator {
+    #[default]
     All, // AND - all conditions must match
     Any, // OR - any condition must match
 }
@@ -141,16 +142,12 @@ impl ConditionOperator {
     }
 }
 
-impl Default for ConditionOperator {
-    fn default() -> Self {
-        ConditionOperator::All
-    }
-}
-
 /// Alert status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AlertStatus {
+    #[default]
     Active,
     Acknowledged,
     Resolved,
@@ -175,12 +172,6 @@ impl AlertStatus {
             "silenced" => Some(AlertStatus::Silenced),
             _ => None,
         }
-    }
-}
-
-impl Default for AlertStatus {
-    fn default() -> Self {
-        AlertStatus::Active
     }
 }
 

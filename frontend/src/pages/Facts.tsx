@@ -7,7 +7,12 @@ export default function Facts() {
   const [search, setSearch] = useState('');
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
 
-  const { data: factNames = [], isLoading: namesLoading, isError: namesError, error: namesErrorData } = useQuery({
+  const {
+    data: factNames = [],
+    isLoading: namesLoading,
+    isError: namesError,
+    error: namesErrorData,
+  } = useQuery({
     queryKey: ['fact-names'],
     queryFn: api.getFactNames,
   });
@@ -32,7 +37,10 @@ export default function Facts() {
 
   if (namesError) {
     const errorMessage = (namesErrorData as Error)?.message || 'Unknown error';
-    const isPuppetDBUnavailable = errorMessage.includes('503') || errorMessage.includes('Service Unavailable') || errorMessage.includes('PuppetDB');
+    const isPuppetDBUnavailable =
+      errorMessage.includes('503') ||
+      errorMessage.includes('Service Unavailable') ||
+      errorMessage.includes('PuppetDB');
 
     return (
       <div className="flex items-center justify-center h-64">
@@ -79,9 +87,7 @@ export default function Facts() {
                   <button
                     onClick={() => setSelectedFact(name)}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm ${
-                      selectedFact === name
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'hover:bg-gray-100'
+                      selectedFact === name ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-100'
                     }`}
                   >
                     {name}
@@ -121,26 +127,26 @@ export default function Facts() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {factValues.map((fact: { certname: string; value: unknown }, index: number) => (
-                        <tr key={`${fact.certname}-${index}`}>
-                          <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                            {fact.certname}
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-600">
-                            <code className="bg-gray-100 px-2 py-1 rounded">
-                              {typeof fact.value === 'object'
-                                ? JSON.stringify(fact.value)
-                                : String(fact.value)}
-                            </code>
-                          </td>
-                        </tr>
-                      ))}
+                      {factValues.map(
+                        (fact: { certname: string; value: unknown }, index: number) => (
+                          <tr key={`${fact.certname}-${index}`}>
+                            <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                              {fact.certname}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-600">
+                              <code className="bg-gray-100 px-2 py-1 rounded">
+                                {typeof fact.value === 'object'
+                                  ? JSON.stringify(fact.value)
+                                  : String(fact.value)}
+                              </code>
+                            </td>
+                          </tr>
+                        )
+                      )}
                     </tbody>
                   </table>
                   {factValues.length === 0 && (
-                    <p className="text-center text-gray-500 py-4">
-                      No values found for this fact
-                    </p>
+                    <p className="text-center text-gray-500 py-4">No values found for this fact</p>
                   )}
                 </div>
               )}

@@ -91,7 +91,7 @@ async fn check_group_permission(
     if check.allowed {
         Ok(())
     } else {
-        Err(AppError::forbidden(&check.reason.unwrap_or_else(|| {
+        Err(AppError::forbidden(check.reason.unwrap_or_else(|| {
             "No matching permission found".to_string()
         })))
     }
@@ -544,7 +544,7 @@ async fn create_update_schedule(
         .await
         .map_err(|e| {
             tracing::error!("Failed to create update schedule: {}", e);
-            AppError::bad_request(&format!("Failed to create update schedule: {}", e))
+            AppError::bad_request(format!("Failed to create update schedule: {}", e))
         })?;
 
     Ok((StatusCode::CREATED, Json(schedule)))
@@ -586,7 +586,7 @@ async fn update_update_schedule(
         .await
         .map_err(|e| {
             tracing::error!("Failed to update schedule: {}", e);
-            AppError::bad_request(&format!("Failed to update schedule: {}", e))
+            AppError::bad_request(format!("Failed to update schedule: {}", e))
         })?
         .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
 
@@ -630,7 +630,7 @@ async fn run_update_schedule(
     let schedule = inv_repo
         .get_group_update_schedule(&schedule_id)
         .await
-        .map_err(|e| AppError::internal(&format!("Failed to fetch schedule: {}", e)))?
+        .map_err(|e| AppError::internal(format!("Failed to fetch schedule: {}", e)))?
         .ok_or_else(|| AppError::not_found("Update schedule not found"))?;
 
     // Resolve group members (pinned + rule-matched)
@@ -660,7 +660,7 @@ async fn run_update_schedule(
             )),
         )
         .await
-        .map_err(|e| AppError::internal(&format!("Failed to create update job: {}", e)))?;
+        .map_err(|e| AppError::internal(format!("Failed to create update job: {}", e)))?;
 
     // Update schedule last_run_at
     let _ = inv_repo

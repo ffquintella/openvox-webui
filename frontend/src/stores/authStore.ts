@@ -121,7 +121,8 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => (state, _error) => {
-        const storedToken = typeof window !== 'undefined' ? safeLocalStorageGet('auth_token') : null;
+        const storedToken =
+          typeof window !== 'undefined' ? safeLocalStorageGet('auth_token') : null;
         if (state) {
           state.hasHydrated = true;
           state.token = state.token ?? storedToken;

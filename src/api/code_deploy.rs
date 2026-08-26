@@ -100,10 +100,7 @@ async fn get_feature_status(
     State(state): State<AppState>,
     _auth_user: AuthUser,
 ) -> Json<CodeDeployFeatureStatus> {
-    let enabled = state
-        .code_deploy_config
-        .as_ref()
-        .map_or(false, |c| c.enabled);
+    let enabled = state.code_deploy_config.as_ref().is_some_and(|c| c.enabled);
 
     let message = if !enabled {
         Some("Code Deploy feature is not enabled. To enable it, add the following to your config.yaml:\n\ncode_deploy:\n  enabled: true\n  repos_base_dir: /var/lib/openvox-webui/code-deploy/repos\n  ssh_keys_dir: /etc/openvox-webui/code-deploy/ssh-keys\n  r10k_path: /opt/puppetlabs/puppet/bin/r10k\n  encryption_key: <your-encryption-key>".to_string())
@@ -184,7 +181,7 @@ async fn delete_ssh_key(
     let deleted = service.delete_ssh_key(id).await.map_err(|e| {
         tracing::error!("Failed to delete SSH key: {}", e);
         if e.to_string().contains("in use") {
-            AppError::conflict(&e.to_string())
+            AppError::conflict(e.to_string())
         } else {
             AppError::internal("Failed to delete SSH key")
         }
@@ -290,7 +287,7 @@ async fn delete_pat_token(
     let deleted = service.delete_pat_token(id).await.map_err(|e| {
         tracing::error!("Failed to delete PAT token: {}", e);
         if e.to_string().contains("in use") {
-            AppError::conflict(&e.to_string())
+            AppError::conflict(e.to_string())
         } else {
             AppError::internal("Failed to delete PAT token")
         }
@@ -454,7 +451,7 @@ async fn sync_repository(
         if e.to_string().contains("not found") {
             AppError::not_found("Repository not found")
         } else {
-            AppError::internal(&format!("Failed to sync repository: {}", e))
+            AppError::internal(format!("Failed to sync repository: {}", e))
         }
     })?;
 
@@ -616,7 +613,7 @@ async fn trigger_deployment(
             if e.to_string().contains("not found") {
                 AppError::not_found("Environment not found")
             } else {
-                AppError::internal(&format!("Failed to trigger deployment: {}", e))
+                AppError::internal(format!("Failed to trigger deployment: {}", e))
             }
         })?;
 
@@ -739,7 +736,7 @@ async fn retry_deployment(
             if e.to_string().contains("not found") {
                 AppError::not_found("Deployment not found")
             } else if e.to_string().contains("cannot be retried") {
-                AppError::bad_request(&e.to_string())
+                AppError::bad_request(e.to_string())
             } else {
                 AppError::internal("Failed to retry deployment")
             }

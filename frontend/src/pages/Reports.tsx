@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, CheckCircle, XCircle, Clock, AlertCircle, ArrowRightLeft, Loader2 } from 'lucide-react';
+import {
+  FileText,
+  CheckCircle,
+  XCircle,
+  Clock,
+  AlertCircle,
+  ArrowRightLeft,
+  Loader2,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import { Report, ResourceEvent } from '../types';
@@ -42,7 +50,8 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api.getReportEvents(reportHash)
+    api
+      .getReportEvents(reportHash)
       .then((data) => {
         setEvents(data);
         setLoading(false);
@@ -201,7 +210,9 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
             )}
 
             {/* Source location and containment path */}
-            {(event.file || event.containing_class || (event.containment_path && event.containment_path.length > 0)) && (
+            {(event.file ||
+              event.containing_class ||
+              (event.containment_path && event.containment_path.length > 0)) && (
               <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
                 {event.containing_class && (
                   <p className="text-xs text-gray-500">
@@ -210,7 +221,11 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
                 )}
                 {event.file && (
                   <p className="text-xs text-gray-500">
-                    File: <span className="font-mono">{event.file}{event.line ? `:${event.line}` : ''}</span>
+                    File:{' '}
+                    <span className="font-mono">
+                      {event.file}
+                      {event.line ? `:${event.line}` : ''}
+                    </span>
                   </p>
                 )}
                 {event.containment_path && event.containment_path.length > 0 && (
@@ -277,11 +292,13 @@ export default function Reports() {
           const isExpanded = expandedReport === report.hash;
 
           return (
-            <div key={report.hash} className={clsx(
-              'card transition-all cursor-pointer',
-              isExpanded && 'ring-2 ring-primary-200'
-            )}
-            onClick={() => setExpandedReport(isExpanded ? null : report.hash)}
+            <div
+              key={report.hash}
+              className={clsx(
+                'card transition-all cursor-pointer',
+                isExpanded && 'ring-2 ring-primary-200'
+              )}
+              onClick={() => setExpandedReport(isExpanded ? null : report.hash)}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
@@ -323,14 +340,15 @@ export default function Reports() {
 
               {/* Expanded Details */}
               {isExpanded && (
-                <div className="mt-6 pt-6 border-t border-gray-200 space-y-4" onClick={(e) => e.stopPropagation()}>
+                <div
+                  className="mt-6 pt-6 border-t border-gray-200 space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {/* Report metadata */}
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-gray-500">Report Hash</p>
-                      <p className="font-mono text-xs text-gray-700 truncate">
-                        {report.hash}
-                      </p>
+                      <p className="font-mono text-xs text-gray-700 truncate">{report.hash}</p>
                     </div>
                     <div>
                       <p className="text-gray-500">Puppet Version</p>
@@ -388,9 +406,7 @@ export default function Reports() {
                     {report.start_time && (
                       <p>Started: {new Date(report.start_time).toLocaleString()}</p>
                     )}
-                    {report.end_time && (
-                      <p>Ended: {new Date(report.end_time).toLocaleString()}</p>
-                    )}
+                    {report.end_time && <p>Ended: {new Date(report.end_time).toLocaleString()}</p>}
                     {report.metrics?.time?.total !== undefined && (
                       <p>Duration: {report.metrics.time.total.toFixed(2)}s</p>
                     )}

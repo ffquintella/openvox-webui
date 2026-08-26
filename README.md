@@ -31,8 +31,8 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 
 ### Prerequisites
 
-- Rust 1.75+
-- Node.js 20+
+- Rust 1.88+
+- Node.js 22.22.2+ (or 24.15.0+)
 - Docker and Docker Compose (optional, for PuppetDB)
 
 ### Development Setup

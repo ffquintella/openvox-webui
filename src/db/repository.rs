@@ -321,7 +321,7 @@ impl<'a> GroupRepository<'a> {
         .await
         .context("Failed to fetch rules")?;
 
-        Ok(rows.into_iter().map(|r| row_to_rule(r)).collect())
+        Ok(rows.into_iter().map(row_to_rule).collect())
     }
 
     /// Add a rule to a group
@@ -593,10 +593,7 @@ impl<'a> GroupRepository<'a> {
                 operator: parse_operator(&row.operator),
                 value: serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null),
             };
-            rules_map
-                .entry(row.group_id)
-                .or_insert_with(Vec::new)
-                .push(rule);
+            rules_map.entry(row.group_id).or_default().push(rule);
         }
 
         Ok(rules_map)
@@ -641,7 +638,7 @@ impl<'a> GroupRepository<'a> {
         for row in rows {
             pinned_map
                 .entry(row.group_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(row.certname);
         }
 

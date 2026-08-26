@@ -1,5 +1,8 @@
 //! Analytics and Reporting models
 
+// These database-facing parsers intentionally return `Option` for fallback handling.
+#![allow(clippy::should_implement_trait)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

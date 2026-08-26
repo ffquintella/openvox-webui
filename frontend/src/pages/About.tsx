@@ -10,9 +10,7 @@ export default function About() {
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">About</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">
-          Information about OpenVox WebUI
-        </p>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">Information about OpenVox WebUI</p>
       </div>
 
       {/* Project Info Card */}
@@ -25,9 +23,7 @@ export default function About() {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               OpenVox WebUI
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Version {__APP_VERSION__}
-            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Version {__APP_VERSION__}</p>
           </div>
         </div>
         <p className="text-gray-600 dark:text-gray-300 mb-4">
@@ -75,9 +71,9 @@ export default function About() {
           http://www.apache.org/licenses/LICENSE-2.0
         </a>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-          Unless required by applicable law or agreed to in writing, software distributed under
-          the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-          KIND, either express or implied.
+          Unless required by applicable law or agreed to in writing, software distributed under the
+          License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+          either express or implied.
         </p>
       </div>
 

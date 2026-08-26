@@ -67,7 +67,12 @@ export default function Backup() {
   const tabs = [
     { id: 'backups' as const, name: 'Backups', icon: HardDrive, badge: backups.length },
     { id: 'schedule' as const, name: 'Schedule', icon: Calendar },
-    { id: 'history' as const, name: 'Restore History', icon: History, badge: restores.length > 0 ? restores.length : undefined },
+    {
+      id: 'history' as const,
+      name: 'Restore History',
+      icon: History,
+      badge: restores.length > 0 ? restores.length : undefined,
+    },
   ];
 
   const handleCreateBackup = async (data: CreateBackupRequest) => {
@@ -94,7 +99,9 @@ export default function Backup() {
       setVerifyingBackup(null);
       // Show result in a toast/alert
       if (result.valid) {
-        alert(`Backup verified successfully!\nFiles: ${result.file_count}\nSize: ${result.total_size} bytes`);
+        alert(
+          `Backup verified successfully!\nFiles: ${result.file_count}\nSize: ${result.total_size} bytes`
+        );
       } else {
         alert(`Backup verification failed: ${result.error || 'Unknown error'}`);
       }
@@ -156,7 +163,9 @@ export default function Backup() {
                 Backup Feature Not Enabled
               </h3>
               <p className="mt-2 text-yellow-700 dark:text-yellow-300">
-                The backup feature is not enabled in the server configuration. Add a <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">backup:</code> section to your config.yaml to enable this feature.
+                The backup feature is not enabled in the server configuration. Add a{' '}
+                <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">backup:</code>{' '}
+                section to your config.yaml to enable this feature.
               </p>
             </div>
           </div>
@@ -216,12 +225,14 @@ export default function Backup() {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <div className="flex items-center gap-3">
-            <div className={clsx(
-              "p-2 rounded-lg",
-              featureStatus.encryption_enabled
-                ? "bg-green-100 dark:bg-green-900/30"
-                : "bg-gray-100 dark:bg-gray-700"
-            )}>
+            <div
+              className={clsx(
+                'p-2 rounded-lg',
+                featureStatus.encryption_enabled
+                  ? 'bg-green-100 dark:bg-green-900/30'
+                  : 'bg-gray-100 dark:bg-gray-700'
+              )}
+            >
               {featureStatus.encryption_enabled ? (
                 <Lock className="w-5 h-5 text-green-600 dark:text-green-400" />
               ) : (
@@ -238,12 +249,14 @@ export default function Backup() {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <div className="flex items-center gap-3">
-            <div className={clsx(
-              "p-2 rounded-lg",
-              featureStatus.schedule_active
-                ? "bg-green-100 dark:bg-green-900/30"
-                : "bg-gray-100 dark:bg-gray-700"
-            )}>
+            <div
+              className={clsx(
+                'p-2 rounded-lg',
+                featureStatus.schedule_active
+                  ? 'bg-green-100 dark:bg-green-900/30'
+                  : 'bg-gray-100 dark:bg-gray-700'
+              )}
+            >
               <Clock className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </div>
             <div>
@@ -307,9 +320,7 @@ export default function Backup() {
         />
       )}
 
-      {activeTab === 'history' && (
-        <HistoryTab restores={restores} loading={restoresLoading} />
-      )}
+      {activeTab === 'history' && <HistoryTab restores={restores} loading={restoresLoading} />}
 
       {/* Create Backup Modal */}
       {showCreateBackup && (
@@ -564,7 +575,9 @@ function ScheduleTab({
     return (
       <div className="text-center py-12">
         <Calendar className="w-12 h-12 mx-auto text-gray-400" />
-        <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">No schedule configured</h3>
+        <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">
+          No schedule configured
+        </h3>
         <p className="mt-2 text-gray-500 dark:text-gray-400">
           Configure a backup schedule in your server configuration.
         </p>
@@ -614,7 +627,9 @@ function ScheduleTab({
         {/* Active Toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm font-medium text-gray-900 dark:text-white">Schedule Active</label>
+            <label className="text-sm font-medium text-gray-900 dark:text-white">
+              Schedule Active
+            </label>
             <p className="text-sm text-gray-500 dark:text-gray-400">Enable automatic backups</p>
           </div>
           <button
@@ -681,7 +696,9 @@ function ScheduleTab({
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
             >
               {days.map((day, idx) => (
-                <option key={day} value={idx}>{day}</option>
+                <option key={day} value={idx}>
+                  {day}
+                </option>
               ))}
             </select>
           </div>
@@ -700,7 +717,9 @@ function ScheduleTab({
             min="1"
             max="100"
             value={formData.retention_count}
-            onChange={(e) => setFormData({ ...formData, retention_count: parseInt(e.target.value) })}
+            onChange={(e) =>
+              setFormData({ ...formData, retention_count: parseInt(e.target.value) })
+            }
             disabled={!editMode}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
           />
@@ -732,13 +751,7 @@ function ScheduleTab({
 // History Tab
 // ============================================================================
 
-function HistoryTab({
-  restores,
-  loading,
-}: {
-  restores: BackupRestore[];
-  loading: boolean;
-}) {
+function HistoryTab({ restores, loading }: { restores: BackupRestore[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -751,7 +764,9 @@ function HistoryTab({
     return (
       <div className="text-center py-12">
         <History className="w-12 h-12 mx-auto text-gray-400" />
-        <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">No restore history</h3>
+        <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">
+          No restore history
+        </h3>
         <p className="mt-2 text-gray-500 dark:text-gray-400">
           Restore operations will appear here.
         </p>
@@ -828,8 +843,9 @@ function CreateBackupModal({
   const [includeDatabase, setIncludeDatabase] = useState(true);
   const [includeConfig, setIncludeConfig] = useState(true);
 
-  const canSubmit = (!encryptionEnabled || (password && password === confirmPassword)) &&
-                   (includeDatabase || includeConfig);
+  const canSubmit =
+    (!encryptionEnabled || (password && password === confirmPassword)) &&
+    (includeDatabase || includeConfig);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -847,9 +863,7 @@ function CreateBackupModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
         <div className="p-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-            Create Backup
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Create Backup</h3>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* What to include */}
@@ -876,7 +890,9 @@ function CreateBackupModal({
                     className="rounded border-gray-300 dark:border-gray-600"
                   />
                   <FileText className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Configuration Files</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Configuration Files
+                  </span>
                 </label>
               </div>
             </div>
@@ -987,13 +1003,15 @@ function PasswordModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
         <div className="p-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            {title}
-          </h3>
-          <p className={clsx(
-            "text-sm mb-4",
-            variant === 'danger' ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400"
-          )}>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">{title}</h3>
+          <p
+            className={clsx(
+              'text-sm mb-4',
+              variant === 'danger'
+                ? 'text-red-600 dark:text-red-400'
+                : 'text-gray-500 dark:text-gray-400'
+            )}
+          >
             {description}
           </p>
 
@@ -1019,8 +1037,10 @@ function PasswordModal({
                 type="submit"
                 disabled={!password || loading}
                 className={clsx(
-                  "px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2",
-                  variant === 'danger' ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
+                  'px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2',
+                  variant === 'danger'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 )}
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -1059,12 +1079,8 @@ function ConfirmModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
         <div className="p-6">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            {title}
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            {message}
-          </p>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">{title}</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{message}</p>
 
           <div className="flex justify-end gap-3">
             <button
@@ -1077,8 +1093,10 @@ function ConfirmModal({
               onClick={onConfirm}
               disabled={loading}
               className={clsx(
-                "px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2",
-                variant === 'danger' ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
+                'px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2',
+                variant === 'danger'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
               )}
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -1097,18 +1115,38 @@ function ConfirmModal({
 
 function StatusBadge({ status }: { status: BackupStatus }) {
   const config = {
-    pending: { icon: Clock, color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
-    in_progress: { icon: Loader2, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-    completed: { icon: CheckCircle2, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    failed: { icon: XCircle, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-    deleted: { icon: Trash2, color: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' },
+    pending: {
+      icon: Clock,
+      color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+    },
+    in_progress: {
+      icon: Loader2,
+      color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+    completed: {
+      icon: CheckCircle2,
+      color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    },
+    failed: {
+      icon: XCircle,
+      color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    },
+    deleted: {
+      icon: Trash2,
+      color: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+    },
   }[status] || { icon: AlertTriangle, color: 'bg-yellow-100 text-yellow-700' };
 
   const Icon = config.icon;
   const animate = status === 'in_progress';
 
   return (
-    <span className={clsx('inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded-full', config.color)}>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded-full',
+        config.color
+      )}
+    >
       <Icon className={clsx('w-3 h-3', animate && 'animate-spin')} />
       {status.replace('_', ' ')}
     </span>

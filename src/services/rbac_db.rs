@@ -446,10 +446,7 @@ impl DbRbacService {
         for row in rows {
             let role_id: String = row.get("role_id");
             let permission = row_to_permission(&row)?;
-            permissions_map
-                .entry(role_id)
-                .or_insert_with(Vec::new)
-                .push(permission);
+            permissions_map.entry(role_id).or_default().push(permission);
         }
 
         Ok(permissions_map)

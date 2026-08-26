@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, User, Shield, Trash2, Mail, ChevronRight, X, Loader2, Key, Globe } from 'lucide-react';
+import {
+  Plus,
+  User,
+  Shield,
+  Trash2,
+  Mail,
+  ChevronRight,
+  X,
+  Loader2,
+  Key,
+  Globe,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import type { Role, AuthProvider } from '../types';
@@ -167,10 +178,7 @@ export default function Users() {
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
           <p className="text-gray-500 mt-1">Manage user accounts and role assignments</p>
         </div>
-        <button
-          onClick={() => setIsCreateOpen(true)}
-          className="btn btn-primary flex items-center"
-        >
+        <button onClick={() => setIsCreateOpen(true)} className="btn btn-primary flex items-center">
           <Plus className="w-4 h-4 mr-2" />
           New User
         </button>
@@ -230,9 +238,12 @@ export default function Users() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  {newAuthProvider === 'local' && 'User will authenticate with username and password'}
-                  {newAuthProvider === 'saml' && 'User will authenticate via SSO only (no password required)'}
-                  {newAuthProvider === 'both' && 'User can use either password or SSO to authenticate'}
+                  {newAuthProvider === 'local' &&
+                    'User will authenticate with username and password'}
+                  {newAuthProvider === 'saml' &&
+                    'User will authenticate via SSO only (no password required)'}
+                  {newAuthProvider === 'both' &&
+                    'User can use either password or SSO to authenticate'}
                 </p>
               </div>
 
@@ -290,7 +301,8 @@ export default function Users() {
                     placeholder={newEmail || 'user@example.com'}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    The identifier sent by the SSO provider (usually email). Defaults to email if not specified.
+                    The identifier sent by the SSO provider (usually email). Defaults to email if
+                    not specified.
                   </p>
                 </div>
               )}
@@ -521,8 +533,8 @@ export default function Users() {
                   <div className="bg-gray-50 rounded-lg p-4">
                     {selectedUser.roles && selectedUser.roles.length > 0 ? (
                       <p className="text-sm text-gray-600">
-                        User has {selectedUser.roles.length} role(s) with combined permissions.
-                        View individual roles for permission details.
+                        User has {selectedUser.roles.length} role(s) with combined permissions. View
+                        individual roles for permission details.
                       </p>
                     ) : (
                       <p className="text-sm text-gray-500">

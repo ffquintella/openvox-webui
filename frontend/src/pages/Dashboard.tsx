@@ -108,9 +108,16 @@ export default function Dashboard() {
 
   // Drill-down state for inventory compliance
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
-  const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
+  const [selectedSoftware, setSelectedSoftware] = useState<{
+    name: string;
+    softwareType: string;
+  } | null>(null);
   const [selectedPatchAgeBucket, setSelectedPatchAgeBucket] = useState<string | null>(null);
-  const { data: nodes = [], isLoading: nodesLoading, refetch: refetchNodes } = useQuery({
+  const {
+    data: nodes = [],
+    isLoading: nodesLoading,
+    refetch: refetchNodes,
+  } = useQuery({
     queryKey: ['nodes'],
     queryFn: api.getNodes,
   });
@@ -127,7 +134,11 @@ export default function Dashboard() {
   // Recent-reports list at the bottom of the page. Small page size — the
   // weekly trend chart is now powered by the pre-aggregated daily summary
   // below, so this no longer needs to pull thousands of reports.
-  const { data: reports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery({
+  const {
+    data: reports = [],
+    isLoading: reportsLoading,
+    refetch: refetchReports,
+  } = useQuery({
     queryKey: ['reports', 'recent'],
     queryFn: () =>
       api.getReports({
@@ -160,8 +171,10 @@ export default function Dashboard() {
   // Drill-down queries
   const { data: complianceNodes = [], isLoading: complianceNodesLoading } =
     useComplianceCategoryNodes(selectedCompliance);
-  const { data: softwareNodes = [], isLoading: softwareNodesLoading } =
-    useOutdatedSoftwareNodes(selectedSoftware?.name ?? null, selectedSoftware?.softwareType);
+  const { data: softwareNodes = [], isLoading: softwareNodesLoading } = useOutdatedSoftwareNodes(
+    selectedSoftware?.name ?? null,
+    selectedSoftware?.softwareType
+  );
   const { data: patchAgeNodes = [], isLoading: patchAgeNodesLoading } =
     usePatchAgeBucketNodes(selectedPatchAgeBucket);
 
@@ -345,8 +358,7 @@ export default function Dashboard() {
     },
     {
       name: 'Up To Date',
-      value:
-        (inventoryComplianceData.find((entry) => entry.label === 'Compliant')?.value ?? 0),
+      value: inventoryComplianceData.find((entry) => entry.label === 'Compliant')?.value ?? 0,
       subtitle: 'Fresh nodes with no detected drift',
       icon: CheckCircle,
       color: 'text-success-500',
@@ -514,7 +526,9 @@ export default function Dashboard() {
             <div
               key={stat.name}
               className={`card transition-all ${stat.drilldown ? 'cursor-pointer hover:shadow-md hover:ring-1 hover:ring-primary-200' : ''}`}
-              onClick={() => stat.drilldown && stat.value > 0 && setSelectedCompliance(stat.drilldown)}
+              onClick={() =>
+                stat.drilldown && stat.value > 0 && setSelectedCompliance(stat.drilldown)
+              }
             >
               <div className="flex items-center">
                 <div className={`p-3 rounded-lg ${stat.bg}`}>
@@ -552,7 +566,13 @@ export default function Dashboard() {
                       const data = _data as unknown as { label?: string; value?: number };
                       const category = data?.label?.toLowerCase();
                       if (category && (data?.value ?? 0) > 0) {
-                        setSelectedCompliance(category === 'compliant' ? 'compliant' : category === 'outdated' ? 'outdated' : 'stale');
+                        setSelectedCompliance(
+                          category === 'compliant'
+                            ? 'compliant'
+                            : category === 'outdated'
+                              ? 'outdated'
+                              : 'stale'
+                        );
                       }
                     }}
                   >
@@ -563,8 +583,8 @@ export default function Dashboard() {
                           entry.label === 'Compliant'
                             ? '#22c55e'
                             : entry.label === 'Outdated'
-                            ? '#f59e0b'
-                            : '#ef4444'
+                              ? '#f59e0b'
+                              : '#ef4444'
                         }
                         className="cursor-pointer"
                       />
@@ -657,7 +677,9 @@ export default function Dashboard() {
                   <div
                     key={`${item.software_type}-${item.name}`}
                     className="flex items-center justify-between gap-4 cursor-pointer hover:bg-gray-50 rounded-lg px-2 py-1 -mx-2 transition-colors"
-                    onClick={() => setSelectedSoftware({ name: item.name, softwareType: item.software_type })}
+                    onClick={() =>
+                      setSelectedSoftware({ name: item.name, softwareType: item.software_type })
+                    }
                   >
                     <div>
                       <p className="text-sm font-medium text-gray-900">{item.name}</p>
@@ -698,7 +720,8 @@ export default function Dashboard() {
             </div>
             <div className="text-center p-3 bg-red-50 rounded-lg">
               <p className="text-2xl font-bold text-red-700">
-                {vulnDashboard.severity_distribution.find((s) => s.severity === 'critical')?.count ?? 0}
+                {vulnDashboard.severity_distribution.find((s) => s.severity === 'critical')
+                  ?.count ?? 0}
               </p>
               <p className="text-xs text-red-600">Critical</p>
             </div>
@@ -710,7 +733,8 @@ export default function Dashboard() {
             </div>
             <div className="text-center p-3 bg-yellow-50 rounded-lg">
               <p className="text-2xl font-bold text-yellow-700">
-                {vulnDashboard.severity_distribution.find((s) => s.severity === 'medium')?.count ?? 0}
+                {vulnDashboard.severity_distribution.find((s) => s.severity === 'medium')?.count ??
+                  0}
               </p>
               <p className="text-xs text-yellow-600">Medium</p>
             </div>
@@ -721,7 +745,8 @@ export default function Dashboard() {
           </div>
           {vulnDashboard.total_vulnerable_nodes > 0 && (
             <p className="text-sm text-gray-600 mt-3">
-              {vulnDashboard.total_vulnerable_nodes} {vulnDashboard.total_vulnerable_nodes === 1 ? 'node' : 'nodes'} affected
+              {vulnDashboard.total_vulnerable_nodes}{' '}
+              {vulnDashboard.total_vulnerable_nodes === 1 ? 'node' : 'nodes'} affected
             </p>
           )}
         </div>
@@ -745,9 +770,7 @@ export default function Dashboard() {
             <div className="text-center py-8 text-gray-500">
               <Server className="h-12 w-12 mx-auto mb-3 text-gray-300" />
               <p>No nodes found</p>
-              {searchQuery && (
-                <p className="text-sm mt-1">Try adjusting your search criteria</p>
-              )}
+              {searchQuery && <p className="text-sm mt-1">Try adjusting your search criteria</p>}
             </div>
           ) : (
             <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -815,8 +838,8 @@ export default function Dashboard() {
                         report.status === 'failed'
                           ? 'bg-danger-500'
                           : report.status === 'changed'
-                          ? 'bg-success-500'
-                          : 'bg-primary-500'
+                            ? 'bg-success-500'
+                            : 'bg-primary-500'
                       }`}
                     />
                   </div>
@@ -839,8 +862,8 @@ export default function Dashboard() {
                           report.status === 'failed'
                             ? 'text-danger-600'
                             : report.status === 'changed'
-                            ? 'text-success-600'
-                            : 'text-primary-600'
+                              ? 'text-success-600'
+                              : 'text-primary-600'
                         }`}
                       >
                         {report.status}
@@ -889,10 +912,18 @@ export default function Dashboard() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Pkgs</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Apps</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Checked</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Pkgs
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Apps
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Last Checked
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -909,14 +940,18 @@ export default function Dashboard() {
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_packages > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_packages}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_packages}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_applications > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_applications}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_applications}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}
@@ -966,9 +1001,15 @@ export default function Dashboard() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Installed</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Installed
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Latest
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -1033,9 +1074,15 @@ export default function Dashboard() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Age</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Patched</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Age
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Last Patched
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">

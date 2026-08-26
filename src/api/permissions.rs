@@ -271,7 +271,7 @@ async fn get_permission_matrix(
             if let Some(resource_map) = role_permissions.get_mut(&resource_name) {
                 // Admin action grants all actions on this resource
                 if perm.action == Action::Admin {
-                    for (_, granted) in resource_map.iter_mut() {
+                    for granted in resource_map.values_mut() {
                         *granted = true;
                     }
                 } else if let Some(granted) = resource_map.get_mut(&action_name) {

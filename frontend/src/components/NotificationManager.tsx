@@ -37,8 +37,7 @@ export default function NotificationManager() {
   // Monitor notifications and show toasts for new ones
   useEffect(() => {
     const newNotifications = notifications.filter(
-      (notification) =>
-        !shownNotificationIds.has(notification.id) && !notification.read
+      (notification) => !shownNotificationIds.has(notification.id) && !notification.read
     );
 
     if (newNotifications.length > 0) {
@@ -59,9 +58,6 @@ export default function NotificationManager() {
   };
 
   return (
-    <NotificationToastContainer
-      notifications={toastNotifications}
-      onRemove={handleRemoveToast}
-    />
+    <NotificationToastContainer notifications={toastNotifications} onRemove={handleRemoveToast} />
   );
 }

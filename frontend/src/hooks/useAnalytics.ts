@@ -20,7 +20,8 @@ export const analyticsKeys = {
   all: ['analytics'] as const,
   savedReports: () => [...analyticsKeys.all, 'saved-reports'] as const,
   savedReport: (id: string) => [...analyticsKeys.savedReports(), id] as const,
-  savedReportsByType: (type: ReportType) => [...analyticsKeys.savedReports(), 'type', type] as const,
+  savedReportsByType: (type: ReportType) =>
+    [...analyticsKeys.savedReports(), 'type', type] as const,
   templates: () => [...analyticsKeys.all, 'templates'] as const,
   template: (id: string) => [...analyticsKeys.templates(), id] as const,
   schedules: () => [...analyticsKeys.all, 'schedules'] as const,
@@ -35,7 +36,9 @@ export const analyticsKeys = {
 // Saved Reports
 export function useSavedReports(reportType?: ReportType) {
   return useQuery({
-    queryKey: reportType ? analyticsKeys.savedReportsByType(reportType) : analyticsKeys.savedReports(),
+    queryKey: reportType
+      ? analyticsKeys.savedReportsByType(reportType)
+      : analyticsKeys.savedReports(),
     queryFn: () => api.getSavedReports(reportType),
   });
 }
@@ -288,6 +291,7 @@ export function useDeleteDriftBaseline() {
 // Export
 export function useExportExecution() {
   return useMutation({
-    mutationFn: ({ id, format }: { id: string; format?: string }) => api.exportExecution(id, format),
+    mutationFn: ({ id, format }: { id: string; format?: string }) =>
+      api.exportExecution(id, format),
   });
 }

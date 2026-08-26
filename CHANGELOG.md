@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Dependency validation after the August 2026 update rollup: retain `samael` 0.0.19 until its no-`xmlsec` build is fixed upstream, align the declared Rust 1.88 and Node.js 22.22.2 toolchains with updated dependencies, use the TypeScript 6 API supported by `typescript-eslint`, clear formatting and lint warnings, and execute the previously skipped alert-rule BDD scenarios.
 - **Node group classification: pinned nodes now appear in every ancestor group.** Previously a node pinned to a leaf group (e.g. `ADM - ESI (D)`) was only shown as a member of the leaf — every ancestor (`Develop`, `Linux`, …) silently reported "0 nodes matched" even though the pinning logically placed the node under them. Worse, the pinning short-circuit also prevented ancestor-level rules from being evaluated for any pinned node, so a rule like `clientcert ~ .*ds.*` on `Develop` never matched. Pinned membership now propagates up the entire ancestor chain (added with `MatchType::Inherited`) and ancestor groups show their full membership in the UI.
 
 ### Added

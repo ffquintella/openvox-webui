@@ -675,24 +675,24 @@ impl ReportingService {
         let font_bold = BuiltinFont::HelveticaBold;
 
         // Build page operations
-        let mut ops = Vec::new();
-        ops.push(Op::StartTextSection);
-
-        // Title - position at top of page (A4: 210mm x 297mm)
-        ops.push(Op::SetTextCursor {
-            pos: printpdf::Point {
-                x: Pt::from(Mm(20.0)),
-                y: Pt::from(Mm(280.0)),
+        let mut ops = vec![
+            Op::StartTextSection,
+            // Title - position at top of page (A4: 210mm x 297mm)
+            Op::SetTextCursor {
+                pos: printpdf::Point {
+                    x: Pt::from(Mm(20.0)),
+                    y: Pt::from(Mm(280.0)),
+                },
             },
-        });
-        ops.push(Op::SetFont {
-            font: PdfFontHandle::Builtin(font_bold),
-            size: Pt(16.0),
-        });
-        ops.push(Op::SetLineHeight { lh: Pt(16.0) });
-        ops.push(Op::ShowText {
-            items: vec![TextItem::Text(title.to_string())],
-        });
+            Op::SetFont {
+                font: PdfFontHandle::Builtin(font_bold),
+                size: Pt(16.0),
+            },
+            Op::SetLineHeight { lh: Pt(16.0) },
+            Op::ShowText {
+                items: vec![TextItem::Text(title.to_string())],
+            },
+        ];
 
         // Content - split by lines and render
         let lines: Vec<&str> = content.lines().collect();

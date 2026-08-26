@@ -473,7 +473,8 @@ async fn create_rustls_config(
     let versions: Vec<&'static rustls::SupportedProtocolVersion> =
         match tls_config.min_version.as_str() {
             "1.3" => vec![&rustls::version::TLS13],
-            "1.2" | _ => vec![&rustls::version::TLS12, &rustls::version::TLS13],
+            "1.2" => vec![&rustls::version::TLS12, &rustls::version::TLS13],
+            _ => vec![&rustls::version::TLS12, &rustls::version::TLS13],
         };
 
     info!(
@@ -493,7 +494,7 @@ async fn create_rustls_config(
         .with_protocol_versions(&versions)
         .context("Failed to set TLS protocol versions")?
         .with_no_client_auth()
-        .with_single_cert(certs, key.into())
+        .with_single_cert(certs, key)
         .context("Failed to build TLS server config")?;
 
     // Enable ALPN for HTTP/1.1 and HTTP/2

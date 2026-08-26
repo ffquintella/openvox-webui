@@ -56,7 +56,16 @@ import type {
   SeverityLevel,
 } from '../types';
 
-type TabId = 'overview' | 'heatmap' | 'groups' | 'facts' | 'topology' | 'reports' | 'compliance' | 'drift' | 'updates';
+type TabId =
+  | 'overview'
+  | 'heatmap'
+  | 'groups'
+  | 'facts'
+  | 'topology'
+  | 'reports'
+  | 'compliance'
+  | 'drift'
+  | 'updates';
 
 interface Tab {
   id: TabId;
@@ -131,9 +140,7 @@ function toDriftFactDrafts(baselineFacts: Record<string, unknown>): DriftFactDra
     id: createRuleId(),
     fact_name: factName,
     expected_value:
-      typeof expectedValue === 'string'
-        ? expectedValue
-        : JSON.stringify(expectedValue),
+      typeof expectedValue === 'string' ? expectedValue : JSON.stringify(expectedValue),
   }));
 }
 
@@ -208,10 +215,7 @@ function toComplianceRule(draft: ComplianceRuleDraft): ComplianceRule {
 
 function isComplianceRuleDraftValid(rule: ComplianceRuleDraft): boolean {
   return Boolean(
-    rule.name.trim() &&
-      rule.fact_name.trim() &&
-      rule.operator.trim() &&
-      rule.expected_value.trim(),
+    rule.name.trim() && rule.fact_name.trim() && rule.operator.trim() && rule.expected_value.trim()
   );
 }
 
@@ -235,7 +239,8 @@ export default function Analytics() {
   const [showNewReportModal, setShowNewReportModal] = useState(false);
   const [showNewComplianceModal, setShowNewComplianceModal] = useState(false);
   const [showNewDriftModal, setShowNewDriftModal] = useState(false);
-  const [editingComplianceBaseline, setEditingComplianceBaseline] = useState<ComplianceBaseline | null>(null);
+  const [editingComplianceBaseline, setEditingComplianceBaseline] =
+    useState<ComplianceBaseline | null>(null);
   const [editingDriftBaseline, setEditingDriftBaseline] = useState<DriftBaseline | null>(null);
   const [reportResult, setReportResult] = useState<ReportResult | null>(null);
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
@@ -254,10 +259,7 @@ export default function Analytics() {
 
   // The full node list is only needed by the topology visualization, so it is
   // fetched lazily when that tab is active rather than on every page load.
-  const {
-    data: nodes = [],
-    refetch: refetchNodes,
-  } = useQuery({
+  const { data: nodes = [], refetch: refetchNodes } = useQuery({
     queryKey: ['nodes', 'all'],
     queryFn: () => api.getNodesPaginated({ limit: 5000 }).then((r) => r.nodes),
     enabled: activeTab === 'topology',
@@ -285,32 +287,38 @@ export default function Analytics() {
   });
   const reportsCount30d = useMemo(
     () => hourlySummary30d.reduce((sum, r) => sum + r.total, 0),
-    [hourlySummary30d],
+    [hourlySummary30d]
   );
 
-  const {
-    data: factNames = [],
-    isLoading: factNamesLoading,
-  } = useQuery({
+  const { data: factNames = [], isLoading: factNamesLoading } = useQuery({
     queryKey: ['factNames'],
     queryFn: api.getFactNames,
   });
 
-  const {
-    data: facts = [],
-    isLoading: factsLoading,
-  } = useQuery({
+  const { data: facts = [], isLoading: factsLoading } = useQuery({
     queryKey: ['facts', selectedFact],
     queryFn: () => api.getFacts({ name: selectedFact }),
     enabled: activeTab === 'facts' || activeTab === 'overview',
   });
 
   // Reporting queries
-  const { data: savedReports = [], isLoading: savedReportsLoading, refetch: refetchSavedReports } = useSavedReports();
+  const {
+    data: savedReports = [],
+    isLoading: savedReportsLoading,
+    refetch: refetchSavedReports,
+  } = useSavedReports();
   const { data: reportTemplates = [], isLoading: templatesLoading } = useReportTemplates();
   const { data: schedules = [], isLoading: schedulesLoading } = useSchedules();
-  const { data: complianceBaselines = [], isLoading: complianceLoading, refetch: refetchCompliance } = useComplianceBaselines();
-  const { data: driftBaselines = [], isLoading: driftLoading, refetch: refetchDrift } = useDriftBaselines();
+  const {
+    data: complianceBaselines = [],
+    isLoading: complianceLoading,
+    refetch: refetchCompliance,
+  } = useComplianceBaselines();
+  const {
+    data: driftBaselines = [],
+    isLoading: driftLoading,
+    refetch: refetchDrift,
+  } = useDriftBaselines();
 
   // Mutations
   const createReport = useCreateSavedReport();
@@ -326,7 +334,7 @@ export default function Analytics() {
 
   const groupNameById = useMemo(
     () => new Map(groups.map((group) => [group.id, group.name])),
-    [groups],
+    [groups]
   );
 
   // Heatmap data is now pre-aggregated by the backend; the chart fetches
@@ -438,7 +446,9 @@ export default function Analytics() {
           {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card text-center">
-              <p className="text-3xl font-bold text-gray-900">{(nodeStats?.total ?? 0).toLocaleString()}</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {(nodeStats?.total ?? 0).toLocaleString()}
+              </p>
               <p className="text-sm text-gray-500">Total Nodes</p>
             </div>
             <div className="card text-center">
@@ -545,7 +555,9 @@ export default function Analytics() {
           <div className="card">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Generate Report</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {(['node_health', 'compliance', 'change_tracking', 'drift_detection'] as ReportType[]).map((type) => (
+              {(
+                ['node_health', 'compliance', 'change_tracking', 'drift_detection'] as ReportType[]
+              ).map((type) => (
                 <button
                   key={type}
                   onClick={() => handleGenerateReport(type)}
@@ -607,11 +619,21 @@ export default function Analytics() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Name</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Type</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Created</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Public</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Actions</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Type
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Created
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Public
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -689,9 +711,7 @@ export default function Analytics() {
                           <p className="text-sm text-gray-500 mt-1">{template.description}</p>
                         )}
                       </div>
-                      {template.is_system && (
-                        <span className="text-xs text-gray-400">System</span>
-                      )}
+                      {template.is_system && <span className="text-xs text-gray-400">System</span>}
                     </div>
                     <div className="mt-3">
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
@@ -724,11 +744,21 @@ export default function Analytics() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Schedule</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Timezone</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Last Run</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Next Run</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Status</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Schedule
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Timezone
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Last Run
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Next Run
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                        Status
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -785,7 +815,9 @@ export default function Analytics() {
               <div className="text-center py-8 text-gray-500">
                 <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                 <p>No compliance baselines defined</p>
-                <p className="text-sm mt-1">Create a baseline to check node compliance against expected values</p>
+                <p className="text-sm mt-1">
+                  Create a baseline to check node compliance against expected values
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -817,12 +849,17 @@ export default function Analytics() {
                     </div>
                     <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
                       <span>{baseline.rules.length} rules</span>
-                      <span className={`capitalize ${
-                        baseline.severity_level === 'critical' ? 'text-danger-600' :
-                        baseline.severity_level === 'high' ? 'text-warning-600' :
-                        baseline.severity_level === 'medium' ? 'text-primary-600' :
-                        'text-gray-600'
-                      }`}>
+                      <span
+                        className={`capitalize ${
+                          baseline.severity_level === 'critical'
+                            ? 'text-danger-600'
+                            : baseline.severity_level === 'high'
+                              ? 'text-warning-600'
+                              : baseline.severity_level === 'medium'
+                                ? 'text-primary-600'
+                                : 'text-gray-600'
+                        }`}
+                      >
                         {baseline.severity_level} severity
                       </span>
                     </div>
@@ -859,7 +896,9 @@ export default function Analytics() {
               <div className="text-center py-8 text-gray-500">
                 <GitCompare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                 <p>No drift baselines defined</p>
-                <p className="text-sm mt-1">Create a baseline to detect configuration drift across nodes</p>
+                <p className="text-sm mt-1">
+                  Create a baseline to detect configuration drift across nodes
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -892,21 +931,24 @@ export default function Analytics() {
                     <div className="mt-3 flex items-center gap-4 text-sm text-gray-500">
                       <span>{Object.keys(baseline.baseline_facts).length} facts tracked</span>
                       <span>
-                        Scope: {baseline.node_group_id
+                        Scope:{' '}
+                        {baseline.node_group_id
                           ? groupNameById.get(baseline.node_group_id) || baseline.node_group_id
                           : 'All nodes'}
                       </span>
                     </div>
                     {Object.keys(baseline.baseline_facts).length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {Object.keys(baseline.baseline_facts).slice(0, 4).map((factName) => (
-                          <span
-                            key={factName}
-                            className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700"
-                          >
-                            {factName}
-                          </span>
-                        ))}
+                        {Object.keys(baseline.baseline_facts)
+                          .slice(0, 4)
+                          .map((factName) => (
+                            <span
+                              key={factName}
+                              className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700"
+                            >
+                              {factName}
+                            </span>
+                          ))}
                         {Object.keys(baseline.baseline_facts).length > 4 && (
                           <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
                             +{Object.keys(baseline.baseline_facts).length - 4} more
@@ -1080,9 +1122,7 @@ function ReportResultView({ result }: { result: ReportResult }) {
             <p className="text-sm text-gray-500">Resources Failed</p>
           </div>
         </div>
-        <div className="text-sm text-gray-500">
-          Time Range: {data.time_range}
-        </div>
+        <div className="text-sm text-gray-500">Time Range: {data.time_range}</div>
       </div>
     );
   }
@@ -1101,11 +1141,15 @@ function ReportResultView({ result }: { result: ReportResult }) {
             <p className="text-sm text-gray-500">With Drift</p>
           </div>
           <div className="text-center p-3 bg-success-50 rounded-lg">
-            <p className="text-2xl font-bold text-success-600">{data.summary.nodes_without_drift}</p>
+            <p className="text-2xl font-bold text-success-600">
+              {data.summary.nodes_without_drift}
+            </p>
             <p className="text-sm text-gray-500">No Drift</p>
           </div>
           <div className="text-center p-3 bg-warning-50 rounded-lg">
-            <p className="text-2xl font-bold text-warning-600">{data.summary.total_drifted_facts}</p>
+            <p className="text-2xl font-bold text-warning-600">
+              {data.summary.total_drifted_facts}
+            </p>
             <p className="text-sm text-gray-500">Drifted Facts</p>
           </div>
         </div>
@@ -1129,7 +1173,13 @@ function NewReportModal({
   onCreate,
 }: {
   onClose: () => void;
-  onCreate: (data: { name: string; description?: string; report_type: ReportType; query_config: Record<string, unknown>; is_public?: boolean }) => Promise<void>;
+  onCreate: (data: {
+    name: string;
+    description?: string;
+    report_type: ReportType;
+    query_config: Record<string, unknown>;
+    is_public?: boolean;
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1215,11 +1265,7 @@ function NewReportModal({
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !name}
-              className="btn-primary"
-            >
+            <button type="submit" disabled={isSubmitting || !name} className="btn-primary">
               {isSubmitting ? 'Creating...' : 'Create Report'}
             </button>
           </div>
@@ -1247,17 +1293,34 @@ function ComplianceBaselineHelp() {
       {showHelp && (
         <div className="mt-3 p-4 bg-primary-50 border border-primary-200 rounded-lg text-sm text-gray-700 space-y-2">
           <p>
-            A <strong>compliance baseline</strong> defines a set of rules that check node facts against expected values to ensure your infrastructure meets your standards.
+            A <strong>compliance baseline</strong> defines a set of rules that check node facts
+            against expected values to ensure your infrastructure meets your standards.
           </p>
-          <p><strong>Naming tips:</strong> Use descriptive names that reflect the purpose, e.g. &quot;Production OS Standards&quot; or &quot;Security Hardening Checks&quot;.</p>
-          <p><strong>Severity levels:</strong></p>
+          <p>
+            <strong>Naming tips:</strong> Use descriptive names that reflect the purpose, e.g.
+            &quot;Production OS Standards&quot; or &quot;Security Hardening Checks&quot;.
+          </p>
+          <p>
+            <strong>Severity levels:</strong>
+          </p>
           <ul className="list-disc ml-5 space-y-1">
-            <li><strong>Low</strong> &mdash; Informational, minor deviations</li>
-            <li><strong>Medium</strong> &mdash; Should be addressed in normal workflow</li>
-            <li><strong>High</strong> &mdash; Important issues requiring prompt attention</li>
-            <li><strong>Critical</strong> &mdash; Urgent, must be fixed immediately</li>
+            <li>
+              <strong>Low</strong> &mdash; Informational, minor deviations
+            </li>
+            <li>
+              <strong>Medium</strong> &mdash; Should be addressed in normal workflow
+            </li>
+            <li>
+              <strong>High</strong> &mdash; Important issues requiring prompt attention
+            </li>
+            <li>
+              <strong>Critical</strong> &mdash; Urgent, must be fixed immediately
+            </li>
           </ul>
-          <p>Add one or more rules below to check specific facts against the expected values for this baseline.</p>
+          <p>
+            Add one or more rules below to check specific facts against the expected values for this
+            baseline.
+          </p>
         </div>
       )}
     </div>
@@ -1273,16 +1336,8 @@ function ComplianceRuleEditor({
   onChange: (rules: ComplianceRuleDraft[]) => void;
   factNames: string[];
 }) {
-  const updateRule = (
-    ruleId: string,
-    field: keyof ComplianceRuleDraft,
-    value: string,
-  ) => {
-    onChange(
-      rules.map((rule) =>
-        rule.id === ruleId ? { ...rule, [field]: value } : rule,
-      ),
-    );
+  const updateRule = (ruleId: string, field: keyof ComplianceRuleDraft, value: string) => {
+    onChange(rules.map((rule) => (rule.id === ruleId ? { ...rule, [field]: value } : rule)));
   };
 
   const removeRule = (ruleId: string) => {
@@ -1294,9 +1349,7 @@ function ComplianceRuleEditor({
       <div className="flex items-center justify-between">
         <div>
           <h4 className="text-sm font-semibold text-gray-900">Compliance Rules</h4>
-          <p className="text-xs text-gray-500 mt-1">
-            Create fact-based checks for this baseline.
-          </p>
+          <p className="text-xs text-gray-500 mt-1">Create fact-based checks for this baseline.</p>
         </div>
         <button
           type="button"
@@ -1315,7 +1368,10 @@ function ComplianceRuleEditor({
       ) : (
         <div className="space-y-4">
           {rules.map((rule, index) => (
-            <div key={rule.id} className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50/60">
+            <div
+              key={rule.id}
+              className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50/60"
+            >
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h5 className="text-sm font-medium text-gray-900">Rule {index + 1}</h5>
@@ -1404,7 +1460,9 @@ function ComplianceRuleEditor({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expected Value</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expected Value
+                </label>
                 <textarea
                   value={rule.expected_value}
                   onChange={(e) => updateRule(rule.id, 'expected_value', e.target.value)}
@@ -1433,7 +1491,19 @@ function NewComplianceBaselineModal({
 }: {
   factNames: string[];
   onClose: () => void;
-  onCreate: (data: { name: string; description?: string; rules: Array<{ id: string; name: string; fact_name: string; operator: string; expected_value: unknown; severity: 'low' | 'medium' | 'high' | 'critical' }>; severity_level?: 'low' | 'medium' | 'high' | 'critical' }) => Promise<void>;
+  onCreate: (data: {
+    name: string;
+    description?: string;
+    rules: Array<{
+      id: string;
+      name: string;
+      fact_name: string;
+      operator: string;
+      expected_value: unknown;
+      severity: 'low' | 'medium' | 'high' | 'critical';
+    }>;
+    severity_level?: 'low' | 'medium' | 'high' | 'critical';
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -1501,18 +1571,10 @@ function NewComplianceBaselineModal({
                 <option value="critical">Critical</option>
               </select>
             </div>
-            <ComplianceRuleEditor
-              rules={rules}
-              onChange={setRules}
-              factNames={factNames}
-            />
+            <ComplianceRuleEditor rules={rules} onChange={setRules} factNames={factNames} />
           </div>
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn btn-secondary"
-            >
+            <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancel
             </button>
             <button
@@ -1539,7 +1601,20 @@ function EditComplianceBaselineModal({
   baseline: ComplianceBaseline;
   factNames: string[];
   onClose: () => void;
-  onUpdate: (data: { name?: string; description?: string | null; rules?: Array<{ id: string; name: string; description?: string; fact_name: string; operator: string; expected_value: unknown; severity: 'low' | 'medium' | 'high' | 'critical' }>; severity_level?: 'low' | 'medium' | 'high' | 'critical' }) => Promise<void>;
+  onUpdate: (data: {
+    name?: string;
+    description?: string | null;
+    rules?: Array<{
+      id: string;
+      name: string;
+      description?: string;
+      fact_name: string;
+      operator: string;
+      expected_value: unknown;
+      severity: 'low' | 'medium' | 'high' | 'critical';
+    }>;
+    severity_level?: 'low' | 'medium' | 'high' | 'critical';
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState(baseline.name);
   const [description, setDescription] = useState(baseline.description || '');
@@ -1547,7 +1622,7 @@ function EditComplianceBaselineModal({
   const [rules, setRules] = useState<ComplianceRuleDraft[]>(
     baseline.rules.length > 0
       ? baseline.rules.map(toComplianceRuleDraft)
-      : [createEmptyComplianceRuleDraft()],
+      : [createEmptyComplianceRuleDraft()]
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1608,21 +1683,14 @@ function EditComplianceBaselineModal({
                 <option value="critical">Critical</option>
               </select>
             </div>
-            <ComplianceRuleEditor
-              rules={rules}
-              onChange={setRules}
-              factNames={factNames}
-            />
+            <ComplianceRuleEditor rules={rules} onChange={setRules} factNames={factNames} />
             <div className="text-xs text-gray-400">
-              {rules.length} rule{rules.length !== 1 ? 's' : ''} configured &middot; Created {new Date(baseline.created_at).toLocaleDateString()}
+              {rules.length} rule{rules.length !== 1 ? 's' : ''} configured &middot; Created{' '}
+              {new Date(baseline.created_at).toLocaleDateString()}
             </div>
           </div>
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn btn-secondary"
-            >
+            <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancel
             </button>
             <button
@@ -1650,9 +1718,7 @@ function DriftFactEditor({
   factNames: string[];
 }) {
   const updateFact = (factId: string, field: keyof DriftFactDraft, value: string) => {
-    onChange(
-      facts.map((fact) => (fact.id === factId ? { ...fact, [field]: value } : fact)),
-    );
+    onChange(facts.map((fact) => (fact.id === factId ? { ...fact, [field]: value } : fact)));
   };
 
   const addFact = () => {
@@ -1689,7 +1755,10 @@ function DriftFactEditor({
       ) : (
         <div className="space-y-4">
           {facts.map((fact, index) => (
-            <div key={fact.id} className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50/60">
+            <div
+              key={fact.id}
+              className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50/60"
+            >
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h5 className="text-sm font-medium text-gray-900">Fact {index + 1}</h5>
@@ -1721,7 +1790,9 @@ function DriftFactEditor({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expected Value</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expected Value
+                  </label>
                   <input
                     type="text"
                     value={fact.expected_value}
@@ -1753,7 +1824,12 @@ function NewDriftBaselineModal({
   groups,
 }: {
   onClose: () => void;
-  onCreate: (data: { name: string; description?: string; baseline_facts: Record<string, unknown>; node_group_id?: string }) => Promise<void>;
+  onCreate: (data: {
+    name: string;
+    description?: string;
+    baseline_facts: Record<string, unknown>;
+    node_group_id?: string;
+  }) => Promise<void>;
   factNames: string[];
   groups: NodeGroup[];
 }) {
@@ -1825,7 +1901,11 @@ function NewDriftBaselineModal({
               </div>
             </div>
 
-            <DriftFactEditor facts={trackedFacts} onChange={setTrackedFacts} factNames={factNames} />
+            <DriftFactEditor
+              facts={trackedFacts}
+              onChange={setTrackedFacts}
+              factNames={factNames}
+            />
           </div>
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn btn-secondary">
@@ -1856,13 +1936,18 @@ function EditDriftBaselineModal({
   factNames: string[];
   groups: NodeGroup[];
   onClose: () => void;
-  onUpdate: (data: { name?: string; description?: string | null; baseline_facts?: Record<string, unknown>; node_group_id?: string | null }) => Promise<void>;
+  onUpdate: (data: {
+    name?: string;
+    description?: string | null;
+    baseline_facts?: Record<string, unknown>;
+    node_group_id?: string | null;
+  }) => Promise<void>;
 }) {
   const [name, setName] = useState(baseline.name);
   const [description, setDescription] = useState(baseline.description || '');
   const [nodeGroupId, setNodeGroupId] = useState(baseline.node_group_id || '');
   const [trackedFacts, setTrackedFacts] = useState<DriftFactDraft[]>(
-    toDriftFactDrafts(baseline.baseline_facts),
+    toDriftFactDrafts(baseline.baseline_facts)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1928,7 +2013,11 @@ function EditDriftBaselineModal({
               </div>
             </div>
 
-            <DriftFactEditor facts={trackedFacts} onChange={setTrackedFacts} factNames={factNames} />
+            <DriftFactEditor
+              facts={trackedFacts}
+              onChange={setTrackedFacts}
+              factNames={factNames}
+            />
           </div>
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn btn-secondary">

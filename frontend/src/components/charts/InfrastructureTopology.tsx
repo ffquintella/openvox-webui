@@ -65,15 +65,9 @@ function TreeNodeComponent({
         </div>
 
         {/* Icon */}
-        {node.type === 'environment' && (
-          <Folder className="w-4 h-4 text-amber-500" />
-        )}
-        {node.type === 'group' && (
-          <Folder className="w-4 h-4 text-primary-500" />
-        )}
-        {node.type === 'node' && (
-          <Server className={`w-4 h-4 ${getStatusColor(node.status)}`} />
-        )}
+        {node.type === 'environment' && <Folder className="w-4 h-4 text-amber-500" />}
+        {node.type === 'group' && <Folder className="w-4 h-4 text-primary-500" />}
+        {node.type === 'node' && <Server className={`w-4 h-4 ${getStatusColor(node.status)}`} />}
 
         {/* Name */}
         <span className="text-sm text-gray-900 flex-1">{node.name}</span>
@@ -87,9 +81,7 @@ function TreeNodeComponent({
 
         {/* Status indicator for nodes */}
         {node.type === 'node' && (
-          <Circle
-            className={`w-2 h-2 fill-current ${getStatusColor(node.status)}`}
-          />
+          <Circle className={`w-2 h-2 fill-current ${getStatusColor(node.status)}`} />
         )}
       </div>
 
@@ -257,17 +249,11 @@ export default function InfrastructureTopology({
           </div>
 
           {/* Expand/Collapse buttons */}
-          <button
-            onClick={expandAll}
-            className="text-xs text-primary-600 hover:text-primary-700"
-          >
+          <button onClick={expandAll} className="text-xs text-primary-600 hover:text-primary-700">
             Expand All
           </button>
           <span className="text-gray-300">|</span>
-          <button
-            onClick={collapseAll}
-            className="text-xs text-primary-600 hover:text-primary-700"
-          >
+          <button onClick={collapseAll} className="text-xs text-primary-600 hover:text-primary-700">
             Collapse All
           </button>
         </div>
@@ -302,11 +288,7 @@ export default function InfrastructureTopology({
           </div>
         ) : (
           <div className="p-2">
-            <TreeNodeComponent
-              node={tree}
-              expanded={expanded}
-              onToggle={handleToggle}
-            />
+            <TreeNodeComponent node={tree} expanded={expanded} onToggle={handleToggle} />
           </div>
         )}
       </div>

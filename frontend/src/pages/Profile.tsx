@@ -79,7 +79,9 @@ export default function Profile() {
 
       {/* User Info Card */}
       <div className="card mb-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Account Information</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          Account Information
+        </h2>
         <div className="space-y-4">
           <div className="flex items-center">
             <div className="w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center mr-4">
@@ -145,7 +147,9 @@ export default function Profile() {
       {/* Change Password Card - Only show for local and both auth providers */}
       {user?.auth_provider !== 'saml' && (
         <div className="card">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Change Password</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            Change Password
+          </h2>
 
           {/* Success Message */}
           {success && (
@@ -164,106 +168,120 @@ export default function Profile() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Current Password */}
-          <div>
-            <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
-              Current Password
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="currentPassword"
-                type={showCurrentPassword ? 'text' : 'password'}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className="input pl-10 pr-10"
-                placeholder="Enter current password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+            {/* Current Password */}
+            <div>
+              <label
+                htmlFor="currentPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
               >
-                {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* New Password */}
-          <div>
-            <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
-              New Password
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="newPassword"
-                type={showNewPassword ? 'text' : 'password'}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="input pl-10 pr-10"
-                placeholder="Enter new password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewPassword(!showNewPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-              >
-                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-gray-500">Must be at least 8 characters</p>
-          </div>
-
-          {/* Confirm Password */}
-          <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-              Confirm New Password
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="confirmPassword"
-                type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="input pl-10 pr-10"
-                placeholder="Confirm new password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-              >
-                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={changePasswordMutation.isPending}
-              className="btn btn-primary"
-            >
-              {changePasswordMutation.isPending ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  <span>Changing Password...</span>
+                Current Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
                 </div>
-              ) : (
-                'Change Password'
-              )}
-            </button>
-          </div>
-        </form>
+                <input
+                  id="currentPassword"
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="input pl-10 pr-10"
+                  placeholder="Enter current password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* New Password */}
+            <div>
+              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                New Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="newPassword"
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="input pl-10 pr-10"
+                  placeholder="Enter new password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">Must be at least 8 characters</p>
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Confirm New Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="input pl-10 pr-10"
+                  placeholder="Confirm new password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={changePasswordMutation.isPending}
+                className="btn btn-primary"
+              >
+                {changePasswordMutation.isPending ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <span>Changing Password...</span>
+                  </div>
+                ) : (
+                  'Change Password'
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

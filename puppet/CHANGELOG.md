@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Repository validation after the August 2026 dependency rollup now uses compatible Rust, Node.js, and TypeScript toolchains, avoids formatter/linter warnings, retains the buildable no-`xmlsec` SAML dependency, and runs the complete alert-rule BDD suite.
+
 ## [0.40.7] - 2026-07-29
 
 ### Fixed

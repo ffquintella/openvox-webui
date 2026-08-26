@@ -1022,8 +1022,10 @@ pub struct BackupScheduleConfig {
 /// Backup frequency options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum BackupFrequency {
     Hourly,
+    #[default]
     Daily,
     Weekly,
     Custom,
@@ -1147,12 +1149,6 @@ impl Default for BackupIncludeConfig {
             database: default_include_database(),
             config_files: default_include_config(),
         }
-    }
-}
-
-impl Default for BackupFrequency {
-    fn default() -> Self {
-        BackupFrequency::Daily
     }
 }
 

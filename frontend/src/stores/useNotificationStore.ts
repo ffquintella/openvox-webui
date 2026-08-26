@@ -56,9 +56,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   // Update existing notification
   updateNotification: (notification) => {
     set((state) => ({
-      notifications: state.notifications.map((n) =>
-        n.id === notification.id ? notification : n
-      ),
+      notifications: state.notifications.map((n) => (n.id === notification.id ? notification : n)),
     }));
     // Update stats
     get().fetchStats();
@@ -147,9 +145,12 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       return;
     }
 
-    const eventSource = new EventSource(`/api/v1/notifications/stream?token=${encodeURIComponent(token)}`, {
-      withCredentials: true,
-    });
+    const eventSource = new EventSource(
+      `/api/v1/notifications/stream?token=${encodeURIComponent(token)}`,
+      {
+        withCredentials: true,
+      }
+    );
 
     eventSource.onopen = () => {
       console.warn('SSE connection established');

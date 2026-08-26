@@ -112,7 +112,7 @@ Production-ready deployment and operations:
 
 **RPM Package:**
 - Distribution: RHEL 8+, CentOS, Fedora, Rocky
-- Dependencies: Rust 1.75+, Node.js 20+, OpenSSL, SQLite3
+- Dependencies: Rust 1.88+, Node.js 22.22.2+ (or 24.15.0+), OpenSSL, SQLite3
 - Systemd service
 - User/group management
 - Log rotation

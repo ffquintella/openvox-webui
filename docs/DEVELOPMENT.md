@@ -4,7 +4,7 @@ Practical notes for contributors on how to build, test, and package both backend
 
 ## 1. Prerequisites
 - Rust toolchain (stable) with `rustup` installed; `cargo` on PATH.
-- Node.js ≥ 18 with npm.
+- Node.js 22.22.2+ (or 24.15.0+) with npm.
 - SQLite dev tools (for local builds).
 - PDK or Puppet installed if building the Puppet module.
 - Optional: `make`, `docker` if building packages inside containers.
@@ -107,4 +107,3 @@ Notes:
 - If `pdk` isn’t available, the publish script falls back to Puppet CLI tooling where possible; upload is always via Forge API.
 - Frontend build errors: clear `frontend/node_modules` and `npm ci` again.
 - Database issues: remove local SQLite db (`data/` or `/tmp/openvox_test_*.db`) for a clean slate in dev.
-

@@ -803,7 +803,7 @@ impl InventoryRepository {
                     .unwrap_or_default();
             for item in items {
                 if item.name == software_name
-                    && software_type.map_or(true, |st| item.software_type == st)
+                    && software_type.is_none_or(|st| item.software_type == st)
                     && seen_certnames.insert(row.certname.clone())
                 {
                     results.push(OutdatedSoftwareNodeDetail {
@@ -3208,21 +3208,30 @@ struct UpdateJobTargetStateRow {
     status: String,
 }
 
+type PackageCatalogKey = (
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+);
+
+type ApplicationCatalogKey = (
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+);
+
 fn fold_package_catalog(
     rows: Vec<CatalogPackageObservationRow>,
 ) -> Vec<RepositoryVersionCatalogEntry> {
     use std::collections::HashMap;
-    let mut grouped: HashMap<
-        (
-            String,
-            String,
-            String,
-            Option<String>,
-            String,
-            Option<String>,
-        ),
-        CatalogPackageObservationRow,
-    > = HashMap::new();
+    let mut grouped: HashMap<PackageCatalogKey, CatalogPackageObservationRow> = HashMap::new();
 
     for row in rows {
         let key = (
@@ -3279,18 +3288,8 @@ fn fold_application_catalog(
     rows: Vec<CatalogApplicationObservationRow>,
 ) -> Vec<RepositoryVersionCatalogEntry> {
     use std::collections::HashMap;
-    let mut grouped: HashMap<
-        (
-            String,
-            String,
-            String,
-            Option<String>,
-            String,
-            Option<String>,
-            Option<String>,
-        ),
-        CatalogApplicationObservationRow,
-    > = HashMap::new();
+    let mut grouped: HashMap<ApplicationCatalogKey, CatalogApplicationObservationRow> =
+        HashMap::new();
 
     for row in rows {
         let key = (

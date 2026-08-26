@@ -217,11 +217,7 @@ export default function Login() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
             </div>
@@ -245,9 +241,7 @@ export default function Login() {
 
           {/* Footer */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Infrastructure management powered by OpenVox
-            </p>
+            <p className="text-sm text-gray-500">Infrastructure management powered by OpenVox</p>
           </div>
         </div>
       </div>

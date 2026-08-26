@@ -111,9 +111,9 @@ impl FacterService {
             classification
                 .variables
                 .get(key)
-                .and_then(|v| match v {
-                    serde_json::Value::String(s) => Some(s.clone()),
-                    _ => Some(v.to_string()),
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => v.to_string(),
                 })
                 .unwrap_or_else(|| format!("{{{{var:{}}}}}", key))
         });

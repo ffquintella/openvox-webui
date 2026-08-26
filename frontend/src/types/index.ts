@@ -358,20 +358,10 @@ export type UpdateJobStatus =
   | 'cancelled';
 
 export type UpdateTargetStatus =
-  | 'pending_approval'
-  | 'queued'
-  | 'dispatched'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'rejected';
+  'pending_approval' | 'queued' | 'dispatched' | 'succeeded' | 'failed' | 'cancelled' | 'rejected';
 
 export type UpdateOperationType =
-  | 'package_update'
-  | 'package_install'
-  | 'package_remove'
-  | 'system_patch'
-  | 'security_patch';
+  'package_update' | 'package_install' | 'package_remove' | 'system_patch' | 'security_patch';
 
 export interface UpdateJobTarget {
   id: string;
@@ -645,14 +635,7 @@ export type Resource =
   | 'api_keys';
 
 export type Action =
-  | 'read'
-  | 'create'
-  | 'update'
-  | 'delete'
-  | 'admin'
-  | 'export'
-  | 'classify'
-  | 'generate';
+  'read' | 'create' | 'update' | 'delete' | 'admin' | 'export' | 'classify' | 'generate';
 
 export type Scope =
   | { type: 'all' }
@@ -1111,7 +1094,8 @@ export interface RenewCAResponse {
 }
 
 // Analytics & Reporting types
-export type ReportType = 'node_health' | 'compliance' | 'change_tracking' | 'drift_detection' | 'custom';
+export type ReportType =
+  'node_health' | 'compliance' | 'change_tracking' | 'drift_detection' | 'custom';
 export type OutputFormat = 'json' | 'csv' | 'pdf';
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -1418,10 +1402,10 @@ export interface DriftReport {
 }
 
 export type ReportResult =
-  | { report_type: 'node_health' } & NodeHealthReport
-  | { report_type: 'compliance' } & ComplianceReport
-  | { report_type: 'change_tracking' } & ChangeTrackingReport
-  | { report_type: 'drift_detection' } & DriftReport
+  | ({ report_type: 'node_health' } & NodeHealthReport)
+  | ({ report_type: 'compliance' } & ComplianceReport)
+  | ({ report_type: 'change_tracking' } & ChangeTrackingReport)
+  | ({ report_type: 'drift_detection' } & DriftReport)
   | { report_type: 'custom'; data: unknown };
 
 export interface GenerateReportRequest {
@@ -1436,12 +1420,7 @@ export interface GenerateReportRequest {
 
 export type ChannelType = 'webhook' | 'email' | 'slack' | 'teams';
 export type AlertRuleType =
-  | 'node_status'
-  | 'compliance'
-  | 'drift'
-  | 'report_failure'
-  | 'update_job'
-  | 'custom';
+  'node_status' | 'compliance' | 'drift' | 'report_failure' | 'update_job' | 'custom';
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 export type ConditionOperator = 'all' | 'any';
 export type AlertStatus = 'active' | 'acknowledged' | 'resolved' | 'silenced';
@@ -1538,7 +1517,7 @@ export interface AlertCondition {
   type?: AlertConditionType;
   enabled?: boolean;
   config?: AlertConditionConfig;
-  
+
   // Legacy simple format (backwards compatibility)
   field?: string;
   operator: string;
@@ -1681,7 +1660,8 @@ export interface NotificationHistory {
 // Code Deploy Types
 // ============================================================================
 
-export type DeploymentStatus = 'pending' | 'approved' | 'rejected' | 'deploying' | 'success' | 'failed' | 'cancelled';
+export type DeploymentStatus =
+  'pending' | 'approved' | 'rejected' | 'deploying' | 'success' | 'failed' | 'cancelled';
 
 export interface CodeSshKey {
   id: string;

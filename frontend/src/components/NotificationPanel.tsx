@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react';
-import { X, Check, CheckCheck, Trash2, AlertCircle, CheckCircle, Info, AlertTriangle, Bell } from 'lucide-react';
+import {
+  X,
+  Check,
+  CheckCheck,
+  Trash2,
+  AlertCircle,
+  CheckCircle,
+  Info,
+  AlertTriangle,
+  Bell,
+} from 'lucide-react';
 import { useNotificationStore } from '../stores/useNotificationStore';
 import { Notification, NotificationType } from '../types/notification';
 import { formatDistanceToNow } from 'date-fns';
@@ -21,9 +31,8 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
     fetchNotifications(filter === 'unread');
   }, [filter, fetchNotifications]);
 
-  const filteredNotifications = filter === 'unread'
-    ? notifications.filter(n => !n.read)
-    : notifications;
+  const filteredNotifications =
+    filter === 'unread' ? notifications.filter((n) => !n.read) : notifications;
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
@@ -144,20 +153,14 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
               >
                 <div className="flex items-start space-x-3">
                   {/* Icon */}
-                  <div className="flex-shrink-0 pt-1">
-                    {getNotificationIcon(notification.type)}
-                  </div>
+                  <div className="flex-shrink-0 pt-1">{getNotificationIcon(notification.type)}</div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between">
-                      <p className="text-sm font-medium text-gray-900">
-                        {notification.title}
-                      </p>
+                      <p className="text-sm font-medium text-gray-900">{notification.title}</p>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {notification.message}
-                    </p>
+                    <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
                     <p className="text-xs text-gray-500 mt-1">
                       {formatTime(notification.created_at)}
                     </p>

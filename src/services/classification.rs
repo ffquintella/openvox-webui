@@ -556,9 +556,9 @@ fn get_fact_value(facts: &serde_json::Value, path: &str) -> Option<serde_json::V
     let mut current = facts;
 
     for part in parts {
-        match current.get(part) {
-            Some(v) => current = v,
-            None => return None,
+        {
+            let v = current.get(part)?;
+            current = v
         }
     }
 

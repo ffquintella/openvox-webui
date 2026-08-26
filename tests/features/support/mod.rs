@@ -2,4 +2,4 @@
 
 mod world;
 
-pub use world::{TestResponse, TestUser, TestWorld};
+pub use world::{TestAlertCondition, TestResponse, TestUser, TestWorld};

@@ -1,9 +1,5 @@
 import { useMemo } from 'react';
-import {
-  Treemap,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts';
+import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import type { NodeGroup } from '../../types';
 
 interface GroupMembershipChartProps {
@@ -93,7 +89,13 @@ function CustomContent(props: {
   );
 }
 
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: TreemapNode }> }) {
+function CustomTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: TreemapNode }>;
+}) {
   if (!active || !payload || !payload.length) return null;
 
   const data = payload[0].payload;
@@ -105,7 +107,10 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
   );
 }
 
-export default function GroupMembershipChart({ groups, title = 'Node Group Membership' }: GroupMembershipChartProps) {
+export default function GroupMembershipChart({
+  groups,
+  title = 'Node Group Membership',
+}: GroupMembershipChartProps) {
   const treemapData = useMemo(() => {
     // Build hierarchy based on parent relationships
     const rootGroups = groups.filter((g) => !g.parent_id);

@@ -37,7 +37,16 @@ const COMPLIANCE_COLORS: Record<string, string> = {
   Stale: '#9ca3af',
 };
 
-const BAR_COLORS = ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#f43f5e', '#ef4444', '#f97316'];
+const BAR_COLORS = [
+  '#3b82f6',
+  '#6366f1',
+  '#8b5cf6',
+  '#a855f7',
+  '#ec4899',
+  '#f43f5e',
+  '#ef4444',
+  '#f97316',
+];
 
 function JobStatusBadge({ status }: { status: UpdateJobStatus }) {
   const config: Record<string, { label: string; className: string }> = {
@@ -51,7 +60,9 @@ function JobStatusBadge({ status }: { status: UpdateJobStatus }) {
   };
   const c = config[status] || { label: status, className: 'bg-gray-100 text-gray-800' };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${c.className}`}>
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${c.className}`}
+    >
       {c.label}
     </span>
   );
@@ -77,11 +88,10 @@ export default function UpdatesTab() {
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
-  const { data: softwareNodes = [], isLoading: softwareNodesLoading } =
-    useOutdatedSoftwareNodes(
-      selectedSoftware?.name ?? null,
-      selectedSoftware?.softwareType
-    );
+  const { data: softwareNodes = [], isLoading: softwareNodesLoading } = useOutdatedSoftwareNodes(
+    selectedSoftware?.name ?? null,
+    selectedSoftware?.softwareType
+  );
 
   const { data: complianceNodes = [], isLoading: complianceNodesLoading } =
     useComplianceCategoryNodes(selectedCompliance);
@@ -109,9 +119,7 @@ export default function UpdatesTab() {
           <div className="flex items-center justify-center mb-2">
             <Server className="w-5 h-5 text-primary-500" />
           </div>
-          <p className="text-3xl font-bold text-gray-900">
-            {summary?.nodes_with_inventory ?? 0}
-          </p>
+          <p className="text-3xl font-bold text-gray-900">{summary?.nodes_with_inventory ?? 0}</p>
           <p className="text-sm text-gray-500">Nodes with Inventory</p>
         </div>
         <button
@@ -121,9 +129,7 @@ export default function UpdatesTab() {
           <div className="flex items-center justify-center mb-2">
             <Package className="w-5 h-5 text-orange-500" />
           </div>
-          <p className="text-3xl font-bold text-orange-600">
-            {summary?.outdated_nodes ?? 0}
-          </p>
+          <p className="text-3xl font-bold text-orange-600">{summary?.outdated_nodes ?? 0}</p>
           <p className="text-sm text-gray-500">Outdated Nodes</p>
         </button>
         <div className="card text-center">
@@ -142,9 +148,7 @@ export default function UpdatesTab() {
           <div className="flex items-center justify-center mb-2">
             <Clock className="w-5 h-5 text-gray-500" />
           </div>
-          <p className="text-3xl font-bold text-gray-600">
-            {summary?.stale_nodes ?? 0}
-          </p>
+          <p className="text-3xl font-bold text-gray-600">{summary?.stale_nodes ?? 0}</p>
           <p className="text-sm text-gray-500">Stale Nodes</p>
         </button>
       </div>
@@ -178,10 +182,7 @@ export default function UpdatesTab() {
                   cursor="pointer"
                 >
                   {complianceData.map((entry, idx) => (
-                    <Cell
-                      key={idx}
-                      fill={COMPLIANCE_COLORS[entry.label] ?? '#d1d5db'}
-                    />
+                    <Cell key={idx} fill={COMPLIANCE_COLORS[entry.label] ?? '#d1d5db'} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value, name) => [String(value), String(name)]} />
@@ -300,10 +301,18 @@ export default function UpdatesTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Software</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Affected Nodes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    #
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Software
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Type
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    Affected Nodes
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -349,9 +358,7 @@ export default function UpdatesTab() {
               <div key={job.id} className="border rounded-lg">
                 <button
                   className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
-                  onClick={() =>
-                    setExpandedJobId(expandedJobId === job.id ? null : job.id)
-                  }
+                  onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}
                 >
                   <div className="flex items-center gap-3">
                     {expandedJobId === job.id ? (
@@ -365,12 +372,15 @@ export default function UpdatesTab() {
                     </span>
                     {job.package_names && job.package_names.length > 0 && (
                       <span className="text-xs text-gray-500">
-                        ({job.package_names.length} package{job.package_names.length !== 1 ? 's' : ''})
+                        ({job.package_names.length} package
+                        {job.package_names.length !== 1 ? 's' : ''})
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <span>{job.targets?.length ?? 0} target{(job.targets?.length ?? 0) !== 1 ? 's' : ''}</span>
+                    <span>
+                      {job.targets?.length ?? 0} target{(job.targets?.length ?? 0) !== 1 ? 's' : ''}
+                    </span>
                     <span>{formatDate(job.created_at)}</span>
                   </div>
                 </button>
@@ -401,9 +411,15 @@ export default function UpdatesTab() {
                             <td className="py-2 px-2">
                               <JobStatusBadge status={target.status as UpdateJobStatus} />
                             </td>
-                            <td className="py-2 px-2 text-gray-500">{formatDate(target.dispatched_at)}</td>
-                            <td className="py-2 px-2 text-gray-500">{formatDate(target.completed_at)}</td>
-                            <td className="py-2 px-2 text-red-600 text-xs">{target.last_error || '-'}</td>
+                            <td className="py-2 px-2 text-gray-500">
+                              {formatDate(target.dispatched_at)}
+                            </td>
+                            <td className="py-2 px-2 text-gray-500">
+                              {formatDate(target.completed_at)}
+                            </td>
+                            <td className="py-2 px-2 text-red-600 text-xs">
+                              {target.last_error || '-'}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -448,9 +464,15 @@ export default function UpdatesTab() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Installed</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Installed
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Latest
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -513,10 +535,18 @@ export default function UpdatesTab() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Pkgs</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Apps</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Checked</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Pkgs
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Apps
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Last Checked
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -533,14 +563,18 @@ export default function UpdatesTab() {
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_packages > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_packages}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_packages}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_applications > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_applications}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_applications}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}

@@ -1,5 +1,8 @@
 //! Inventory data models for Phase 10.
 
+// These database-facing parsers intentionally return `Option` for fallback handling.
+#![allow(clippy::should_implement_trait)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

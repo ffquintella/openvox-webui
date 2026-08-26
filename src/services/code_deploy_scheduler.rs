@@ -222,16 +222,3 @@ async fn cleanup_task(state: CodeDeploySchedulerState) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-
-    #[test]
-    fn test_scheduler_state_creation() {
-        // Basic test to ensure the module compiles correctly
-        // Full integration tests would require a database connection
-        assert!(true);
-    }
-}

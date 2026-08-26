@@ -429,10 +429,4 @@ mod tests {
         assert!(match_cron_field("*/5", 0));
         assert!(!match_cron_field("*/5", 7));
     }
-
-    #[test]
-    fn test_scheduler_state_creation() {
-        // Basic test to ensure the module compiles correctly
-        assert!(true);
-    }
 }

@@ -25,10 +25,7 @@ import {
   useOutdatedSoftwareNodes,
   useComplianceCategoryNodes,
 } from '../hooks/useUpdates';
-import {
-  useVulnerabilityDashboard,
-  useCveSearch,
-} from '../hooks/useCve';
+import { useVulnerabilityDashboard, useCveSearch } from '../hooks/useCve';
 import { useGroups } from '../hooks/useGroups';
 import type {
   UpdateJobStatus,
@@ -69,7 +66,9 @@ function StatusBadge({ status }: { status: UpdateJobStatus }) {
   };
   const c = config[status] || { label: status, className: 'bg-gray-100 text-gray-800' };
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${c.className}`}>
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${c.className}`}
+    >
       {c.label}
     </span>
   );
@@ -84,8 +83,11 @@ function SeverityBadge({ severity, count }: { severity: string; count?: number }
     unknown: 'bg-gray-100 text-gray-800',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[severity] || colors.unknown}`}>
-      {severity}{count !== undefined ? ` (${count})` : ''}
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[severity] || colors.unknown}`}
+    >
+      {severity}
+      {count !== undefined ? ` (${count})` : ''}
     </span>
   );
 }
@@ -98,16 +100,25 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
   const { data: dashboard, isLoading } = useInventoryDashboard();
   const { data: vulnDashboard } = useVulnerabilityDashboard();
   const [showDispatcher, setShowDispatcher] = useState(false);
-  const [selectedSoftware, setSelectedSoftware] = useState<{ name: string; softwareType: string } | null>(null);
+  const [selectedSoftware, setSelectedSoftware] = useState<{
+    name: string;
+    softwareType: string;
+  } | null>(null);
   const [selectedCompliance, setSelectedCompliance] = useState<string | null>(null);
 
-  const { data: softwareNodes = [], isLoading: softwareNodesLoading } =
-    useOutdatedSoftwareNodes(selectedSoftware?.name ?? null, selectedSoftware?.softwareType);
+  const { data: softwareNodes = [], isLoading: softwareNodesLoading } = useOutdatedSoftwareNodes(
+    selectedSoftware?.name ?? null,
+    selectedSoftware?.softwareType
+  );
   const { data: complianceNodes = [], isLoading: complianceNodesLoading } =
     useComplianceCategoryNodes(selectedCompliance);
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><RefreshCw className="h-8 w-8 animate-spin text-gray-400" /></div>;
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    );
   }
 
   const summary = dashboard?.summary;
@@ -125,21 +136,27 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
           onClick={() => setSelectedCompliance('outdated')}
         >
           <div className="text-sm font-medium text-gray-500">Outdated Nodes</div>
-          <div className="mt-1 text-2xl font-semibold text-orange-600">{summary?.outdated_nodes ?? 0}</div>
+          <div className="mt-1 text-2xl font-semibold text-orange-600">
+            {summary?.outdated_nodes ?? 0}
+          </div>
         </button>
         <button
           className="bg-white rounded-lg border p-4 text-left hover:ring-2 hover:ring-orange-300 transition-all cursor-pointer"
           onClick={() => setSelectedCompliance('outdated')}
         >
           <div className="text-sm font-medium text-gray-500">Outdated Packages</div>
-          <div className="mt-1 text-2xl font-semibold text-orange-600">{summary?.outdated_packages ?? 0}</div>
+          <div className="mt-1 text-2xl font-semibold text-orange-600">
+            {summary?.outdated_packages ?? 0}
+          </div>
         </button>
         <button
           className="bg-white rounded-lg border p-4 text-left hover:ring-2 hover:ring-red-300 transition-all cursor-pointer"
           onClick={() => onSwitchTab('vulnerabilities')}
         >
           <div className="text-sm font-medium text-gray-500">Vulnerable Nodes</div>
-          <div className="mt-1 text-2xl font-semibold text-red-600">{vulnDashboard?.total_vulnerable_nodes ?? 0}</div>
+          <div className="mt-1 text-2xl font-semibold text-red-600">
+            {vulnDashboard?.total_vulnerable_nodes ?? 0}
+          </div>
         </button>
       </div>
 
@@ -167,9 +184,15 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Software</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Affected Nodes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Software
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Type
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Affected Nodes
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -177,11 +200,15 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
                   <tr
                     key={`${item.software_type}-${item.name}`}
                     className="hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedSoftware({ name: item.name, softwareType: item.software_type })}
+                    onClick={() =>
+                      setSelectedSoftware({ name: item.name, softwareType: item.software_type })
+                    }
                   >
                     <td className="px-4 py-3 text-sm text-gray-900">{item.name}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{item.software_type}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-orange-600">{item.affected_nodes}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-orange-600">
+                      {item.affected_nodes}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -222,9 +249,15 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Installed</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Installed
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Latest
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -287,10 +320,18 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Pkgs</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Outdated Apps</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Checked</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Node
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Pkgs
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        Outdated Apps
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        Last Checked
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -307,14 +348,18 @@ function UpdateStatusTab({ onSwitchTab }: { onSwitchTab: (tab: TabId) => void })
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_packages > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_packages}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_packages}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {node.outdated_applications > 0 ? (
-                            <span className="text-orange-600 font-semibold">{node.outdated_applications}</span>
+                            <span className="text-orange-600 font-semibold">
+                              {node.outdated_applications}
+                            </span>
                           ) : (
                             <span className="text-green-600">0</span>
                           )}
@@ -359,8 +404,11 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
   const previewJob = usePreviewUpdateJob();
 
   const operationType: UpdateOperationType =
-    updateScope === 'all' ? 'system_patch' :
-    updateScope === 'security' ? 'security_patch' : 'package_update';
+    updateScope === 'all'
+      ? 'system_patch'
+      : updateScope === 'security'
+        ? 'security_patch'
+        : 'package_update';
 
   const buildRequest = (): CreateUpdateJobRequest => ({
     operation_type: operationType,
@@ -382,26 +430,32 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
         target_all_outdated: targetMode === 'all_outdated',
       });
       setPreview(result);
-    } catch { /* error handled by mutation */ }
+    } catch {
+      /* error handled by mutation */
+    }
   };
 
   const handleSubmit = async () => {
     try {
       await createJob.mutateAsync(buildRequest());
       onClose();
-    } catch { /* error handled by mutation */ }
+    } catch {
+      /* error handled by mutation */
+    }
   };
 
   return (
     <div className="bg-white rounded-lg border shadow-sm p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium text-gray-900">Dispatch Updates</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">&times;</button>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          &times;
+        </button>
       </div>
 
       {/* Step indicators */}
       <div className="flex space-x-4 text-sm">
-        {[1, 2, 3, 4].map(s => (
+        {[1, 2, 3, 4].map((s) => (
           <button
             key={s}
             onClick={() => setStep(s)}
@@ -418,43 +472,63 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
           <h4 className="font-medium text-gray-700">Select Targets</h4>
           <div className="space-y-3">
             <label className="flex items-center space-x-3 cursor-pointer">
-              <input type="radio" checked={targetMode === 'single'} onChange={() => setTargetMode('single')} className="text-primary-600" />
+              <input
+                type="radio"
+                checked={targetMode === 'single'}
+                onChange={() => setTargetMode('single')}
+                className="text-primary-600"
+              />
               <span className="text-sm">Single node</span>
             </label>
             {targetMode === 'single' && (
               <input
                 type="text"
                 value={selectedCertname}
-                onChange={e => setSelectedCertname(e.target.value)}
+                onChange={(e) => setSelectedCertname(e.target.value)}
                 placeholder="Enter node certname..."
                 className="ml-7 block w-full max-w-md rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               />
             )}
 
             <label className="flex items-center space-x-3 cursor-pointer">
-              <input type="radio" checked={targetMode === 'group'} onChange={() => setTargetMode('group')} className="text-primary-600" />
+              <input
+                type="radio"
+                checked={targetMode === 'group'}
+                onChange={() => setTargetMode('group')}
+                className="text-primary-600"
+              />
               <span className="text-sm">Node group</span>
             </label>
             {targetMode === 'group' && (
               <select
                 value={selectedGroupId}
-                onChange={e => setSelectedGroupId(e.target.value)}
+                onChange={(e) => setSelectedGroupId(e.target.value)}
                 className="ml-7 block w-full max-w-md rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               >
                 <option value="">Select a group...</option>
-                {groups?.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
+                {groups?.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
                 ))}
               </select>
             )}
 
             <label className="flex items-center space-x-3 cursor-pointer">
-              <input type="radio" checked={targetMode === 'all_outdated'} onChange={() => setTargetMode('all_outdated')} className="text-primary-600" />
+              <input
+                type="radio"
+                checked={targetMode === 'all_outdated'}
+                onChange={() => setTargetMode('all_outdated')}
+                className="text-primary-600"
+              />
               <span className="text-sm">All outdated nodes</span>
             </label>
           </div>
           <div className="flex justify-end">
-            <button onClick={() => setStep(2)} className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700">
+            <button
+              onClick={() => setStep(2)}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700"
+            >
               Next
             </button>
           </div>
@@ -467,26 +541,45 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
           <h4 className="font-medium text-gray-700">Update Scope</h4>
           <div className="space-y-3">
             <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border hover:bg-gray-50">
-              <input type="radio" checked={updateScope === 'all'} onChange={() => setUpdateScope('all')} className="mt-0.5 text-primary-600" />
+              <input
+                type="radio"
+                checked={updateScope === 'all'}
+                onChange={() => setUpdateScope('all')}
+                className="mt-0.5 text-primary-600"
+              />
               <div>
                 <div className="text-sm font-medium">All updates</div>
-                <div className="text-xs text-gray-500">Apply all available package and OS updates</div>
+                <div className="text-xs text-gray-500">
+                  Apply all available package and OS updates
+                </div>
               </div>
             </label>
 
             <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border hover:bg-gray-50">
-              <input type="radio" checked={updateScope === 'security'} onChange={() => setUpdateScope('security')} className="mt-0.5 text-primary-600" />
+              <input
+                type="radio"
+                checked={updateScope === 'security'}
+                onChange={() => setUpdateScope('security')}
+                className="mt-0.5 text-primary-600"
+              />
               <div>
                 <div className="text-sm font-medium flex items-center gap-2">
                   Security updates only
                   <Shield className="h-3.5 w-3.5 text-red-500" />
                 </div>
-                <div className="text-xs text-gray-500">Update only packages with known CVE vulnerabilities</div>
+                <div className="text-xs text-gray-500">
+                  Update only packages with known CVE vulnerabilities
+                </div>
               </div>
             </label>
 
             <label className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg border hover:bg-gray-50">
-              <input type="radio" checked={updateScope === 'select'} onChange={() => setUpdateScope('select')} className="mt-0.5 text-primary-600" />
+              <input
+                type="radio"
+                checked={updateScope === 'select'}
+                onChange={() => setUpdateScope('select')}
+                className="mt-0.5 text-primary-600"
+              />
               <div>
                 <div className="text-sm font-medium">Select packages</div>
                 <div className="text-xs text-gray-500">Choose specific packages to update</div>
@@ -498,7 +591,7 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
             <div className="ml-7">
               <textarea
                 value={selectedPackages.join('\n')}
-                onChange={e => setSelectedPackages(e.target.value.split('\n').filter(Boolean))}
+                onChange={(e) => setSelectedPackages(e.target.value.split('\n').filter(Boolean))}
                 placeholder="Enter package names (one per line)..."
                 rows={4}
                 className="block w-full max-w-md rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
@@ -507,8 +600,18 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
           )}
 
           <div className="flex justify-between">
-            <button onClick={() => setStep(1)} className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50">Back</button>
-            <button onClick={() => setStep(3)} className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700">Next</button>
+            <button
+              onClick={() => setStep(1)}
+              className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep(3)}
+              className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700"
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
@@ -520,18 +623,28 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
 
           <div className="space-y-3">
             <label className="flex items-center space-x-3">
-              <input type="radio" checked={scheduleMode === 'now'} onChange={() => setScheduleMode('now')} className="text-primary-600" />
+              <input
+                type="radio"
+                checked={scheduleMode === 'now'}
+                onChange={() => setScheduleMode('now')}
+                className="text-primary-600"
+              />
               <span className="text-sm">Execute now</span>
             </label>
             <label className="flex items-center space-x-3">
-              <input type="radio" checked={scheduleMode === 'later'} onChange={() => setScheduleMode('later')} className="text-primary-600" />
+              <input
+                type="radio"
+                checked={scheduleMode === 'later'}
+                onChange={() => setScheduleMode('later')}
+                className="text-primary-600"
+              />
               <span className="text-sm">Schedule for later</span>
             </label>
             {scheduleMode === 'later' && (
               <input
                 type="datetime-local"
                 value={scheduledFor}
-                onChange={e => setScheduledFor(e.target.value)}
+                onChange={(e) => setScheduledFor(e.target.value)}
                 className="ml-7 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               />
             )}
@@ -541,14 +654,19 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
             <input
               type="checkbox"
               checked={requiresApproval}
-              onChange={e => setRequiresApproval(e.target.checked)}
+              onChange={(e) => setRequiresApproval(e.target.checked)}
               className="rounded text-primary-600"
             />
             <span className="text-sm">Require approval before execution</span>
           </label>
 
           <div className="flex justify-between items-center">
-            <button onClick={() => setStep(2)} className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50">Back</button>
+            <button
+              onClick={() => setStep(2)}
+              className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50"
+            >
+              Back
+            </button>
             <div className="flex space-x-3">
               <button
                 onClick={handlePreview}
@@ -558,13 +676,16 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
                 <Eye className="h-4 w-4 mr-2" />
                 {previewJob.isPending ? 'Loading...' : 'Preview'}
               </button>
-              <button onClick={() => setStep(4)} className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700">Next</button>
+              <button
+                onClick={() => setStep(4)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md text-sm hover:bg-primary-700"
+              >
+                Next
+              </button>
             </div>
           </div>
 
-          {preview && (
-            <PreviewResult preview={preview} />
-          )}
+          {preview && <PreviewResult preview={preview} />}
         </div>
       )}
 
@@ -574,14 +695,39 @@ function UpdateDispatcher({ onClose }: { onClose: () => void }) {
           <h4 className="font-medium text-gray-700">Confirm Update Job</h4>
 
           <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-            <div><span className="font-medium">Scope:</span> {updateScope === 'all' ? 'All updates' : updateScope === 'security' ? 'Security updates only' : `Selected packages (${selectedPackages.length})`}</div>
-            <div><span className="font-medium">Target:</span> {targetMode === 'single' ? selectedCertname : targetMode === 'group' ? `Group: ${groups?.find(g => g.id === selectedGroupId)?.name || selectedGroupId}` : 'All outdated nodes'}</div>
-            <div><span className="font-medium">Schedule:</span> {scheduleMode === 'now' ? 'Immediate' : `Scheduled: ${scheduledFor}`}</div>
-            <div><span className="font-medium">Approval required:</span> {requiresApproval ? 'Yes' : 'No'}</div>
+            <div>
+              <span className="font-medium">Scope:</span>{' '}
+              {updateScope === 'all'
+                ? 'All updates'
+                : updateScope === 'security'
+                  ? 'Security updates only'
+                  : `Selected packages (${selectedPackages.length})`}
+            </div>
+            <div>
+              <span className="font-medium">Target:</span>{' '}
+              {targetMode === 'single'
+                ? selectedCertname
+                : targetMode === 'group'
+                  ? `Group: ${groups?.find((g) => g.id === selectedGroupId)?.name || selectedGroupId}`
+                  : 'All outdated nodes'}
+            </div>
+            <div>
+              <span className="font-medium">Schedule:</span>{' '}
+              {scheduleMode === 'now' ? 'Immediate' : `Scheduled: ${scheduledFor}`}
+            </div>
+            <div>
+              <span className="font-medium">Approval required:</span>{' '}
+              {requiresApproval ? 'Yes' : 'No'}
+            </div>
           </div>
 
           <div className="flex justify-between">
-            <button onClick={() => setStep(3)} className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50">Back</button>
+            <button
+              onClick={() => setStep(3)}
+              className="px-4 py-2 text-gray-700 border rounded-md text-sm hover:bg-gray-50"
+            >
+              Back
+            </button>
             <button
               onClick={handleSubmit}
               disabled={createJob.isPending}
@@ -609,13 +755,19 @@ function PreviewResult({ preview }: { preview: UpdatePreviewResponse }) {
       <div className="text-sm font-medium text-blue-900">
         Preview: {preview.total_nodes} node(s), {preview.total_packages} package(s) to update
       </div>
-      {preview.targets.map(target => (
+      {preview.targets.map((target) => (
         <div key={target.certname} className="text-sm">
           <button
-            onClick={() => setExpanded(prev => ({ ...prev, [target.certname]: !prev[target.certname] }))}
+            onClick={() =>
+              setExpanded((prev) => ({ ...prev, [target.certname]: !prev[target.certname] }))
+            }
             className="flex items-center gap-1 font-medium text-blue-800 hover:text-blue-600"
           >
-            {expanded[target.certname] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {expanded[target.certname] ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
             {target.certname} ({target.packages_to_update.length} packages)
           </button>
           {expanded[target.certname] && (
@@ -623,9 +775,13 @@ function PreviewResult({ preview }: { preview: UpdatePreviewResponse }) {
               {target.packages_to_update.map((pkg, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs text-blue-700">
                   <span className="font-mono">{pkg.name}</span>
-                  <span>{pkg.from_version} &rarr; {pkg.to_version}</span>
+                  <span>
+                    {pkg.from_version} &rarr; {pkg.to_version}
+                  </span>
                   {pkg.cve_ids.length > 0 && (
-                    <span className="text-red-600">({pkg.cve_ids.length} CVE{pkg.cve_ids.length !== 1 ? 's' : ''})</span>
+                    <span className="text-red-600">
+                      ({pkg.cve_ids.length} CVE{pkg.cve_ids.length !== 1 ? 's' : ''})
+                    </span>
                   )}
                 </div>
               ))}
@@ -648,7 +804,11 @@ function UpdateJobsTab() {
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><RefreshCw className="h-8 w-8 animate-spin text-gray-400" /></div>;
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    );
   }
 
   if (!jobs || jobs.length === 0) {
@@ -662,14 +822,18 @@ function UpdateJobsTab() {
 
   return (
     <div className="space-y-4">
-      {jobs.map(job => (
+      {jobs.map((job) => (
         <div key={job.id} className="bg-white rounded-lg border">
           <div
             className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50"
             onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
           >
             <div className="flex items-center gap-4">
-              {expandedJob === job.id ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+              {expandedJob === job.id ? (
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+              )}
               <div>
                 <div className="text-sm font-medium text-gray-900">
                   {job.operation_type.replace(/_/g, ' ')} &mdash; {job.target_nodes.length} node(s)
@@ -684,24 +848,36 @@ function UpdateJobsTab() {
               {job.status === 'pending_approval' && (
                 <div className="flex gap-2">
                   <button
-                    onClick={e => { e.stopPropagation(); approveJob.mutate({ jobId: job.id, request: { approved: true } }); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      approveJob.mutate({ jobId: job.id, request: { approved: true } });
+                    }}
                     className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
                   >
                     Approve
                   </button>
                   <button
-                    onClick={e => { e.stopPropagation(); approveJob.mutate({ jobId: job.id, request: { approved: false } }); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      approveJob.mutate({ jobId: job.id, request: { approved: false } });
+                    }}
                     className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
                   >
                     Reject
                   </button>
                 </div>
               )}
-              {(job.status === 'pending_approval' || job.status === 'approved' || job.status === 'in_progress') && (
+              {(job.status === 'pending_approval' ||
+                job.status === 'approved' ||
+                job.status === 'in_progress') && (
                 <button
-                  onClick={e => {
+                  onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm('Cancel this update job? All pending and in-progress targets will be marked as cancelled.')) {
+                    if (
+                      window.confirm(
+                        'Cancel this update job? All pending and in-progress targets will be marked as cancelled.'
+                      )
+                    ) {
                       cancelJob.mutate(job.id);
                     }
                   }}
@@ -717,23 +893,41 @@ function UpdateJobsTab() {
           {expandedJob === job.id && (
             <div className="px-4 py-3 border-t bg-gray-50 text-sm space-y-2">
               <div className="grid grid-cols-2 gap-4">
-                <div><span className="font-medium">Operation:</span> {job.operation_type}</div>
-                <div><span className="font-medium">Requires Approval:</span> {job.requires_approval ? 'Yes' : 'No'}</div>
-                {job.approved_by && <div><span className="font-medium">Approved by:</span> {job.approved_by}</div>}
-                {job.scheduled_for && <div><span className="font-medium">Scheduled for:</span> {formatDate(job.scheduled_for)}</div>}
+                <div>
+                  <span className="font-medium">Operation:</span> {job.operation_type}
+                </div>
+                <div>
+                  <span className="font-medium">Requires Approval:</span>{' '}
+                  {job.requires_approval ? 'Yes' : 'No'}
+                </div>
+                {job.approved_by && (
+                  <div>
+                    <span className="font-medium">Approved by:</span> {job.approved_by}
+                  </div>
+                )}
+                {job.scheduled_for && (
+                  <div>
+                    <span className="font-medium">Scheduled for:</span>{' '}
+                    {formatDate(job.scheduled_for)}
+                  </div>
+                )}
               </div>
               {job.package_names.length > 0 && (
-                <div><span className="font-medium">Packages:</span> {job.package_names.join(', ')}</div>
+                <div>
+                  <span className="font-medium">Packages:</span> {job.package_names.join(', ')}
+                </div>
               )}
               {job.targets.length > 0 && (
                 <div>
                   <span className="font-medium">Targets:</span>
                   <div className="mt-1 space-y-1">
-                    {job.targets.map(target => (
+                    {job.targets.map((target) => (
                       <div key={target.id} className="flex items-center gap-2 text-xs">
                         <span className="font-mono">{target.certname}</span>
                         <StatusBadge status={target.status as UpdateJobStatus} />
-                        {target.last_error && <span className="text-red-600">{target.last_error}</span>}
+                        {target.last_error && (
+                          <span className="text-red-600">{target.last_error}</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -758,8 +952,9 @@ function VersionCatalogTab() {
 
   const filtered = useMemo(() => {
     if (!catalog) return [];
-    return catalog.filter(entry => {
-      const matchesSearch = !search || entry.software_name.toLowerCase().includes(search.toLowerCase());
+    return catalog.filter((entry) => {
+      const matchesSearch =
+        !search || entry.software_name.toLowerCase().includes(search.toLowerCase());
       const matchesPlatform = !platformFilter || entry.platform_family === platformFilter;
       return matchesSearch && matchesPlatform;
     });
@@ -767,11 +962,15 @@ function VersionCatalogTab() {
 
   const platforms = useMemo(() => {
     if (!catalog) return [];
-    return [...new Set(catalog.map(e => e.platform_family))].sort();
+    return [...new Set(catalog.map((e) => e.platform_family))].sort();
   }, [catalog]);
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><RefreshCw className="h-8 w-8 animate-spin text-gray-400" /></div>;
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    );
   }
 
   return (
@@ -782,18 +981,22 @@ function VersionCatalogTab() {
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search software..."
             className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
           />
         </div>
         <select
           value={platformFilter}
-          onChange={e => setPlatformFilter(e.target.value)}
+          onChange={(e) => setPlatformFilter(e.target.value)}
           className="rounded-md border-gray-300 shadow-sm text-sm"
         >
           <option value="">All platforms</option>
-          {platforms.map(p => <option key={p} value={p}>{p}</option>)}
+          {platforms.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -801,15 +1004,25 @@ function VersionCatalogTab() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Software</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Platform</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest Version</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nodes</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Software
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Platform
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Type
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Latest Version
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Nodes
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {filtered.slice(0, 100).map(entry => (
+            {filtered.slice(0, 100).map((entry) => (
               <tr key={entry.id}>
                 <td className="px-4 py-3 text-sm font-mono text-gray-900">{entry.software_name}</td>
                 <td className="px-4 py-3 text-sm text-gray-500">{entry.platform_family}</td>
@@ -821,7 +1034,9 @@ function VersionCatalogTab() {
           </tbody>
         </table>
         {filtered.length > 100 && (
-          <div className="px-4 py-2 text-xs text-gray-500 bg-gray-50">Showing 100 of {filtered.length} entries</div>
+          <div className="px-4 py-2 text-xs text-gray-500 bg-gray-50">
+            Showing 100 of {filtered.length} entries
+          </div>
         )}
       </div>
     </div>
@@ -843,10 +1058,17 @@ function VulnerabilitiesTab() {
   );
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><RefreshCw className="h-8 w-8 animate-spin text-gray-400" /></div>;
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+      </div>
+    );
   }
 
-  if (!dashboard || (dashboard.total_vulnerable_nodes === 0 && dashboard.total_cves_matched === 0)) {
+  if (
+    !dashboard ||
+    (dashboard.total_vulnerable_nodes === 0 && dashboard.total_cves_matched === 0)
+  ) {
     return (
       <div className="text-center py-12 text-gray-500">
         <Shield className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -861,7 +1083,9 @@ function VulnerabilitiesTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="text-sm font-medium text-gray-500">Vulnerable Nodes</div>
-          <div className="mt-1 text-2xl font-semibold text-red-600">{dashboard.total_vulnerable_nodes}</div>
+          <div className="mt-1 text-2xl font-semibold text-red-600">
+            {dashboard.total_vulnerable_nodes}
+          </div>
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="text-sm font-medium text-gray-500">CVEs Matched</div>
@@ -874,7 +1098,7 @@ function VulnerabilitiesTab() {
         <div className="bg-white rounded-lg border p-4">
           <div className="text-sm font-medium text-gray-500">Severity Breakdown</div>
           <div className="mt-1 flex gap-1 flex-wrap">
-            {dashboard.severity_distribution.map(s => (
+            {dashboard.severity_distribution.map((s) => (
               <SeverityBadge key={s.severity} severity={s.severity} count={s.count} />
             ))}
           </div>
@@ -891,23 +1115,41 @@ function VulnerabilitiesTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVE ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">CVSS</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Affected Nodes</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">KEV</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    CVE ID
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Severity
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    CVSS
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Affected Nodes
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    KEV
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Description
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {dashboard.top_cves.map(cve => (
+                {dashboard.top_cves.map((cve) => (
                   <tr key={cve.cve_id}>
                     <td className="px-4 py-3 text-sm font-mono text-primary-600">{cve.cve_id}</td>
-                    <td className="px-4 py-3"><SeverityBadge severity={cve.severity} /></td>
+                    <td className="px-4 py-3">
+                      <SeverityBadge severity={cve.severity} />
+                    </td>
                     <td className="px-4 py-3 text-sm">{cve.cvss_score?.toFixed(1) ?? '-'}</td>
                     <td className="px-4 py-3 text-sm font-medium">{cve.affected_nodes}</td>
-                    <td className="px-4 py-3">{cve.is_kev ? <AlertTriangle className="h-4 w-4 text-red-500" /> : '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500 max-w-md truncate">{cve.description || '-'}</td>
+                    <td className="px-4 py-3">
+                      {cve.is_kev ? <AlertTriangle className="h-4 w-4 text-red-500" /> : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-md truncate">
+                      {cve.description || '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -926,19 +1168,41 @@ function VulnerabilitiesTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Node</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Vulns</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Critical</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">KEV</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Node
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Total Vulns
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Critical
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    KEV
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {dashboard.top_vulnerable_nodes.map(node => (
+                {dashboard.top_vulnerable_nodes.map((node) => (
                   <tr key={node.certname}>
-                    <td className="px-4 py-3 text-sm font-mono text-primary-600">{node.certname}</td>
+                    <td className="px-4 py-3 text-sm font-mono text-primary-600">
+                      {node.certname}
+                    </td>
                     <td className="px-4 py-3 text-sm">{node.total_vulns}</td>
-                    <td className="px-4 py-3 text-sm">{node.critical_count > 0 ? <span className="text-red-600 font-medium">{node.critical_count}</span> : '0'}</td>
-                    <td className="px-4 py-3 text-sm">{node.kev_count > 0 ? <span className="text-red-600 font-medium">{node.kev_count}</span> : '0'}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {node.critical_count > 0 ? (
+                        <span className="text-red-600 font-medium">{node.critical_count}</span>
+                      ) : (
+                        '0'
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {node.kev_count > 0 ? (
+                        <span className="text-red-600 font-medium">{node.kev_count}</span>
+                      ) : (
+                        '0'
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -959,14 +1223,14 @@ function VulnerabilitiesTab() {
               <input
                 type="text"
                 value={cveSearch}
-                onChange={e => setCveSearch(e.target.value)}
+                onChange={(e) => setCveSearch(e.target.value)}
                 placeholder="Search CVE ID or description..."
                 className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               />
             </div>
             <select
               value={severityFilter}
-              onChange={e => setSeverityFilter(e.target.value)}
+              onChange={(e) => setSeverityFilter(e.target.value)}
               className="rounded-md border-gray-300 shadow-sm text-sm"
             >
               <option value="">All severities</option>
@@ -981,24 +1245,42 @@ function VulnerabilitiesTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">CVE ID</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">CVSS</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Published</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    CVE ID
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    Severity
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    CVSS
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    Published
+                  </th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    Description
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {cveResults.slice(0, 50).map(entry => (
+                {cveResults.slice(0, 50).map((entry) => (
                   <tr key={entry.id}>
                     <td className="px-4 py-2 text-sm font-mono">
                       {entry.id}
-                      {entry.is_kev && <AlertTriangle className="inline h-3 w-3 ml-1 text-red-500" />}
+                      {entry.is_kev && (
+                        <AlertTriangle className="inline h-3 w-3 ml-1 text-red-500" />
+                      )}
                     </td>
-                    <td className="px-4 py-2"><SeverityBadge severity={entry.severity} /></td>
+                    <td className="px-4 py-2">
+                      <SeverityBadge severity={entry.severity} />
+                    </td>
                     <td className="px-4 py-2 text-sm">{entry.cvss_score?.toFixed(1) ?? '-'}</td>
-                    <td className="px-4 py-2 text-sm text-gray-500">{formatDate(entry.published_at)}</td>
-                    <td className="px-4 py-2 text-sm text-gray-500 max-w-sm truncate">{entry.description || '-'}</td>
+                    <td className="px-4 py-2 text-sm text-gray-500">
+                      {formatDate(entry.published_at)}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-500 max-w-sm truncate">
+                      {entry.description || '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1024,7 +1306,7 @@ export default function Updates() {
       {/* Tab navigation */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
-          {TABS.map(tab => {
+          {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (

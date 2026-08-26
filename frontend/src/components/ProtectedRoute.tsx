@@ -35,7 +35,10 @@ export default function ProtectedRoute({ children, requiredPermission }: Protect
   }
 
   // Check permission if required
-  if (requiredPermission && !hasPermission(requiredPermission.resource, requiredPermission.action)) {
+  if (
+    requiredPermission &&
+    !hasPermission(requiredPermission.resource, requiredPermission.action)
+  ) {
     // User is authenticated but doesn't have permission
     return <Navigate to="/access-denied" replace />;
   }

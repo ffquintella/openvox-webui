@@ -100,7 +100,12 @@ export default function CodeDeploy() {
   const expiringTokens = patTokens.filter((t) => t.is_expiring_soon || t.is_expired).length;
 
   const tabs = [
-    { id: 'repositories' as const, name: 'Repositories', icon: GitBranch, badge: repositories.length },
+    {
+      id: 'repositories' as const,
+      name: 'Repositories',
+      icon: GitBranch,
+      badge: repositories.length,
+    },
     { id: 'environments' as const, name: 'Environments', icon: Server, badge: environments.length },
     {
       id: 'deployments' as const,
@@ -131,7 +136,10 @@ export default function CodeDeploy() {
       } else if (confirmAction.type === 'approve') {
         await approveMutation.mutateAsync({ id: confirmAction.id });
       } else if (confirmAction.type === 'reject') {
-        await rejectMutation.mutateAsync({ id: confirmAction.id, request: { reason: rejectReason } });
+        await rejectMutation.mutateAsync({
+          id: confirmAction.id,
+          request: { reason: rejectReason },
+        });
       }
       setConfirmAction(null);
       setRejectReason('');
@@ -222,7 +230,9 @@ export default function CodeDeploy() {
               </h3>
               <div className="text-sm text-yellow-800 space-y-2">
                 <p>
-                  The Code Deploy feature is currently disabled. To enable it, add the following configuration to your <code className="bg-yellow-100 px-1.5 py-0.5 rounded">config.yaml</code> file:
+                  The Code Deploy feature is currently disabled. To enable it, add the following
+                  configuration to your{' '}
+                  <code className="bg-yellow-100 px-1.5 py-0.5 rounded">config.yaml</code> file:
                 </p>
                 {featureStatus.message && (
                   <pre className="bg-yellow-100 p-4 rounded mt-3 overflow-x-auto text-xs">
@@ -230,7 +240,8 @@ export default function CodeDeploy() {
                   </pre>
                 )}
                 <p className="mt-3">
-                  After updating the configuration, restart the OpenVox WebUI service for the changes to take effect.
+                  After updating the configuration, restart the OpenVox WebUI service for the
+                  changes to take effect.
                 </p>
               </div>
             </div>
@@ -239,7 +250,12 @@ export default function CodeDeploy() {
       )}
 
       {/* Tabs */}
-      <div className={clsx('border-b border-gray-200', featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none')}>
+      <div
+        className={clsx(
+          'border-b border-gray-200',
+          featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none'
+        )}
+      >
         <nav className="-mb-px flex space-x-8">
           {tabs.map((tab) => (
             <button
@@ -272,61 +288,67 @@ export default function CodeDeploy() {
       </div>
 
       {/* Tab Content */}
-      <div className={clsx(featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none')}>
-      {activeTab === 'repositories' && (
-        <RepositoriesTab
-          repositories={repositories}
-          isLoading={reposLoading}
-          onSync={(id) => syncRepoMutation.mutate(id)}
-          isSyncing={syncRepoMutation.isPending}
-          syncingRepoId={syncRepoMutation.variables}
-          onEdit={(repo) => setEditingRepo(repo)}
-          onDelete={(id, name) => setConfirmAction({ type: 'delete-repo', id, name })}
-          onCreateNew={() => setShowCreateRepo(true)}
-        />
-      )}
+      <div
+        className={clsx(
+          featureStatus && !featureStatus.enabled && 'opacity-50 pointer-events-none'
+        )}
+      >
+        {activeTab === 'repositories' && (
+          <RepositoriesTab
+            repositories={repositories}
+            isLoading={reposLoading}
+            onSync={(id) => syncRepoMutation.mutate(id)}
+            isSyncing={syncRepoMutation.isPending}
+            syncingRepoId={syncRepoMutation.variables}
+            onEdit={(repo) => setEditingRepo(repo)}
+            onDelete={(id, name) => setConfirmAction({ type: 'delete-repo', id, name })}
+            onCreateNew={() => setShowCreateRepo(true)}
+          />
+        )}
 
-      {activeTab === 'environments' && (
-        <EnvironmentsTab
-          environments={environments}
-          isLoading={envsLoading}
-          onUpdateEnvironment={(id, request) => updateEnvMutation.mutate({ id, request })}
-          onApprove={(id) => setConfirmAction({ type: 'approve', id })}
-          onForceDeploy={(environmentId) => triggerDeployMutation.mutate({ environment_id: environmentId })}
-        />
-      )}
+        {activeTab === 'environments' && (
+          <EnvironmentsTab
+            environments={environments}
+            isLoading={envsLoading}
+            onUpdateEnvironment={(id, request) => updateEnvMutation.mutate({ id, request })}
+            onApprove={(id) => setConfirmAction({ type: 'approve', id })}
+            onForceDeploy={(environmentId) =>
+              triggerDeployMutation.mutate({ environment_id: environmentId })
+            }
+          />
+        )}
 
-      {activeTab === 'deployments' && (
-        <DeploymentsTab
-          deployments={deployments}
-          isLoading={deploysLoading}
-          selectedId={selectedDeployment}
-          onSelect={setSelectedDeployment}
-          onApprove={(id) => setConfirmAction({ type: 'approve', id })}
-          onReject={(id) => setConfirmAction({ type: 'reject', id })}
-          onRetry={(id) => retryMutation.mutate(id)}
-          onCancel={(id) => cancelMutation.mutate(id)}
-        />
-      )}
+        {activeTab === 'deployments' && (
+          <DeploymentsTab
+            deployments={deployments}
+            isLoading={deploysLoading}
+            selectedId={selectedDeployment}
+            onSelect={setSelectedDeployment}
+            onApprove={(id) => setConfirmAction({ type: 'approve', id })}
+            onReject={(id) => setConfirmAction({ type: 'reject', id })}
+            onRetry={(id) => retryMutation.mutate(id)}
+            onCancel={(id) => cancelMutation.mutate(id)}
+          />
+        )}
 
-      {activeTab === 'ssh-keys' && (
-        <SshKeysTab
-          keys={sshKeys}
-          isLoading={keysLoading}
-          onDelete={(id, name) => setConfirmAction({ type: 'delete-key', id, name })}
-          onCreateNew={() => setShowCreateKey(true)}
-        />
-      )}
+        {activeTab === 'ssh-keys' && (
+          <SshKeysTab
+            keys={sshKeys}
+            isLoading={keysLoading}
+            onDelete={(id, name) => setConfirmAction({ type: 'delete-key', id, name })}
+            onCreateNew={() => setShowCreateKey(true)}
+          />
+        )}
 
-      {activeTab === 'pat-tokens' && (
-        <PatTokensTab
-          tokens={patTokens}
-          isLoading={tokensLoading}
-          onDelete={(id, name) => setConfirmAction({ type: 'delete-pat-token', id, name })}
-          onEdit={(token) => setEditingPatToken(token)}
-          onCreateNew={() => setShowCreatePatToken(true)}
-        />
-      )}
+        {activeTab === 'pat-tokens' && (
+          <PatTokensTab
+            tokens={patTokens}
+            isLoading={tokensLoading}
+            onDelete={(id, name) => setConfirmAction({ type: 'delete-pat-token', id, name })}
+            onEdit={(token) => setEditingPatToken(token)}
+            onCreateNew={() => setShowCreatePatToken(true)}
+          />
+        )}
       </div>
 
       {/* Create Repository Modal */}
@@ -395,8 +417,8 @@ export default function CodeDeploy() {
               {confirmAction.type === 'delete-repo' && (
                 <>
                   Are you sure you want to delete repository{' '}
-                  <span className="font-mono font-medium">{confirmAction.name}</span>? This will also
-                  delete all associated environments and deployments.
+                  <span className="font-mono font-medium">{confirmAction.name}</span>? This will
+                  also delete all associated environments and deployments.
                 </>
               )}
               {confirmAction.type === 'delete-key' && (
@@ -408,12 +430,14 @@ export default function CodeDeploy() {
               {confirmAction.type === 'delete-pat-token' && (
                 <>
                   Are you sure you want to delete PAT token{' '}
-                  <span className="font-mono font-medium">{confirmAction.name}</span>? Repositories using
-                  this token will no longer be able to authenticate.
+                  <span className="font-mono font-medium">{confirmAction.name}</span>? Repositories
+                  using this token will no longer be able to authenticate.
                 </>
               )}
               {confirmAction.type === 'approve' && (
-                <>Are you sure you want to approve this deployment? It will be deployed immediately.</>
+                <>
+                  Are you sure you want to approve this deployment? It will be deployed immediately.
+                </>
               )}
               {confirmAction.type === 'reject' && (
                 <div className="space-y-3">
@@ -447,7 +471,9 @@ export default function CodeDeploy() {
                     'bg-red-600 hover:bg-red-700',
                   confirmAction.type === 'approve' && 'bg-green-600 hover:bg-green-700',
                   confirmAction.type === 'reject' && 'bg-yellow-600 hover:bg-yellow-700',
-                  confirmAction.type === 'reject' && !rejectReason.trim() && 'opacity-50 cursor-not-allowed'
+                  confirmAction.type === 'reject' &&
+                    !rejectReason.trim() &&
+                    'opacity-50 cursor-not-allowed'
                 )}
               >
                 {confirmAction.type.includes('delete') && 'Delete'}
@@ -608,7 +634,10 @@ function RepositoriesTab({
                   className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
                 >
                   <RefreshCw
-                    className={clsx('w-4 h-4', isSyncing && syncingRepoId === repo.id && 'animate-spin')}
+                    className={clsx(
+                      'w-4 h-4',
+                      isSyncing && syncingRepoId === repo.id && 'animate-spin'
+                    )}
                   />
                   Sync
                 </button>
@@ -645,7 +674,10 @@ function EnvironmentsTab({
 }: {
   environments: CodeEnvironment[];
   isLoading: boolean;
-  onUpdateEnvironment: (id: string, request: { auto_deploy?: boolean; requires_approval?: boolean }) => void;
+  onUpdateEnvironment: (
+    id: string,
+    request: { auto_deploy?: boolean; requires_approval?: boolean }
+  ) => void;
   onApprove: (id: string) => void;
   onForceDeploy: (environmentId: string) => void;
 }) {
@@ -683,7 +715,9 @@ function EnvironmentsTab({
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Current Commit
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              Status
+            </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
               Settings
             </th>
@@ -730,7 +764,9 @@ function EnvironmentsTab({
                     <input
                       type="checkbox"
                       checked={env.auto_deploy}
-                      onChange={(e) => onUpdateEnvironment(env.id, { auto_deploy: e.target.checked })}
+                      onChange={(e) =>
+                        onUpdateEnvironment(env.id, { auto_deploy: e.target.checked })
+                      }
                       className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                     />
                     Auto-deploy
@@ -848,7 +884,9 @@ function DeploymentsTab({
                   <GitCommit className="w-4 h-4" />
                   <code className="font-mono">{deployment.commit_sha.substring(0, 7)}</code>
                 </div>
-                <span>{new Date(deployment.started_at || deployment.created_at).toLocaleString()}</span>
+                <span>
+                  {new Date(deployment.started_at || deployment.created_at).toLocaleString()}
+                </span>
               </div>
             </div>
           ))}
@@ -880,7 +918,9 @@ function DeploymentsTab({
 
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase">Commit</label>
-              <p className="mt-1 font-mono text-sm text-gray-900">{selectedDeployment.commit_sha}</p>
+              <p className="mt-1 font-mono text-sm text-gray-900">
+                {selectedDeployment.commit_sha}
+              </p>
               {selectedDeployment.commit_message && (
                 <p className="mt-1 text-sm text-gray-500">{selectedDeployment.commit_message}</p>
               )}
@@ -909,8 +949,12 @@ function DeploymentsTab({
 
             {selectedDeployment.rejection_reason && (
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase">Rejection Reason</label>
-                <p className="mt-1 text-sm text-yellow-600">{selectedDeployment.rejection_reason}</p>
+                <label className="text-xs font-medium text-gray-500 uppercase">
+                  Rejection Reason
+                </label>
+                <p className="mt-1 text-sm text-yellow-600">
+                  {selectedDeployment.rejection_reason}
+                </p>
               </div>
             )}
 
@@ -943,7 +987,8 @@ function DeploymentsTab({
                   </button>
                 </>
               )}
-              {(selectedDeployment.status === 'failed' || selectedDeployment.status === 'rejected') && (
+              {(selectedDeployment.status === 'failed' ||
+                selectedDeployment.status === 'rejected') && (
                 <button
                   onClick={() => onRetry(selectedDeployment.id)}
                   className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-md hover:bg-primary-700"
@@ -1026,7 +1071,9 @@ function SshKeysTab({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Name
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Public Key
               </th>
@@ -1138,7 +1185,9 @@ function PatTokensTab({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Name
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 Description
               </th>
@@ -1177,13 +1226,20 @@ function PatTokensTab({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   {token.expires_at ? (
-                    <span className={clsx(
-                      token.is_expired ? 'text-red-600' : token.is_expiring_soon ? 'text-yellow-600' : 'text-gray-500'
-                    )}>
-                      {new Date(token.expires_at).toLocaleDateString()}
-                      {token.days_until_expiration !== undefined && token.days_until_expiration >= 0 && (
-                        <span className="text-xs ml-1">({token.days_until_expiration}d)</span>
+                    <span
+                      className={clsx(
+                        token.is_expired
+                          ? 'text-red-600'
+                          : token.is_expiring_soon
+                            ? 'text-yellow-600'
+                            : 'text-gray-500'
                       )}
+                    >
+                      {new Date(token.expires_at).toLocaleDateString()}
+                      {token.days_until_expiration !== undefined &&
+                        token.days_until_expiration >= 0 && (
+                          <span className="text-xs ml-1">({token.days_until_expiration}d)</span>
+                        )}
                     </span>
                   ) : (
                     <span className="text-gray-400">Never</span>
@@ -1268,7 +1324,9 @@ function CreatePatTokenModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Description (optional)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Description (optional)
+            </label>
             <input
               type="text"
               value={description}
@@ -1308,7 +1366,9 @@ function CreatePatTokenModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Expiration Date (optional)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Expiration Date (optional)
+            </label>
             <input
               type="date"
               value={expiresAt}
@@ -1417,7 +1477,9 @@ function EditPatTokenModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">New Token (leave empty to keep current)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              New Token (leave empty to keep current)
+            </label>
             <input
               type="password"
               value={newToken}
@@ -1482,7 +1544,13 @@ function DeploymentStatusBadge({ status }: { status?: DeploymentStatus }) {
   const { icon: Icon, color, bg, text } = config[status];
 
   return (
-    <span className={clsx('inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full', bg, color)}>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full',
+        bg,
+        color
+      )}
+    >
       <Icon className={clsx('w-3 h-3', status === 'deploying' && 'animate-spin')} />
       {text}
     </span>
@@ -1519,8 +1587,8 @@ function CreateRepositoryModal({
       url,
       branch_pattern: branchPattern,
       auth_type: authType,
-      ssh_key_id: authType === 'ssh' ? (sshKeyId || undefined) : undefined,
-      pat_token_id: authType === 'pat' ? (patTokenId || undefined) : undefined,
+      ssh_key_id: authType === 'ssh' ? sshKeyId || undefined : undefined,
+      pat_token_id: authType === 'pat' ? patTokenId || undefined : undefined,
       poll_interval_seconds: pollInterval,
       is_control_repo: isControlRepo,
     });
@@ -1551,7 +1619,11 @@ function CreateRepositoryModal({
               onChange={(e) => setUrl(e.target.value)}
               required
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-              placeholder={authType === 'ssh' ? 'git@github.com:org/repo.git' : 'https://github.com/org/repo.git'}
+              placeholder={
+                authType === 'ssh'
+                  ? 'git@github.com:org/repo.git'
+                  : 'https://github.com/org/repo.git'
+              }
             />
             <p className="mt-1 text-xs text-gray-500">
               {authType === 'ssh' && 'Use SSH URL format (git@github.com:...)'}
@@ -1569,7 +1641,9 @@ function CreateRepositoryModal({
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
               placeholder="* (all branches)"
             />
-            <p className="mt-1 text-xs text-gray-500">Glob pattern for branch filtering (e.g., *, feature/*, production)</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Glob pattern for branch filtering (e.g., *, feature/*, production)
+            </p>
           </div>
 
           <div>
@@ -1655,7 +1729,9 @@ function CreateRepositoryModal({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Poll Interval (seconds)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Poll Interval (seconds)
+            </label>
             <input
               type="number"
               value={pollInterval}
@@ -1742,7 +1818,8 @@ function EditRepositoryModal({
       url: url !== repository.url ? url : undefined,
       branch_pattern: branchPattern !== repository.branch_pattern ? branchPattern : undefined,
       auth_type: authType !== repository.auth_type ? authType : undefined,
-      poll_interval_seconds: pollInterval !== repository.poll_interval_seconds ? pollInterval : undefined,
+      poll_interval_seconds:
+        pollInterval !== repository.poll_interval_seconds ? pollInterval : undefined,
       is_control_repo: isControlRepo !== repository.is_control_repo ? isControlRepo : undefined,
     };
 
@@ -1792,7 +1869,11 @@ function EditRepositoryModal({
               onChange={(e) => setUrl(e.target.value)}
               required
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-              placeholder={authType === 'ssh' ? 'git@github.com:org/repo.git' : 'https://github.com/org/repo.git'}
+              placeholder={
+                authType === 'ssh'
+                  ? 'git@github.com:org/repo.git'
+                  : 'https://github.com/org/repo.git'
+              }
             />
             <p className="mt-1 text-xs text-gray-500">
               {authType === 'ssh' && 'Use SSH URL format (git@github.com:...)'}
@@ -1810,7 +1891,9 @@ function EditRepositoryModal({
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
               placeholder="* (all branches)"
             />
-            <p className="mt-1 text-xs text-gray-500">Glob pattern for branch filtering (e.g., *, feature/*, production)</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Glob pattern for branch filtering (e.g., *, feature/*, production)
+            </p>
           </div>
 
           <div>
@@ -1873,9 +1956,7 @@ function EditRepositoryModal({
                   ))}
                 </select>
                 {repository.ssh_key_name && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Current: {repository.ssh_key_name}
-                  </p>
+                  <p className="mt-1 text-xs text-gray-500">Current: {repository.ssh_key_name}</p>
                 )}
               </div>
               {repository.ssh_key_id && (
@@ -1921,9 +2002,7 @@ function EditRepositoryModal({
                   ))}
                 </select>
                 {repository.pat_token_name && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Current: {repository.pat_token_name}
-                  </p>
+                  <p className="mt-1 text-xs text-gray-500">Current: {repository.pat_token_name}</p>
                 )}
                 {patTokens.length === 0 && (
                   <p className="mt-1 text-xs text-yellow-600">
@@ -1952,7 +2031,9 @@ function EditRepositoryModal({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Poll Interval (seconds)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Poll Interval (seconds)
+            </label>
             <input
               type="number"
               value={pollInterval}
@@ -2035,7 +2116,9 @@ function CreateSshKeyModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Private Key (OpenSSH format)</label>
+            <label className="block text-sm font-medium text-gray-700">
+              Private Key (OpenSSH format)
+            </label>
             <textarea
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}

@@ -69,7 +69,7 @@ impl<'a> AuditRepository<'a> {
             action: action.to_string(),
             resource_type: resource_type.to_string(),
             resource_id: resource_id.map(|s| s.to_string()),
-            details: details.map(|d| d.clone()),
+            details: details.cloned(),
             ip_address: ip_address.map(|s| s.to_string()),
             created_at: parse_db_timestamp(&created_at),
         })

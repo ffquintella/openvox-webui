@@ -1,5 +1,8 @@
 //! CVE vulnerability models.
 
+// These database-facing parsers intentionally preserve their existing fallback semantics.
+#![allow(clippy::should_implement_trait)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

@@ -117,10 +117,10 @@ function getErrorMessage(error: unknown): string {
       response?: { data?: { error?: string; message?: string } };
     };
     return (
-      maybeError.response?.data?.error
-      || maybeError.response?.data?.message
-      || maybeError.message
-      || 'Unknown error'
+      maybeError.response?.data?.error ||
+      maybeError.response?.data?.message ||
+      maybeError.message ||
+      'Unknown error'
     );
   }
 
@@ -137,7 +137,11 @@ export default function Alerting() {
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
 
   // Queries
-  const { data: alerts = [], isLoading: alertsLoading, refetch: refetchAlerts } = useQuery({
+  const {
+    data: alerts = [],
+    isLoading: alertsLoading,
+    refetch: refetchAlerts,
+  } = useQuery({
     queryKey: ['alerts'],
     queryFn: () => api.getAlerts(),
   });
@@ -280,7 +284,9 @@ export default function Alerting() {
                 <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Alerts</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Active Alerts
+                </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                   {alertStats.total_active}
                 </p>
@@ -454,7 +460,8 @@ export default function Alerting() {
                       No notification channels configured
                     </h4>
                     <p className="mt-1 text-sm text-orange-800 dark:text-orange-200">
-                      Alert rules will not send notifications until you configure at least one notification channel.
+                      Alert rules will not send notifications until you configure at least one
+                      notification channel.
                     </p>
                   </div>
                 </div>
@@ -605,7 +612,8 @@ export default function Alerting() {
                       No notification channels configured
                     </h3>
                     <p className="mt-2 text-sm text-orange-800 dark:text-orange-200">
-                      Alert rules won't send notifications until you create at least one notification channel. Create a channel to receive alert notifications.
+                      Alert rules won't send notifications until you create at least one
+                      notification channel. Create a channel to receive alert notifications.
                     </p>
                     <button
                       onClick={() => setShowNewChannelModal(true)}
@@ -621,71 +629,80 @@ export default function Alerting() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {channels.map((channel) => {
                   // Extract email recipients for email channels
-                  const emailRecipients = channel.channel_type === 'email' && channel.config && typeof channel.config === 'object' && 'to' in channel.config
-                    ? (channel.config.to as string[]).join(', ')
-                    : null;
+                  const emailRecipients =
+                    channel.channel_type === 'email' &&
+                    channel.config &&
+                    typeof channel.config === 'object' &&
+                    'to' in channel.config
+                      ? (channel.config.to as string[]).join(', ')
+                      : null;
 
                   return (
-                  <div
-                    key={channel.id}
-                    className="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                          {channel.name}
-                        </h4>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          {CHANNEL_TYPE_LABELS[channel.channel_type]}
-                        </p>
-                        {emailRecipients && (
-                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate" title={emailRecipients}>
-                            {emailRecipients}
+                    <div
+                      key={channel.id}
+                      className="rounded-lg border border-gray-200 p-4 dark:border-gray-700"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 dark:text-gray-100">
+                            {channel.name}
+                          </h4>
+                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {CHANNEL_TYPE_LABELS[channel.channel_type]}
                           </p>
+                          {emailRecipients && (
+                            <p
+                              className="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate"
+                              title={emailRecipients}
+                            >
+                              {emailRecipients}
+                            </p>
+                          )}
+                        </div>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 ${
+                            channel.is_enabled
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {channel.is_enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-center space-x-2">
+                        <button
+                          onClick={() => testChannelMutation.mutate(channel.id)}
+                          disabled={testChannelMutation.isPending}
+                          className="flex items-center space-x-1 rounded-md bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300"
+                        >
+                          {testChannelMutation.isPending ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Volume2 className="h-3 w-3" />
+                          )}
+                          <span>Test</span>
+                        </button>
+                        <button
+                          onClick={() => deleteChannelMutation.mutate(channel.id)}
+                          disabled={deleteChannelMutation.isPending}
+                          className="rounded-md p-1.5 text-red-600 hover:bg-red-100 dark:text-red-400"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {testChannelMutation.isSuccess &&
+                        testChannelMutation.variables === channel.id && (
+                          <div className="mt-3 rounded-md bg-green-50 p-2 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-200">
+                            Test notification sent successfully
+                          </div>
                         )}
-                      </div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 ${
-                          channel.is_enabled
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {channel.is_enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </div>
-                    <div className="mt-4 flex items-center space-x-2">
-                      <button
-                        onClick={() => testChannelMutation.mutate(channel.id)}
-                        disabled={testChannelMutation.isPending}
-                        className="flex items-center space-x-1 rounded-md bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300"
-                      >
-                        {testChannelMutation.isPending ? (
-                          <RefreshCw className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Volume2 className="h-3 w-3" />
+                      {testChannelMutation.isError &&
+                        testChannelMutation.variables === channel.id && (
+                          <div className="mt-3 rounded-md bg-red-50 p-2 text-xs text-red-800 dark:bg-red-900/20 dark:text-red-200">
+                            Failed to send test notification
+                          </div>
                         )}
-                        <span>Test</span>
-                      </button>
-                      <button
-                        onClick={() => deleteChannelMutation.mutate(channel.id)}
-                        disabled={deleteChannelMutation.isPending}
-                        className="rounded-md p-1.5 text-red-600 hover:bg-red-100 dark:text-red-400"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </div>
-                    {testChannelMutation.isSuccess && testChannelMutation.variables === channel.id && (
-                      <div className="mt-3 rounded-md bg-green-50 p-2 text-xs text-green-800 dark:bg-green-900/20 dark:text-green-200">
-                        Test notification sent successfully
-                      </div>
-                    )}
-                    {testChannelMutation.isError && testChannelMutation.variables === channel.id && (
-                      <div className="mt-3 rounded-md bg-red-50 p-2 text-xs text-red-800 dark:bg-red-900/20 dark:text-red-200">
-                        Failed to send test notification
-                      </div>
-                    )}
-                  </div>
                   );
                 })}
               </div>
@@ -779,18 +796,12 @@ export default function Alerting() {
       </div>
 
       {/* Modals would go here - simplified for now */}
-      {showNewChannelModal && (
-        <NewChannelModal onClose={() => setShowNewChannelModal(false)} />
-      )}
+      {showNewChannelModal && <NewChannelModal onClose={() => setShowNewChannelModal(false)} />}
       {showNewRuleModal && (
         <RuleModal channels={channels} onClose={() => setShowNewRuleModal(false)} />
       )}
       {editingRule && (
-        <RuleModal
-          channels={channels}
-          rule={editingRule}
-          onClose={() => setEditingRule(null)}
-        />
+        <RuleModal channels={channels} rule={editingRule} onClose={() => setEditingRule(null)} />
       )}
       {showNewSilenceModal && (
         <NewSilenceModal rules={rules} onClose={() => setShowNewSilenceModal(false)} />
@@ -867,7 +878,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Build config based on channel type
     let config: Record<string, unknown>;
     if (channelType === 'webhook') {
@@ -877,7 +888,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
     } else {
       config = { webhook_url: webhookUrl };
     }
-    
+
     const request: CreateChannelRequest = {
       name,
       channel_type: channelType,
@@ -933,9 +944,7 @@ function NewChannelModal({ onClose }: { onClose: () => void }) {
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
               required
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {getChannelHint()}
-            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{getChannelHint()}</p>
           </div>
           <div>
             <label className="flex items-center space-x-2">
@@ -992,9 +1001,7 @@ function RuleModal({
   const [selectedChannels, setSelectedChannels] = useState<string[]>(rule?.channels || []);
   const [useAdvancedFormat, setUseAdvancedFormat] = useState(false);
   const [conditions, setConditions] = useState<AlertCondition[]>(
-    rule?.conditions || [
-      { field: 'node.status', operator: 'eq', value: 'failed' },
-    ]
+    rule?.conditions || [{ field: 'node.status', operator: 'eq', value: 'failed' }]
   );
   const [conditionOperator, setConditionOperator] = useState<'all' | 'any'>(
     rule?.condition_operator || 'all'
@@ -1028,29 +1035,31 @@ function RuleModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate conditions
-    const invalidConditions = conditions.map((c, idx) => {
-      const errors: string[] = [];
-      if (useAdvancedFormat) {
-        if (!c.type) errors.push('type');
-        if (!c.operator) errors.push('operator');
-      } else {
-        if (!c.field) errors.push('field');
-        if (!c.operator) errors.push('operator');
-        if (c.value === undefined || c.value === '') errors.push('value');
-      }
-      return errors.length > 0 ? { index: idx + 1, errors } : null;
-    }).filter(Boolean);
-    
+    const invalidConditions = conditions
+      .map((c, idx) => {
+        const errors: string[] = [];
+        if (useAdvancedFormat) {
+          if (!c.type) errors.push('type');
+          if (!c.operator) errors.push('operator');
+        } else {
+          if (!c.field) errors.push('field');
+          if (!c.operator) errors.push('operator');
+          if (c.value === undefined || c.value === '') errors.push('value');
+        }
+        return errors.length > 0 ? { index: idx + 1, errors } : null;
+      })
+      .filter(Boolean);
+
     if (invalidConditions.length > 0) {
-      const errorMsg = invalidConditions.map(item => 
-        `Condition ${item!.index}: missing ${item!.errors.join(', ')}`
-      ).join('\n');
+      const errorMsg = invalidConditions
+        .map((item) => `Condition ${item!.index}: missing ${item!.errors.join(', ')}`)
+        .join('\n');
       alert('Please complete all required fields:\n\n' + errorMsg);
       return;
     }
-    
+
     if (isEditing) {
       const request: UpdateAlertRuleRequest = {
         name,
@@ -1125,18 +1134,42 @@ function RuleModal({
               {useAdvancedFormat ? (
                 <div className="space-y-2">
                   <div className="text-sm text-blue-600 dark:text-blue-400">
-                    Advanced format: Create conditions with specific types (NodeStatus, LastReportTime, etc.)
+                    Advanced format: Create conditions with specific types (NodeStatus,
+                    LastReportTime, etc.)
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">
                     <strong>How to fill:</strong>
                     <ul className="mt-1 ml-4 space-y-1 list-disc">
-                      <li><strong>Type:</strong> Select the condition type (e.g., NodeStatus, LastReportTime)</li>
-                      <li><strong>Operator:</strong> Choose comparison operator (e.g., equals, greater than)</li>
-                      <li><strong>Config:</strong> JSON configuration specific to the condition type. Examples:
+                      <li>
+                        <strong>Type:</strong> Select the condition type (e.g., NodeStatus,
+                        LastReportTime)
+                      </li>
+                      <li>
+                        <strong>Operator:</strong> Choose comparison operator (e.g., equals, greater
+                        than)
+                      </li>
+                      <li>
+                        <strong>Config:</strong> JSON configuration specific to the condition type.
+                        Examples:
                         <ul className="ml-4 mt-1 list-circle">
-                          <li>NodeStatus: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"status": "failed"}'}</code></li>
-                          <li>LastReportTime: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"hours": 24}'}</code></li>
-                          <li>NodeCountThreshold: <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">{'{"count": 10, "threshold": 5}'}</code></li>
+                          <li>
+                            NodeStatus:{' '}
+                            <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                              {'{"status": "failed"}'}
+                            </code>
+                          </li>
+                          <li>
+                            LastReportTime:{' '}
+                            <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                              {'{"hours": 24}'}
+                            </code>
+                          </li>
+                          <li>
+                            NodeCountThreshold:{' '}
+                            <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                              {'{"count": 10, "threshold": 5}'}
+                            </code>
+                          </li>
                         </ul>
                       </li>
                     </ul>
@@ -1165,17 +1198,35 @@ function RuleModal({
                           className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700"
                         >
                           <option value="">Select Type...</option>
-                          <option value="NodeStatus">Node Status - Check node connection state</option>
+                          <option value="NodeStatus">
+                            Node Status - Check node connection state
+                          </option>
                           <option value="NodeFact">Node Fact - Evaluate custom fact values</option>
-                          <option value="ReportMetric">Report Metric - Monitor report metrics</option>
-                          <option value="EnvironmentFilter">Environment Filter - Filter by environment</option>
+                          <option value="ReportMetric">
+                            Report Metric - Monitor report metrics
+                          </option>
+                          <option value="EnvironmentFilter">
+                            Environment Filter - Filter by environment
+                          </option>
                           <option value="GroupFilter">Group Filter - Filter by node group</option>
-                          <option value="NodeCountThreshold">Node Count Threshold - Alert on node count</option>
-                          <option value="TimeWindowFilter">Time Window Filter - Time-based conditions</option>
-                          <option value="LastReportTime">Last Report Time - Detect stale nodes</option>
-                          <option value="ConsecutiveFailures">Consecutive Failures - Detect repeated failures</option>
-                          <option value="ConsecutiveChanges">Consecutive Changes - Monitor change frequency</option>
-                          <option value="ClassChangeFrequency">Class Change Frequency - Track class changes</option>
+                          <option value="NodeCountThreshold">
+                            Node Count Threshold - Alert on node count
+                          </option>
+                          <option value="TimeWindowFilter">
+                            Time Window Filter - Time-based conditions
+                          </option>
+                          <option value="LastReportTime">
+                            Last Report Time - Detect stale nodes
+                          </option>
+                          <option value="ConsecutiveFailures">
+                            Consecutive Failures - Detect repeated failures
+                          </option>
+                          <option value="ConsecutiveChanges">
+                            Consecutive Changes - Monitor change frequency
+                          </option>
+                          <option value="ClassChangeFrequency">
+                            Class Change Frequency - Track class changes
+                          </option>
                         </select>
                         <select
                           value={condition.operator || ''}
@@ -1206,7 +1257,10 @@ function RuleModal({
                           onChange={(e) => {
                             try {
                               const newConditions = [...conditions];
-                              newConditions[index] = { ...condition, config: JSON.parse(e.target.value) };
+                              newConditions[index] = {
+                                ...condition,
+                                config: JSON.parse(e.target.value),
+                              };
                               setConditions(newConditions);
                             } catch {
                               // Ignore JSON parse errors while typing
@@ -1231,25 +1285,54 @@ function RuleModal({
                           <option value="">Select Field...</option>
                           {ruleType === 'update_job' ? (
                             <>
-                              <option value="job.status">Job Status - e.g. completed_with_failures, in_progress</option>
-                              <option value="job.operation_type">Operation Type - e.g. system_patch, security_patch</option>
-                              <option value="job.timed_out">Timed Out - true/false (exceeded max runtime or agent silent)</option>
-                              <option value="job.failed_targets">Failed Targets - number of nodes that failed</option>
-                              <option value="job.total_targets">Total Targets - number of nodes in the job</option>
-                              <option value="job.runtime_minutes">Runtime (minutes) - minutes since the job was created</option>
+                              <option value="job.status">
+                                Job Status - e.g. completed_with_failures, in_progress
+                              </option>
+                              <option value="job.operation_type">
+                                Operation Type - e.g. system_patch, security_patch
+                              </option>
+                              <option value="job.timed_out">
+                                Timed Out - true/false (exceeded max runtime or agent silent)
+                              </option>
+                              <option value="job.failed_targets">
+                                Failed Targets - number of nodes that failed
+                              </option>
+                              <option value="job.total_targets">
+                                Total Targets - number of nodes in the job
+                              </option>
+                              <option value="job.runtime_minutes">
+                                Runtime (minutes) - minutes since the job was created
+                              </option>
                             </>
                           ) : (
                             <>
-                              <option value="node.status">Node Status - Node connection state (online/offline/failed)</option>
+                              <option value="node.status">
+                                Node Status - Node connection state (online/offline/failed)
+                              </option>
                               <option value="node.name">Node Name - Hostname of the node</option>
-                              <option value="node.environment">Node Environment - Puppet environment (production, development)</option>
+                              <option value="node.environment">
+                                Node Environment - Puppet environment (production, development)
+                              </option>
                               <option value="node.group">Node Group - Node group assignment</option>
-                              <option value="node.last_report">Last Report (hours ago) - Hours since the last Puppet run, e.g. &gt; 24</option>
-                              <option value="node.last_report_minutes">Last Report (minutes ago) - Minutes since the last Puppet run</option>
-                              <option value="node.never_reported">Never Reported - true/false (node has no report at all)</option>
-                              <option value="report.status">Report Status - Status of last Puppet run (success/failed)</option>
-                              <option value="report.changed">Resources Changed - Number of resources changed</option>
-                              <option value="report.failed">Resources Failed - Number of resources failed</option>
+                              <option value="node.last_report">
+                                Last Report (hours ago) - Hours since the last Puppet run, e.g. &gt;
+                                24
+                              </option>
+                              <option value="node.last_report_minutes">
+                                Last Report (minutes ago) - Minutes since the last Puppet run
+                              </option>
+                              <option value="node.never_reported">
+                                Never Reported - true/false (node has no report at all)
+                              </option>
+                              <option value="report.status">
+                                Report Status - Status of last Puppet run (success/failed)
+                              </option>
+                              <option value="report.changed">
+                                Resources Changed - Number of resources changed
+                              </option>
+                              <option value="report.failed">
+                                Resources Failed - Number of resources failed
+                              </option>
                               <option value="facts">Facts - Custom fact values</option>
                             </>
                           )}
@@ -1278,8 +1361,7 @@ function RuleModal({
                           <option value="exists">exists - Field exists</option>
                           <option value="not_exists">not exists - Field does not exist</option>
                         </select>
-                        {ruleType === 'update_job' &&
-                        condition.field === 'job.runtime_minutes' ? (
+                        {ruleType === 'update_job' && condition.field === 'job.runtime_minutes' ? (
                           <div className="flex flex-col gap-1">
                             <input
                               type="number"
@@ -1339,7 +1421,11 @@ function RuleModal({
                     type="button"
                     onClick={() => {
                       const newConditions = conditions.filter((_, i) => i !== index);
-                      setConditions(newConditions.length > 0 ? newConditions : [{ field: '', operator: 'eq', value: '' }]);
+                      setConditions(
+                        newConditions.length > 0
+                          ? newConditions
+                          : [{ field: '', operator: 'eq', value: '' }]
+                      );
                     }}
                     className="flex h-10 w-10 items-center justify-center rounded-md bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900 dark:text-red-300"
                     title="Remove condition"
@@ -1392,11 +1478,15 @@ function RuleModal({
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 dark:border-gray-600 dark:bg-gray-700"
                 disabled={isEditing}
               >
-                <option value="node_status">Node Status - Monitor node availability and health</option>
+                <option value="node_status">
+                  Node Status - Monitor node availability and health
+                </option>
                 <option value="compliance">Compliance - Track configuration compliance</option>
                 <option value="drift">Drift Detection - Detect configuration drift</option>
                 <option value="report_failure">Report Failure - Alert on failed Puppet runs</option>
-                <option value="update_job">Update Job - Alert on failed or timed-out update jobs</option>
+                <option value="update_job">
+                  Update Job - Alert on failed or timed-out update jobs
+                </option>
                 <option value="custom">Custom - Custom alert conditions</option>
               </select>
             </div>
@@ -1456,7 +1546,9 @@ function RuleModal({
                         }}
                         className="rounded border-gray-300 focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">{channel.name}</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {channel.name}
+                      </span>
                     </label>
                   );
                 })}

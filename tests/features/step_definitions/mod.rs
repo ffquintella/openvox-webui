@@ -1,5 +1,6 @@
 //! Step definitions for Cucumber scenarios
 
+pub mod alerting_steps;
 pub mod ca_steps;
 pub mod classification_steps;
 pub mod common_steps;

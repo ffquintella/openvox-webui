@@ -3,7 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Shield, Trash2, Users, Lock, X, Star, Folder } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
-import type { Role, ResourceInfo, Resource, Action, CreatePermissionRequest, GroupPermissionInfo, NodeGroup } from '../types';
+import type {
+  Role,
+  ResourceInfo,
+  Resource,
+  Action,
+  CreatePermissionRequest,
+  GroupPermissionInfo,
+  NodeGroup,
+} from '../types';
 
 // SuperAdmin role name constant
 const SUPER_ADMIN_ROLE_NAME = 'super_admin';
@@ -102,8 +110,15 @@ export default function Roles() {
 
   // Group permission mutations
   const addGroupPermissionMutation = useMutation({
-    mutationFn: ({ roleId, groupId, action }: { roleId: string; groupId: string; action: Action }) =>
-      api.addGroupPermission(roleId, { group_id: groupId, action }),
+    mutationFn: ({
+      roleId,
+      groupId,
+      action,
+    }: {
+      roleId: string;
+      groupId: string;
+      action: Action;
+    }) => api.addGroupPermission(roleId, { group_id: groupId, action }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groupPermissions', selectedRole?.id] });
       setIsAddGroupPermOpen(false);
@@ -185,10 +200,7 @@ export default function Roles() {
           <h1 className="text-2xl font-bold text-gray-900">Roles</h1>
           <p className="text-gray-500 mt-1">Manage roles and their permissions</p>
         </div>
-        <button
-          onClick={() => setIsCreateOpen(true)}
-          className="btn btn-primary flex items-center"
-        >
+        <button onClick={() => setIsCreateOpen(true)} className="btn btn-primary flex items-center">
           <Plus className="w-4 h-4 mr-2" />
           New Role
         </button>
@@ -299,12 +311,14 @@ export default function Roles() {
                       </span>
                     )}
                     {role.is_system && (
-                      <span className={clsx(
-                        'text-xs px-2 py-1 rounded',
-                        role.name === SUPER_ADMIN_ROLE_NAME
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-gray-100 text-gray-600'
-                      )}>
+                      <span
+                        className={clsx(
+                          'text-xs px-2 py-1 rounded',
+                          role.name === SUPER_ADMIN_ROLE_NAME
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-gray-100 text-gray-600'
+                        )}
+                      >
                         System
                       </span>
                     )}
@@ -359,8 +373,9 @@ export default function Roles() {
                     <div>
                       <h4 className="font-semibold text-amber-800">Super Administrator</h4>
                       <p className="text-sm text-amber-700 mt-1">
-                        This role has unrestricted access to all resources and actions across the entire system.
-                        Permissions cannot be modified as SuperAdmin always bypasses permission checks.
+                        This role has unrestricted access to all resources and actions across the
+                        entire system. Permissions cannot be modified as SuperAdmin always bypasses
+                        permission checks.
                       </p>
                     </div>
                   </div>
@@ -458,7 +473,19 @@ export default function Roles() {
                   {selectedRole.name === SUPER_ADMIN_ROLE_NAME ? (
                     <div className="text-center py-4">
                       <div className="flex flex-wrap justify-center gap-2 mb-3">
-                        {['nodes', 'groups', 'reports', 'facts', 'users', 'roles', 'settings', 'audit_logs', 'facter_templates', 'api_keys', 'certificates'].map((resource) => (
+                        {[
+                          'nodes',
+                          'groups',
+                          'reports',
+                          'facts',
+                          'users',
+                          'roles',
+                          'settings',
+                          'audit_logs',
+                          'facter_templates',
+                          'api_keys',
+                          'certificates',
+                        ].map((resource) => (
                           <span
                             key={resource}
                             className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded font-medium"
@@ -468,7 +495,8 @@ export default function Roles() {
                         ))}
                       </div>
                       <p className="text-sm text-amber-600">
-                        All actions (read, create, update, delete, admin, export, classify, generate, sign, reject, revoke)
+                        All actions (read, create, update, delete, admin, export, classify,
+                        generate, sign, reject, revoke)
                       </p>
                     </div>
                   ) : selectedRole.permissions && selectedRole.permissions.length > 0 ? (
@@ -486,7 +514,8 @@ export default function Roles() {
                             {perm.scope && perm.scope.type !== 'all' && (
                               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
                                 {perm.scope.type}
-                                {(perm.scope.type === 'environment' || perm.scope.type === 'group') &&
+                                {(perm.scope.type === 'environment' ||
+                                  perm.scope.type === 'group') &&
                                   `: ${perm.scope.value}`}
                               </span>
                             )}
@@ -571,7 +600,8 @@ export default function Roles() {
                           </div>
                         </div>
                         <p className="text-xs text-gray-500">
-                          Grant this role permission to perform the selected action on the specific node group.
+                          Grant this role permission to perform the selected action on the specific
+                          node group.
                         </p>
                         <div className="flex justify-end gap-2">
                           <button

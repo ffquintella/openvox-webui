@@ -60,10 +60,7 @@ function CustomTooltip({
       {payload.map((entry) => (
         <div key={entry.name} className="flex items-center justify-between gap-4 text-sm">
           <div className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: entry.color }}
-            />
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: entry.color }} />
             <span className="text-gray-600 capitalize">{entry.name}</span>
           </div>
           <span className="font-medium text-gray-900">{entry.value}</span>

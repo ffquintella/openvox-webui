@@ -89,10 +89,7 @@ export function usePreviewUpdateJob() {
   });
 }
 
-export function useOutdatedSoftwareNodes(
-  name: string | null,
-  softwareType?: string
-) {
+export function useOutdatedSoftwareNodes(name: string | null, softwareType?: string) {
   return useQuery<OutdatedSoftwareNodeDetail[]>({
     queryKey: ['outdated-software-nodes', name, softwareType],
     queryFn: () => api.getOutdatedSoftwareNodes(name!, softwareType),

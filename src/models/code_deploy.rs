@@ -4,6 +4,9 @@
 //! Supports multiple repositories, environment discovery from branches,
 //! and integration with r10k for deployment.
 
+// These database-facing parsers intentionally return `Option` for fallback handling.
+#![allow(clippy::should_implement_trait)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -165,7 +168,7 @@ impl From<CodePatToken> for CodePatTokenResponse {
                 let duration = expires_at.signed_duration_since(now);
                 let days = duration.num_days();
                 let expired = days < 0;
-                let expiring_soon = days >= 0 && days <= 30; // Warning 30 days before expiration
+                let expiring_soon = (0..=30).contains(&days); // Warning 30 days before expiration
                 (Some(days), expired, expiring_soon)
             }
             None => (None, false, false),
@@ -215,8 +218,10 @@ pub struct UpdatePatTokenRequest {
 /// Authentication type for Git repositories
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AuthType {
     /// SSH key authentication
+    #[default]
     Ssh,
     /// Personal Access Token (for GitHub, GitLab, etc.)
     Pat,
@@ -240,12 +245,6 @@ impl AuthType {
             "none" => Some(AuthType::None),
             _ => None,
         }
-    }
-}
-
-impl Default for AuthType {
-    fn default() -> Self {
-        AuthType::Ssh
     }
 }
 

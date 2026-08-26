@@ -15,7 +15,11 @@ export function PermissionMatrixEditor({ onError }: PermissionMatrixEditorProps)
     Map<string, { roleId: string; resource: Resource; action: Action; granted: boolean }>
   >(new Map());
 
-  const { data: matrix, isLoading, error } = useQuery<PermissionMatrix>({
+  const {
+    data: matrix,
+    isLoading,
+    error,
+  } = useQuery<PermissionMatrix>({
     queryKey: ['permissionMatrix'],
     queryFn: api.getPermissionMatrix,
   });
@@ -39,7 +43,12 @@ export function PermissionMatrixEditor({ onError }: PermissionMatrixEditorProps)
     },
   });
 
-  const handleToggle = (roleId: string, resource: Resource, action: Action, currentValue: boolean) => {
+  const handleToggle = (
+    roleId: string,
+    resource: Resource,
+    action: Action,
+    currentValue: boolean
+  ) => {
     const key = `${roleId}-${resource}-${action}`;
     const newChanges = new Map(pendingChanges);
 
@@ -100,9 +109,7 @@ export function PermissionMatrixEditor({ onError }: PermissionMatrixEditorProps)
 
   if (error || !matrix) {
     return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-lg">
-        Failed to load permission matrix
-      </div>
+      <div className="bg-red-50 text-red-700 p-4 rounded-lg">Failed to load permission matrix</div>
     );
   }
 
@@ -211,11 +218,7 @@ export function PermissionMatrixEditor({ onError }: PermissionMatrixEditorProps)
                             )}
                             title={isGranted ? 'Granted' : 'Not granted'}
                           >
-                            {isGranted ? (
-                              <Check className="w-4 h-4" />
-                            ) : (
-                              <X className="w-4 h-4" />
-                            )}
+                            {isGranted ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                           </button>
                         </td>
                       );

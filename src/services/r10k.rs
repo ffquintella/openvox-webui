@@ -732,7 +732,7 @@ pub fn parse_puppetfile(content: &str) -> Vec<PuppetfileModule> {
             if let Some(name) = current_module.take() {
                 modules.push(PuppetfileModule {
                     name,
-                    options: current_opts.drain(..).collect(),
+                    options: std::mem::take(&mut current_opts),
                 });
             }
 

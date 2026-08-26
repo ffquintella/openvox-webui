@@ -208,9 +208,11 @@ pub fn create_refresh_token(
 
 /// Validate and decode a JWT token
 pub fn validate_token(token: &str, secret: &str) -> Result<TokenData<Claims>, AuthError> {
-    let mut validation = Validation::default();
-    validation.validate_exp = true;
-    validation.validate_nbf = true;
+    let validation = Validation {
+        validate_exp: true,
+        validate_nbf: true,
+        ..Validation::default()
+    };
 
     decode::<Claims>(
         token,
@@ -475,9 +477,8 @@ async fn authenticate_api_key(state: &AppState, token: &str) -> Result<AuthUser,
 fn extract_query_token(uri: &axum::http::Uri) -> Option<String> {
     uri.query().and_then(|query| {
         query.split('&').find_map(|pair| {
-            let mut parts = pair.splitn(2, '=');
-            let key = parts.next()?;
-            let value = parts.next()?;
+            let (key, value) = pair.split_once('=')?;
+
             if key == "token" {
                 Some(value.to_string())
             } else {

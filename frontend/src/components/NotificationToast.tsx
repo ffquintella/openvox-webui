@@ -86,9 +86,7 @@ export default function NotificationToast({
         <div className="flex items-start">
           <div className="flex-shrink-0">{config.icon}</div>
           <div className="ml-3 flex-1">
-            <p className={`text-sm font-medium ${config.textColor}`}>
-              {notification.title}
-            </p>
+            <p className={`text-sm font-medium ${config.textColor}`}>{notification.title}</p>
             <p className="mt-1 text-sm text-gray-600">{notification.message}</p>
             {notification.link && (
               <a

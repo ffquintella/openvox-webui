@@ -108,8 +108,8 @@ async fn query_facts(
                 if let Some(value) = value_filter {
                     match &fc.value {
                         serde_json::Value::String(s) => s == value,
-                        serde_json::Value::Number(n) => &n.to_string() == value,
-                        serde_json::Value::Bool(b) => &b.to_string() == value,
+                        serde_json::Value::Number(n) => n.to_string() == value,
+                        serde_json::Value::Bool(b) => b.to_string() == value,
                         _ => false,
                     }
                 } else {

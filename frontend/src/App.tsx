@@ -104,7 +104,9 @@ function App() {
       'mousemove',
     ];
 
-    events.forEach((eventName) => window.addEventListener(eventName, handleActivity, { passive: true }));
+    events.forEach((eventName) =>
+      window.addEventListener(eventName, handleActivity, { passive: true })
+    );
     document.addEventListener('visibilitychange', handleVisibilityChange);
     const intervalId = window.setInterval(checkIdleTimeout, 60_000);
 
@@ -126,9 +128,7 @@ function App() {
   return (
     <>
       {/* Force Password Change Modal */}
-      {showForcePasswordChange && (
-        <ForcePasswordChange onSuccess={handlePasswordChangeSuccess} />
-      )}
+      {showForcePasswordChange && <ForcePasswordChange onSuccess={handlePasswordChangeSuccess} />}
 
       <Suspense fallback={<PageLoader />}>
         <Routes>
@@ -160,7 +160,9 @@ function App() {
                       <Route
                         path="/roles"
                         element={
-                          <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'roles', action: 'read' }}
+                          >
                             <Roles />
                           </ProtectedRoute>
                         }
@@ -168,7 +170,9 @@ function App() {
                       <Route
                         path="/users"
                         element={
-                          <ProtectedRoute requiredPermission={{ resource: 'users', action: 'read' }}>
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'users', action: 'read' }}
+                          >
                             <Users />
                           </ProtectedRoute>
                         }
@@ -176,7 +180,9 @@ function App() {
                       <Route
                         path="/permissions"
                         element={
-                          <ProtectedRoute requiredPermission={{ resource: 'roles', action: 'read' }}>
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'roles', action: 'read' }}
+                          >
                             <Permissions />
                           </ProtectedRoute>
                         }
@@ -184,7 +190,9 @@ function App() {
                       <Route
                         path="/settings"
                         element={
-                          <ProtectedRoute requiredPermission={{ resource: 'settings', action: 'read' }}>
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'settings', action: 'read' }}
+                          >
                             <Settings />
                           </ProtectedRoute>
                         }

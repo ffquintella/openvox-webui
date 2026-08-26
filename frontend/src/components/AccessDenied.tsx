@@ -23,10 +23,7 @@ export function AccessDenied({
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
       <p className="text-gray-600 mb-6 max-w-md">{message}</p>
       {showBackButton && (
-        <button
-          onClick={() => navigate(-1)}
-          className="btn btn-secondary flex items-center"
-        >
+        <button onClick={() => navigate(-1)} className="btn btn-secondary flex items-center">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Go Back
         </button>

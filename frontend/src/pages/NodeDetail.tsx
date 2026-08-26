@@ -45,7 +45,15 @@ import type {
 } from '../types';
 
 type TabId = 'overview' | 'inventory' | 'facts' | 'reports' | 'groups';
-type InventoryView = 'all' | 'packages' | 'applications' | 'websites' | 'runtimes' | 'containers' | 'users' | 'history';
+type InventoryView =
+  | 'all'
+  | 'packages'
+  | 'applications'
+  | 'websites'
+  | 'runtimes'
+  | 'containers'
+  | 'users'
+  | 'history';
 
 interface Tab {
   id: TabId;
@@ -198,8 +206,7 @@ function FactsBrowser({
     const query = searchQuery.toLowerCase();
     return flattenedFacts.filter(
       (fact) =>
-        fact.path.toLowerCase().includes(query) ||
-        String(fact.value).toLowerCase().includes(query)
+        fact.path.toLowerCase().includes(query) || String(fact.value).toLowerCase().includes(query)
     );
   }, [flattenedFacts, searchQuery]);
 
@@ -343,10 +350,10 @@ function FactsBrowser({
                               typeof fact.value === 'string'
                                 ? 'text-success-600'
                                 : typeof fact.value === 'number'
-                                ? 'text-primary-600'
-                                : typeof fact.value === 'boolean'
-                                ? 'text-amber-600'
-                                : 'text-gray-600'
+                                  ? 'text-primary-600'
+                                  : typeof fact.value === 'boolean'
+                                    ? 'text-amber-600'
+                                    : 'text-gray-600'
                             }`}
                           >
                             {renderValue(fact.value)}
@@ -428,7 +435,8 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api.getReportEvents(reportHash)
+    api
+      .getReportEvents(reportHash)
       .then((data) => {
         setEvents(data);
         setLoading(false);
@@ -587,7 +595,9 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
             )}
 
             {/* Source location and containment path */}
-            {(event.file || event.containing_class || (event.containment_path && event.containment_path.length > 0)) && (
+            {(event.file ||
+              event.containing_class ||
+              (event.containment_path && event.containment_path.length > 0)) && (
               <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
                 {event.containing_class && (
                   <p className="text-xs text-gray-500">
@@ -596,7 +606,11 @@ function ResourceEventsPanel({ reportHash }: { reportHash: string }) {
                 )}
                 {event.file && (
                   <p className="text-xs text-gray-500">
-                    File: <span className="font-mono">{event.file}{event.line ? `:${event.line}` : ''}</span>
+                    File:{' '}
+                    <span className="font-mono">
+                      {event.file}
+                      {event.line ? `:${event.line}` : ''}
+                    </span>
                   </p>
                 )}
                 {event.containment_path && event.containment_path.length > 0 && (
@@ -659,7 +673,9 @@ function ReportsTimeline({ reports }: { reports: Report[] }) {
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className={`text-sm font-medium capitalize ${getStatusColor(report.status).split(' ')[0]}`}>
+                  <span
+                    className={`text-sm font-medium capitalize ${getStatusColor(report.status).split(' ')[0]}`}
+                  >
                     {report.status || 'Unknown'}
                   </span>
                   <span className="text-xs text-gray-500 flex items-center gap-1">
@@ -671,21 +687,20 @@ function ReportsTimeline({ reports }: { reports: Report[] }) {
                 <p className="text-sm text-gray-600 mt-1">
                   {report.environment && `Environment: ${report.environment}`}
                   {report.metrics?.changes !== undefined && (
-                    <span className="ml-2">
-                      {report.metrics.changes} changes
-                    </span>
+                    <span className="ml-2">{report.metrics.changes} changes</span>
                   )}
                 </p>
 
                 {/* Expanded details */}
                 {isExpanded && (
-                  <div className="mt-4 pt-4 border-t border-gray-200 space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="mt-4 pt-4 border-t border-gray-200 space-y-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-gray-500">Report Hash</p>
-                        <p className="font-mono text-xs text-gray-700 truncate">
-                          {report.hash}
-                        </p>
+                        <p className="font-mono text-xs text-gray-700 truncate">{report.hash}</p>
                       </div>
                       <div>
                         <p className="text-gray-500">Puppet Version</p>
@@ -768,13 +783,7 @@ function ReportsTimeline({ reports }: { reports: Report[] }) {
 }
 
 // Group Membership Component
-function GroupMembership({
-  certname,
-  groups,
-}: {
-  certname: string;
-  groups: NodeGroup[];
-}) {
+function GroupMembership({ certname, groups }: { certname: string; groups: NodeGroup[] }) {
   const {
     data: classification,
     isLoading: classificationLoading,
@@ -793,11 +802,7 @@ function GroupMembership({
   // by the backend against the node's facts.
   const ruleMatchedGroupIds = useMemo(() => {
     if (!classification) return null;
-    return new Set(
-      classification.groups
-        .filter((g) => g.match_type === 'rules')
-        .map((g) => g.id)
-    );
+    return new Set(classification.groups.filter((g) => g.match_type === 'rules').map((g) => g.id));
   }, [classification]);
 
   const potentialGroups = useMemo(() => {
@@ -819,9 +824,7 @@ function GroupMembership({
           Pinned to Groups ({matchedGroups.length})
         </h3>
         {matchedGroups.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            This node is not pinned to any groups.
-          </p>
+          <p className="text-sm text-gray-500">This node is not pinned to any groups.</p>
         ) : (
           <div className="space-y-2">
             {matchedGroups.map((group) => (
@@ -843,9 +846,7 @@ function GroupMembership({
                   <p className="text-primary-600">
                     {Object.keys(group.classes || {}).length} classes
                   </p>
-                  <p className="text-primary-500">
-                    {group.pinned_nodes.length} nodes
-                  </p>
+                  <p className="text-primary-500">{group.pinned_nodes.length} nodes</p>
                 </div>
               </Link>
             ))}
@@ -884,8 +885,8 @@ function GroupMembership({
                   <div>
                     <p className="font-medium text-gray-900">{group.name}</p>
                     <p className="text-xs text-gray-500">
-                      {group.rules.length} rule{group.rules.length !== 1 ? 's' : ''} •{' '}
-                      Match {group.rule_match_type}
+                      {group.rules.length} rule{group.rules.length !== 1 ? 's' : ''} • Match{' '}
+                      {group.rule_match_type}
                     </p>
                   </div>
                 </div>
@@ -911,11 +912,16 @@ function GroupMembership({
 
 function getSeverityBadgeColor(severity: string): string {
   switch (severity.toLowerCase()) {
-    case 'critical': return 'bg-red-100 text-red-800';
-    case 'high': return 'bg-orange-100 text-orange-800';
-    case 'medium': return 'bg-yellow-100 text-yellow-800';
-    case 'low': return 'bg-blue-100 text-blue-800';
-    default: return 'bg-gray-100 text-gray-800';
+    case 'critical':
+      return 'bg-red-100 text-red-800';
+    case 'high':
+      return 'bg-orange-100 text-orange-800';
+    case 'medium':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'low':
+      return 'bg-blue-100 text-blue-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
   }
 }
 
@@ -925,8 +931,14 @@ function VulnerabilityBanner({ vulnerabilities }: { vulnerabilities: HostVulnera
   const highCount = vulnerabilities.filter((v) => v.severity === 'high').length;
   const kevCount = vulnerabilities.filter((v) => v.is_kev).length;
 
-  const bannerColor = criticalCount > 0 ? 'bg-red-50 border-red-200' : highCount > 0 ? 'bg-orange-50 border-orange-200' : 'bg-yellow-50 border-yellow-200';
-  const iconColor = criticalCount > 0 ? 'text-red-600' : highCount > 0 ? 'text-orange-600' : 'text-yellow-600';
+  const bannerColor =
+    criticalCount > 0
+      ? 'bg-red-50 border-red-200'
+      : highCount > 0
+        ? 'bg-orange-50 border-orange-200'
+        : 'bg-yellow-50 border-yellow-200';
+  const iconColor =
+    criticalCount > 0 ? 'text-red-600' : highCount > 0 ? 'text-orange-600' : 'text-yellow-600';
 
   return (
     <div className={`rounded-lg border p-4 ${bannerColor}`}>
@@ -935,12 +947,19 @@ function VulnerabilityBanner({ vulnerabilities }: { vulnerabilities: HostVulnera
           <AlertTriangle className={`w-5 h-5 ${iconColor}`} />
           <div>
             <p className="font-medium text-gray-900">
-              {vulnerabilities.length} {vulnerabilities.length === 1 ? 'vulnerability' : 'vulnerabilities'} detected
+              {vulnerabilities.length}{' '}
+              {vulnerabilities.length === 1 ? 'vulnerability' : 'vulnerabilities'} detected
             </p>
             <div className="flex gap-3 text-sm text-gray-600 mt-0.5">
-              {criticalCount > 0 && <span className="text-red-700 font-medium">{criticalCount} Critical</span>}
-              {highCount > 0 && <span className="text-orange-700 font-medium">{highCount} High</span>}
-              {kevCount > 0 && <span className="text-red-700 font-medium">{kevCount} KEV (Known Exploited)</span>}
+              {criticalCount > 0 && (
+                <span className="text-red-700 font-medium">{criticalCount} Critical</span>
+              )}
+              {highCount > 0 && (
+                <span className="text-orange-700 font-medium">{highCount} High</span>
+              )}
+              {kevCount > 0 && (
+                <span className="text-red-700 font-medium">{kevCount} KEV (Known Exploited)</span>
+              )}
             </div>
           </div>
         </div>
@@ -969,14 +988,22 @@ function VulnerabilityBanner({ vulnerabilities }: { vulnerabilities: HostVulnera
             <tbody>
               {vulnerabilities
                 .sort((a, b) => {
-                  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 };
+                  const order: Record<string, number> = {
+                    critical: 0,
+                    high: 1,
+                    medium: 2,
+                    low: 3,
+                    unknown: 4,
+                  };
                   return (order[a.severity] ?? 4) - (order[b.severity] ?? 4);
                 })
                 .map((vuln) => (
                   <tr key={vuln.id} className="border-b border-gray-100">
                     <td className="py-2 pr-4 font-mono text-xs">{vuln.cve_id}</td>
                     <td className="py-2 pr-4">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getSeverityBadgeColor(vuln.severity)}`}>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${getSeverityBadgeColor(vuln.severity)}`}
+                      >
                         {vuln.severity}
                       </span>
                     </td>
@@ -984,7 +1011,11 @@ function VulnerabilityBanner({ vulnerabilities }: { vulnerabilities: HostVulnera
                     <td className="py-2 pr-4 font-mono text-xs">{vuln.package_name}</td>
                     <td className="py-2 pr-4 font-mono text-xs">{vuln.installed_version}</td>
                     <td className="py-2">
-                      {vuln.is_kev && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">KEV</span>}
+                      {vuln.is_kev && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          KEV
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1027,28 +1058,34 @@ function InventorySection({
   const [applicationDisplayCount, setApplicationDisplayCount] = useState(100);
 
   const packageRepos = useMemo(
-    () => ['all', ...new Set(packages.map((pkg) => pkg.repository_source).filter(Boolean) as string[])],
-    [packages],
+    () => [
+      'all',
+      ...new Set(packages.map((pkg) => pkg.repository_source).filter(Boolean) as string[]),
+    ],
+    [packages]
   );
   const applicationTypes = useMemo(
-    () => ['all', ...new Set(applications.map((app) => app.application_type).filter(Boolean) as string[])],
-    [applications],
+    () => [
+      'all',
+      ...new Set(applications.map((app) => app.application_type).filter(Boolean) as string[]),
+    ],
+    [applications]
   );
   const websiteTypes = useMemo(
     () => ['all', ...new Set(websites.map((site) => site.server_type).filter(Boolean))],
-    [websites],
+    [websites]
   );
   const runtimeTypes = useMemo(
     () => ['all', ...new Set(runtimes.map((runtime) => runtime.runtime_type).filter(Boolean))],
-    [runtimes],
+    [runtimes]
   );
   const containerRuntimeTypes = useMemo(
     () => ['all', ...new Set(containers.map((c) => c.runtime_type).filter(Boolean))],
-    [containers],
+    [containers]
   );
   const userTypes = useMemo(
     () => ['all', ...new Set(users.map((u) => u.user_type).filter(Boolean) as string[])],
-    [users],
+    [users]
   );
 
   const filteredPackages = useMemo(
@@ -1059,11 +1096,18 @@ function InventorySection({
         }
 
         return matchesInventorySearch(
-          [pkg.name, pkg.version, pkg.release, pkg.architecture, pkg.repository_source, pkg.install_path],
-          searchQuery,
+          [
+            pkg.name,
+            pkg.version,
+            pkg.release,
+            pkg.architecture,
+            pkg.repository_source,
+            pkg.install_path,
+          ],
+          searchQuery
         );
       }),
-    [packages, packageRepoFilter, searchQuery],
+    [packages, packageRepoFilter, searchQuery]
   );
 
   const filteredApplications = useMemo(
@@ -1074,11 +1118,18 @@ function InventorySection({
         }
 
         return matchesInventorySearch(
-          [app.name, app.version, app.publisher, app.install_path, app.application_type, app.bundle_identifier],
-          searchQuery,
+          [
+            app.name,
+            app.version,
+            app.publisher,
+            app.install_path,
+            app.application_type,
+            app.bundle_identifier,
+          ],
+          searchQuery
         );
       }),
-    [applications, applicationTypeFilter, searchQuery],
+    [applications, applicationTypeFilter, searchQuery]
   );
 
   const filteredWebsites = useMemo(
@@ -1089,11 +1140,18 @@ function InventorySection({
         }
 
         return matchesInventorySearch(
-          [site.site_name, site.server_type, site.document_root, site.application_pool, site.tls_certificate_reference, site.bindings.join(' ')],
-          searchQuery,
+          [
+            site.site_name,
+            site.server_type,
+            site.document_root,
+            site.application_pool,
+            site.tls_certificate_reference,
+            site.bindings.join(' '),
+          ],
+          searchQuery
         );
       }),
-    [websites, websiteTypeFilter, searchQuery],
+    [websites, websiteTypeFilter, searchQuery]
   );
 
   const filteredRuntimes = useMemo(
@@ -1104,40 +1162,50 @@ function InventorySection({
         }
 
         return matchesInventorySearch(
-          [runtime.runtime_name, runtime.runtime_type, runtime.runtime_version, runtime.install_path, runtime.management_endpoint, runtime.deployed_units.join(' ')],
-          searchQuery,
+          [
+            runtime.runtime_name,
+            runtime.runtime_type,
+            runtime.runtime_version,
+            runtime.install_path,
+            runtime.management_endpoint,
+            runtime.deployed_units.join(' '),
+          ],
+          searchQuery
         );
       }),
-    [runtimes, runtimeTypeFilter, searchQuery],
+    [runtimes, runtimeTypeFilter, searchQuery]
   );
 
-  const filteredContainers = useMemo(
-    () => {
-      const items = containers;
-      return items.filter((c) => {
-        if (containerRuntimeFilter !== 'all' && c.runtime_type !== containerRuntimeFilter) return false;
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return [c.container_id, c.name, c.image, c.status, c.runtime_type, ...c.ports, ...c.mounts]
-          .some((v) => v?.toLowerCase().includes(query));
-      });
-    },
-    [containers, containerRuntimeFilter, searchQuery],
-  );
+  const filteredContainers = useMemo(() => {
+    const items = containers;
+    return items.filter((c) => {
+      if (containerRuntimeFilter !== 'all' && c.runtime_type !== containerRuntimeFilter)
+        return false;
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return [
+        c.container_id,
+        c.name,
+        c.image,
+        c.status,
+        c.runtime_type,
+        ...c.ports,
+        ...c.mounts,
+      ].some((v) => v?.toLowerCase().includes(query));
+    });
+  }, [containers, containerRuntimeFilter, searchQuery]);
 
-  const filteredUsers = useMemo(
-    () => {
-      const items = users;
-      return items.filter((u) => {
-        if (userTypeFilter !== 'all' && u.user_type !== userTypeFilter) return false;
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return [u.username, u.home_directory, u.shell, u.user_type, u.gecos, ...u.groups]
-          .some((v) => v?.toLowerCase().includes(query));
-      });
-    },
-    [users, userTypeFilter, searchQuery],
-  );
+  const filteredUsers = useMemo(() => {
+    const items = users;
+    return items.filter((u) => {
+      if (userTypeFilter !== 'all' && u.user_type !== userTypeFilter) return false;
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return [u.username, u.home_directory, u.shell, u.user_type, u.gecos, ...u.groups].some((v) =>
+        v?.toLowerCase().includes(query)
+      );
+    });
+  }, [users, userTypeFilter, searchQuery]);
 
   useEffect(() => {
     setPackageDisplayCount(100);
@@ -1148,11 +1216,17 @@ function InventorySection({
     () =>
       history.filter((entry) =>
         matchesInventorySearch(
-          [entry.distribution, entry.os_family, entry.os_version, entry.collector_version, entry.is_full_snapshot ? 'full snapshot' : 'incremental'],
-          searchQuery,
-        ),
+          [
+            entry.distribution,
+            entry.os_family,
+            entry.os_version,
+            entry.collector_version,
+            entry.is_full_snapshot ? 'full snapshot' : 'incremental',
+          ],
+          searchQuery
+        )
       ),
-    [history, searchQuery],
+    [history, searchQuery]
   );
 
   if (!inventory) {
@@ -1201,7 +1275,17 @@ function InventorySection({
   ];
 
   const viewPills: Array<{ id: InventoryView; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: inventory.summary.package_count + inventory.summary.application_count + inventory.summary.website_count + inventory.summary.runtime_count + inventory.summary.container_count + inventory.summary.user_count },
+    {
+      id: 'all',
+      label: 'All',
+      count:
+        inventory.summary.package_count +
+        inventory.summary.application_count +
+        inventory.summary.website_count +
+        inventory.summary.runtime_count +
+        inventory.summary.container_count +
+        inventory.summary.user_count,
+    },
     { id: 'packages', label: 'Packages', count: filteredPackages.length },
     { id: 'applications', label: 'Applications', count: filteredApplications.length },
     { id: 'websites', label: 'Websites', count: filteredWebsites.length },
@@ -1228,9 +1312,7 @@ function InventorySection({
       </div>
 
       {/* Vulnerability Warning Banner */}
-      {vulnerabilities.length > 0 && (
-        <VulnerabilityBanner vulnerabilities={vulnerabilities} />
-      )}
+      {vulnerabilities.length > 0 && <VulnerabilityBanner vulnerabilities={vulnerabilities} />}
 
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Inventory Summary</h3>
@@ -1275,14 +1357,18 @@ function InventorySection({
           </div>
           <div className="p-3 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-500">Inventory Freshness</p>
-            <p className={`text-sm font-medium ${inventory.update_status?.is_stale ? 'text-amber-700' : 'text-gray-900'}`}>
+            <p
+              className={`text-sm font-medium ${inventory.update_status?.is_stale ? 'text-amber-700' : 'text-gray-900'}`}
+            >
               {inventory.update_status?.is_stale ? 'Stale' : 'Current'}
             </p>
           </div>
           <div className="p-3 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-500">Outdated Software</p>
             <p className="text-sm font-medium text-gray-900">
-              {(inventory.update_status?.outdated_packages ?? 0) + (inventory.update_status?.outdated_applications ?? 0)} items
+              {(inventory.update_status?.outdated_packages ?? 0) +
+                (inventory.update_status?.outdated_applications ?? 0)}{' '}
+              items
             </p>
           </div>
         </div>
@@ -1415,112 +1501,128 @@ function InventorySection({
       {(activeView === 'all' || activeView === 'packages' || activeView === 'applications') && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Installed Packages
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredPackages.length} matching</span>
-          </h3>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
-              {filteredPackages.length === 0 ? (
-                <div className="p-6 text-sm text-gray-500 text-center">No packages reported.</div>
-              ) : (
-                <>
-                  {filteredPackages.slice(0, packageDisplayCount).map((pkg) => (
-                    <div key={`${pkg.name}-${pkg.version}-${pkg.release ?? 'na'}`} className="p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{pkg.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {renderInventoryVersion(pkg.version, pkg.release)}
-                            {pkg.architecture ? ` • ${pkg.architecture}` : ''}
-                          </p>
-                          {pkg.install_time && (
-                            <p className="text-xs text-gray-400 mt-1">
-                              Installed {new Date(pkg.install_time).toLocaleString()}
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Installed Packages
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                {filteredPackages.length} matching
+              </span>
+            </h3>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
+                {filteredPackages.length === 0 ? (
+                  <div className="p-6 text-sm text-gray-500 text-center">No packages reported.</div>
+                ) : (
+                  <>
+                    {filteredPackages.slice(0, packageDisplayCount).map((pkg) => (
+                      <div
+                        key={`${pkg.name}-${pkg.version}-${pkg.release ?? 'na'}`}
+                        className="p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{pkg.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {renderInventoryVersion(pkg.version, pkg.release)}
+                              {pkg.architecture ? ` • ${pkg.architecture}` : ''}
                             </p>
+                            {pkg.install_time && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                Installed {new Date(pkg.install_time).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                          {pkg.repository_source && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                              {pkg.repository_source}
+                            </span>
                           )}
                         </div>
-                        {pkg.repository_source && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                            {pkg.repository_source}
-                          </span>
-                        )}
                       </div>
-                    </div>
-                  ))}
-                  {filteredPackages.length > packageDisplayCount && (
-                    <button
-                      onClick={() => setPackageDisplayCount(prev => prev + 100)}
-                      className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
-                    >
-                      Show more ({filteredPackages.length - packageDisplayCount} remaining)
-                    </button>
-                  )}
-                </>
-              )}
+                    ))}
+                    {filteredPackages.length > packageDisplayCount && (
+                      <button
+                        onClick={() => setPackageDisplayCount((prev) => prev + 100)}
+                        className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
+                      >
+                        Show more ({filteredPackages.length - packageDisplayCount} remaining)
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
           </div>
 
           <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Installed Applications
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredApplications.length} matching</span>
-          </h3>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
-              {filteredApplications.length === 0 ? (
-                <div className="p-6 text-sm text-gray-500 text-center">No applications reported.</div>
-              ) : (
-                <>
-                  {filteredApplications.slice(0, applicationDisplayCount).map((app) => (
-                    <div key={`${app.name}-${app.version}-${app.install_path ?? 'na'}`} className="p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{app.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {app.version}
-                            {app.publisher ? ` • ${app.publisher}` : ''}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {[app.install_scope, app.architecture].filter(Boolean).join(' • ') || 'Scope unknown'}
-                          </p>
-                          {app.install_path && (
-                            <p className="text-xs text-gray-400 mt-1 font-mono break-all">
-                              {app.install_path}
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Installed Applications
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                {filteredApplications.length} matching
+              </span>
+            </h3>
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
+                {filteredApplications.length === 0 ? (
+                  <div className="p-6 text-sm text-gray-500 text-center">
+                    No applications reported.
+                  </div>
+                ) : (
+                  <>
+                    {filteredApplications.slice(0, applicationDisplayCount).map((app) => (
+                      <div
+                        key={`${app.name}-${app.version}-${app.install_path ?? 'na'}`}
+                        className="p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{app.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {app.version}
+                              {app.publisher ? ` • ${app.publisher}` : ''}
                             </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {[app.install_scope, app.architecture].filter(Boolean).join(' • ') ||
+                                'Scope unknown'}
+                            </p>
+                            {app.install_path && (
+                              <p className="text-xs text-gray-400 mt-1 font-mono break-all">
+                                {app.install_path}
+                              </p>
+                            )}
+                          </div>
+                          {app.application_type && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-primary-50 text-primary-700">
+                              {app.application_type}
+                            </span>
                           )}
                         </div>
-                        {app.application_type && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-primary-50 text-primary-700">
-                            {app.application_type}
-                          </span>
-                        )}
                       </div>
-                    </div>
-                  ))}
-                  {filteredApplications.length > applicationDisplayCount && (
-                    <button
-                      onClick={() => setApplicationDisplayCount(prev => prev + 100)}
-                      className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
-                    >
-                      Show more ({filteredApplications.length - applicationDisplayCount} remaining)
-                    </button>
-                  )}
-                </>
-              )}
+                    ))}
+                    {filteredApplications.length > applicationDisplayCount && (
+                      <button
+                        onClick={() => setApplicationDisplayCount((prev) => prev + 100)}
+                        className="w-full p-3 text-sm text-blue-600 hover:bg-gray-50 font-medium border-t border-gray-100"
+                      >
+                        Show more ({filteredApplications.length - applicationDisplayCount}{' '}
+                        remaining)
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
           </div>
         </div>
       )}
 
       {inventory.update_status && (
-        <div className={`rounded-xl border p-4 ${
-          inventory.update_status.is_stale || inventory.update_status.outdated_items.length > 0
-            ? 'border-amber-200 bg-amber-50'
-            : 'border-emerald-200 bg-emerald-50'
-        }`}>
+        <div
+          className={`rounded-xl border p-4 ${
+            inventory.update_status.is_stale || inventory.update_status.outdated_items.length > 0
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-emerald-200 bg-emerald-50'
+          }`}
+        >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-medium text-gray-900">Update Status</p>
@@ -1537,10 +1639,16 @@ function InventorySection({
           {inventory.update_status.outdated_items.length > 0 && (
             <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
               {inventory.update_status.outdated_items.slice(0, 6).map((item) => (
-                <div key={`${item.software_type}-${item.name}-${item.installed_version}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2">
+                <div
+                  key={`${item.software_type}-${item.name}-${item.installed_version}`}
+                  className="rounded-lg border border-amber-200 bg-white px-3 py-2"
+                >
                   <p className="text-sm font-medium text-gray-900">{item.name}</p>
                   <p className="text-xs text-gray-500">
-                    {item.software_type} • {item.installed_version}{item.installed_release ? `-${item.installed_release}` : ''} → {item.latest_version}{item.latest_release ? `-${item.latest_release}` : ''}
+                    {item.software_type} • {item.installed_version}
+                    {item.installed_release ? `-${item.installed_release}` : ''} →{' '}
+                    {item.latest_version}
+                    {item.latest_release ? `-${item.latest_release}` : ''}
                   </p>
                 </div>
               ))}
@@ -1552,77 +1660,99 @@ function InventorySection({
       {(activeView === 'all' || activeView === 'websites' || activeView === 'runtimes') && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Websites
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredWebsites.length} matching</span>
-          </h3>
-          <div className="space-y-3">
-            {filteredWebsites.length === 0 ? (
-              <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
-                No website inventory reported.
-              </div>
-            ) : (
-              filteredWebsites.map((site) => (
-                <div key={`${site.server_type}-${site.site_name}`} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{site.site_name}</p>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">{site.server_type}</p>
-                    </div>
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                      {site.bindings.join(', ') || 'No bindings'}
-                    </span>
-                  </div>
-                  {site.document_root && (
-                    <p className="text-xs text-gray-500 mt-2 font-mono break-all">{site.document_root}</p>
-                  )}
-                  {(site.application_pool || site.tls_certificate_reference) && (
-                    <p className="text-xs text-gray-400 mt-2">
-                      {[site.application_pool && `App pool: ${site.application_pool}`, site.tls_certificate_reference && `TLS: ${site.tls_certificate_reference}`]
-                        .filter(Boolean)
-                        .join(' • ')}
-                    </p>
-                  )}
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Websites
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                {filteredWebsites.length} matching
+              </span>
+            </h3>
+            <div className="space-y-3">
+              {filteredWebsites.length === 0 ? (
+                <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
+                  No website inventory reported.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                filteredWebsites.map((site) => (
+                  <div
+                    key={`${site.server_type}-${site.site_name}`}
+                    className="p-4 border border-gray-200 rounded-lg"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-gray-900">{site.site_name}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">
+                          {site.server_type}
+                        </p>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                        {site.bindings.join(', ') || 'No bindings'}
+                      </span>
+                    </div>
+                    {site.document_root && (
+                      <p className="text-xs text-gray-500 mt-2 font-mono break-all">
+                        {site.document_root}
+                      </p>
+                    )}
+                    {(site.application_pool || site.tls_certificate_reference) && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        {[
+                          site.application_pool && `App pool: ${site.application_pool}`,
+                          site.tls_certificate_reference &&
+                            `TLS: ${site.tls_certificate_reference}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Runtimes
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredRuntimes.length} matching</span>
-          </h3>
-          <div className="space-y-3">
-            {filteredRuntimes.length === 0 ? (
-              <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
-                No runtime inventory reported.
-              </div>
-            ) : (
-              filteredRuntimes.map((runtime) => (
-                <div key={`${runtime.runtime_type}-${runtime.runtime_name}`} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{runtime.runtime_name}</p>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">{runtime.runtime_type}</p>
-                    </div>
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                      {runtime.runtime_version || 'Version unknown'}
-                    </span>
-                  </div>
-                  {runtime.deployed_units.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      Deployments: {runtime.deployed_units.join(', ')}
-                    </p>
-                  )}
-                  {runtime.install_path && (
-                    <p className="text-xs text-gray-400 mt-2 font-mono break-all">{runtime.install_path}</p>
-                  )}
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Runtimes
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                {filteredRuntimes.length} matching
+              </span>
+            </h3>
+            <div className="space-y-3">
+              {filteredRuntimes.length === 0 ? (
+                <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
+                  No runtime inventory reported.
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                filteredRuntimes.map((runtime) => (
+                  <div
+                    key={`${runtime.runtime_type}-${runtime.runtime_name}`}
+                    className="p-4 border border-gray-200 rounded-lg"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-gray-900">{runtime.runtime_name}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">
+                          {runtime.runtime_type}
+                        </p>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                        {runtime.runtime_version || 'Version unknown'}
+                      </span>
+                    </div>
+                    {runtime.deployed_units.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Deployments: {runtime.deployed_units.join(', ')}
+                      </p>
+                    )}
+                    {runtime.install_path && (
+                      <p className="text-xs text-gray-400 mt-2 font-mono break-all">
+                        {runtime.install_path}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1631,7 +1761,9 @@ function InventorySection({
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Containers
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredContainers.length} matching</span>
+            <span className="ml-2 text-sm font-normal text-gray-500">
+              {filteredContainers.length} matching
+            </span>
           </h3>
           {filteredContainers.length === 0 ? (
             <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
@@ -1656,27 +1788,35 @@ function InventorySection({
                       <tr key={container.container_id} className="hover:bg-gray-50">
                         <td className="py-2 px-3">
                           <p className="font-medium text-gray-900">{container.name}</p>
-                          <p className="text-xs text-gray-400 font-mono truncate max-w-[200px]">{container.container_id}</p>
+                          <p className="text-xs text-gray-400 font-mono truncate max-w-[200px]">
+                            {container.container_id}
+                          </p>
                         </td>
                         <td className="py-2 px-3">
-                          <span className="font-mono text-xs text-gray-700">{container.image || '—'}</span>
+                          <span className="font-mono text-xs text-gray-700">
+                            {container.image || '—'}
+                          </span>
                         </td>
                         <td className="py-2 px-3">
-                          <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
-                            container.status === 'running'
-                              ? 'bg-success-50 text-success-700'
-                              : container.status === 'exited'
-                                ? 'bg-gray-100 text-gray-600'
-                                : container.status === 'paused' || container.status === 'created'
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : container.status === 'dead'
-                                    ? 'bg-danger-50 text-danger-700'
-                                    : 'bg-primary-50 text-primary-700'
-                          }`}>
+                          <span
+                            className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                              container.status === 'running'
+                                ? 'bg-success-50 text-success-700'
+                                : container.status === 'exited'
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : container.status === 'paused' || container.status === 'created'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : container.status === 'dead'
+                                      ? 'bg-danger-50 text-danger-700'
+                                      : 'bg-primary-50 text-primary-700'
+                            }`}
+                          >
                             {container.status}
                           </span>
                           {container.status_detail && (
-                            <p className="text-xs text-gray-400 mt-0.5">{container.status_detail}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {container.status_detail}
+                            </p>
                           )}
                         </td>
                         <td className="py-2 px-3">
@@ -1690,7 +1830,9 @@ function InventorySection({
                           </span>
                         </td>
                         <td className="py-2 px-3 text-xs text-gray-500">
-                          {container.created_at ? new Date(container.created_at).toLocaleString() : '-'}
+                          {container.created_at
+                            ? new Date(container.created_at).toLocaleString()
+                            : '-'}
                         </td>
                       </tr>
                     ))}
@@ -1706,7 +1848,9 @@ function InventorySection({
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Users
-            <span className="ml-2 text-sm font-normal text-gray-500">{filteredUsers.length} matching</span>
+            <span className="ml-2 text-sm font-normal text-gray-500">
+              {filteredUsers.length} matching
+            </span>
           </h3>
           {filteredUsers.length === 0 ? (
             <div className="p-6 border border-gray-200 rounded-lg text-sm text-gray-500 text-center">
@@ -1721,7 +1865,9 @@ function InventorySection({
                       <th className="text-left py-2 px-3 font-medium text-gray-600">Username</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600">UID/SID</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600">Type</th>
-                      <th className="text-left py-2 px-3 font-medium text-gray-600">Home Directory</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">
+                        Home Directory
+                      </th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600">Shell</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600">Groups</th>
                       <th className="text-left py-2 px-3 font-medium text-gray-600">Status</th>
@@ -1731,34 +1877,40 @@ function InventorySection({
                     {filteredUsers.map((user) => (
                       <tr key={user.username} className="hover:bg-gray-50">
                         <td className="py-2 px-3">
-                          <span className="font-medium font-mono text-gray-900">{user.username}</span>
-                          {user.gecos && (
-                            <p className="text-xs text-gray-400">{user.gecos}</p>
-                          )}
+                          <span className="font-medium font-mono text-gray-900">
+                            {user.username}
+                          </span>
+                          {user.gecos && <p className="text-xs text-gray-400">{user.gecos}</p>}
                         </td>
                         <td className="py-2 px-3 font-mono text-xs text-gray-600">
-                          {user.uid != null ? user.uid : user.sid ?? '-'}
+                          {user.uid != null ? user.uid : (user.sid ?? '-')}
                         </td>
                         <td className="py-2 px-3">
                           {user.user_type && (
-                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
-                              user.user_type === 'regular'
-                                ? 'bg-primary-50 text-primary-700'
-                                : user.user_type === 'system'
-                                  ? 'bg-gray-100 text-gray-600'
-                                  : user.user_type === 'service'
-                                    ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-gray-100 text-gray-600'
-                            }`}>
+                            <span
+                              className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                                user.user_type === 'regular'
+                                  ? 'bg-primary-50 text-primary-700'
+                                  : user.user_type === 'system'
+                                    ? 'bg-gray-100 text-gray-600'
+                                    : user.user_type === 'service'
+                                      ? 'bg-amber-50 text-amber-700'
+                                      : 'bg-gray-100 text-gray-600'
+                              }`}
+                            >
                               {user.user_type}
                             </span>
                           )}
                         </td>
                         <td className="py-2 px-3">
-                          <span className="font-mono text-xs text-gray-600">{user.home_directory ?? '-'}</span>
+                          <span className="font-mono text-xs text-gray-600">
+                            {user.home_directory ?? '-'}
+                          </span>
                         </td>
                         <td className="py-2 px-3">
-                          <span className="font-mono text-xs text-gray-600">{user.shell ?? '-'}</span>
+                          <span className="font-mono text-xs text-gray-600">
+                            {user.shell ?? '-'}
+                          </span>
                         </td>
                         <td className="py-2 px-3">
                           <span className="text-xs text-gray-500">
@@ -1798,7 +1950,9 @@ function InventorySection({
               {filteredHistory.map((entry, index) => {
                 const previous = filteredHistory[index + 1];
                 const packageDelta = previous ? entry.package_count - previous.package_count : null;
-                const applicationDelta = previous ? entry.application_count - previous.application_count : null;
+                const applicationDelta = previous
+                  ? entry.application_count - previous.application_count
+                  : null;
 
                 return (
                   <div key={entry.id} className="p-4 border border-gray-200 rounded-lg">
@@ -1808,7 +1962,8 @@ function InventorySection({
                           {entry.distribution} {entry.os_version}
                         </p>
                         <p className="text-xs text-gray-500">
-                          Collected {new Date(entry.collected_at).toLocaleString()} via {entry.collector_version}
+                          Collected {new Date(entry.collected_at).toLocaleString()} via{' '}
+                          {entry.collector_version}
                         </p>
                       </div>
                       <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
@@ -1816,13 +1971,16 @@ function InventorySection({
                       </span>
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      {entry.package_count} packages, {entry.application_count} applications, {entry.website_count} websites, {entry.runtime_count} runtimes
+                      {entry.package_count} packages, {entry.application_count} applications,{' '}
+                      {entry.website_count} websites, {entry.runtime_count} runtimes
                     </p>
                     {(packageDelta !== null || applicationDelta !== null) && (
                       <p className="text-xs text-gray-400 mt-1">
-                        {packageDelta !== null && `Packages ${packageDelta >= 0 ? '+' : ''}${packageDelta}`}
+                        {packageDelta !== null &&
+                          `Packages ${packageDelta >= 0 ? '+' : ''}${packageDelta}`}
                         {packageDelta !== null && applicationDelta !== null && ' • '}
-                        {applicationDelta !== null && `Applications ${applicationDelta >= 0 ? '+' : ''}${applicationDelta}`}
+                        {applicationDelta !== null &&
+                          `Applications ${applicationDelta >= 0 ? '+' : ''}${applicationDelta}`}
                       </p>
                     )}
                   </div>
@@ -2020,18 +2178,14 @@ export default function NodeDetail() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{node.certname}</h1>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-gray-500">
-                  {node.catalog_environment || 'production'}
-                </span>
+                <span className="text-gray-500">{node.catalog_environment || 'production'}</span>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm ${getStatusColor(
                     node.latest_report_status
                   )}`}
                 >
                   <StatusIcon className="w-3 h-3" />
-                  <span className="capitalize">
-                    {node.latest_report_status || 'Unknown'}
-                  </span>
+                  <span className="capitalize">{node.latest_report_status || 'Unknown'}</span>
                 </span>
               </div>
             </div>
@@ -2049,7 +2203,9 @@ export default function NodeDetail() {
               onClick={handleDeleteClick}
               disabled={!canDeleteNode}
               className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-red-600 disabled:hover:bg-transparent"
-              title={canDeleteNode ? 'Delete this node' : 'You do not have authorization to delete nodes'}
+              title={
+                canDeleteNode ? 'Delete this node' : 'You do not have authorization to delete nodes'
+              }
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -2079,9 +2235,7 @@ export default function NodeDetail() {
                 <li>Revoke the node's certificate (if it exists)</li>
                 <li>Deactivate the node in PuppetDB</li>
               </ul>
-              <p className="text-red-600 font-medium">
-                This action cannot be undone.
-              </p>
+              <p className="text-red-600 font-medium">This action cannot be undone.</p>
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -2132,13 +2286,17 @@ export default function NodeDetail() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Certificate revoked:</span>
-                  <span className={`font-medium ${deleteResult.certificate_revoked ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span
+                    className={`font-medium ${deleteResult.certificate_revoked ? 'text-green-600' : 'text-gray-400'}`}
+                  >
                     {deleteResult.certificate_revoked ? 'Yes' : 'No (may not exist)'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">PuppetDB deactivated:</span>
-                  <span className={`font-medium ${deleteResult.puppetdb_deactivated ? 'text-green-600' : 'text-gray-400'}`}>
+                  <span
+                    className={`font-medium ${deleteResult.puppetdb_deactivated ? 'text-green-600' : 'text-gray-400'}`}
+                  >
                     {deleteResult.puppetdb_deactivated ? 'Yes' : 'No (may not exist)'}
                   </span>
                 </div>
@@ -2278,9 +2436,7 @@ export default function NodeDetail() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Node Information
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Node Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Certificate Name</p>
@@ -2288,21 +2444,15 @@ export default function NodeDetail() {
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Catalog Environment</p>
-                  <p className="text-sm text-gray-900">
-                    {node.catalog_environment || 'Not set'}
-                  </p>
+                  <p className="text-sm text-gray-900">{node.catalog_environment || 'Not set'}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Facts Environment</p>
-                  <p className="text-sm text-gray-900">
-                    {node.facts_environment || 'Not set'}
-                  </p>
+                  <p className="text-sm text-gray-900">{node.facts_environment || 'Not set'}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Report Environment</p>
-                  <p className="text-sm text-gray-900">
-                    {node.report_environment || 'Not set'}
-                  </p>
+                  <p className="text-sm text-gray-900">{node.report_environment || 'Not set'}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Catalog Timestamp</p>
@@ -2338,28 +2488,54 @@ export default function NodeDetail() {
 
             {/* Quick Facts */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Key Facts
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Facts</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
-                  ['os.family', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).family],
-                  ['os.name', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).name],
-                  ['os.release.full', normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).release && ((normalizedFacts.os as Record<string, unknown>).release as Record<string, unknown>).full],
+                  [
+                    'os.family',
+                    normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).family,
+                  ],
+                  [
+                    'os.name',
+                    normalizedFacts.os && (normalizedFacts.os as Record<string, unknown>).name,
+                  ],
+                  [
+                    'os.release.full',
+                    normalizedFacts.os &&
+                      (normalizedFacts.os as Record<string, unknown>).release &&
+                      (
+                        (normalizedFacts.os as Record<string, unknown>).release as Record<
+                          string,
+                          unknown
+                        >
+                      ).full,
+                  ],
                   ['kernel', normalizedFacts.kernel],
                   ['kernelrelease', normalizedFacts.kernelrelease],
                   ['virtual', normalizedFacts.virtual],
                   ['is_virtual', normalizedFacts.is_virtual],
-                  ['processors.count', normalizedFacts.processors && (normalizedFacts.processors as Record<string, unknown>).count],
-                  ['memory.system.total', normalizedFacts.memory && (normalizedFacts.memory as Record<string, unknown>).system && ((normalizedFacts.memory as Record<string, unknown>).system as Record<string, unknown>).total],
+                  [
+                    'processors.count',
+                    normalizedFacts.processors &&
+                      (normalizedFacts.processors as Record<string, unknown>).count,
+                  ],
+                  [
+                    'memory.system.total',
+                    normalizedFacts.memory &&
+                      (normalizedFacts.memory as Record<string, unknown>).system &&
+                      (
+                        (normalizedFacts.memory as Record<string, unknown>).system as Record<
+                          string,
+                          unknown
+                        >
+                      ).total,
+                  ],
                 ]
                   .filter(([, value]) => value !== undefined)
                   .map(([key, value]) => (
                     <div key={key as string} className="p-3 bg-gray-50 rounded-lg">
                       <p className="text-xs text-gray-500">{key as string}</p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {String(value)}
-                      </p>
+                      <p className="text-sm font-medium text-gray-900">{String(value)}</p>
                     </div>
                   ))}
               </div>
@@ -2371,8 +2547,8 @@ export default function NodeDetail() {
           <FactsBrowser facts={normalizedFacts} groupFactNames={groupFactNames} />
         )}
 
-        {activeTab === 'inventory' && (
-          inventoryLoading ? (
+        {activeTab === 'inventory' &&
+          (inventoryLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
             </div>
@@ -2383,28 +2559,25 @@ export default function NodeDetail() {
               history={inventoryHistory}
               historyLoading={inventoryHistoryLoading}
             />
-          )
-        )}
+          ))}
 
-        {activeTab === 'reports' && (
-          reportsLoading ? (
+        {activeTab === 'reports' &&
+          (reportsLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
             </div>
           ) : (
             <ReportsTimeline reports={reports} />
-          )
-        )}
+          ))}
 
-        {activeTab === 'groups' && (
-          groupsLoading ? (
+        {activeTab === 'groups' &&
+          (groupsLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
             </div>
           ) : (
             <GroupMembership certname={certname!} groups={groups} />
-          )
-        )}
+          ))}
       </div>
     </div>
   );

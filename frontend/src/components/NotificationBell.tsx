@@ -30,10 +30,7 @@ export default function NotificationBell() {
       {isOpen && (
         <>
           {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setIsOpen(false)}
-          />
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
 
           {/* Panel */}
           <div className="absolute right-0 mt-2 z-50">

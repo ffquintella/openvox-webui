@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Search, Filter, ChevronRight, ChevronLeft, CheckCircle2, XCircle, Clock, HelpCircle, AlertTriangle, Plus } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  HelpCircle,
+  AlertTriangle,
+  Plus,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { api, nodeRemovalApi } from '../services/api';
 import { Node, NodeStatus, PendingNodeRemoval } from '../types';
@@ -37,7 +48,13 @@ function StatusBadge({ status }: { status?: NodeStatus }) {
   const { icon: Icon, color, bg, text } = config[status];
 
   return (
-    <span className={clsx('inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full', bg, color)}>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full',
+        bg,
+        color
+      )}
+    >
       <Icon className="w-3 h-3" />
       {text}
     </span>
@@ -136,10 +153,7 @@ export default function Nodes() {
           <span className="text-sm text-gray-500">
             {total.toLocaleString()} {total === 1 ? 'node' : 'nodes'}
           </span>
-          <Link
-            to="/nodes/add"
-            className="btn btn-primary flex items-center gap-2"
-          >
+          <Link to="/nodes/add" className="btn btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Add Node
           </Link>
@@ -180,8 +194,18 @@ export default function Nodes() {
               ))}
             </select>
             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              <svg
+                className="w-4 h-4 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </div>
           </div>
@@ -208,15 +232,21 @@ export default function Nodes() {
               <th className="px-6 py-3"></th>
             </tr>
           </thead>
-          <tbody className={clsx('bg-white divide-y divide-gray-200', isFetching && isPlaceholderData && 'opacity-60')}>
+          <tbody
+            className={clsx(
+              'bg-white divide-y divide-gray-200',
+              isFetching && isPlaceholderData && 'opacity-60'
+            )}
+          >
             {nodes.map((node: Node) => {
               const pendingRemoval = pendingRemovalMap.get(node.certname);
               return (
-                <tr key={node.certname} className={clsx('hover:bg-gray-50', pendingRemoval && 'bg-orange-50')}>
+                <tr
+                  key={node.certname}
+                  className={clsx('hover:bg-gray-50', pendingRemoval && 'bg-orange-50')}
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="font-medium text-gray-900">
-                      {node.certname}
-                    </span>
+                    <span className="font-medium text-gray-900">{node.certname}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex flex-col gap-1">
@@ -228,9 +258,7 @@ export default function Nodes() {
                     {node.catalog_environment || '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {node.report_timestamp
-                      ? new Date(node.report_timestamp).toLocaleString()
-                      : '-'}
+                    {node.report_timestamp ? new Date(node.report_timestamp).toLocaleString() : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <Link

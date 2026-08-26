@@ -376,14 +376,10 @@ impl CodeDeployService {
                     ));
                 }
                 // Allow either pat_token_id (new) or github_pat (legacy)
-                if req.pat_token_id.is_some() {
+                if let Some(pat_token_id) = req.pat_token_id {
                     // Validate the PAT token exists
                     let token_repo = CodePatTokenRepository::new(&self.pool);
-                    if token_repo
-                        .get_by_id(req.pat_token_id.unwrap())
-                        .await?
-                        .is_none()
-                    {
+                    if token_repo.get_by_id(pat_token_id).await?.is_none() {
                         return Err(anyhow::anyhow!("PAT token not found"));
                     }
                 } else if req.github_pat.is_none() {
@@ -655,9 +651,7 @@ impl CodeDeployService {
                 None => true, // No previous deployment
             };
 
-            if needs_deployment && env.current_commit.is_some() {
-                let commit_sha = env.current_commit.as_ref().unwrap();
-
+            if let (true, Some(commit_sha)) = (needs_deployment, env.current_commit.as_ref()) {
                 if env.auto_deploy && !env.requires_approval {
                     // Auto-deploy: create approved deployment
                     info!(

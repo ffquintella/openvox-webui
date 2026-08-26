@@ -66,9 +66,8 @@ export default function FactDistributionChart({
     facts
       .filter((f) => f.name === factName)
       .forEach((fact) => {
-        const value = typeof fact.value === 'object'
-          ? JSON.stringify(fact.value)
-          : String(fact.value);
+        const value =
+          typeof fact.value === 'object' ? JSON.stringify(fact.value) : String(fact.value);
 
         valueCounts.set(value, (valueCounts.get(value) || 0) + 1);
       });
@@ -122,12 +121,7 @@ export default function FactDistributionChart({
           >
             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
             <XAxis type="number" />
-            <YAxis
-              type="category"
-              dataKey="value"
-              tick={{ fontSize: 12 }}
-              width={75}
-            />
+            <YAxis type="category" dataKey="value" tick={{ fontSize: 12 }} width={75} />
             <Tooltip content={<CustomTooltip />} />
             <Bar dataKey="count" radius={[0, 4, 4, 0]}>
               {chartData.map((_, index) => (

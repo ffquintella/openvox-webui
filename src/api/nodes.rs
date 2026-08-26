@@ -930,7 +930,7 @@ async fn delete_node(
 
     if !permission_check.allowed {
         return Err(AppError::forbidden(
-            &permission_check
+            permission_check
                 .reason
                 .unwrap_or_else(|| "No matching permission found".to_string()),
         ));

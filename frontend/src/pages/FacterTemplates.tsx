@@ -14,9 +14,17 @@ import type {
 
 const VALUE_SOURCE_TYPES: { value: FactValueSourceType; label: string; description: string }[] = [
   { value: 'Static', label: 'Static', description: 'A fixed value' },
-  { value: 'FromClassification', label: 'From Classification', description: 'Value from node classification' },
+  {
+    value: 'FromClassification',
+    label: 'From Classification',
+    description: 'Value from node classification',
+  },
   { value: 'FromFact', label: 'From Fact', description: 'Copy value from another fact' },
-  { value: 'Template', label: 'Template', description: 'Template string with variable substitution' },
+  {
+    value: 'Template',
+    label: 'Template',
+    description: 'Template string with variable substitution',
+  },
 ];
 
 export default function FacterTemplates() {
@@ -53,8 +61,13 @@ export default function FacterTemplates() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateFactTemplate>[1] }) =>
-      api.updateFactTemplate(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Parameters<typeof api.updateFactTemplate>[1];
+    }) => api.updateFactTemplate(id, data),
     onSuccess: (updatedTemplate) => {
       queryClient.invalidateQueries({ queryKey: ['factTemplates'] });
       setSelectedTemplate(updatedTemplate);
@@ -130,10 +143,7 @@ export default function FacterTemplates() {
   };
 
   const addFact = () => {
-    setFormFacts([
-      ...formFacts,
-      { name: '', value: { type: 'Static', value: '' } },
-    ]);
+    setFormFacts([...formFacts, { name: '', value: { type: 'Static', value: '' } }]);
   };
 
   const updateFact = (index: number, updates: Partial<FactDefinition>) => {
@@ -191,10 +201,7 @@ export default function FacterTemplates() {
           <h1 className="text-2xl font-bold text-gray-900">Facter Templates</h1>
           <p className="text-gray-500 mt-1">Define templates for generating external facts</p>
         </div>
-        <button
-          onClick={() => setIsCreateOpen(true)}
-          className="btn btn-primary flex items-center"
-        >
+        <button onClick={() => setIsCreateOpen(true)} className="btn btn-primary flex items-center">
           <Plus className="w-4 h-4 mr-2" />
           New Template
         </button>
@@ -232,11 +239,7 @@ export default function FacterTemplates() {
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="label mb-0">Fact Definitions</label>
-                  <button
-                    type="button"
-                    onClick={addFact}
-                    className="btn btn-secondary text-sm"
-                  >
+                  <button type="button" onClick={addFact} className="btn btn-secondary text-sm">
                     <Plus className="w-4 h-4 mr-1" />
                     Add Fact
                   </button>
@@ -364,10 +367,7 @@ export default function FacterTemplates() {
                   {generatedOutput}
                 </pre>
                 <div className="flex justify-end gap-3 mt-4">
-                  <button
-                    onClick={() => setGeneratedOutput(null)}
-                    className="btn btn-secondary"
-                  >
+                  <button onClick={() => setGeneratedOutput(null)} className="btn btn-secondary">
                     Generate Another
                   </button>
                   <button
@@ -418,15 +418,11 @@ export default function FacterTemplates() {
                       )}
                     </div>
                   </div>
-                  <span className="text-xs text-gray-400">
-                    {template.facts.length} facts
-                  </span>
+                  <span className="text-xs text-gray-400">{template.facts.length} facts</span>
                 </button>
               ))}
               {templates.length === 0 && (
-                <div className="p-4 text-center text-gray-500">
-                  No templates defined
-                </div>
+                <div className="p-4 text-center text-gray-500">No templates defined</div>
               )}
             </div>
           </div>
@@ -440,9 +436,7 @@ export default function FacterTemplates() {
                 <div className="flex items-center">
                   <FileCode2 className="w-8 h-8 text-primary-600 mr-3" />
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900">
-                      {selectedTemplate.name}
-                    </h2>
+                    <h2 className="text-xl font-semibold text-gray-900">{selectedTemplate.name}</h2>
                     {selectedTemplate.description && (
                       <p className="text-gray-500">{selectedTemplate.description}</p>
                     )}
@@ -456,10 +450,7 @@ export default function FacterTemplates() {
                     <Download className="w-4 h-4 mr-2" />
                     Generate
                   </button>
-                  <button
-                    onClick={startEditing}
-                    className="btn btn-secondary"
-                  >
+                  <button onClick={startEditing} className="btn btn-secondary">
                     Edit
                   </button>
                   <button
@@ -479,14 +470,9 @@ export default function FacterTemplates() {
                 </h3>
                 <div className="space-y-3">
                   {selectedTemplate.facts.map((fact, index) => (
-                    <div
-                      key={index}
-                      className="bg-gray-50 rounded-lg p-4 border border-gray-200"
-                    >
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-mono font-medium text-gray-900">
-                          {fact.name}
-                        </span>
+                        <span className="font-mono font-medium text-gray-900">{fact.name}</span>
                         <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded">
                           {getValueSourceLabel(fact.value.type)}
                         </span>
@@ -532,11 +518,7 @@ export default function FacterTemplates() {
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
                     <label className="label mb-0">Fact Definitions</label>
-                    <button
-                      type="button"
-                      onClick={addFact}
-                      className="btn btn-secondary text-sm"
-                    >
+                    <button type="button" onClick={addFact} className="btn btn-secondary text-sm">
                       <Plus className="w-4 h-4 mr-1" />
                       Add Fact
                     </button>
@@ -560,11 +542,7 @@ export default function FacterTemplates() {
                 </div>
 
                 <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={cancelEditing}
-                    className="btn btn-secondary"
-                  >
+                  <button type="button" onClick={cancelEditing} className="btn btn-secondary">
                     Cancel
                   </button>
                   <button
@@ -606,7 +584,11 @@ function FactEditor({ fact, onChange, onValueChange, onRemove }: FactEditorProps
         return (
           <input
             type="text"
-            value={typeof fact.value.value === 'string' ? fact.value.value : JSON.stringify(fact.value.value)}
+            value={
+              typeof fact.value.value === 'string'
+                ? fact.value.value
+                : JSON.stringify(fact.value.value)
+            }
             onChange={(e) => {
               // Try to parse as JSON, fall back to string
               let value: unknown = e.target.value;
@@ -694,11 +676,7 @@ function FactEditor({ fact, onChange, onValueChange, onRemove }: FactEditorProps
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-gray-400 hover:text-red-600 mt-6"
-        >
+        <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-600 mt-6">
           <X className="w-5 h-5" />
         </button>
       </div>

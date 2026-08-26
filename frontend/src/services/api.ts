@@ -185,9 +185,7 @@ const isAuthEndpoint = (url?: string): boolean => {
   }
 
   return (
-    url.includes('/auth/login')
-    || url.includes('/auth/refresh')
-    || url.includes('/auth/logout')
+    url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout')
   );
 };
 
@@ -231,10 +229,10 @@ client.interceptors.response.use(
     const originalRequest = (error.config ?? {}) as RetriableRequestConfig;
 
     if (
-      status === 401
-      && !originalRequest._retry
-      && !isAuthEndpoint(originalRequest.url)
-      && localStorage.getItem('refresh_token')
+      status === 401 &&
+      !originalRequest._retry &&
+      !isAuthEndpoint(originalRequest.url) &&
+      localStorage.getItem('refresh_token')
     ) {
       originalRequest._retry = true;
 
@@ -260,13 +258,12 @@ client.interceptors.response.use(
 
     if (status === 401 && useAuthStore.getState().isAuthenticated) {
       const serverMessage =
-        typeof error.response?.data?.message === 'string'
-          ? error.response.data.message
-          : '';
+        typeof error.response?.data?.message === 'string' ? error.response.data.message : '';
 
-      const reason = serverMessage === 'Session expired due to inactivity'
-        ? 'Your session expired after 30 minutes of inactivity.'
-        : 'Your session has expired. Please sign in again.';
+      const reason =
+        serverMessage === 'Session expired due to inactivity'
+          ? 'Your session expired after 30 minutes of inactivity.'
+          : 'Your session has expired. Please sign in again.';
 
       useAuthStore.getState().logout(reason);
 
@@ -316,7 +313,10 @@ export const api = {
     return response.data;
   },
 
-  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+  changePassword: async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ message: string }> => {
     const response = await client.post('/auth/change-password', {
       current_password: currentPassword,
       new_password: newPassword,
@@ -344,15 +344,11 @@ export const api = {
   // Paginated node list. Filtering, sorting and pagination are performed
   // server-side (by PuppetDB) so the whole fleet is never pulled at once.
   // The total matching count comes from the X-Total-Count response header.
-  getNodesPaginated: async (
-    params: NodesQueryParams = {}
-  ): Promise<PaginatedNodes> => {
+  getNodesPaginated: async (params: NodesQueryParams = {}): Promise<PaginatedNodes> => {
     const response = await client.get('/nodes', { params });
     const totalHeader = response.headers['x-total-count'];
     const parsedTotal = totalHeader !== undefined ? Number(totalHeader) : NaN;
-    const total = Number.isFinite(parsedTotal)
-      ? parsedTotal
-      : response.data.length;
+    const total = Number.isFinite(parsedTotal) ? parsedTotal : response.data.length;
     return { nodes: response.data, total };
   },
 
@@ -415,18 +411,14 @@ export const api = {
     return response.data;
   },
 
-  getComplianceCategoryNodes: async (
-    category: string
-  ): Promise<ComplianceCategoryNode[]> => {
+  getComplianceCategoryNodes: async (category: string): Promise<ComplianceCategoryNode[]> => {
     const response = await client.get(
       `/inventory/dashboard/compliance/${encodeURIComponent(category)}`
     );
     return response.data;
   },
 
-  getPatchAgeBucketNodes: async (
-    bucket: string
-  ): Promise<PatchAgeBucketNode[]> => {
+  getPatchAgeBucketNodes: async (bucket: string): Promise<PatchAgeBucketNode[]> => {
     const response = await client.get(
       `/inventory/dashboard/patch-age/${encodeURIComponent(bucket)}`
     );
@@ -463,10 +455,7 @@ export const api = {
     return response.data;
   },
 
-  approveUpdateJob: async (
-    jobId: string,
-    request: ApproveUpdateJobRequest
-  ): Promise<UpdateJob> => {
+  approveUpdateJob: async (jobId: string, request: ApproveUpdateJobRequest): Promise<UpdateJob> => {
     const response = await client.post(`/inventory/updates/${jobId}/approve`, request);
     return response.data;
   },
@@ -547,12 +536,19 @@ export const api = {
     return response.data;
   },
 
-  createGroupUpdateSchedule: async (groupId: string, data: CreateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+  createGroupUpdateSchedule: async (
+    groupId: string,
+    data: CreateGroupUpdateScheduleRequest
+  ): Promise<GroupUpdateSchedule> => {
     const response = await client.post(`/groups/${groupId}/update-schedules`, data);
     return response.data;
   },
 
-  updateGroupUpdateSchedule: async (groupId: string, scheduleId: string, data: UpdateGroupUpdateScheduleRequest): Promise<GroupUpdateSchedule> => {
+  updateGroupUpdateSchedule: async (
+    groupId: string,
+    scheduleId: string,
+    data: UpdateGroupUpdateScheduleRequest
+  ): Promise<GroupUpdateSchedule> => {
     const response = await client.put(`/groups/${groupId}/update-schedules/${scheduleId}`, data);
     return response.data;
   },
@@ -567,7 +563,10 @@ export const api = {
   },
 
   // Facts
-  getFacts: async (params?: { name?: string; certname?: string }): Promise<Array<{ certname: string; name: string; value: unknown }>> => {
+  getFacts: async (params?: {
+    name?: string;
+    certname?: string;
+  }): Promise<Array<{ certname: string; name: string; value: unknown }>> => {
     const response = await client.get('/facts', { params });
     // Backend returns { facts: [...], total: N } wrapper, extract the facts array
     return response.data.facts || response.data;
@@ -645,7 +644,10 @@ export const api = {
     return response.data;
   },
 
-  getReportEvents: async (hash: string, params?: { status?: string; type?: string }): Promise<ResourceEvent[]> => {
+  getReportEvents: async (
+    hash: string,
+    params?: { status?: string; type?: string }
+  ): Promise<ResourceEvent[]> => {
     const response = await client.get(`/reports/${hash}/events`, { params });
     return response.data;
   },
@@ -759,7 +761,10 @@ export const api = {
     return response.data;
   },
 
-  addPermissionToRole: async (roleId: string, permission: CreatePermissionRequest): Promise<Role> => {
+  addPermissionToRole: async (
+    roleId: string,
+    permission: CreatePermissionRequest
+  ): Promise<Role> => {
     const response = await client.post(`/roles/${roleId}/permissions`, permission);
     return response.data;
   },
@@ -784,7 +789,10 @@ export const api = {
     return response.data;
   },
 
-  updateFactTemplate: async (id: string, data: UpdateFactTemplateRequest): Promise<FactTemplate> => {
+  updateFactTemplate: async (
+    id: string,
+    data: UpdateFactTemplateRequest
+  ): Promise<FactTemplate> => {
     const response = await client.put(`/facter/templates/${id}`, data);
     return response.data;
   },
@@ -798,7 +806,11 @@ export const api = {
     return response.data;
   },
 
-  exportFacts: async (certname: string, template: string, format: ExportFormat = 'json'): Promise<string> => {
+  exportFacts: async (
+    certname: string,
+    template: string,
+    format: ExportFormat = 'json'
+  ): Promise<string> => {
     const response = await client.get(`/facter/export/${encodeURIComponent(certname)}`, {
       params: { template, format },
     });
@@ -832,7 +844,11 @@ export const api = {
   },
 
   importConfig: async (content: string, dryRun: boolean = false): Promise<ImportConfigResponse> => {
-    const response = await client.post('/settings/import', { content, format: 'yaml', dry_run: dryRun });
+    const response = await client.post('/settings/import', {
+      content,
+      format: 'yaml',
+      dry_run: dryRun,
+    });
     return response.data;
   },
 
@@ -938,7 +954,10 @@ export const api = {
     return response.data;
   },
 
-  updateSavedReport: async (id: string, request: UpdateSavedReportRequest): Promise<SavedReport> => {
+  updateSavedReport: async (
+    id: string,
+    request: UpdateSavedReportRequest
+  ): Promise<SavedReport> => {
     const response = await client.put(`/analytics/saved-reports/${id}`, request);
     return response.data;
   },
@@ -998,7 +1017,10 @@ export const api = {
     return response.data;
   },
 
-  generateReportByType: async (reportType: ReportType, config?: ReportQueryConfig): Promise<unknown> => {
+  generateReportByType: async (
+    reportType: ReportType,
+    config?: ReportQueryConfig
+  ): Promise<unknown> => {
     const response = await client.post(`/analytics/generate/${reportType}`, config || {});
     return response.data;
   },
@@ -1013,12 +1035,17 @@ export const api = {
     return response.data;
   },
 
-  createComplianceBaseline: async (request: CreateComplianceBaselineRequest): Promise<ComplianceBaseline> => {
+  createComplianceBaseline: async (
+    request: CreateComplianceBaselineRequest
+  ): Promise<ComplianceBaseline> => {
     const response = await client.post('/analytics/compliance-baselines', request);
     return response.data;
   },
 
-  updateComplianceBaseline: async (id: string, request: UpdateComplianceBaselineRequest): Promise<ComplianceBaseline> => {
+  updateComplianceBaseline: async (
+    id: string,
+    request: UpdateComplianceBaselineRequest
+  ): Promise<ComplianceBaseline> => {
     const response = await client.put(`/analytics/compliance-baselines/${id}`, request);
     return response.data;
   },
@@ -1042,7 +1069,10 @@ export const api = {
     return response.data;
   },
 
-  updateDriftBaseline: async (id: string, request: UpdateDriftBaselineRequest): Promise<DriftBaseline> => {
+  updateDriftBaseline: async (
+    id: string,
+    request: UpdateDriftBaselineRequest
+  ): Promise<DriftBaseline> => {
     const response = await client.put(`/analytics/drift-baselines/${id}`, request);
     return response.data;
   },
@@ -1080,7 +1110,10 @@ export const api = {
     return response.data.data;
   },
 
-  updateChannel: async (id: string, request: UpdateChannelRequest): Promise<NotificationChannel> => {
+  updateChannel: async (
+    id: string,
+    request: UpdateChannelRequest
+  ): Promise<NotificationChannel> => {
     const response = await client.put(`/alerting/channels/${id}`, request);
     return response.data.data;
   },
@@ -1265,7 +1298,10 @@ export const api = {
     return response.data;
   },
 
-  updateCodeRepository: async (id: string, request: UpdateRepositoryRequest): Promise<CodeRepository> => {
+  updateCodeRepository: async (
+    id: string,
+    request: UpdateRepositoryRequest
+  ): Promise<CodeRepository> => {
     const response = await client.put(`/code/repositories/${id}`, request);
     return response.data;
   },
@@ -1290,7 +1326,10 @@ export const api = {
     return response.data;
   },
 
-  updateCodeEnvironment: async (id: string, request: UpdateEnvironmentRequest): Promise<CodeEnvironment> => {
+  updateCodeEnvironment: async (
+    id: string,
+    request: UpdateEnvironmentRequest
+  ): Promise<CodeEnvironment> => {
     const response = await client.put(`/code/environments/${id}`, request);
     return response.data;
   },
@@ -1311,12 +1350,18 @@ export const api = {
     return response.data;
   },
 
-  approveDeployment: async (id: string, request?: ApproveDeploymentRequest): Promise<CodeDeployment> => {
+  approveDeployment: async (
+    id: string,
+    request?: ApproveDeploymentRequest
+  ): Promise<CodeDeployment> => {
     const response = await client.post(`/code/deployments/${id}/approve`, request || {});
     return response.data;
   },
 
-  rejectDeployment: async (id: string, request: RejectDeploymentRequest): Promise<CodeDeployment> => {
+  rejectDeployment: async (
+    id: string,
+    request: RejectDeploymentRequest
+  ): Promise<CodeDeployment> => {
     const response = await client.post(`/code/deployments/${id}/reject`, request);
     return response.data;
   },
@@ -1351,7 +1396,10 @@ export const api = {
     return response.data;
   },
 
-  addGroupPermission: async (roleId: string, request: AddGroupPermissionRequest): Promise<GroupPermissionInfo> => {
+  addGroupPermission: async (
+    roleId: string,
+    request: AddGroupPermissionRequest
+  ): Promise<GroupPermissionInfo> => {
     const response = await client.post(`/roles/${roleId}/group-permissions`, request);
     return response.data;
   },
@@ -1392,7 +1440,10 @@ export const notificationApi = {
     return response.data;
   },
 
-  bulkMarkRead: async (notificationIds: string[], read: boolean): Promise<{ success: boolean; count: number }> => {
+  bulkMarkRead: async (
+    notificationIds: string[],
+    read: boolean
+  ): Promise<{ success: boolean; count: number }> => {
     const response = await client.post('/notifications/bulk-mark-read', {
       notification_ids: notificationIds,
       read,
@@ -1410,7 +1461,9 @@ export const notificationApi = {
     return response.data;
   },
 
-  createNotification: async (data: CreateNotificationRequest): Promise<{ notification: Notification }> => {
+  createNotification: async (
+    data: CreateNotificationRequest
+  ): Promise<{ notification: Notification }> => {
     const response = await client.post('/notifications', data);
     return response.data;
   },
@@ -1537,7 +1590,6 @@ export const nodeRemovalApi = {
     const response = await client.get(`/node-removal/audit/${encodeURIComponent(certname)}`);
     return response.data;
   },
-
 };
 
 // CVE / Vulnerability API - separated to avoid TypeScript object literal property limit
@@ -1547,7 +1599,10 @@ export const cveApi = {
     return response.data;
   },
 
-  getVulnerableNodes: async (severity?: string, limit?: number): Promise<NodeVulnerabilitySummary[]> => {
+  getVulnerableNodes: async (
+    severity?: string,
+    limit?: number
+  ): Promise<NodeVulnerabilitySummary[]> => {
     const response = await client.get('/cve/nodes', { params: { severity, limit } });
     return response.data;
   },
@@ -1557,8 +1612,15 @@ export const cveApi = {
     return response.data;
   },
 
-  searchCves: async (query?: string, severity?: string, isKev?: boolean, limit?: number): Promise<CveEntry[]> => {
-    const response = await client.get('/cve/entries', { params: { query, severity, is_kev: isKev, limit } });
+  searchCves: async (
+    query?: string,
+    severity?: string,
+    isKev?: boolean,
+    limit?: number
+  ): Promise<CveEntry[]> => {
+    const response = await client.get('/cve/entries', {
+      params: { query, severity, is_kev: isKev, limit },
+    });
     return response.data;
   },
 
@@ -1577,7 +1639,10 @@ export const cveApi = {
     return response.data;
   },
 
-  updateCveFeed: async (id: string, request: UpdateCveFeedSourceRequest): Promise<CveFeedSource> => {
+  updateCveFeed: async (
+    id: string,
+    request: UpdateCveFeedSourceRequest
+  ): Promise<CveFeedSource> => {
     const response = await client.put(`/cve/feeds/${id}`, request);
     return response.data;
   },

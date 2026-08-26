@@ -1,7 +1,15 @@
 //! Test world for Cucumber scenarios
 
 use cucumber::World;
+use serde_json::Value;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct TestAlertCondition {
+    pub condition_type: String,
+    pub operator: String,
+    pub value: Value,
+}
 
 /// Test world that maintains state across scenario steps
 #[derive(Debug, Default, World)]
@@ -54,6 +62,15 @@ pub struct TestWorld {
 
     /// Node environments (certname -> environment)
     pub node_environments: HashMap<String, String>,
+
+    /// Alerting state used by the in-memory alert-rule BDD scenarios.
+    pub alert_conditions: Vec<TestAlertCondition>,
+    pub alert_logical_operator: String,
+    pub alert_nodes: HashMap<String, Value>,
+    pub alert_matched_nodes: Vec<String>,
+    pub alert_rule_enabled: bool,
+    pub notification_channels_configured: bool,
+    pub alert_generated: bool,
 
     /// Base URL for API calls
     #[allow(dead_code)]

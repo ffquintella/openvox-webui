@@ -279,9 +279,7 @@ fn extract_cn_from_pem(pem: &str) -> Option<String> {
             let rest = &pem[start..];
 
             // Find the end of the CN value
-            let end = rest
-                .find(|c: char| c == ',' || c == '/' || c == '\n' || c == '\r')
-                .unwrap_or(rest.len());
+            let end = rest.find([',', '/', '\n', '\r']).unwrap_or(rest.len());
 
             let cn = rest[..end].trim().to_string();
             if !cn.is_empty() {

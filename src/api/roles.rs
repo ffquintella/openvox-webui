@@ -405,8 +405,8 @@ async fn add_permission_to_role(
         .permissions
         .iter()
         .map(|p| CreatePermissionRequest {
-            resource: p.resource.clone(),
-            action: p.action.clone(),
+            resource: p.resource,
+            action: p.action,
             scope: Some(p.scope.clone()),
             constraint: p.constraint.clone(),
         })
@@ -533,8 +533,8 @@ async fn remove_permission_from_role(
         .iter()
         .filter(|p| p.id != permission_id)
         .map(|p| CreatePermissionRequest {
-            resource: p.resource.clone(),
-            action: p.action.clone(),
+            resource: p.resource,
+            action: p.action,
             scope: Some(p.scope.clone()),
             constraint: p.constraint.clone(),
         })

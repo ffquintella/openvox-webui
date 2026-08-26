@@ -144,8 +144,8 @@ Before building packages, ensure you have the following installed:
 **Common Requirements:**
 
 - Git
-- Rust toolchain (1.70+)
-- Node.js 20+
+- Rust toolchain (1.88+)
+- Node.js 22.22.2+ (or 24.15.0+)
 - npm
 
 **For RPM builds (RHEL/Rocky/AlmaLinux/Fedora):**
@@ -155,8 +155,8 @@ Before building packages, ensure you have the following installed:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
-# Install Node.js 20
-sudo dnf module enable nodejs:20 -y
+# Install Node.js 22
+sudo dnf module enable nodejs:22 -y
 sudo dnf install nodejs -y
 
 # Install build tools
@@ -170,8 +170,8 @@ sudo dnf install rpm-build rpmdevtools gcc openssl-devel sqlite-devel make -y
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
-# Install Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Install build tools

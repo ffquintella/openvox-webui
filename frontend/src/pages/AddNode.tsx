@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Copy, Check, Terminal, Server, Package, AlertTriangle, ExternalLink } from 'lucide-react';
+import {
+  ArrowLeft,
+  Copy,
+  Check,
+  Terminal,
+  Server,
+  Package,
+  AlertTriangle,
+  ExternalLink,
+} from 'lucide-react';
 import { api } from '../services/api';
 import type { BootstrapConfigResponse } from '../types';
 
@@ -83,10 +92,7 @@ export default function AddNode() {
     <div>
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
-        <Link
-          to="/nodes"
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-        >
+        <Link to="/nodes" className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </Link>
         <div>
@@ -104,14 +110,17 @@ export default function AddNode() {
               <h3 className="font-medium text-amber-800">Configuration Required</h3>
               <p className="text-amber-700 text-sm mt-1">
                 The OpenVox Server URL has not been configured. Please configure it in{' '}
-                <Link to="/settings" className="underline font-medium">Settings</Link>{' '}
+                <Link to="/settings" className="underline font-medium">
+                  Settings
+                </Link>{' '}
                 before bootstrapping nodes.
               </p>
               <p className="text-amber-700 text-sm mt-2">
-                Add the following to your <code className="bg-amber-100 px-1 rounded">config.yaml</code>:
+                Add the following to your{' '}
+                <code className="bg-amber-100 px-1 rounded">config.yaml</code>:
               </p>
               <pre className="bg-amber-100 text-amber-900 p-2 rounded mt-2 text-xs overflow-x-auto">
-{`node_bootstrap:
+                {`node_bootstrap:
   openvox_server_url: "openvox.example.com"
   repository_base_url: "https://yum.example.com/openvox"
   agent_package_name: "openvox-agent"`}
@@ -136,12 +145,16 @@ export default function AddNode() {
           </div>
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-500">Package</span>
-            <span className="font-medium text-gray-900">{config?.agent_package_name || 'openvox-agent'}</span>
+            <span className="font-medium text-gray-900">
+              {config?.agent_package_name || 'openvox-agent'}
+            </span>
           </div>
           {config?.repository_base_url && (
             <div className="flex justify-between py-2 border-b border-gray-100 md:col-span-2">
               <span className="text-gray-500">Repository URL</span>
-              <span className="font-mono text-xs text-gray-900 truncate ml-4">{config.repository_base_url}</span>
+              <span className="font-mono text-xs text-gray-900 truncate ml-4">
+                {config.repository_base_url}
+              </span>
             </div>
           )}
         </div>
@@ -160,8 +173,8 @@ export default function AddNode() {
           <span>
             <span className="font-medium text-gray-900">Ignore SSL certificates *</span>
             <span className="block text-sm text-gray-500 mt-0.5">
-              Disables TLS certificate validation when downloading the bootstrap script
-              (adds <code className="bg-gray-100 px-1 rounded">-k</code> on Linux and
+              Disables TLS certificate validation when downloading the bootstrap script (adds{' '}
+              <code className="bg-gray-100 px-1 rounded">-k</code> on Linux and
               <code className="bg-gray-100 px-1 rounded">-SkipCertificateCheck</code> on Windows).
               Use only with trusted self-signed servers.
             </span>
@@ -186,7 +199,7 @@ export default function AddNode() {
             onClick={handleCopy}
             disabled={!isConfigured}
             className="absolute top-2 right-2 p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isConfigured ? "Copy to clipboard" : "Configure Puppet Server URL first"}
+            title={isConfigured ? 'Copy to clipboard' : 'Configure Puppet Server URL first'}
           >
             {copied ? (
               <Check className="w-4 h-4 text-green-400" />
@@ -234,15 +247,17 @@ export default function AddNode() {
           Windows Bootstrap
         </h2>
         <p className="text-gray-600 mb-4">
-          Run this command in an <strong>elevated PowerShell</strong> (Run as Administrator) on the Windows node:
+          Run this command in an <strong>elevated PowerShell</strong> (Run as Administrator) on the
+          Windows node:
         </p>
         {ignoreSsl && (
           <p className="text-sm text-amber-600 mb-4 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
-              Run this with <strong>PowerShell 7</strong> (<code className="bg-gray-100 px-1 rounded">pwsh</code>).
-              The <code className="bg-gray-100 px-1 rounded">-SkipCertificateCheck</code> flag is not available
-              in Windows PowerShell 5.1.
+              Run this with <strong>PowerShell 7</strong> (
+              <code className="bg-gray-100 px-1 rounded">pwsh</code>). The{' '}
+              <code className="bg-gray-100 px-1 rounded">-SkipCertificateCheck</code> flag is not
+              available in Windows PowerShell 5.1.
             </span>
           </p>
         )}
@@ -254,7 +269,7 @@ export default function AddNode() {
             onClick={handleCopyWindows}
             disabled={!isConfigured}
             className="absolute top-2 right-2 p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isConfigured ? "Copy to clipboard" : "Configure Puppet Server URL first"}
+            title={isConfigured ? 'Copy to clipboard' : 'Configure Puppet Server URL first'}
           >
             {copiedWindows ? (
               <Check className="w-4 h-4 text-green-400" />
@@ -272,9 +287,7 @@ export default function AddNode() {
         <div className="mt-4 space-y-4">
           <div>
             <h3 className="font-medium text-gray-700 mb-2">Non-Interactive Mode</h3>
-            <p className="text-gray-600 text-sm mb-2">
-              For automated deployments:
-            </p>
+            <p className="text-gray-600 text-sm mb-2">For automated deployments:</p>
             <pre className="bg-gray-100 text-gray-800 p-3 rounded-lg font-mono text-sm overflow-x-auto">
               {`${winTlsPrefix}$script = (iwr ${winIwrFlags}'${protocol}//${serverHost}/api/v1/bootstrap/windows-script').Content; & ([scriptblock]::Create($script)) -NonInteractive`}
             </pre>
@@ -300,8 +313,17 @@ export default function AddNode() {
         <ol className="list-decimal list-inside space-y-2 text-gray-600">
           <li>Detects the operating system (RHEL/CentOS, Debian/Ubuntu, etc.)</li>
           <li>Configures the package repository for OpenVox/Puppet packages</li>
-          <li>Installs the <code className="bg-gray-100 px-1 rounded">{config?.agent_package_name || 'openvox-agent'}</code> package</li>
-          <li>Configures <code className="bg-gray-100 px-1 rounded">puppet.conf</code> with the Puppet Server URL</li>
+          <li>
+            Installs the{' '}
+            <code className="bg-gray-100 px-1 rounded">
+              {config?.agent_package_name || 'openvox-agent'}
+            </code>{' '}
+            package
+          </li>
+          <li>
+            Configures <code className="bg-gray-100 px-1 rounded">puppet.conf</code> with the Puppet
+            Server URL
+          </li>
           <li>Runs the Puppet agent to submit a certificate signing request</li>
           <li>Enables and starts the Puppet agent service so the node checks in unattended</li>
         </ol>

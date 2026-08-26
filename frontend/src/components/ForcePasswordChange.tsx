@@ -101,7 +101,10 @@ export default function ForcePasswordChange({ onSuccess }: ForcePasswordChangePr
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Current Password */}
             <div>
-              <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              <label
+                htmlFor="currentPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Current Password
               </label>
               <div className="relative">
@@ -122,7 +125,11 @@ export default function ForcePasswordChange({ onSuccess }: ForcePasswordChangePr
                   onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
                 >
-                  {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -157,7 +164,10 @@ export default function ForcePasswordChange({ onSuccess }: ForcePasswordChangePr
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Confirm New Password
               </label>
               <div className="relative">
@@ -177,7 +187,11 @@ export default function ForcePasswordChange({ onSuccess }: ForcePasswordChangePr
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
                 >
-                  {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>

@@ -94,7 +94,9 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center h-16 px-6 border-b border-gray-200 dark:border-gray-700">
-            <span className="text-xl font-bold text-primary-600 dark:text-primary-400">OpenVox</span>
+            <span className="text-xl font-bold text-primary-600 dark:text-primary-400">
+              OpenVox
+            </span>
             <span className="ml-1 text-xl font-light text-gray-600 dark:text-gray-300">WebUI</span>
           </div>
 
@@ -167,10 +169,12 @@ export default function Layout({ children }: LayoutProps) {
                   </div>
                   <span className="ml-3 truncate">{user?.username || 'User'}</span>
                 </div>
-                <ChevronDown className={clsx(
-                  'w-4 h-4 text-gray-400 transition-transform',
-                  userMenuOpen && 'rotate-180'
-                )} />
+                <ChevronDown
+                  className={clsx(
+                    'w-4 h-4 text-gray-400 transition-transform',
+                    userMenuOpen && 'rotate-180'
+                  )}
+                />
               </button>
 
               {/* Dropdown Menu */}
@@ -202,7 +206,9 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
               )}
             </div>
-            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">OpenVox WebUI v{__APP_VERSION__}</p>
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              OpenVox WebUI v{__APP_VERSION__}
+            </p>
           </div>
         </div>
       </aside>

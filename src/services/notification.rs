@@ -407,13 +407,3 @@ impl NotificationService {
         Ok(result.rows_affected() as i64)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_notification_creation() {
-        // Basic test to ensure the module compiles correctly
-        // Full integration tests would require a database connection
-        assert!(true);
-    }
-}
