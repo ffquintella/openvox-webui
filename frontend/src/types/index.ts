@@ -1111,6 +1111,7 @@ export interface VariableAssignment {
 export interface VariableAssignmentsQuery {
   machine?: string;
   variable?: string;
+  value?: string;
   limit?: number;
   offset?: number;
 }

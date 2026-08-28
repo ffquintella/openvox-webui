@@ -24,15 +24,24 @@ function formatValue(value: unknown): string {
 export default function VariableAssignmentsTab({ active }: VariableAssignmentsTabProps) {
   const [machineInput, setMachineInput] = useState('');
   const [variableInput, setVariableInput] = useState('');
-  const [filters, setFilters] = useState({ machine: '', variable: '' });
+  const [valueInput, setValueInput] = useState('');
+  const [filters, setFilters] = useState({ machine: '', variable: '', value: '' });
   const [page, setPage] = useState(0);
 
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
-    queryKey: ['analytics', 'variable-assignments', filters.machine, filters.variable, page],
+    queryKey: [
+      'analytics',
+      'variable-assignments',
+      filters.machine,
+      filters.variable,
+      filters.value,
+      page,
+    ],
     queryFn: () =>
       api.getVariableAssignments({
         machine: filters.machine || undefined,
         variable: filters.variable || undefined,
+        value: filters.value || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
@@ -43,13 +52,18 @@ export default function VariableAssignmentsTab({ active }: VariableAssignmentsTa
   const applySearch = (event: FormEvent) => {
     event.preventDefault();
     setPage(0);
-    setFilters({ machine: machineInput.trim(), variable: variableInput.trim() });
+    setFilters({
+      machine: machineInput.trim(),
+      variable: variableInput.trim(),
+      value: valueInput.trim(),
+    });
   };
 
   const clearSearch = () => {
     setMachineInput('');
     setVariableInput('');
-    setFilters({ machine: '', variable: '' });
+    setValueInput('');
+    setFilters({ machine: '', variable: '', value: '' });
     setPage(0);
   };
 
@@ -69,7 +83,10 @@ export default function VariableAssignmentsTab({ active }: VariableAssignmentsTa
           </p>
         </div>
 
-        <form onSubmit={applySearch} className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+        <form
+          onSubmit={applySearch}
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"
+        >
           <div>
             <label htmlFor="variable-machine-search" className="label">
               Machine
@@ -96,12 +113,25 @@ export default function VariableAssignmentsTab({ active }: VariableAssignmentsTa
               placeholder="Search variable name"
             />
           </div>
+          <div>
+            <label htmlFor="variable-value-search" className="label">
+              Value
+            </label>
+            <input
+              id="variable-value-search"
+              type="search"
+              value={valueInput}
+              onChange={(event) => setValueInput(event.target.value)}
+              className="input"
+              placeholder="Search variable value"
+            />
+          </div>
           <div className="flex items-end gap-2">
             <button type="submit" className="btn btn-primary flex items-center gap-2">
               <Search className="h-4 w-4" />
               Search
             </button>
-            {(filters.machine || filters.variable) && (
+            {(filters.machine || filters.variable || filters.value) && (
               <button
                 type="button"
                 onClick={clearSearch}
@@ -145,7 +175,7 @@ export default function VariableAssignmentsTab({ active }: VariableAssignmentsTa
           <div className="px-6 py-16 text-center">
             <p className="font-medium text-gray-900">No assignments found</p>
             <p className="mt-1 text-sm text-gray-500">
-              Try a different machine or variable search.
+              Try a different machine, variable, or value search.
             </p>
           </div>
         ) : (

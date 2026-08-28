@@ -111,6 +111,7 @@ pub struct ExportQuery {
 pub struct VariableAssignmentsQuery {
     pub machine: Option<String>,
     pub variable: Option<String>,
+    pub value: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -195,6 +196,7 @@ async fn list_variable_assignments(
     let assignments = collect_variable_assignments(
         classifications,
         normalized_filter(query.variable.as_deref()).as_deref(),
+        normalized_filter(query.value.as_deref()).as_deref(),
     );
     let total = assignments.len();
     let offset = query.offset.unwrap_or(0) as usize;
@@ -214,6 +216,7 @@ fn normalized_filter(value: Option<&str>) -> Option<String> {
 fn collect_variable_assignments(
     classifications: Vec<ClassificationResult>,
     variable_filter: Option<&str>,
+    value_filter: Option<&str>,
 ) -> Vec<VariableAssignment> {
     let mut assignments = Vec::new();
 
@@ -229,6 +232,9 @@ fn collect_variable_assignments(
 
         for (variable, value) in variables {
             if variable_filter.is_some_and(|filter| !variable.to_lowercase().contains(filter)) {
+                continue;
+            }
+            if value_filter.is_some_and(|filter| !searchable_value(value).contains(filter)) {
                 continue;
             }
 
@@ -249,6 +255,13 @@ fn collect_variable_assignments(
             .then_with(|| a.variable.to_lowercase().cmp(&b.variable.to_lowercase()))
     });
     assignments
+}
+
+fn searchable_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(value) => value.to_lowercase(),
+        _ => value.to_string().to_lowercase(),
+    }
 }
 
 // ==================== Saved Reports ====================
@@ -721,6 +734,7 @@ mod tests {
                 ),
             ],
             None,
+            None,
         );
 
         assert_eq!(assignments.len(), 3);
@@ -739,9 +753,43 @@ mod tests {
                 serde_json::json!({"Ntp_Servers": ["ntp.example.com"], "timezone": "UTC"}),
             )],
             normalized_filter(Some("  NTP  ")).as_deref(),
+            None,
         );
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].variable, "Ntp_Servers");
+    }
+
+    #[test]
+    fn variable_value_filter_matches_scalar_and_structured_values_case_insensitively() {
+        let classifications = vec![classification(
+            "web-01.example.com",
+            serde_json::json!({
+                "enabled": true,
+                "ntp_servers": ["NTP-01.EXAMPLE.COM", "ntp-02.example.com"],
+                "settings": {"region": "South America"},
+                "timezone": "UTC"
+            }),
+        )];
+
+        let array_match = collect_variable_assignments(
+            classifications.clone(),
+            None,
+            normalized_filter(Some("ntp-02")).as_deref(),
+        );
+        let object_match = collect_variable_assignments(
+            classifications.clone(),
+            None,
+            normalized_filter(Some("SOUTH AMERICA")).as_deref(),
+        );
+        let boolean_match = collect_variable_assignments(
+            classifications,
+            None,
+            normalized_filter(Some("TRUE")).as_deref(),
+        );
+
+        assert_eq!(array_match[0].variable, "ntp_servers");
+        assert_eq!(object_match[0].variable, "settings");
+        assert_eq!(boolean_match[0].variable, "enabled");
     }
 }

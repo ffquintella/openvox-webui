@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-08-28
+
+### Added
+- Variable assignment reports can now be filtered by variable value, including case-insensitive matches inside structured array and object values.
+
 ## [0.41.0] - 2026-08-28
 
 ### Added
@@ -247,6 +252,7 @@ When releasing a new version, copy this template:
 
 ## Links
 
-[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.41.1...HEAD
+[0.41.1]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.1
 [0.41.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.0
 [0.1.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.1.0

@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-08-28
+
+### Added
+- Machine variable assignments can now be filtered by variable value, including case-insensitive matches inside structured array and object values.
+
 ## [0.41.0] - 2026-08-28
 
 ### Added
