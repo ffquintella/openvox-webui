@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RefreshCw,
   FileText,
@@ -13,6 +13,7 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
+  Braces,
 } from 'lucide-react';
 import { api } from '../services/api';
 import {
@@ -23,6 +24,7 @@ import {
   TimeSeriesMetrics,
 } from '../components/charts';
 import UpdatesTab from '../components/analytics/UpdatesTab';
+import VariableAssignmentsTab from '../components/analytics/VariableAssignmentsTab';
 import {
   useSavedReports,
   useReportTemplates,
@@ -61,6 +63,7 @@ type TabId =
   | 'heatmap'
   | 'groups'
   | 'facts'
+  | 'variable-assignments'
   | 'topology'
   | 'reports'
   | 'compliance'
@@ -78,6 +81,7 @@ const TABS: Tab[] = [
   { id: 'heatmap', label: 'Activity Heatmap' },
   { id: 'groups', label: 'Group Membership' },
   { id: 'facts', label: 'Fact Distribution' },
+  { id: 'variable-assignments', label: 'Variable Assignments', icon: Braces },
   { id: 'topology', label: 'Topology' },
   { id: 'reports', label: 'Reports', icon: FileText },
   { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
@@ -234,6 +238,7 @@ const COMPLIANCE_OPERATORS = [
 const SEVERITY_OPTIONS: SeverityLevel[] = ['low', 'medium', 'high', 'critical'];
 
 export default function Analytics() {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [selectedFact, setSelectedFact] = useState<string>('os.family');
   const [showNewReportModal, setShowNewReportModal] = useState(false);
@@ -350,6 +355,7 @@ export default function Analytics() {
     refetchSavedReports();
     refetchCompliance();
     refetchDrift();
+    queryClient.invalidateQueries({ queryKey: ['analytics', 'variable-assignments'] });
   };
 
   const handleGenerateReport = async (reportType: ReportType) => {
@@ -541,6 +547,10 @@ export default function Analytics() {
             )}
           </div>
         </div>
+      )}
+
+      {activeTab === 'variable-assignments' && (
+        <VariableAssignmentsTab active={activeTab === 'variable-assignments'} />
       )}
 
       {activeTab === 'topology' && (

@@ -77,6 +77,8 @@ import type {
   GenerateReportRequest,
   ReportType,
   ReportQueryConfig,
+  VariableAssignmentsQuery,
+  VariableAssignmentsResponse,
   // Alerting types
   NotificationChannel,
   CreateChannelRequest,
@@ -938,6 +940,13 @@ export const api = {
   },
 
   // Analytics & Reporting
+  getVariableAssignments: async (
+    params: VariableAssignmentsQuery = {}
+  ): Promise<VariableAssignmentsResponse> => {
+    const response = await client.get('/analytics/variable-assignments', { params });
+    return response.data;
+  },
+
   getSavedReports: async (reportType?: ReportType): Promise<SavedReport[]> => {
     const params = reportType ? { report_type: reportType } : {};
     const response = await client.get('/analytics/saved-reports', { params });

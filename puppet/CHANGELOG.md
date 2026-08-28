@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-28
+
+### Added
+- Analytics now includes a machine variable assignments report showing the effective external variables each node receives, with machine and variable searches, environment and matched-group context, and pagination.
+
 ### Fixed
 - Repository validation after the August 2026 dependency rollup now uses compatible Rust, Node.js, and TypeScript toolchains, avoids formatter/linter warnings, retains the buildable no-`xmlsec` SAML dependency, and runs the complete alert-rule BDD suite.
 

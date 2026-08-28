@@ -5,22 +5,27 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
+use futures::{stream, StreamExt};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::repository::{
-    ComplianceBaselineRepository, DriftBaselineRepository, ReportExecutionRepository,
-    ReportScheduleRepository, ReportTemplateRepository, SavedReportRepository,
+    ComplianceBaselineRepository, DriftBaselineRepository, GroupRepository,
+    ReportExecutionRepository, ReportScheduleRepository, ReportTemplateRepository,
+    SavedReportRepository,
 };
 use crate::middleware::auth::AuthUser;
 use crate::models::{
-    ComplianceBaseline, CreateComplianceBaselineRequest, CreateDriftBaselineRequest,
-    CreateSavedReportRequest, CreateScheduleRequest, DriftBaseline, ExecuteReportRequest,
-    OutputFormat, ReportExecution, ReportQueryConfig, ReportResult, ReportSchedule, ReportTemplate,
-    ReportType, SavedReport, UpdateComplianceBaselineRequest, UpdateDriftBaselineRequest,
-    UpdateSavedReportRequest, UpdateScheduleRequest,
+    ClassificationResult, ComplianceBaseline, CreateComplianceBaselineRequest,
+    CreateDriftBaselineRequest, CreateSavedReportRequest, CreateScheduleRequest, DriftBaseline,
+    ExecuteReportRequest, OutputFormat, ReportExecution, ReportQueryConfig, ReportResult,
+    ReportSchedule, ReportTemplate, ReportType, SavedReport, UpdateComplianceBaselineRequest,
+    UpdateDriftBaselineRequest, UpdateSavedReportRequest, UpdateScheduleRequest,
 };
-use crate::services::ReportingService;
+use crate::services::{
+    classification::{build_classification_facts, ClassificationService},
+    ReportingService,
+};
 use crate::utils::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -57,6 +62,8 @@ pub fn routes() -> Router<AppState> {
         // Generate reports on-demand (without saving)
         .route("/generate", post(generate_report))
         .route("/generate/{report_type}", post(generate_report_by_type))
+        // Effective external variables assigned to machines
+        .route("/variable-assignments", get(list_variable_assignments))
         // Compliance Baselines
         .route(
             "/compliance-baselines",
@@ -98,6 +105,150 @@ pub struct ExecutionsQuery {
 #[derive(Debug, Deserialize)]
 pub struct ExportQuery {
     pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct VariableAssignmentsQuery {
+    pub machine: Option<String>,
+    pub variable: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VariableAssignment {
+    pub machine: String,
+    pub variable: String,
+    pub value: serde_json::Value,
+    pub environment: Option<String>,
+    pub groups: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VariableAssignmentsResponse {
+    pub assignments: Vec<VariableAssignment>,
+    pub total: usize,
+}
+
+// ==================== Variable Assignments ====================
+
+/// List the effective variables each machine receives after group inheritance
+/// and precedence have been applied.
+async fn list_variable_assignments(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<VariableAssignmentsQuery>,
+) -> AppResult<Json<VariableAssignmentsResponse>> {
+    let puppetdb = state
+        .puppetdb
+        .as_ref()
+        .ok_or_else(|| AppError::ServiceUnavailable("PuppetDB is not configured".to_string()))?;
+
+    let group_repo = GroupRepository::new(&state.db);
+    let groups = group_repo
+        .get_all(auth_user.organization_id)
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to load classification groups: {e}")))?;
+    let classification_service = ClassificationService::new(groups);
+
+    let machine_filter = normalized_filter(query.machine.as_deref());
+    let mut nodes = puppetdb
+        .get_nodes()
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to query machines: {e}")))?;
+    if let Some(filter) = machine_filter.as_deref() {
+        nodes.retain(|node| node.certname.to_lowercase().contains(filter));
+    }
+
+    // PuppetDB fact lookups are independent, so keep a small bounded amount of
+    // concurrency. This avoids serial fleet-wide latency without overwhelming
+    // PuppetDB on larger installations.
+    let classifications: Vec<ClassificationResult> = stream::iter(nodes)
+        .map(|node| {
+            let classification_service = &classification_service;
+            async move {
+                match puppetdb.get_node_facts(&node.certname).await {
+                    Ok(facts) => {
+                        let facts = build_classification_facts(
+                            facts,
+                            &node.certname,
+                            node.catalog_environment.as_deref(),
+                        );
+                        Some(classification_service.classify(&node.certname, &facts))
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            "Skipping variable assignments for '{}': {}",
+                            node.certname,
+                            error
+                        );
+                        None
+                    }
+                }
+            }
+        })
+        .buffer_unordered(10)
+        .filter_map(async move |classification| classification)
+        .collect()
+        .await;
+
+    let assignments = collect_variable_assignments(
+        classifications,
+        normalized_filter(query.variable.as_deref()).as_deref(),
+    );
+    let total = assignments.len();
+    let offset = query.offset.unwrap_or(0) as usize;
+    let limit = state.config.pagination.resolve_limit(query.limit) as usize;
+    let assignments = assignments.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(VariableAssignmentsResponse { assignments, total }))
+}
+
+fn normalized_filter(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase)
+}
+
+fn collect_variable_assignments(
+    classifications: Vec<ClassificationResult>,
+    variable_filter: Option<&str>,
+) -> Vec<VariableAssignment> {
+    let mut assignments = Vec::new();
+
+    for classification in classifications {
+        let Some(variables) = classification.variables.as_object() else {
+            continue;
+        };
+        let group_names: Vec<String> = classification
+            .groups
+            .iter()
+            .map(|group| group.name.clone())
+            .collect();
+
+        for (variable, value) in variables {
+            if variable_filter.is_some_and(|filter| !variable.to_lowercase().contains(filter)) {
+                continue;
+            }
+
+            assignments.push(VariableAssignment {
+                machine: classification.certname.clone(),
+                variable: variable.clone(),
+                value: value.clone(),
+                environment: classification.environment.clone(),
+                groups: group_names.clone(),
+            });
+        }
+    }
+
+    assignments.sort_by(|a, b| {
+        a.machine
+            .to_lowercase()
+            .cmp(&b.machine.to_lowercase())
+            .then_with(|| a.variable.to_lowercase().cmp(&b.variable.to_lowercase()))
+    });
+    assignments
 }
 
 // ==================== Saved Reports ====================
@@ -532,4 +683,65 @@ async fn export_execution(
         ],
         data,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{GroupMatch, MatchType};
+
+    fn classification(certname: &str, variables: serde_json::Value) -> ClassificationResult {
+        ClassificationResult {
+            certname: certname.to_string(),
+            organization_id: None,
+            groups: vec![GroupMatch {
+                id: Uuid::new_v4(),
+                name: "Base Linux".to_string(),
+                match_type: MatchType::Rules,
+                matched_rules: vec![],
+            }],
+            classes: serde_json::json!({}),
+            variables,
+            environment: Some("production".to_string()),
+            conflict_error: None,
+        }
+    }
+
+    #[test]
+    fn variable_assignments_show_effective_machine_values() {
+        let assignments = collect_variable_assignments(
+            vec![
+                classification(
+                    "web-02.example.com",
+                    serde_json::json!({"ntp_servers": ["ntp.example.com"]}),
+                ),
+                classification(
+                    "web-01.example.com",
+                    serde_json::json!({"timezone": "UTC", "ntp_servers": ["ntp.example.com"]}),
+                ),
+            ],
+            None,
+        );
+
+        assert_eq!(assignments.len(), 3);
+        assert_eq!(assignments[0].machine, "web-01.example.com");
+        assert_eq!(assignments[0].variable, "ntp_servers");
+        assert_eq!(assignments[0].groups, vec!["Base Linux"]);
+        assert_eq!(assignments[0].environment.as_deref(), Some("production"));
+        assert_eq!(assignments[2].machine, "web-02.example.com");
+    }
+
+    #[test]
+    fn variable_assignment_filter_is_case_insensitive() {
+        let assignments = collect_variable_assignments(
+            vec![classification(
+                "web-01.example.com",
+                serde_json::json!({"Ntp_Servers": ["ntp.example.com"], "timezone": "UTC"}),
+            )],
+            normalized_filter(Some("  NTP  ")).as_deref(),
+        );
+
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].variable, "Ntp_Servers");
+    }
 }

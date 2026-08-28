@@ -1100,6 +1100,26 @@ export type OutputFormat = 'json' | 'csv' | 'pdf';
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical';
 
+export interface VariableAssignment {
+  machine: string;
+  variable: string;
+  value: unknown;
+  environment?: string | null;
+  groups: string[];
+}
+
+export interface VariableAssignmentsQuery {
+  machine?: string;
+  variable?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface VariableAssignmentsResponse {
+  assignments: VariableAssignment[];
+  total: number;
+}
+
 export interface ReportQueryConfig {
   time_range?: string;
   status_filter?: string[];

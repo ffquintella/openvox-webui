@@ -1,6 +1,6 @@
 [package]
 name = "openvox-webui"
-version = "0.40.7"
+version = "0.41.0"
 edition = "2021"
 rust-version = "1.88"
 authors = ["OpenVox Contributors"]
