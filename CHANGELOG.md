@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.41.1] - 2026-08-28
 
 ### Added
-- Variable assignment reports can now be filtered by variable value, including case-insensitive matches inside structured array and object values.
+- **Variable value search:** The machine variable assignments report now has a dedicated value filter alongside the machine and variable-name filters. Matching is case-insensitive across strings, numbers, booleans, arrays, and objects, and runs before pagination so result totals and page boundaries stay accurate.
 
 ## [0.41.0] - 2026-08-28
 

@@ -89,6 +89,7 @@ All phases (1-9) have been completed and deployed to production. This is a summa
 - Real-time dashboard with visualizations
 - Node status monitoring and health indicators
 - Report generation (compliance, drift detection, custom)
+- Machine variable assignment reporting with machine, variable-name, and value searches
 - Scheduled report execution
 - Alert rules with multiple notification channels
 - Alert acknowledgment and silencing
@@ -118,6 +119,8 @@ All phases (1-9) have been completed and deployed to production. This is a summa
 This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
 
 ### Current Version
+Current release: **v0.41.1**
+
 Check version with: `make version`
 
 ### Bump Commands
@@ -157,7 +160,7 @@ make bump-major       # v1.0.0 → v2.0.0 (breaking changes)
 - **Roles:** `GET/POST /api/v1/roles`, `GET/PUT/DELETE /api/v1/roles/:id`
 - **Nodes:** `GET /api/v1/nodes`, `GET /api/v1/nodes/:certname`
 - **Groups:** `GET/POST /api/v1/groups`, `GET/PUT/DELETE /api/v1/groups/:id`
-- **Reports:** `GET /api/v1/reports`, `POST /api/v1/analytics/saved-reports`
+- **Reports:** `GET /api/v1/reports`, `POST /api/v1/analytics/saved-reports`, `GET /api/v1/analytics/variable-assignments`
 - **Alerts:** `GET/POST /api/v1/alerting/*`, `GET /api/v1/alerting/alerts`
 - **CA:** `GET /api/v1/ca/*`, `POST /api/v1/ca/sign/:certname`
 - **Settings:** `GET /api/v1/settings`, `POST /api/v1/settings/import`
@@ -468,7 +471,8 @@ Status: In progress. Phases 10.1 through 10.5 are implemented, and Phase 10.6 is
 
 | Version | Status | Key Features |
 |---------|--------|--------------|
-| **1.0.x** | ✅ Current | Production-ready with full feature set |
+| **0.41.x** | ✅ Current | Searchable machine variable assignment reporting |
+| 1.0.x | Planned | Stable production milestone |
 | 0.9.x | ✅ Released | Performance optimization, security, packages |
 | 0.8.x | ✅ Released | Reporting, alerting, multi-tenancy |
 | 0.7.5.x | ✅ Released | CA management UI |
