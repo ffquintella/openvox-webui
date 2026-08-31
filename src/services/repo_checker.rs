@@ -318,18 +318,18 @@ fn parse_repomd_primary_href(xml: &str) -> Option<String> {
         match reader.read_event() {
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let local = e.local_name();
-                if local.as_ref() == b"data" {
+                if local.as_ref() == "data" {
                     // Check if type="primary"
                     in_primary_data = e.attributes().filter_map(|a| a.ok()).any(|a| {
-                        a.key.local_name().as_ref() == b"type"
+                        a.key.local_name().as_ref() == "type"
                             && a.normalized_value(XmlVersion::Implicit1_0)
                                 .map(|v| v == "primary")
                                 .unwrap_or(false)
                     });
                 }
-                if in_primary_data && local.as_ref() == b"location" {
+                if in_primary_data && local.as_ref() == "location" {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
-                        if attr.key.local_name().as_ref() == b"href" {
+                        if attr.key.local_name().as_ref() == "href" {
                             if let Ok(val) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 return Some(val.to_string());
                             }
@@ -338,7 +338,7 @@ fn parse_repomd_primary_href(xml: &str) -> Option<String> {
                 }
             }
             Ok(Event::End(ref e)) => {
-                if e.local_name().as_ref() == b"data" {
+                if e.local_name().as_ref() == "data" {
                     in_primary_data = false;
                 }
             }
@@ -362,10 +362,10 @@ fn parse_metalink_url(xml: &str) -> Option<String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                if e.local_name().as_ref() == b"url" {
+                if e.local_name().as_ref() == "url" {
                     // Check for protocol="https" or protocol="http"
                     let is_http = e.attributes().filter_map(|a| a.ok()).any(|a| {
-                        a.key.local_name().as_ref() == b"protocol"
+                        a.key.local_name().as_ref() == "protocol"
                             && a.normalized_value(XmlVersion::Implicit1_0)
                                 .map(|v| v == "https" || v == "http")
                                 .unwrap_or(false)
@@ -377,9 +377,9 @@ fn parse_metalink_url(xml: &str) -> Option<String> {
                 }
             }
             Ok(Event::Text(e)) if in_url => {
-                url_text.push_str(&String::from_utf8_lossy(e.as_ref()));
+                url_text.push_str(e.as_ref());
             }
-            Ok(Event::End(ref e)) if e.local_name().as_ref() == b"url" && in_url => {
+            Ok(Event::End(ref e)) if e.local_name().as_ref() == "url" && in_url => {
                 let trimmed = url_text.trim().to_string();
                 if !trimmed.is_empty() {
                     // Strip the filename from the URL to get the base
@@ -421,7 +421,7 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
             Ok(Event::Start(ref e)) => {
                 let local = e.local_name();
                 match local.as_ref() {
-                    b"package" => {
+                    "package" => {
                         in_package = true;
                         current_name.clear();
                         current_epoch = None;
@@ -429,10 +429,10 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                         current_release = None;
                         current_arch = None;
                     }
-                    b"name" if in_package => {
+                    "name" if in_package => {
                         in_name = true;
                     }
-                    b"arch" if in_package => {
+                    "arch" if in_package => {
                         in_arch = true;
                     }
                     _ => {}
@@ -440,10 +440,10 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
             }
             Ok(Event::Empty(ref e)) => {
                 // <version epoch="0" ver="1.2.3" rel="1.el9"/>
-                if in_package && e.local_name().as_ref() == b"version" {
+                if in_package && e.local_name().as_ref() == "version" {
                     for attr in e.attributes().filter_map(|a| a.ok()) {
                         match attr.key.local_name().as_ref() {
-                            b"epoch" => {
+                            "epoch" => {
                                 let val = attr
                                     .normalized_value(XmlVersion::Implicit1_0)
                                     .unwrap_or_default()
@@ -452,13 +452,13 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                                     current_epoch = Some(val);
                                 }
                             }
-                            b"ver" => {
+                            "ver" => {
                                 current_version = attr
                                     .normalized_value(XmlVersion::Implicit1_0)
                                     .unwrap_or_default()
                                     .to_string();
                             }
-                            b"rel" => {
+                            "rel" => {
                                 let val = attr
                                     .normalized_value(XmlVersion::Implicit1_0)
                                     .unwrap_or_default()
@@ -473,9 +473,9 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                 }
             }
             Ok(Event::Text(ref e)) => {
-                let text = String::from_utf8_lossy(e.as_ref());
+                let text = e.as_ref();
                 if in_name {
-                    current_name.push_str(&text);
+                    current_name.push_str(text);
                 }
                 if in_arch {
                     current_arch = Some(text.to_string());
@@ -484,7 +484,7 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
             Ok(Event::End(ref e)) => {
                 let local = e.local_name();
                 match local.as_ref() {
-                    b"package" => {
+                    "package" => {
                         if !current_name.is_empty() && !current_version.is_empty() {
                             packages.push(RepoPackageVersion {
                                 name: current_name.clone(),
@@ -496,8 +496,8 @@ fn parse_yum_primary_xml(xml: &str) -> Result<Vec<RepoPackageVersion>> {
                         }
                         in_package = false;
                     }
-                    b"name" => in_name = false,
-                    b"arch" => in_arch = false,
+                    "name" => in_name = false,
+                    "arch" => in_arch = false,
                     _ => {}
                 }
             }
