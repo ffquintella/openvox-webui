@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Response xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ID="response">
+    <Issuer>https://idp.example.com</Issuer>
+    <ds:Signature>
+        <ds:SignedInfo>
+            <ds:CanonicalizationMethod
+                    Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+            <ds:SignatureMethod
+                    Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+            <ds:Reference URI="#element(/1/3)">
+                <ds:Transforms>
+                    <ds:Transform
+                            Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+                    <ds:Transform
+                            Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                </ds:Transforms>
+                <ds:DigestMethod
+                        Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                <ds:DigestValue/>
+            </ds:Reference>
+        </ds:SignedInfo>
+        <ds:SignatureValue/>
+        <ds:KeyInfo>
+            <ds:KeyName>signing</ds:KeyName>
+        </ds:KeyInfo>
+    </ds:Signature>
+    <LegitimateAssertion ID="element(/1/3)">
+        <Subject>legitimate@example.com</Subject>
+        <Role>user</Role>
+    </LegitimateAssertion>
+</Response>

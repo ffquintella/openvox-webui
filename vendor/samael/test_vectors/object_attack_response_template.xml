@@ -1,0 +1,45 @@
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
+                xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" Version="2.0"
+                ID="_a890a910011c26be5cf0aa558ad80fd0b7c10c9855" IssueInstant="2026-02-25T13:32:14.979Z"
+                Destination="ancestor">
+    <saml:Issuer>https://capriza.github.io/samling/samling.html</saml:Issuer>
+    <samlp:Status>
+        <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
+    </samlp:Status>
+    <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" Version="2.0"
+                    ID="_ec87dd840868b48045a05b8a1778ffd3ed1d473f2f" IssueInstant="2026-02-25T13:32:14.953Z">
+        <saml:Issuer>https://capriza.github.io/samling/samling.html</saml:Issuer>
+        <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+            <ds:SignedInfo>
+                <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+                <ds:Reference URI="#_a890a910011c26be5cf0aa558ad80fd0b7c10c9855">
+                    <ds:Transforms>
+                        <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+                        <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+                    </ds:Transforms>
+                    <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+                    <ds:DigestValue/>
+                </ds:Reference>
+            </ds:SignedInfo>
+            <ds:SignatureValue/>
+            <ds:KeyInfo>
+                <ds:KeyName>signing</ds:KeyName>
+            </ds:KeyInfo>
+        </ds:Signature>
+        <saml:Subject>
+            <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">ancestor</saml:NameID>
+            <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+                <saml:SubjectConfirmationData NotOnOrAfter="2026-02-25T13:42:14.953Z" Recipient="ancestor"/>
+            </saml:SubjectConfirmation>
+        </saml:Subject>
+        <saml:Conditions NotBefore="2026-02-25T13:32:14.953Z" NotOnOrAfter="2026-02-25T13:42:14.953Z"/>
+        <saml:AuthnStatement AuthnInstant="2026-02-25T13:32:14.953Z" SessionNotOnOrAfter="2026-02-25T13:42:14.952Z"
+                             SessionIndex="_samling_195326_36199734">
+            <saml:AuthnContext>
+                <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified
+                </saml:AuthnContextClassRef>
+            </saml:AuthnContext>
+        </saml:AuthnStatement>
+    </saml:Assertion>
+</samlp:Response>
