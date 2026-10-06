@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.2] - 2026-10-06
+
 ### Fixed
 - RPM and DEB package install scripts now add the `puppet` user to the `openvox-webui` group so puppetserver can still read `/etc/puppetlabs/code/environments` (owned `openvox-webui:openvox-webui`, mode `750`). Restart puppetserver after installing so the new group membership takes effect.
 
