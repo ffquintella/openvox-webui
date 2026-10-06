@@ -136,6 +136,13 @@ if [ -d /etc/puppetlabs/code ]; then
     mkdir -p /etc/puppetlabs/code/environments
     chown -R openvox-webui:openvox-webui /etc/puppetlabs/code/environments
     chmod 750 /etc/puppetlabs/code/environments
+
+    # puppetserver (user 'puppet') must still be able to read the environments;
+    # grant that through membership in the openvox-webui group
+    if getent passwd puppet >/dev/null 2>&1; then
+        usermod -a -G openvox-webui puppet || true
+        echo "Added 'puppet' to the openvox-webui group; restart puppetserver to apply"
+    fi
 fi
 
 # Run interactive configuration on first install (not upgrade)
