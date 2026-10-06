@@ -284,9 +284,10 @@ Upgrade to OpenVox v0.15.1 or later (uses HTTP 303 redirect)
 5. **Check file permissions:**
    ```bash
    ls -l /etc/puppetlabs/puppet/ssl/private_keys/openvox.pem
-   # Should be readable by openvox-webui process user
-   chmod 640 /etc/puppetlabs/puppet/ssl/private_keys/openvox.pem
-   chown openvox-webui:openvox-webui /etc/puppetlabs/puppet/ssl/private_keys/openvox.pem
+   # Should be readable by openvox-webui process user. Prefer granting read
+   # access via an ACL (or a dedicated key such as webui.pem) instead of
+   # changing the ownership of the server's own puppet key.
+   setfacl -m u:openvox-webui:r /etc/puppetlabs/puppet/ssl/private_keys/openvox.pem
    ```
 
 ### Error: "SSL certificate verification failed"
