@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.3] - 2026-10-07
+
+### Fixed
+- Update jobs are now dispatched to, and accept results from, nodes whose agents report an upper-case certname (e.g. `SEGDC1VPR0009.FGV.BR`). Pending-job lookup and result submission previously compared certnames case-sensitively, so such nodes never received their job and it failed after the 240-minute maximum runtime.
+
 ## [0.41.2] - 2026-10-06
 
 ### Fixed

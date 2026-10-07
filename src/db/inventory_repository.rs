@@ -1341,7 +1341,7 @@ impl InventoryRepository {
                 j.maintenance_window_end
             FROM update_job_targets t
             INNER JOIN update_jobs j ON j.id = t.job_id
-            WHERE t.certname = ?1
+            WHERE t.certname = ?1 COLLATE NOCASE
               AND t.status = 'queued'
               AND j.status IN ('approved', 'in_progress')
               AND (j.scheduled_for IS NULL OR datetime(j.scheduled_for) <= datetime(?2))
@@ -1407,7 +1407,7 @@ impl InventoryRepository {
         request: &SubmitUpdateJobResultRequest,
     ) -> Result<Option<UpdateJob>> {
         let target = sqlx::query_as::<_, UpdateJobTargetStateRow>(
-            "SELECT id, job_id, certname, status FROM update_job_targets WHERE id = ?1 AND job_id = ?2 AND certname = ?3",
+            "SELECT id, job_id, certname, status FROM update_job_targets WHERE id = ?1 AND job_id = ?2 AND certname = ?3 COLLATE NOCASE",
         )
         .bind(target_id)
         .bind(job_id)
@@ -3949,6 +3949,66 @@ mod tests {
         assert_eq!(completed.targets[0].status, UpdateTargetStatus::Succeeded);
         assert_eq!(completed.results.len(), 1);
         assert_eq!(completed.results[0].status, UpdateTargetStatus::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn update_jobs_dispatch_and_complete_regardless_of_certname_case() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::migrate!("./migrations/inventory")
+            .run(&pool)
+            .await
+            .expect("inventory migrations");
+
+        let repo = InventoryRepository::new(pool);
+        let job = repo
+            .create_update_job(
+                UpdateOperationType::PackageUpdate,
+                &["httpd".to_string()],
+                None,
+                &["node1.example.com".to_string()],
+                true,
+                None,
+                None,
+                None,
+                "admin",
+                None,
+            )
+            .await
+            .expect("create update job");
+        repo.approve_update_job(&job.id, true, "operator", None)
+            .await
+            .expect("approve update job")
+            .expect("job exists");
+
+        // Agents on hosts with upper-case hostnames poll with an upper-case
+        // certname while targets are stored lower-case.
+        let pending = repo
+            .claim_pending_updates_for_node("NODE1.EXAMPLE.COM")
+            .await
+            .expect("claim pending updates");
+        assert_eq!(pending.len(), 1);
+
+        let completed = repo
+            .submit_update_job_result(
+                &job.id,
+                &pending[0].target_id,
+                "NODE1.EXAMPLE.COM",
+                &SubmitUpdateJobResultRequest {
+                    status: UpdateTargetStatus::Succeeded,
+                    summary: None,
+                    output: None,
+                    started_at: Some(Utc::now()),
+                    finished_at: Some(Utc::now()),
+                },
+            )
+            .await
+            .expect("submit result")
+            .expect("target matched despite certname case");
+        assert_eq!(completed.status, UpdateJobStatus::Completed);
     }
 
     #[tokio::test]
