@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.5] - 2026-10-16
+
+### Fixed
+- RPM and DEB package builds failed with "patch location `vendor/samael` does not contain packages matching `samael`" because the Docker build did not copy the vendored `samael` crate. `scripts/build-packages.sh` now includes `vendor/`. This also affects v0.41.2 to v0.41.4, whose package jobs failed; 0.41.5 is the first release since 0.41.1 to ship RPM and DEB packages.
+
 ## [0.41.4] - 2026-10-16
 
 ### Changed
