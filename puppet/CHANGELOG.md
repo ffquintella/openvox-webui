@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.4] - 2026-10-16
+
+### Changed
+- Dependency updates: `dirs` 7.0, `rstest` 0.27 and the Rust minor-version group (5 crates), plus the frontend npm minor-version group (11 packages).
+
 ## [0.41.3] - 2026-10-07
 
 ### Fixed
