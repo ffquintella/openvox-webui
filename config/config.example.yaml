@@ -88,6 +88,15 @@ pagination:
   default_limit: 100   # Page size used when a client does not specify ?limit=
   max_limit: 5000      # Upper bound on ?limit= to keep responses bounded
 
+# Memory monitor: restarts the service (via systemd) before it hangs at its memory limit
+memory_monitor:
+  enabled: true
+  interval_secs: 30          # Sampling interval
+  warn_percent: 80           # Log a warning at/above this % of MemoryHigh
+  restart_percent: 95        # Exit for a supervised restart at/above this % (0 = never)
+  restart_after_samples: 4   # Consecutive samples above restart_percent before exiting
+  fallback_limit_mb: 0       # Limit used when no cgroup limit is visible (0 = none)
+
 # Dashboard layout and display preferences
 dashboard:
   default_time_range: "24h"  # 1h, 6h, 12h, 24h, 7d, 30d

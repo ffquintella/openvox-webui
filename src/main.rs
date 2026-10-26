@@ -372,6 +372,10 @@ async fn main() -> Result<()> {
         notification_service.clone(),
     );
 
+    // Memory monitor: warns near the cgroup memory limit and exits for a
+    // supervised restart instead of lingering throttled and unresponsive.
+    let _memory_monitor = services::start_memory_monitor(config.memory_monitor.clone());
+
     // Create application state
     let state = AppState {
         config: config.clone(),

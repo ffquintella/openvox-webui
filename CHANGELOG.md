@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.6] - 2026-10-26
+
+### Added
+- **Memory monitor:** the service now samples its own memory (cgroup `anon` against `MemoryHigh`, falling back to RSS) every 30 s, logs a warning from 80% of the limit, and exits non-zero when usage stays at or above 95% for 4 consecutive samples so systemd restarts a healthy instance. Previously a process pinned at `MemoryHigh` was throttled into an unresponsive state and never restarted. Configurable under `memory_monitor` (`enabled`, `interval_secs`, `warn_percent`, `restart_percent` (0 disables), `restart_after_samples`, `fallback_limit_mb`). `/api/v1/health/detailed` reports a `memory` component.
+
+### Changed
+- Packaged systemd unit doubles the memory limits to `MemoryHigh=6G` / `MemoryMax=12G` (was 3G/6G) after a production hang at the 3G ceiling.
+
 ## [0.41.5] - 2026-10-16
 
 ### Fixed

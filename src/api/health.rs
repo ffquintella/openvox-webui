@@ -27,6 +27,7 @@ pub struct DetailedHealthResponse {
 pub struct ComponentHealth {
     pub database: ComponentStatus,
     pub puppetdb: ComponentStatus,
+    pub memory: ComponentStatus,
 }
 
 /// Status of a single component
@@ -92,6 +93,31 @@ pub async fn health_check_detailed(
         ComponentStatus::not_configured()
     };
 
+    // Memory is informational: a warning never fails the probe, so load
+    // balancers do not pull a node that is merely busy.
+    let memory_status = match crate::services::MemorySnapshot::latest() {
+        Some(s) => {
+            let message = match (s.percent, s.limit_bytes) {
+                (Some(p), Some(l)) => format!(
+                    "{} MiB of {} MiB ({:.1}%)",
+                    s.used_bytes / 1048576,
+                    l / 1048576,
+                    p
+                ),
+                _ => format!("{} MiB (no limit)", s.used_bytes / 1048576),
+            };
+            ComponentStatus {
+                status: if s.percent.is_some_and(|p| p >= 80.0) {
+                    "warning".to_string()
+                } else {
+                    "healthy".to_string()
+                },
+                message: Some(message),
+            }
+        }
+        None => ComponentStatus::not_configured(),
+    };
+
     // Determine overall status
     let overall_healthy = database_status.status == "healthy"
         && (puppetdb_status.status == "healthy" || puppetdb_status.status == "not_configured");
@@ -112,6 +138,7 @@ pub async fn health_check_detailed(
         components: ComponentHealth {
             database: database_status,
             puppetdb: puppetdb_status,
+            memory: memory_status,
         },
     };
 

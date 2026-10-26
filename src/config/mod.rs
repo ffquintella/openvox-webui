@@ -60,6 +60,68 @@ pub struct AppConfig {
     /// Pagination defaults for list endpoints (nodes, facts)
     #[serde(default)]
     pub pagination: PaginationConfig,
+    /// Process memory monitoring and self-protection
+    #[serde(default)]
+    pub memory_monitor: MemoryMonitorConfig,
+}
+
+/// Memory monitor configuration
+///
+/// The monitor samples the process's cgroup (or RSS when no cgroup limit is
+/// visible) and logs a warning when usage approaches the soft limit
+/// (`MemoryHigh`). When usage stays above `restart_percent` of that limit for
+/// `restart_after_samples` consecutive samples the process exits non-zero so
+/// systemd (`Restart=on-failure`) starts a fresh instance instead of leaving
+/// a throttled, unresponsive one running.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MemoryMonitorConfig {
+    /// Enable/disable the monitor
+    #[serde(default = "default_memory_monitor_enabled")]
+    pub enabled: bool,
+    /// Sampling interval in seconds
+    #[serde(default = "default_memory_monitor_interval")]
+    pub interval_secs: u64,
+    /// Log a warning at or above this percentage of the memory limit
+    #[serde(default = "default_memory_warn_percent")]
+    pub warn_percent: u8,
+    /// Exit for a supervised restart at or above this percentage (0 disables)
+    #[serde(default = "default_memory_restart_percent")]
+    pub restart_percent: u8,
+    /// Consecutive samples above `restart_percent` before restarting
+    #[serde(default = "default_memory_restart_samples")]
+    pub restart_after_samples: u32,
+    /// Fallback limit in MiB when no cgroup limit is visible (0 = none)
+    #[serde(default)]
+    pub fallback_limit_mb: u64,
+}
+
+fn default_memory_monitor_enabled() -> bool {
+    true
+}
+fn default_memory_monitor_interval() -> u64 {
+    30
+}
+fn default_memory_warn_percent() -> u8 {
+    80
+}
+fn default_memory_restart_percent() -> u8 {
+    95
+}
+fn default_memory_restart_samples() -> u32 {
+    4
+}
+
+impl Default for MemoryMonitorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_memory_monitor_enabled(),
+            interval_secs: default_memory_monitor_interval(),
+            warn_percent: default_memory_warn_percent(),
+            restart_percent: default_memory_restart_percent(),
+            restart_after_samples: default_memory_restart_samples(),
+            fallback_limit_mb: 0,
+        }
+    }
 }
 
 /// Pagination configuration for list endpoints
@@ -1546,6 +1608,7 @@ impl Default for AppConfig {
             inventory: None,
             cve: None,
             pagination: PaginationConfig::default(),
+            memory_monitor: MemoryMonitorConfig::default(),
         }
     }
 }

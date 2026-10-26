@@ -89,10 +89,14 @@ UMask=0027
 # Sized for a dedicated inventory DB + normalized (pruned) main DB; bumped in
 # 0.x.y after production incidents showed the previous 1G/2G caps caused
 # sustained kernel memory-throttling under heavy Phase-10 inventory ingestion.
+# Doubled again (3G/6G -> 6G/12G) after a production hang where the process sat
+# at the 3G MemoryHigh ceiling and was throttled for ~1 day. The in-process
+# memory monitor (memory_monitor config) restarts the service cleanly before
+# the cgroup limit is reached.
 LimitNOFILE=65536
 LimitNPROC=4096
-MemoryHigh=3G
-MemoryMax=6G
+MemoryHigh=6G
+MemoryMax=12G
 TasksMax=512
 
 # Logging

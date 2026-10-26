@@ -329,6 +329,7 @@ pub fn test_config() -> AppConfig {
         node_bootstrap: None,
         cve: None,
         pagination: Default::default(),
+        memory_monitor: Default::default(),
     }
 }
 
