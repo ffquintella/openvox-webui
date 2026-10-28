@@ -26,6 +26,7 @@ mod nodes;
 mod notifications;
 mod organizations;
 mod permissions;
+mod plugins;
 mod query;
 mod reports;
 mod roles;
@@ -95,6 +96,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/inventory", inventory::routes())
         // CVE vulnerability endpoints
         .nest("/cve", cve::routes())
+        // Plugin platform endpoints
+        .nest("/plugins", plugins::routes())
 }
 
 /// Create the full API router (public + protected; useful for tests)

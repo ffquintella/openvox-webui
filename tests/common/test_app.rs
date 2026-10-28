@@ -96,6 +96,15 @@ impl TestApp {
         // Initialize notification service
         let notification_service = Arc::new(NotificationService::new(db.clone()));
 
+        let plugin_manager = Arc::new(openvox_webui::services::plugins::PluginManager::new(
+            db.clone(),
+            std::path::PathBuf::from(format!(
+                "/tmp/openvox_test_plugins_{}",
+                Uuid::new_v4().simple()
+            )),
+            8,
+        ));
+
         // Create application state
         let state = AppState {
             config,
@@ -110,6 +119,7 @@ impl TestApp {
             code_deploy_config,
             backup_config: None,
             notification_service,
+            plugin_manager,
         };
 
         // Build the router
@@ -330,6 +340,7 @@ pub fn test_config() -> AppConfig {
         cve: None,
         pagination: Default::default(),
         memory_monitor: Default::default(),
+        plugins: Default::default(),
     }
 }
 

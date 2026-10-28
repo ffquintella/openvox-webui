@@ -485,6 +485,8 @@ export default function Roles() {
                           'facter_templates',
                           'api_keys',
                           'certificates',
+                          'plugins',
+                          'plugin_trust',
                         ].map((resource) => (
                           <span
                             key={resource}

@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useVulnerabilityDashboard } from '../hooks/useCve';
+import PluginWidgets from '../components/plugins/PluginWidgets';
 import type { Node } from '../types';
 
 const COLORS = {
@@ -1039,6 +1040,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Plugin dashboard widgets */}
+      <PluginWidgets />
 
       {/* Patch Age Drill-Down Modal */}
       {selectedPatchAgeBucket && (

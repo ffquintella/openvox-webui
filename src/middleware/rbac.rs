@@ -209,6 +209,7 @@ pub fn check_permission(
 ///     cve: None,
 ///     pagination: PaginationConfig::default(),
 ///     memory_monitor: Default::default(),
+///     plugins: Default::default(),
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
@@ -230,6 +231,7 @@ pub fn check_permission(
 ///     code_deploy_config: None,
 ///     backup_config: None,
 ///     notification_service: Arc::new(NotificationService::new(db.clone())),
+///     plugin_manager: Arc::new(openvox_webui::services::plugins::PluginManager::new(db.clone(), "/tmp/plugins".into(), 1)),
 /// };
 ///
 /// let app = Router::<AppState>::new()

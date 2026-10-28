@@ -1,6 +1,6 @@
 # OpenVox WebUI Plugin Platform — Design v2
 
-Status: **Proposal** (no implementation yet)
+Status: **Proposal**; phase 1 (plugin manager, signatures, trusted keys, admin API and UI, slot registry) is implemented in M19, see §17.1
 
 Complements [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md). That document defines the *typed extension points* (auth, users, secrets, menus, pages, API proxy). This document defines the **platform** they run on: sandbox, permissions, mandatory signing, lifecycle, UI slots, event bus, SDK and governance, plus the domain extensions: authentication (MFA, SSO, LDAP/AD, §11), reports and facts (§12) and advanced classification and dynamic groups (§13). Where the two conflict, this document prevails (see §16).
 
@@ -108,7 +108,7 @@ runtime:
   entry: backend/plugin.wasm
   limits:                      # requested by the plugin; the host applies min(requested, configured ceiling)
     memory_mb: 64
-    fuel_per_call: 50_000_000
+    fuel_per_call: 50000000
     timeout_ms: 2000
 
 capabilities:                  # §6; anything not listed here is denied
@@ -1014,6 +1014,22 @@ When implementing, update PLUGIN_SYSTEM.md to point to this document as the sour
 | 13 | Interceptors v2, trusted `module` (if approved), inbound SCIM | Per §9.2 and §5.2 |
 
 Each phase requires tests (BDD in `tests/features/` for installation, permissions and isolation between plugins), an entry in `puppet/CHANGELOG.md` and a security review before merge.
+
+### 17.1 Phase 1 implementation notes (M19)
+
+Decisions taken while implementing phase 1; where they differ from the text above, this section prevails.
+
+- **Package**: a zip. `MANIFEST.sha256` has one `<sha256 hex>  <path>` line per file (all files except itself and `plugin.sig`). Every file must be listed and nothing may be listed that is absent. Symlinks, duplicate (case-insensitively) names, `..`/absolute paths and oversized or over-expanded archives are refused.
+- **`plugin.sig`** is JSON: `{header: {id, version, api_version, key_id, signed_at}, public_key, signature}` (base64 raw ed25519). The signed message is `"openvox-plugin-signature-v1\0"`, the header as `key=value` lines, a NUL byte, then the exact bytes of `MANIFEST.sha256`. `key_id` is the hex SHA-256 of the raw public key. The public key travels in the package only so an unknown signer can be shown to the administrator; trust comes solely from the trusted key store.
+- **Storage**: the verified `.ovxp` is kept at `<plugins.data_dir>/packages/<id>/<version>.ovxp` and pinned by `package_sha256`. Every load (startup, enable, verify and a 15 minute monitor) re-checks the pinned hash, the manifest hashes and the signature against the current trust store; a hash or signature failure puts the plugin in `error` (`integrity_failed`), a revoked, expired or out-of-scope signer disables it (`signer_revoked`, `signer_expired`, `signer_scope`).
+- **Permissions**: `plugins:admin` is `Resource::Plugins` with action `admin` (reading uses `read`); `plugins:trust` is `Resource::PluginTrust` with action `admin`. Neither is granted to any role by default except through the super admin bypass.
+- **Step-up**: the authentication pipeline of section 11 does not exist yet, so adding or revoking a key (also trusting a key while installing) requires the acting user's current local password. Accounts without a usable local password cannot change trust until step-up lands.
+- **Trust on first use**: installing a package signed by an unknown key stops with `untrusted_signer`; it continues only when the caller holds `plugins:trust` and sends the first 8 characters of the fingerprint (`X-Trust-Key-Confirm`) plus the password.
+- **Built-in runtime** requires a signature from an `origin = builtin` key. The list of embedded project keys is empty until open question 7 is answered, so no built-in plugin can be installed from a package yet.
+- **Runtimes**: only `builtin` plugins can be enabled in M19. `wasm` and `remote` packages can be installed and verified but `enable` answers `runtime_unavailable` until M20.
+- **Upgrades**: a new version must be semver-newer than the active one and must not add capabilities (the approval flow arrives with M20); it then becomes the active version and the old row is kept.
+- **Slot registry**: built from enabled plugins; only `declarative` contributions are served, `iframe` is skipped until phase 5 and `module` is refused at install. A contribution without `requires` is visible to every signed-in user; one requiring a plugin-owned permission is visible to plugin administrators only until plugin permissions can be assigned to roles. Menu items must link under `/p/<plugin-id>/`; `core:settings` and `core:plugins` can never be hidden or renamed by a plugin; menu op `move` is not supported yet.
+- **Not in M19**: two-approver rule for keys (open question 8), capability approval and grants (M20), `openvox-plugin keygen/sign` tooling (tests build packages with `build_signed_package`), the `plugin.trust.*` events (audit entries are written; the event bus is M21).
 
 ## 18. Deferred: multi-tenant and marketplace
 

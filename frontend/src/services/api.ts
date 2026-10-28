@@ -163,6 +163,17 @@ import type {
   FeedSyncResult,
   UpdatePreviewRequest,
   UpdatePreviewResponse,
+  // Plugin types
+  PluginSummary,
+  PluginDetail,
+  PluginPreflightResult,
+  PluginInstallOptions,
+  TrustedKeyView,
+  AddTrustedKeyRequest,
+  UpdateTrustedKeyRequest,
+  RevokeTrustedKeyRequest,
+  UiSlots,
+  UiContributionDetail,
 } from '../types';
 
 const client = axios.create({
@@ -1672,6 +1683,115 @@ export const cveApi = {
 
   previewUpdateJob: async (request: UpdatePreviewRequest): Promise<UpdatePreviewResponse> => {
     const response = await client.post('/inventory/updates/preview', request);
+    return response.data;
+  },
+};
+
+// Plugin platform API. Packages travel as raw bytes (not multipart).
+const PLUGIN_UPLOAD_TIMEOUT_MS = 60_000;
+
+export const pluginsApi = {
+  list: async (): Promise<PluginSummary[]> => {
+    const response = await client.get('/plugins');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<PluginDetail> => {
+    const response = await client.get(`/plugins/${encodeURIComponent(id)}`);
+    return response.data;
+  },
+
+  preflight: async (pkg: Blob | ArrayBuffer): Promise<PluginPreflightResult> => {
+    const response = await client.post('/plugins/preflight', pkg, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+      timeout: PLUGIN_UPLOAD_TIMEOUT_MS,
+    });
+    return response.data;
+  },
+
+  install: async (
+    pkg: Blob | ArrayBuffer,
+    options: PluginInstallOptions = {}
+  ): Promise<PluginDetail> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
+    if (options.trustKeyConfirm) headers['X-Trust-Key-Confirm'] = options.trustKeyConfirm;
+    if (options.trustKeyLabel) headers['X-Trust-Key-Label'] = options.trustKeyLabel;
+    if (options.reauthPassword) headers['X-Reauth-Password'] = options.reauthPassword;
+    const response = await client.post('/plugins', pkg, {
+      headers,
+      timeout: PLUGIN_UPLOAD_TIMEOUT_MS,
+    });
+    return response.data;
+  },
+
+  enable: async (id: string): Promise<PluginDetail> => {
+    const response = await client.post(`/plugins/${encodeURIComponent(id)}/enable`);
+    return response.data;
+  },
+
+  disable: async (id: string): Promise<PluginDetail> => {
+    const response = await client.post(`/plugins/${encodeURIComponent(id)}/disable`);
+    return response.data;
+  },
+
+  verify: async (id: string): Promise<PluginDetail> => {
+    const response = await client.post(`/plugins/${encodeURIComponent(id)}/verify`);
+    return response.data;
+  },
+
+  uninstall: async (id: string): Promise<void> => {
+    await client.delete(`/plugins/${encodeURIComponent(id)}`);
+  },
+
+  // Trusted keys
+  listKeys: async (): Promise<TrustedKeyView[]> => {
+    const response = await client.get('/plugins/trust/keys');
+    return response.data;
+  },
+
+  getKey: async (keyId: string): Promise<TrustedKeyView> => {
+    const response = await client.get(`/plugins/trust/keys/${encodeURIComponent(keyId)}`);
+    return response.data;
+  },
+
+  addKey: async (request: AddTrustedKeyRequest): Promise<TrustedKeyView> => {
+    const response = await client.post('/plugins/trust/keys', request);
+    return response.data;
+  },
+
+  updateKey: async (keyId: string, request: UpdateTrustedKeyRequest): Promise<TrustedKeyView> => {
+    const response = await client.patch(
+      `/plugins/trust/keys/${encodeURIComponent(keyId)}`,
+      request
+    );
+    return response.data;
+  },
+
+  revokeKey: async (keyId: string, request: RevokeTrustedKeyRequest): Promise<TrustedKeyView> => {
+    const response = await client.post(
+      `/plugins/trust/keys/${encodeURIComponent(keyId)}/revoke`,
+      request
+    );
+    return response.data;
+  },
+
+  removeKey: async (keyId: string): Promise<void> => {
+    await client.delete(`/plugins/trust/keys/${encodeURIComponent(keyId)}`);
+  },
+
+  // UI slot registry
+  getUiSlots: async (): Promise<UiSlots> => {
+    const response = await client.get('/plugins/ui/slots');
+    return response.data;
+  },
+
+  getContribution: async (
+    pluginId: string,
+    contributionId: string
+  ): Promise<UiContributionDetail> => {
+    const response = await client.get(
+      `/plugins/ui/contributions/${encodeURIComponent(pluginId)}/${encodeURIComponent(contributionId)}`
+    );
     return response.data;
   },
 };

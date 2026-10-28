@@ -1,4 +1,4 @@
-import { ReactNode, useState, useRef, useEffect } from 'react';
+import { ReactNode, useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -21,10 +21,14 @@ import {
   Rocket,
   HardDrive,
   RefreshCw,
+  Puzzle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import { usePermissionsStore } from '../stores/permissionsStore';
+import { usePluginSlots } from '../hooks/usePlugins';
+import { mergeMenu, type CoreMenuItem } from '../utils/pluginMenu';
 import NotificationBell from './NotificationBell';
 import NotificationManager from './NotificationManager';
 
@@ -32,26 +36,37 @@ interface LayoutProps {
   children: ReactNode;
 }
 
-const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Nodes', href: '/nodes', icon: Server },
-  { name: 'Groups', href: '/groups', icon: FolderTree },
-  { name: 'Reports', href: '/reports', icon: FileText },
-  { name: 'Facts', href: '/facts', icon: Database },
-  { name: 'Facter Templates', href: '/facter-templates', icon: FileCode2 },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { name: 'Alerting', href: '/alerting', icon: Bell },
-  { name: 'Updates', href: '/updates', icon: RefreshCw },
+const navigation: CoreMenuItem[] = [
+  { id: 'core:dashboard', name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { id: 'core:nodes', name: 'Nodes', href: '/nodes', icon: Server },
+  { id: 'core:groups', name: 'Groups', href: '/groups', icon: FolderTree },
+  { id: 'core:reports', name: 'Reports', href: '/reports', icon: FileText },
+  { id: 'core:facts', name: 'Facts', href: '/facts', icon: Database },
+  {
+    id: 'core:facter-templates',
+    name: 'Facter Templates',
+    href: '/facter-templates',
+    icon: FileCode2,
+  },
+  { id: 'core:analytics', name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { id: 'core:alerting', name: 'Alerting', href: '/alerting', icon: Bell },
+  { id: 'core:updates', name: 'Updates', href: '/updates', icon: RefreshCw },
 ];
 
-const adminNavigation = [
-  { name: 'Code Deploy', href: '/code-deploy', icon: Rocket },
-  { name: 'Backup', href: '/backup', icon: HardDrive },
-  { name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
-  { name: 'Users', href: '/users', icon: Users },
-  { name: 'Roles', href: '/roles', icon: Shield },
-  { name: 'Permissions', href: '/permissions', icon: Lock },
-  { name: 'Settings', href: '/settings', icon: Settings },
+const adminNavigation: CoreMenuItem[] = [
+  { id: 'core:code-deploy', name: 'Code Deploy', href: '/code-deploy', icon: Rocket },
+  { id: 'core:backup', name: 'Backup', href: '/backup', icon: HardDrive },
+  { id: 'core:ca', name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
+  { id: 'core:users', name: 'Users', href: '/users', icon: Users },
+  { id: 'core:roles', name: 'Roles', href: '/roles', icon: Shield },
+  { id: 'core:permissions', name: 'Permissions', href: '/permissions', icon: Lock },
+  { id: 'core:plugins', name: 'Plugins', href: '/plugins', icon: Puzzle },
+  { id: 'core:settings', name: 'Settings', href: '/settings', icon: Settings },
+];
+
+const userMenuNavigation: CoreMenuItem[] = [
+  { id: 'core:profile', name: 'Profile', href: '/profile', icon: User },
+  { id: 'core:about', name: 'About', href: '/about', icon: Info },
 ];
 
 export default function Layout({ children }: LayoutProps) {
@@ -60,6 +75,9 @@ export default function Layout({ children }: LayoutProps) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const hasPermission = usePermissionsStore((state) => state.hasPermission);
+  const canSeePlugins = hasPermission('plugins', 'read');
+  const { data: pluginSlots } = usePluginSlots();
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Close user menu when clicking outside
@@ -73,6 +91,24 @@ export default function Layout({ children }: LayoutProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const mainItems = useMemo(
+    () => mergeMenu(navigation, pluginSlots?.slots['nav.main'], pluginSlots?.menu_ops),
+    [pluginSlots]
+  );
+  const adminItems = useMemo(
+    () =>
+      mergeMenu(
+        adminNavigation.filter((item) => item.id !== 'core:plugins' || canSeePlugins),
+        pluginSlots?.slots['nav.admin'],
+        pluginSlots?.menu_ops
+      ),
+    [pluginSlots, canSeePlugins]
+  );
+  const userMenuItems = useMemo(
+    () => mergeMenu(userMenuNavigation, pluginSlots?.slots['nav.user-menu'], pluginSlots?.menu_ops),
+    [pluginSlots]
+  );
 
   const handleLogout = async () => {
     try {
@@ -103,7 +139,7 @@ export default function Layout({ children }: LayoutProps) {
           {/* Navigation */}
           <nav className="flex-1 px-4 py-4 overflow-y-auto">
             <div className="space-y-1">
-              {navigation.map((item) => {
+              {mainItems.map((item) => {
                 const isActive =
                   item.href === '/'
                     ? location.pathname === '/'
@@ -111,7 +147,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 return (
                   <Link
-                    key={item.name}
+                    key={item.id}
                     to={item.href}
                     className={clsx(
                       'flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors',
@@ -133,12 +169,12 @@ export default function Layout({ children }: LayoutProps) {
                 Administration
               </p>
               <div className="mt-2 space-y-1">
-                {adminNavigation.map((item) => {
+                {adminItems.map((item) => {
                   const isActive = location.pathname.startsWith(item.href);
 
                   return (
                     <Link
-                      key={item.name}
+                      key={item.id}
                       to={item.href}
                       className={clsx(
                         'flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors',
@@ -180,22 +216,17 @@ export default function Layout({ children }: LayoutProps) {
               {/* Dropdown Menu */}
               {userMenuOpen && (
                 <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 py-1">
-                  <Link
-                    to="/profile"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <User className="w-4 h-4 mr-3" />
-                    Profile
-                  </Link>
-                  <Link
-                    to="/about"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <Info className="w-4 h-4 mr-3" />
-                    About
-                  </Link>
+                  {userMenuItems.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={item.href}
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <item.icon className="w-4 h-4 mr-3" />
+                      {item.name}
+                    </Link>
+                  ))}
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"

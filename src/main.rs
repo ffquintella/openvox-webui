@@ -376,6 +376,23 @@ async fn main() -> Result<()> {
     // supervised restart instead of lingering throttled and unresponsive.
     let _memory_monitor = services::start_memory_monitor(config.memory_monitor.clone());
 
+    // Plugin manager: re-verifies enabled plugins and builds the slot registry
+    let plugin_manager = Arc::new(services::plugins::PluginManager::new(
+        db.clone(),
+        config.plugins.data_dir.clone(),
+        config.plugins.max_package_mb,
+    ));
+    match plugin_manager.reload().await {
+        Ok(failed) if failed.is_empty() => {}
+        Ok(failed) => warn!(
+            "{} plugin(s) failed verification at startup: {:?}",
+            failed.len(),
+            failed
+        ),
+        Err(e) => warn!("Plugin manager startup failed: {}", e),
+    }
+    services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
+
     // Create application state
     let state = AppState {
         config: config.clone(),
@@ -390,6 +407,7 @@ async fn main() -> Result<()> {
         code_deploy_config,
         backup_config,
         notification_service,
+        plugin_manager,
     };
 
     // Build the router

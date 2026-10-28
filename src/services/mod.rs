@@ -18,6 +18,7 @@ pub mod inventory_scheduler;
 pub mod memory_monitor;
 pub mod node_removal_scheduler;
 pub mod notification;
+pub mod plugins;
 pub mod puppet_ca;
 pub mod puppetdb;
 pub mod r10k;

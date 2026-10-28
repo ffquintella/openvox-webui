@@ -104,6 +104,8 @@ fn format_resource_name(resource: &Resource) -> String {
         Resource::FacterTemplates => "Facter Templates".to_string(),
         Resource::ApiKeys => "API Keys".to_string(),
         Resource::Certificates => "Certificates".to_string(),
+        Resource::Plugins => "Plugins".to_string(),
+        Resource::PluginTrust => "Plugin Trusted Keys".to_string(),
     }
 }
 
@@ -120,6 +122,8 @@ fn get_resource_description(resource: &Resource) -> String {
         Resource::FacterTemplates => "Templates for generating external facts".to_string(),
         Resource::ApiKeys => "API authentication keys".to_string(),
         Resource::Certificates => "Puppet CA certificates".to_string(),
+        Resource::Plugins => "Install and manage plugins".to_string(),
+        Resource::PluginTrust => "Manage the keys that plugins must be signed with".to_string(),
     }
 }
 
@@ -136,6 +140,8 @@ fn get_resource_actions(resource: &Resource) -> Vec<String> {
         Resource::FacterTemplates => vec!["read", "create", "update", "delete"],
         Resource::ApiKeys => vec!["read", "create", "delete"],
         Resource::Certificates => vec!["read", "sign", "reject", "revoke", "admin"],
+        Resource::Plugins => vec!["read", "admin"],
+        Resource::PluginTrust => vec!["admin"],
     }
     .iter()
     .map(|s| s.to_string())

@@ -4,3 +4,4 @@
 //! (in-memory) database and all middleware.
 
 mod alert_conditions_tests;
+mod plugin_tests;

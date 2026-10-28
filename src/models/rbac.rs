@@ -109,9 +109,18 @@ pub enum Resource {
     ApiKeys,
     /// Puppet CA certificates
     Certificates,
+    /// Plugin administration (install, enable, disable, uninstall)
+    Plugins,
+    /// Trusted plugin signing keys (separate from plugin administration)
+    PluginTrust,
 }
 
 impl Resource {
+    /// Parses the string form used in the database and in manifests.
+    pub fn from_name(s: &str) -> Option<Resource> {
+        Resource::all().into_iter().find(|r| r.as_str() == s)
+    }
+
     /// Get all available resources
     pub fn all() -> Vec<Resource> {
         vec![
@@ -126,6 +135,8 @@ impl Resource {
             Resource::FacterTemplates,
             Resource::ApiKeys,
             Resource::Certificates,
+            Resource::Plugins,
+            Resource::PluginTrust,
         ]
     }
 
@@ -143,6 +154,8 @@ impl Resource {
             Resource::FacterTemplates => "facter_templates",
             Resource::ApiKeys => "api_keys",
             Resource::Certificates => "certificates",
+            Resource::Plugins => "plugins",
+            Resource::PluginTrust => "plugin_trust",
         }
     }
 }
@@ -176,6 +189,11 @@ pub enum Action {
 }
 
 impl Action {
+    /// Parses the string form used in the database and in manifests.
+    pub fn from_name(s: &str) -> Option<Action> {
+        Action::all().into_iter().find(|a| a.as_str() == s)
+    }
+
     /// Get all available actions
     pub fn all() -> Vec<Action> {
         vec![

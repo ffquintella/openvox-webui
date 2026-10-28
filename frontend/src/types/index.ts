@@ -632,7 +632,9 @@ export type Resource =
   | 'settings'
   | 'audit_logs'
   | 'facter_templates'
-  | 'api_keys';
+  | 'api_keys'
+  | 'plugins'
+  | 'plugin_trust';
 
 export type Action =
   'read' | 'create' | 'update' | 'delete' | 'admin' | 'export' | 'classify' | 'generate';
@@ -2225,4 +2227,174 @@ export interface UpdatePreviewPackage {
   from_version: string;
   to_version: string;
   cve_ids: string[];
+}
+
+// ============================================================================
+// Plugin platform (M19)
+// ============================================================================
+
+export type PluginState =
+  | 'installed'
+  | 'configured'
+  | 'enabled'
+  | 'disabled'
+  | 'error'
+  | 'update_pending';
+
+export type PluginRuntimeKind = 'wasm' | 'remote' | 'builtin';
+export type PluginRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export interface PluginSummary {
+  id: string;
+  name: string;
+  publisher: string;
+  active_version: string | null;
+  state: PluginState;
+  state_reason: string | null;
+  runtime_kind: PluginRuntimeKind | null;
+  signer_key_id: string | null;
+  signer_label: string | null;
+  installed_by: string | null;
+  installed_at: string;
+  updated_at: string;
+}
+
+export interface PluginCapabilityInfo {
+  name: string;
+  scope: unknown;
+  risk: PluginRiskLevel;
+  description: string;
+}
+
+export interface PluginVersionRecord {
+  plugin_id: string;
+  version: string;
+  api_version: number;
+  package_sha256: string;
+  signed_by_key_id: string;
+  signed_at: string;
+  revoked: boolean;
+  added_at: string;
+}
+
+export interface PluginDetail extends PluginSummary {
+  manifest: Record<string, unknown> | null;
+  capabilities: PluginCapabilityInfo[];
+  versions: PluginVersionRecord[];
+}
+
+export type PluginSignatureStatus =
+  | 'valid'
+  | 'untrusted_key'
+  | 'invalid'
+  | 'key_revoked'
+  | 'key_expired'
+  | 'key_scope';
+
+export interface PluginSignatureReport {
+  status: PluginSignatureStatus;
+  key_id: string;
+  key_label: string | null;
+  key_origin: 'builtin' | 'admin' | null;
+  signed_at: string;
+  message: string | null;
+}
+
+export interface PluginManifestSummary {
+  id: string;
+  name: string;
+  version: string;
+  publisher: string;
+  api_version: number;
+  license: string | null;
+  runtime_kind: PluginRuntimeKind;
+  min_webui_version: string | null;
+}
+
+export interface PluginPreflightResult {
+  manifest: PluginManifestSummary;
+  package_sha256: string;
+  signature: PluginSignatureReport;
+  capabilities: PluginCapabilityInfo[];
+  declared_pii_fields: string[];
+  installed_version: string | null;
+  issues: string[];
+  can_install: boolean;
+}
+
+export interface PluginInstallOptions {
+  /** First 8 hex characters of the signer fingerprint (the key id). */
+  trustKeyConfirm?: string;
+  trustKeyLabel?: string;
+  /** Current password, required when trusting a key during install. */
+  reauthPassword?: string;
+}
+
+export interface TrustedKeyView {
+  key_id: string;
+  fingerprint: string;
+  label: string;
+  origin: 'builtin' | 'admin';
+  allowed_plugin_ids: string[] | null;
+  expires_at: string | null;
+  state: 'active' | 'revoked' | 'expired';
+  expires_soon: boolean;
+  added_by: string | null;
+  added_at: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
+  dependent_plugins: string[];
+}
+
+export interface AddTrustedKeyRequest {
+  public_key: string;
+  label: string;
+  expires_at?: string;
+  allowed_plugin_ids?: string[];
+  password: string;
+}
+
+export interface UpdateTrustedKeyRequest {
+  label?: string;
+  /** null clears the expiry */
+  expires_at?: string | null;
+  /** null clears the scope */
+  allowed_plugin_ids?: string[] | null;
+}
+
+export interface RevokeTrustedKeyRequest {
+  reason: string;
+  password: string;
+}
+
+export type PluginRenderKind = 'declarative' | 'iframe' | 'module';
+
+export interface UiContribution {
+  plugin_id: string;
+  plugin_name: string;
+  slot: string;
+  id: string;
+  render: PluginRenderKind;
+  title: string | null;
+  path: string | null;
+  order: number;
+  label: string | null;
+  icon: string | null;
+  href: string | null;
+}
+
+export interface UiMenuOp {
+  plugin_id: string;
+  target: string;
+  op: 'hide' | 'rename';
+  label: string | null;
+}
+
+export interface UiSlots {
+  slots: Record<string, UiContribution[]>;
+  menu_ops: UiMenuOp[];
+}
+
+export interface UiContributionDetail extends UiContribution {
+  spec: unknown | null;
 }

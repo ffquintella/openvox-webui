@@ -63,6 +63,40 @@ pub struct AppConfig {
     /// Process memory monitoring and self-protection
     #[serde(default)]
     pub memory_monitor: MemoryMonitorConfig,
+    /// Plugin platform (package storage and install limits)
+    #[serde(default)]
+    pub plugins: PluginsConfig,
+}
+
+/// Plugin platform configuration
+///
+/// Signing is not configurable: every plugin must be signed by a trusted key
+/// and there is no setting that turns that off.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginsConfig {
+    /// Directory where verified plugin packages are stored and extracted
+    #[serde(default = "default_plugins_dir")]
+    pub data_dir: PathBuf,
+    /// Largest accepted `.ovxp` upload, in megabytes
+    #[serde(default = "default_plugin_max_package_mb")]
+    pub max_package_mb: u64,
+}
+
+fn default_plugins_dir() -> PathBuf {
+    PathBuf::from("/var/lib/openvox-webui/plugins")
+}
+
+fn default_plugin_max_package_mb() -> u64 {
+    32
+}
+
+impl Default for PluginsConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: default_plugins_dir(),
+            max_package_mb: default_plugin_max_package_mb(),
+        }
+    }
 }
 
 /// Memory monitor configuration
@@ -1609,6 +1643,7 @@ impl Default for AppConfig {
             cve: None,
             pagination: PaginationConfig::default(),
             memory_monitor: MemoryMonitorConfig::default(),
+            plugins: PluginsConfig::default(),
         }
     }
 }

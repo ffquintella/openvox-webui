@@ -111,6 +111,11 @@ hex = "0.4"
 chacha20poly1305 = "0.11"
 tar = "0.4"
 
+# Plugin packages (.ovxp): zip container, ed25519 signatures, manifest versions
+ed25519-dalek = "2.2"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+semver = "1"
+
 # SAML 2.0 authentication
 # Without xmlsec feature, no signature verification (development mode)
 # For production with signature verification, install libxml2, xmlsec1 and enable xmlsec feature

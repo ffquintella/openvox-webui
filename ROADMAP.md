@@ -204,11 +204,11 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > phase: P3
 > spec: S21, S23
 
-- [ ] T68 Define plugin manifest and .ovxp package (S21)
-- [ ] T69 Verify plugin signatures with ed25519 (S21)
-- [ ] T70 Manage trusted keys through API and UI (S21)
-- [ ] T71 Add plugin admin API and Plugins page (S21)
-- [ ] T72 Add built-in runtime and slot registry for menus and pages (S21)
+- [x] T68 Define plugin manifest and .ovxp package (S21)
+- [x] T69 Verify plugin signatures with ed25519 (S21)
+- [x] T70 Manage trusted keys through API and UI (S21)
+- [x] T71 Add plugin admin API and Plugins page (S21)
+- [x] T72 Add built-in runtime and slot registry for menus and pages (S21)
 
 ## [M20] WASM Runtime and Host API
 > outcome: WASM plugins run sandboxed with approved capabilities, own storage and enforced resource limits.

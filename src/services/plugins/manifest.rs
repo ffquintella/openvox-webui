@@ -1,0 +1,694 @@
+//! Parsing and validation of `plugin.yaml` (T68).
+//!
+//! Validation is strict and fails closed: any problem is a reason to refuse
+//! the package. Every problem found is reported, not just the first.
+
+use std::collections::BTreeSet;
+use std::net::IpAddr;
+
+use serde_json::Value;
+
+use crate::models::{
+    Capability, CapabilityDecl, CapabilityInfo, MenuEntry, PluginManifest, RenderKind, RiskLevel,
+    RuntimeKind, PLUGIN_API_MIN_VERSION, PLUGIN_API_VERSION,
+};
+
+pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
+
+/// Slots plugins may contribute to (PLUGIN_PLATFORM.md section 8.1).
+pub const KNOWN_SLOTS: &[&str] = &[
+    "nav.main",
+    "nav.admin",
+    "nav.user-menu",
+    "toolbar.global",
+    "dashboard.widgets",
+    "node.detail.tabs",
+    "node.detail.actions",
+    "group.detail.panels",
+    "report.detail.panels",
+    "footer.global",
+    "settings.sections",
+    "profile.security",
+    "admin.auth",
+    "node.detail.facts",
+    "report.list.columns",
+    "report.export.actions",
+    "reports.builder.sources",
+    "group.rule.editors",
+    "group.members.columns",
+    "classification.explain.panels",
+    "page",
+];
+
+pub const MENU_SECTIONS: &[&str] = &["main", "admin", "user-menu"];
+
+/// Icons a plugin menu item may use (lucide-react names; the frontend keeps
+/// the matching allowlist).
+pub const ALLOWED_ICONS: &[&str] = &[
+    "KeyRound",
+    "Puzzle",
+    "Boxes",
+    "Database",
+    "FileText",
+    "Globe",
+    "Link",
+    "Shield",
+    "Server",
+    "Settings",
+    "BarChart3",
+    "Bell",
+    "Cloud",
+    "Cpu",
+    "Activity",
+    "Plug",
+];
+
+/// Core menu items plugins may hide or rename. `core:settings` and
+/// `core:plugins` are deliberately absent (lock-out protection).
+pub const PROTECTED_MENU_TARGETS: &[&str] = &["core:settings", "core:plugins"];
+
+/// Parses and validates a manifest. `files` is the set of package paths.
+pub fn parse_and_validate(
+    yaml: &[u8],
+    files: &BTreeSet<String>,
+) -> Result<PluginManifest, Vec<String>> {
+    if yaml.len() > MAX_MANIFEST_BYTES {
+        return Err(vec!["plugin.yaml is too large".to_string()]);
+    }
+    let manifest: PluginManifest = serde_norway::from_slice(yaml)
+        .map_err(|e| vec![format!("plugin.yaml is not a valid manifest: {}", e)])?;
+    let problems = validate(&manifest, files);
+    if problems.is_empty() {
+        Ok(manifest)
+    } else {
+        Err(problems)
+    }
+}
+
+pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
+    let mut p: Vec<String> = Vec::new();
+
+    if !valid_plugin_id(&m.id) {
+        p.push(format!(
+            "id '{}' is invalid: use 2 to 64 characters of a-z, 0-9 and '-', starting with a letter",
+            m.id
+        ));
+    }
+    if m.api_version < PLUGIN_API_MIN_VERSION || m.api_version > PLUGIN_API_VERSION {
+        p.push(format!(
+            "api_version {} is not supported (this host supports {} to {})",
+            m.api_version, PLUGIN_API_MIN_VERSION, PLUGIN_API_VERSION
+        ));
+    }
+    check_text(&mut p, "name", &m.name, 80);
+    check_text(&mut p, "publisher", &m.publisher, 80);
+    if let Some(l) = &m.license {
+        check_text(&mut p, "license", l, 64);
+    }
+    if semver::Version::parse(&m.version).is_err() {
+        p.push(format!("version '{}' is not valid semver", m.version));
+    }
+    if let Some(min) = &m.min_webui_version {
+        if semver::Version::parse(min).is_err() {
+            p.push(format!("min_webui_version '{}' is not valid semver", min));
+        }
+    }
+
+    validate_runtime(&mut p, m, files);
+
+    // Capabilities
+    let mut names = BTreeSet::new();
+    for decl in &m.capabilities {
+        match normalize_capability(decl) {
+            Ok(cap) => {
+                if let Err(e) = validate_capability(&cap) {
+                    p.push(e);
+                }
+                if !names.insert(cap.name.clone()) {
+                    p.push(format!("capability '{}' is declared twice", cap.name));
+                }
+            }
+            Err(e) => p.push(e),
+        }
+    }
+
+    validate_contributions(&mut p, m, files, &names);
+
+    if let Some(mig) = &m.migrations {
+        if !safe_package_path(&mig.dir) {
+            p.push(format!("migrations.dir '{}' is not a safe path", mig.dir));
+        }
+    }
+    p
+}
+
+fn validate_runtime(p: &mut Vec<String>, m: &PluginManifest, files: &BTreeSet<String>) {
+    let r = &m.runtime;
+    match r.kind {
+        RuntimeKind::Wasm => match &r.entry {
+            Some(e) if safe_package_path(e) && e.ends_with(".wasm") => {
+                if !files.contains(e) {
+                    p.push(format!("runtime.entry '{}' is not in the package", e));
+                }
+            }
+            _ => p.push("runtime.entry must be a .wasm file inside the package".to_string()),
+        },
+        RuntimeKind::Builtin => match &r.entry {
+            Some(e) if valid_plugin_id(e) => {}
+            _ => p.push("runtime.entry must name a built-in plugin".to_string()),
+        },
+        RuntimeKind::Remote => match &r.endpoint {
+            Some(u) if u.starts_with("https://") && u.len() > 8 && u.len() <= 512 => {}
+            _ => p.push("runtime.endpoint must be an https:// URL".to_string()),
+        },
+    }
+    if let Some(l) = &r.limits {
+        if l.memory_mb.is_some_and(|v| v == 0 || v > 1024) {
+            p.push("runtime.limits.memory_mb must be between 1 and 1024".to_string());
+        }
+        if l.timeout_ms.is_some_and(|v| v == 0 || v > 60_000) {
+            p.push("runtime.limits.timeout_ms must be between 1 and 60000".to_string());
+        }
+        if l.fuel_per_call.is_some_and(|v| v == 0) {
+            p.push("runtime.limits.fuel_per_call must be positive".to_string());
+        }
+    }
+}
+
+fn validate_contributions(
+    p: &mut Vec<String>,
+    m: &PluginManifest,
+    files: &BTreeSet<String>,
+    caps: &BTreeSet<String>,
+) {
+    let page_prefix = format!("/p/{}/", m.id);
+    let mut ids = BTreeSet::new();
+
+    for s in &m.contributes.slots {
+        if !KNOWN_SLOTS.contains(&s.slot.as_str()) {
+            p.push(format!("unknown slot '{}'", s.slot));
+        }
+        if !valid_local_id(&s.id) {
+            p.push(format!("slot contribution id '{}' is invalid", s.id));
+        }
+        if !ids.insert(s.id.clone()) {
+            p.push(format!("contribution id '{}' is used twice", s.id));
+        }
+        if !caps.contains(&format!("ui:slot:{}", s.slot)) {
+            p.push(format!(
+                "contribution '{}' needs the capability ui:slot:{}",
+                s.id, s.slot
+            ));
+        }
+        if let Some(t) = &s.title {
+            check_text(p, "slot title", t, 80);
+        }
+        match s.render {
+            RenderKind::Declarative => match &s.spec {
+                Some(f) if safe_package_path(f) && f.ends_with(".json") => {
+                    if !files.contains(f) {
+                        p.push(format!("spec '{}' is not in the package", f));
+                    }
+                }
+                _ => p.push(format!(
+                    "contribution '{}' needs a .json spec inside the package",
+                    s.id
+                )),
+            },
+            RenderKind::Iframe => match &s.src {
+                Some(f) if safe_package_path(f) && files.contains(f) => {}
+                _ => p.push(format!(
+                    "contribution '{}' needs an existing src inside the package",
+                    s.id
+                )),
+            },
+            RenderKind::Module => p.push(format!(
+                "contribution '{}': trusted modules are not allowed",
+                s.id
+            )),
+        }
+        if s.slot == "page" {
+            match &s.path {
+                Some(path) if path.starts_with(&page_prefix) && safe_url_path(path) => {}
+                _ => p.push(format!(
+                    "page '{}' needs a path under {}",
+                    s.id, page_prefix
+                )),
+            }
+        } else if s.path.is_some() {
+            p.push(format!(
+                "contribution '{}': path is only valid for page",
+                s.id
+            ));
+        }
+        check_requires(p, &m.id, s.requires.as_ref());
+    }
+
+    for entry in &m.contributes.menus {
+        match entry {
+            MenuEntry::Item(i) => {
+                if !valid_local_id(&i.id) {
+                    p.push(format!("menu id '{}' is invalid", i.id));
+                }
+                if !ids.insert(format!("menu:{}", i.id)) {
+                    p.push(format!("menu id '{}' is used twice", i.id));
+                }
+                if !MENU_SECTIONS.contains(&i.section.as_str()) {
+                    p.push(format!("menu '{}': unknown section '{}'", i.id, i.section));
+                } else if !caps.contains(&format!("ui:slot:nav.{}", i.section)) {
+                    p.push(format!(
+                        "menu '{}' needs the capability ui:slot:nav.{}",
+                        i.id, i.section
+                    ));
+                }
+                check_text(p, "menu label", &i.label, 40);
+                if let Some(icon) = &i.icon {
+                    if !ALLOWED_ICONS.contains(&icon.as_str()) {
+                        p.push(format!("menu '{}': icon '{}' is not allowed", i.id, icon));
+                    }
+                }
+                if !i.href.starts_with(&page_prefix) || !safe_url_path(&i.href) {
+                    p.push(format!(
+                        "menu '{}': href must be under {}",
+                        i.id, page_prefix
+                    ));
+                }
+                check_requires(p, &m.id, i.requires.as_ref());
+            }
+            MenuEntry::Op(o) => {
+                if !o.target.starts_with("core:") || !safe_url_path(&o.target) {
+                    p.push(format!("menu op target '{}' must be a core:<id>", o.target));
+                }
+                if PROTECTED_MENU_TARGETS.contains(&o.target.as_str()) {
+                    p.push(format!("menu item '{}' cannot be changed", o.target));
+                }
+                match o.op.as_str() {
+                    "hide" => {}
+                    "rename" => match &o.label {
+                        Some(l) => check_text(p, "menu op label", l, 40),
+                        None => p.push("menu op 'rename' needs a label".to_string()),
+                    },
+                    other => p.push(format!("menu op '{}' is not supported", other)),
+                }
+                if !caps.contains("ui:slot:nav.main") && !caps.contains("ui:slot:nav.admin") {
+                    p.push(
+                        "changing core menu items needs ui:slot:nav.main or ui:slot:nav.admin"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// `requires` may name a core permission (`nodes`) or one of the plugin's own
+/// (`plugin.<id>.<name>`); anything else could impersonate another plugin.
+fn check_requires(p: &mut Vec<String>, plugin_id: &str, r: Option<&crate::models::Requires>) {
+    let Some(r) = r else { return };
+    let own = format!("plugin.{}.", plugin_id);
+    let ok_resource = r.resource.starts_with(&own)
+        || (!r.resource.starts_with("plugin") && valid_local_id(&r.resource.replace('_', "-")));
+    if !ok_resource {
+        p.push(format!(
+            "requires.resource '{}' must be a core resource or start with {}",
+            r.resource, own
+        ));
+    }
+    if !valid_local_id(&r.action.replace('_', "-")) {
+        p.push(format!("requires.action '{}' is invalid", r.action));
+    }
+}
+
+pub fn valid_plugin_id(id: &str) -> bool {
+    let b = id.as_bytes();
+    (2..=64).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+        && !id.ends_with('-')
+}
+
+fn valid_local_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b'.')
+}
+
+/// Human-readable text: no control characters and no markup characters.
+fn check_text(p: &mut Vec<String>, field: &str, v: &str, max: usize) {
+    if v.trim().is_empty() || v.chars().count() > max {
+        p.push(format!("{} must be 1 to {} characters", field, max));
+    } else if v.chars().any(|c| c.is_control() || c == '<' || c == '>') {
+        p.push(format!("{} contains forbidden characters", field));
+    }
+}
+
+/// Relative path inside a package: no traversal, no absolute paths.
+pub fn safe_package_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= 255
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.contains('\0')
+        && path
+            .split('/')
+            .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+}
+
+fn safe_url_path(path: &str) -> bool {
+    path.len() <= 255
+        && path
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"/-_.:".contains(&c))
+        && !path.contains("..")
+}
+
+// ============================================================================
+// Capabilities
+// ============================================================================
+
+pub fn normalize_capability(decl: &CapabilityDecl) -> Result<Capability, String> {
+    match decl {
+        CapabilityDecl::Name(n) => Ok(Capability {
+            name: n.clone(),
+            scope: None,
+        }),
+        CapabilityDecl::Scoped(map) if map.len() == 1 => {
+            let (k, v) = map.iter().next().expect("len checked");
+            Ok(Capability {
+                name: k.clone(),
+                scope: Some(v.clone()),
+            })
+        }
+        CapabilityDecl::Scoped(_) => {
+            Err("a scoped capability must have exactly one name".to_string())
+        }
+    }
+}
+
+pub fn capabilities(m: &PluginManifest) -> Vec<Capability> {
+    m.capabilities
+        .iter()
+        .filter_map(|d| normalize_capability(d).ok())
+        .collect()
+}
+
+const EXACT_CAPABILITIES: &[&str] = &[
+    "nodes:read",
+    "facts:read",
+    "reports:read",
+    "users:read",
+    "kv:rw",
+    "db:own",
+    "email:send",
+    "events:subscribe",
+    "http:egress",
+    "audit:write",
+    "auth:provider",
+    "auth:factor",
+    "auth:credentials",
+    "users:provider",
+    "facts:provide",
+    "facts:export:external",
+    "reports:provide",
+    "reports:annotate",
+    "reports:export:format",
+    "datasets:read",
+    "classification:operators",
+    "classification:membership",
+    "classification:templates",
+    "classification:behaviors",
+    "classification:inject",
+    "groups:read",
+    "groups:write:own",
+];
+
+const PREFIX_CAPABILITIES: &[&str] = &["events:publish:", "secrets:resolve:", "ui:slot:"];
+
+fn validate_capability(c: &Capability) -> Result<(), String> {
+    let known = EXACT_CAPABILITIES.contains(&c.name.as_str())
+        || PREFIX_CAPABILITIES
+            .iter()
+            .any(|pre| c.name.starts_with(pre) && c.name.len() > pre.len());
+    if !known {
+        return Err(format!("unknown capability '{}'", c.name));
+    }
+    if let Some(slot) = c.name.strip_prefix("ui:slot:") {
+        if !KNOWN_SLOTS.contains(&slot) {
+            return Err(format!("capability '{}' names an unknown slot", c.name));
+        }
+    }
+    if c.name == "http:egress" {
+        let hosts = c
+            .scope
+            .as_ref()
+            .and_then(|s| s.get("hosts"))
+            .and_then(Value::as_array)
+            .filter(|h| !h.is_empty())
+            .ok_or("http:egress needs a non-empty hosts allowlist")?;
+        for h in hosts {
+            let host = h.as_str().ok_or("http:egress hosts must be strings")?;
+            validate_egress_host(host)?;
+        }
+    } else if c.scope.is_some() {
+        return Err(format!("capability '{}' takes no scope", c.name));
+    }
+    Ok(())
+}
+
+/// Exact hostnames or `*.domain.tld`; never a bare wildcard, never a private,
+/// loopback or link-local (metadata) address literal.
+pub fn validate_egress_host(host: &str) -> Result<(), String> {
+    let bad = |why: &str| Err(format!("egress host '{}': {}", host, why));
+    if host.is_empty() || host.len() > 253 || host != host.to_ascii_lowercase() {
+        return bad("must be a lowercase hostname");
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        let blocked = match ip {
+            IpAddr::V4(v4) => {
+                v4.is_private()
+                    || v4.is_loopback()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_broadcast()
+                    || v4.octets()[0] == 0
+                    || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64)
+            }
+            IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unspecified()
+                    || (v6.segments()[0] & 0xFFC0) == 0xFE80
+                    || (v6.segments()[0] & 0xFE00) == 0xFC00
+                    || v6.to_ipv4_mapped().is_some()
+            }
+        };
+        return if blocked {
+            bad("private, loopback and link-local addresses are not allowed")
+        } else {
+            Ok(())
+        };
+    }
+    let name = host.strip_prefix("*.").unwrap_or(host);
+    let labels: Vec<&str> = name.split('.').collect();
+    if host.starts_with("*.") && labels.len() < 2 {
+        return bad("wildcards need a registrable domain");
+    }
+    if labels.len() < 2 && host != "localhost" {
+        return bad("must be a fully qualified hostname");
+    }
+    if host == "localhost" || name.ends_with(".localhost") || name.ends_with(".internal") {
+        return bad("local names are not allowed");
+    }
+    let label_ok = |l: &&str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+    };
+    if !labels.iter().all(label_ok) {
+        return bad("contains an invalid label");
+    }
+    Ok(())
+}
+
+/// Risk level and approval-screen wording for a capability.
+pub fn describe_capability(c: &Capability) -> CapabilityInfo {
+    let (risk, text) = match c.name.as_str() {
+        "nodes:read" => (
+            RiskLevel::Medium,
+            "Read nodes and their summary data".to_string(),
+        ),
+        "facts:read" => (RiskLevel::Medium, "Read node facts".to_string()),
+        "reports:read" => (RiskLevel::Medium, "Read Puppet run reports".to_string()),
+        "users:read" => (
+            RiskLevel::High,
+            "Read user accounts (names and emails)".to_string(),
+        ),
+        "kv:rw" => (
+            RiskLevel::Low,
+            "Store small key/value data of its own".to_string(),
+        ),
+        "db:own" => (RiskLevel::Low, "Use its own private database".to_string()),
+        "email:send" => (RiskLevel::High, "Send email from this server".to_string()),
+        "events:subscribe" => (RiskLevel::Medium, "Receive platform events".to_string()),
+        "audit:write" => (RiskLevel::Low, "Write entries to the audit log".to_string()),
+        "http:egress" => {
+            let hosts = c
+                .scope
+                .as_ref()
+                .and_then(|s| s.get("hosts"))
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            (
+                RiskLevel::High,
+                format!("Send data to external hosts: {}", hosts),
+            )
+        }
+        "auth:credentials" => (
+            RiskLevel::Critical,
+            "Receive user passwords in clear text".to_string(),
+        ),
+        "auth:provider" | "auth:factor" | "users:provider" => (
+            RiskLevel::Critical,
+            "Take part in user authentication".to_string(),
+        ),
+        "facts:export:external" | "classification:inject" => (
+            RiskLevel::High,
+            "Change what agents receive from this server".to_string(),
+        ),
+        n if n.starts_with("ui:slot:") => (
+            RiskLevel::Low,
+            format!("Add interface elements to '{}'", &n["ui:slot:".len()..]),
+        ),
+        n if n.starts_with("events:publish:") => (
+            RiskLevel::Low,
+            format!("Publish events named '{}'", &n["events:publish:".len()..]),
+        ),
+        n if n.starts_with("secrets:resolve:") => (
+            RiskLevel::High,
+            format!("Resolve secrets under '{}'", &n["secrets:resolve:".len()..]),
+        ),
+        n if n.starts_with("classification:") => (
+            RiskLevel::High,
+            "Take part in node classification".to_string(),
+        ),
+        _ => (RiskLevel::Medium, format!("Use capability {}", c.name)),
+    };
+    CapabilityInfo {
+        name: c.name.clone(),
+        scope: c.scope.clone(),
+        risk,
+        description: text,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn files(list: &[&str]) -> BTreeSet<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    const OK: &str = r#"
+api_version: 2
+id: acme-demo
+name: ACME Demo
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-demo }
+capabilities:
+  - ui:slot:page
+  - ui:slot:nav.main
+  - http:egress:
+      hosts: [api.acme.com, "*.acme.io"]
+contributes:
+  slots:
+    - { slot: page, id: home, render: declarative, spec: ui/home.json, path: /p/acme-demo/home }
+  menus:
+    - { id: m, section: main, label: Demo, icon: Puzzle, href: /p/acme-demo/home }
+"#;
+
+    #[test]
+    fn accepts_a_valid_manifest() {
+        let m = parse_and_validate(OK.as_bytes(), &files(&["ui/home.json"])).unwrap();
+        assert_eq!(m.id, "acme-demo");
+        assert_eq!(capabilities(&m).len(), 3);
+    }
+
+    #[test]
+    fn rejects_unknown_fields_and_bad_ids() {
+        let bad = OK
+            .replace("id: acme-demo", "id: Bad_ID")
+            .replace("name:", "nope: 1\nname:");
+        assert!(parse_and_validate(bad.as_bytes(), &files(&["ui/home.json"])).is_err());
+        let bad = OK.replace("id: acme-demo", "id: Bad_ID");
+        let e = parse_and_validate(bad.as_bytes(), &files(&["ui/home.json"])).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("id 'Bad_ID'")));
+    }
+
+    #[test]
+    fn contributions_need_their_capability_and_files() {
+        let bad = OK.replace("  - ui:slot:page\n", "");
+        let e = parse_and_validate(bad.as_bytes(), &files(&["ui/home.json"])).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("ui:slot:page")));
+        let e = parse_and_validate(OK.as_bytes(), &files(&[])).unwrap_err();
+        assert!(e.iter().any(|m| m.contains("not in the package")));
+    }
+
+    #[test]
+    fn page_paths_and_hrefs_stay_under_the_plugin_prefix() {
+        let bad = OK.replace("path: /p/acme-demo/home", "path: /p/other/home");
+        assert!(parse_and_validate(bad.as_bytes(), &files(&["ui/home.json"])).is_err());
+        let bad = OK.replace("href: /p/acme-demo/home", "href: /users");
+        assert!(parse_and_validate(bad.as_bytes(), &files(&["ui/home.json"])).is_err());
+    }
+
+    #[test]
+    fn egress_hosts_are_restricted() {
+        for ok in ["api.acme.com", "*.acme.io", "8.8.8.8"] {
+            assert!(validate_egress_host(ok).is_ok(), "{}", ok);
+        }
+        for bad in [
+            "*",
+            "*.com",
+            "com",
+            "localhost",
+            "169.254.169.254",
+            "10.0.0.1",
+            "127.0.0.1",
+            "::1",
+            "fe80::1",
+            "API.acme.com",
+            "a b.com",
+        ] {
+            assert!(validate_egress_host(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn protected_menu_items_cannot_be_hidden() {
+        let m = OK.replace(
+            "menus:\n",
+            "menus:\n    - { target: \"core:settings\", op: hide }\n",
+        );
+        assert!(parse_and_validate(m.as_bytes(), &files(&["ui/home.json"])).is_err());
+    }
+
+    #[test]
+    fn package_paths_reject_traversal() {
+        for bad in ["../x", "/x", "a//b", "a/./b", "a\\b", ""] {
+            assert!(!safe_package_path(bad), "{}", bad);
+        }
+        assert!(safe_package_path("ui/home.json"));
+    }
+}

@@ -26,6 +26,7 @@ pub use middleware::{
 use services::backup::BackupService;
 use services::code_deploy::{CodeDeployConfig, CodeDeployService};
 use services::notification::NotificationService;
+use services::plugins::PluginManager;
 use services::puppet_ca::PuppetCAService;
 use services::puppetdb::PuppetDbClient;
 pub use services::{DbRbacService, RbacService};
@@ -63,6 +64,8 @@ pub struct AppState {
     pub backup_config: Option<BackupConfig>,
     /// Notification service
     pub notification_service: Arc<NotificationService>,
+    /// Plugin manager (packages, trusted keys, slot registry)
+    pub plugin_manager: Arc<PluginManager>,
 }
 
 impl AppState {

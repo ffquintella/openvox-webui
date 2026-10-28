@@ -1027,6 +1027,8 @@ fn parse_resource(s: &str) -> Result<Resource> {
         "facter_templates" => Ok(Resource::FacterTemplates),
         "api_keys" => Ok(Resource::ApiKeys),
         "certificates" => Ok(Resource::Certificates),
+        "plugins" => Ok(Resource::Plugins),
+        "plugin_trust" => Ok(Resource::PluginTrust),
         _ => anyhow::bail!("Unknown resource: {}", s),
     }
 }
