@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-10-29
+
 ### Added
 - Add the WASM runtime and host API for plugins (M20): `wasm` plugins run in wasmtime with a fresh store per call, fuel, a memory ceiling, a wall-clock deadline (epoch interruption), a per-plugin concurrency bulkhead and no WASI, files, network or clock; a trap, timeout or exhausted limit is a handled error that never affects the core or other plugins (T73, T76). Guests use a small JSON-over-memory ABI (`alloc`, `handle`, one `openvox.host_call` import) instead of the Component Model; this also makes `wasm` handlers of M21 events, jobs and webhooks run.
 - Add the capability gate and approval flow (M20): effective capabilities are `declared ∩ approved ∩ plugins.policy`; administrators approve per capability (`GET/PUT /api/v1/plugins/{id}/capabilities`, optional capabilities via `optional: true`), `enable` is refused with `capabilities_not_approved` until every required one is approved, `plugins.policy.denied_capabilities` is a ceiling no approval can exceed, and an upgrade that adds capabilities stays pending (`pending_version`) while the previous version keeps running until it is approved (T74).
@@ -529,7 +531,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 - Add initial admin account setup to the Puppet module (T25)
 - Support RHEL 8/9, CentOS 8/9, Rocky 8/9, AlmaLinux 8/9, Fedora 38/39/40, Debian 11/12 and Ubuntu 22.04/24.04 in the Puppet module (T25)
 
-[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.43.0
 [0.42.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.42.0
 [0.41.6]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.6
 [0.41.5]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.5
