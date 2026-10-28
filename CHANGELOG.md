@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-28
+
 ### Added
 - Add events, jobs and webhooks for plugins (M21): a durable event bus (`event_outbox`) whose dispatcher fans events out to enabled plugin subscriptions and outbound webhook endpoints with at-least-once delivery, priority ordering, host-evaluated payload filters, exponential-backoff retries, dead-lettering after `plugins.events.max_attempts`, a per-plugin concurrency bulkhead and handler timeouts, with plugin lifecycle and trust events (`plugin.installed|upgraded|enabled|disabled`, `plugin.trust.key_added|key_revoked`) published on it (T77); cron-scheduled plugin jobs from `contributes.jobs` that never overlap, are not replayed after downtime, are recorded per run and can be run on demand (T78); HMAC-SHA256 signed inbound webhooks at `/api/v1/plugins/{id}/webhooks/{hook}` (host-generated rotatable secret shown once, timestamp window, replay cache, rate and body limits) and administrator-managed signed outbound webhooks, plus admin endpoints under `/api/v1/plugins/events`, `/jobs` and `/webhooks/outbound` (T79). Handlers of `wasm` and `remote` plugins run through the runtime provided by M20; until then only built-in plugins can be invoked
 - Add the plugin manager (M19): signed `.ovxp` packages with a validated `plugin.yaml` manifest, mandatory ed25519 signature verification at install and at every load (a package that is unsigned, tampered with, or signed by an unknown, revoked, expired or out-of-scope key is never installed or loaded), trusted key management through `/api/v1/plugins/trust/keys` and the Plugins page (separate `plugin_trust` permission, password re-authentication, fingerprint confirmation when trusting a key during install), plugin admin API and Plugins page (preflight, install, enable, disable, verify, uninstall, audited), periodic integrity re-verification, and a built-in runtime plus a permission-filtered slot registry for menus, pages and dashboard widgets with declarative rendering (T68, T69, T70, T71, T72)
@@ -520,7 +522,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 - Add initial admin account setup to the Puppet module (T25)
 - Support RHEL 8/9, CentOS 8/9, Rocky 8/9, AlmaLinux 8/9, Fedora 38/39/40, Debian 11/12 and Ubuntu 22.04/24.04 in the Puppet module (T25)
 
-[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.41.6...HEAD
+[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.42.0
 [0.41.6]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.6
 [0.41.5]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.5
 [0.41.3]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.3
