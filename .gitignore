@@ -111,3 +111,6 @@ logs/
 puppet/pkg/
 
 .claude/plans/
+
+# Graphify knowledge graph output
+graphify-out/
