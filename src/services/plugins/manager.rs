@@ -13,10 +13,11 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::invoke::{HandlerCall, HandlerInvoker, HookIndex, InvokeError, PluginHooks};
 use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
 use super::registry::Registry;
-use crate::db::{AuditRepository, PluginRepository};
+use crate::db::{AuditRepository, PluginEventsRepository, PluginRepository};
 use crate::models::*;
 
 pub const AUDIT_PLUGINS: &str = "plugins";
@@ -28,6 +29,11 @@ pub trait BuiltinPlugin: Send + Sync {
         Ok(())
     }
     fn on_disable(&self) {}
+    /// Runs an event, job or webhook handler. Must return quickly: it is
+    /// called on the async runtime, under the plugin's timeout.
+    fn handle(&self, _call: &HandlerCall) -> anyhow::Result<Value> {
+        Err(anyhow::anyhow!("this plugin has no handlers"))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -106,6 +112,9 @@ pub struct PluginManager {
     builtin_keys: Vec<(String, [u8; 32])>,
     builtin_runtimes: BTreeMap<String, Arc<dyn BuiltinPlugin>>,
     registry: RwLock<Arc<Registry>>,
+    hooks: RwLock<Arc<HookIndex>>,
+    /// Runs handlers of non-builtin runtimes (supplied by M20).
+    external_invoker: Option<Arc<dyn HandlerInvoker>>,
 }
 
 type Failure = (PluginState, &'static str, String);
@@ -119,6 +128,8 @@ impl PluginManager {
             builtin_keys: Vec::new(),
             builtin_runtimes: BTreeMap::new(),
             registry: RwLock::new(Arc::new(Registry::default())),
+            hooks: RwLock::new(Arc::new(HookIndex::default())),
+            external_invoker: None,
         }
     }
 
@@ -131,6 +142,19 @@ impl PluginManager {
     pub fn with_builtin_runtime(mut self, entry: &str, p: Arc<dyn BuiltinPlugin>) -> Self {
         self.builtin_runtimes.insert(entry.to_string(), p);
         self
+    }
+
+    pub fn with_invoker(mut self, invoker: Arc<dyn HandlerInvoker>) -> Self {
+        self.external_invoker = Some(invoker);
+        self
+    }
+
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub fn hooks(&self) -> Arc<HookIndex> {
+        self.hooks.read().map(|r| r.clone()).unwrap_or_default()
     }
 
     pub fn registry(&self) -> Arc<Registry> {
@@ -181,6 +205,7 @@ impl PluginManager {
         self.seed_builtin_keys().await?;
         let mut failed = Vec::new();
         let mut registry = Registry::default();
+        let mut hooks = HookIndex::default();
         for p in self.repo().list_plugins().await? {
             if p.state != PluginState::Enabled {
                 continue;
@@ -189,7 +214,10 @@ impl PluginManager {
                 continue;
             };
             match self.load_verified(&p.id, &version).await {
-                Ok((pkg, _)) => registry.add_plugin(&pkg),
+                Ok((pkg, _)) => {
+                    registry.add_plugin(&pkg);
+                    hooks.add(PluginHooks::from_package(&pkg));
+                }
                 Err((state, code, msg)) => {
                     tracing::error!("plugin {} failed verification: {}", p.id, msg);
                     self.repo().set_state(&p.id, state, Some(code)).await?;
@@ -208,6 +236,9 @@ impl PluginManager {
         }
         if let Ok(mut r) = self.registry.write() {
             *r = Arc::new(registry);
+        }
+        if let Ok(mut h) = self.hooks.write() {
+            *h = Arc::new(hooks);
         }
         Ok(failed)
     }
@@ -639,6 +670,9 @@ impl PluginManager {
         let rec = self.require(id).await?;
         self.notify_disable(&rec).await;
         self.repo().delete_plugin(id).await?;
+        PluginEventsRepository::new(&self.pool)
+            .delete_plugin_events(id)
+            .await?;
         let _ = tokio::fs::remove_dir_all(self.data_dir.join("packages").join(id)).await;
         self.reload().await?;
         Ok(())
@@ -972,6 +1006,30 @@ fn validate_scope(ids: Option<&[String]>) -> Result<(), PluginError> {
         }
     }
     Ok(())
+}
+
+#[async_trait::async_trait]
+impl HandlerInvoker for PluginManager {
+    async fn invoke(&self, call: HandlerCall) -> Result<Value, InvokeError> {
+        use crate::models::RuntimeKind;
+        match call.runtime.kind {
+            RuntimeKind::Builtin => {
+                let entry = call.runtime.entry.clone().unwrap_or_default();
+                let rt = self.builtin_runtimes.get(&entry).ok_or_else(|| {
+                    InvokeError::Unavailable(format!("no built-in plugin '{}'", entry))
+                })?;
+                rt.handle(&call)
+                    .map_err(|e| InvokeError::Failed(e.to_string()))
+            }
+            _ => match &self.external_invoker {
+                Some(inv) => inv.invoke(call).await,
+                None => Err(InvokeError::Unavailable(format!(
+                    "the {} runtime is not available",
+                    call.runtime.kind.as_str()
+                ))),
+            },
+        }
+    }
 }
 
 /// Re-verifies the enabled plugins periodically, so tampering with a stored

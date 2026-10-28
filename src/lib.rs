@@ -66,6 +66,8 @@ pub struct AppState {
     pub notification_service: Arc<NotificationService>,
     /// Plugin manager (packages, trusted keys, slot registry)
     pub plugin_manager: Arc<PluginManager>,
+    /// Plugin event bus, jobs and webhooks
+    pub plugin_runtime: Arc<services::plugins::PluginRuntime>,
 }
 
 impl AppState {

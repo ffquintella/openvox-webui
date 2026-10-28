@@ -133,6 +133,7 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
     }
 
     validate_contributions(&mut p, m, files, &names);
+    validate_hooks(&mut p, m, &names);
 
     if let Some(mig) = &m.migrations {
         if !safe_package_path(&mig.dir) {
@@ -295,6 +296,114 @@ fn validate_contributions(
                         "changing core menu items needs ui:slot:nav.main or ui:slot:nav.admin"
                             .to_string(),
                     );
+                }
+            }
+        }
+    }
+}
+
+/// Converts a five-field cron expression to the seven-field form of the
+/// `cron` crate (seconds fixed at 0, any year).
+pub fn parse_cron(expr: &str) -> Result<cron::Schedule, String> {
+    let fields = expr.split_whitespace().count();
+    if fields != 5 {
+        return Err(format!("cron '{}' must have 5 fields", expr));
+    }
+    format!("0 {}", expr)
+        .parse::<cron::Schedule>()
+        .map_err(|e| format!("cron '{}' is invalid: {}", expr, e))
+}
+
+fn validate_hooks(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<String>) {
+    use super::filter::{pattern_matches, valid_event_pattern, valid_event_type, Filter};
+
+    match m.events_decl() {
+        Err(e) => p.push(e),
+        Ok(ev) => {
+            if !ev.subscribe.is_empty() && !caps.contains("events:subscribe") {
+                p.push("events.subscribe needs the capability events:subscribe".to_string());
+            }
+            if ev.subscribe.len() > 64 {
+                p.push("events.subscribe has more than 64 entries".to_string());
+            }
+            for s in &ev.subscribe {
+                if !valid_event_pattern(&s.event_type) {
+                    p.push(format!("event pattern '{}' is invalid", s.event_type));
+                }
+                if let Some(f) = &s.filter {
+                    if let Err(e) = Filter::parse(f) {
+                        p.push(format!("filter of '{}': {}", s.event_type, e));
+                    }
+                }
+                if let Some(h) = &s.handler {
+                    if !valid_local_id(h) {
+                        p.push(format!("event handler '{}' is invalid", h));
+                    }
+                }
+            }
+            let own = format!("{}.", m.id);
+            for name in &ev.publish {
+                if !valid_event_type(name) || !name.starts_with(&own) {
+                    p.push(format!(
+                        "published event '{}' must be a valid type under '{}*'",
+                        name, own
+                    ));
+                    continue;
+                }
+                let covered = caps.iter().any(|c| {
+                    c.strip_prefix("events:publish:")
+                        .is_some_and(|pat| pattern_matches(pat, name))
+                });
+                if !covered {
+                    p.push(format!(
+                        "published event '{}' needs a matching events:publish:<pattern> capability",
+                        name
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut seen = BTreeSet::new();
+    match m.job_decls() {
+        Err(e) => p.push(e),
+        Ok(jobs) => {
+            if jobs.len() > 32 {
+                p.push("more than 32 jobs declared".to_string());
+            }
+            for j in &jobs {
+                if !valid_local_id(&j.id) || !seen.insert(j.id.clone()) {
+                    p.push(format!("job id '{}' is invalid or repeated", j.id));
+                }
+                if let Err(e) = parse_cron(&j.cron) {
+                    p.push(e);
+                }
+                if !valid_local_id(&j.handler) {
+                    p.push(format!("job handler '{}' is invalid", j.handler));
+                }
+            }
+        }
+    }
+
+    let mut seen = BTreeSet::new();
+    match m.webhook_decls() {
+        Err(e) => p.push(e),
+        Ok(hooks) => {
+            if hooks.len() > 16 {
+                p.push("more than 16 webhooks declared".to_string());
+            }
+            for h in &hooks {
+                if !valid_local_id(&h.id) || !seen.insert(h.id.clone()) {
+                    p.push(format!("webhook id '{}' is invalid or repeated", h.id));
+                }
+                if h.auth != "hmac-sha256" {
+                    p.push(format!(
+                        "webhook '{}': auth must be hmac-sha256 (unsigned webhooks are not allowed)",
+                        h.id
+                    ));
+                }
+                if !valid_local_id(&h.handler) {
+                    p.push(format!("webhook handler '{}' is invalid", h.handler));
                 }
             }
         }

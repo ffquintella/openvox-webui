@@ -26,6 +26,7 @@ mod nodes;
 mod notifications;
 mod organizations;
 mod permissions;
+mod plugin_events;
 mod plugins;
 mod query;
 mod reports;
@@ -56,6 +57,8 @@ pub fn public_routes() -> Router<AppState> {
         .nest("/settings", settings::public_routes())
         // Bootstrap script endpoints (no auth required for node enrollment)
         .nest("/bootstrap", bootstrap::public_routes())
+        // Signed plugin webhooks (HMAC instead of a session)
+        .nest("/plugins", plugins::public_routes())
 }
 
 /// Protected API routes (authentication required)

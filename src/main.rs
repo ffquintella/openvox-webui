@@ -392,6 +392,11 @@ async fn main() -> Result<()> {
         Err(e) => warn!("Plugin manager startup failed: {}", e),
     }
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
+    let plugin_runtime = services::plugins::PluginRuntime::new(
+        plugin_manager.clone(),
+        config.plugins.events.clone(),
+    );
+    plugin_runtime.start();
 
     // Create application state
     let state = AppState {
@@ -408,6 +413,7 @@ async fn main() -> Result<()> {
         backup_config,
         notification_service,
         plugin_manager,
+        plugin_runtime,
     };
 
     // Build the router

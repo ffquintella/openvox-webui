@@ -80,6 +80,99 @@ pub struct PluginsConfig {
     /// Largest accepted `.ovxp` upload, in megabytes
     #[serde(default = "default_plugin_max_package_mb")]
     pub max_package_mb: u64,
+    /// Event bus, jobs and webhooks
+    #[serde(default)]
+    pub events: PluginEventsConfig,
+}
+
+/// Event bus, scheduled jobs and webhook limits for plugins
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginEventsConfig {
+    /// How often the dispatcher looks for due deliveries (milliseconds)
+    #[serde(default = "default_dispatch_interval_ms")]
+    pub dispatch_interval_ms: u64,
+    /// Deliveries claimed per dispatcher tick
+    #[serde(default = "default_dispatch_batch")]
+    pub batch_size: u32,
+    /// Attempts before a delivery is dead-lettered
+    #[serde(default = "default_event_max_attempts")]
+    pub max_attempts: u32,
+    /// First retry delay (seconds); doubles on each attempt
+    #[serde(default = "default_retry_base_secs")]
+    pub retry_base_secs: u64,
+    /// Upper bound of the retry delay (seconds)
+    #[serde(default = "default_retry_max_secs")]
+    pub retry_max_secs: u64,
+    /// Days to keep handled events and job runs
+    #[serde(default = "default_event_retention_days")]
+    pub retention_days: u32,
+    /// Concurrent handler calls per plugin (bulkhead)
+    #[serde(default = "default_per_plugin_concurrency")]
+    pub per_plugin_concurrency: u32,
+    /// Job scheduler tick (seconds)
+    #[serde(default = "default_job_tick_secs")]
+    pub job_tick_secs: u64,
+    /// Largest accepted inbound webhook body (kilobytes)
+    #[serde(default = "default_webhook_max_body_kb")]
+    pub webhook_max_body_kb: u64,
+    /// Inbound webhook requests per minute per (plugin, hook)
+    #[serde(default = "default_webhook_rate_per_minute")]
+    pub webhook_rate_per_minute: u32,
+    /// Accepted clock skew of inbound webhook timestamps (seconds)
+    #[serde(default = "default_webhook_replay_window_secs")]
+    pub webhook_replay_window_secs: i64,
+}
+
+fn default_dispatch_interval_ms() -> u64 {
+    1000
+}
+fn default_dispatch_batch() -> u32 {
+    100
+}
+fn default_event_max_attempts() -> u32 {
+    8
+}
+fn default_retry_base_secs() -> u64 {
+    30
+}
+fn default_retry_max_secs() -> u64 {
+    3600
+}
+fn default_event_retention_days() -> u32 {
+    7
+}
+fn default_per_plugin_concurrency() -> u32 {
+    4
+}
+fn default_job_tick_secs() -> u64 {
+    15
+}
+fn default_webhook_max_body_kb() -> u64 {
+    256
+}
+fn default_webhook_rate_per_minute() -> u32 {
+    120
+}
+fn default_webhook_replay_window_secs() -> i64 {
+    300
+}
+
+impl Default for PluginEventsConfig {
+    fn default() -> Self {
+        Self {
+            dispatch_interval_ms: default_dispatch_interval_ms(),
+            batch_size: default_dispatch_batch(),
+            max_attempts: default_event_max_attempts(),
+            retry_base_secs: default_retry_base_secs(),
+            retry_max_secs: default_retry_max_secs(),
+            retention_days: default_event_retention_days(),
+            per_plugin_concurrency: default_per_plugin_concurrency(),
+            job_tick_secs: default_job_tick_secs(),
+            webhook_max_body_kb: default_webhook_max_body_kb(),
+            webhook_rate_per_minute: default_webhook_rate_per_minute(),
+            webhook_replay_window_secs: default_webhook_replay_window_secs(),
+        }
+    }
 }
 
 fn default_plugins_dir() -> PathBuf {
@@ -95,6 +188,7 @@ impl Default for PluginsConfig {
         Self {
             data_dir: default_plugins_dir(),
             max_package_mb: default_plugin_max_package_mb(),
+            events: PluginEventsConfig::default(),
         }
     }
 }

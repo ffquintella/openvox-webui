@@ -297,3 +297,193 @@ async fn trusted_key_management_requires_password_and_blocks_removal_in_use() {
     assert_eq!(r.status.as_u16(), 422);
     assert_eq!(r.json::<Value>()["code"], "signature_rejected");
 }
+
+#[tokio::test]
+async fn events_jobs_and_webhooks_endpoints_enforce_permissions() {
+    let app = TestApp::new().await;
+    for path in [
+        "/api/v1/plugins/events/stats",
+        "/api/v1/plugins/events/deliveries",
+        "/api/v1/plugins/jobs",
+        "/api/v1/plugins/webhooks/outbound",
+    ] {
+        app.get(path).await.assert_unauthorized();
+    }
+
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    for (method, path) in [
+        ("GET", "/api/v1/plugins/events/stats"),
+        ("GET", "/api/v1/plugins/jobs"),
+        ("GET", "/api/v1/plugins/webhooks/outbound"),
+        ("POST", "/api/v1/plugins/events/deliveries/1/retry"),
+        ("POST", "/api/v1/plugins/demo/jobs/j/run"),
+        ("POST", "/api/v1/plugins/demo/webhooks/h/secret"),
+        ("POST", "/api/v1/plugins/webhooks/outbound"),
+    ] {
+        let body = json_body(json!({
+            "name": "x", "url": "https://hooks.example.com/a", "event_types": ["node.*"]
+        }));
+        send(&app, &viewer, method, path, body, JSON)
+            .await
+            .assert_forbidden();
+    }
+}
+
+#[tokio::test]
+async fn outbound_webhooks_are_managed_through_the_api_and_secrets_are_shown_once() {
+    let app = TestApp::new().await;
+    let token = admin_token(&app).await;
+    let create = |body: Value| {
+        let (app, token) = (&app, &token);
+        async move {
+            send(
+                app,
+                token,
+                "POST",
+                "/api/v1/plugins/webhooks/outbound",
+                json_body(body),
+                JSON,
+            )
+            .await
+        }
+    };
+
+    // http, loopback, bad patterns and bad filters are refused.
+    for bad in [
+        json!({"name": "x", "url": "http://hooks.example.com/a", "event_types": ["node.*"]}),
+        json!({"name": "x", "url": "https://169.254.169.254/a", "event_types": ["node.*"]}),
+        json!({"name": "x", "url": "https://hooks.example.com/a", "event_types": ["Bad Pattern"]}),
+        json!({"name": "x", "url": "https://hooks.example.com/a", "event_types": ["node.*"], "filter": "a =="}),
+        json!({"name": "x", "url": "https://hooks.example.com/a", "event_types": []}),
+    ] {
+        assert_eq!(create(bad).await.status, 400);
+    }
+
+    let r = create(json!({
+        "name": "crm", "url": "https://hooks.example.com/a",
+        "event_types": ["node.*"], "filter": "certname ~ 'web'"
+    }))
+    .await;
+    assert_eq!(r.status, 201);
+    let created: Value = r.json();
+    let id = created["id"].as_str().unwrap().to_string();
+    assert!(created["secret"].as_str().unwrap().starts_with("whsec_"));
+
+    let list = send(
+        &app,
+        &token,
+        "GET",
+        "/api/v1/plugins/webhooks/outbound",
+        vec![],
+        &[],
+    )
+    .await;
+    list.assert_ok();
+    let list: Value = list.json();
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert!(list[0].get("secret").is_none());
+
+    let r = send(
+        &app,
+        &token,
+        "PATCH",
+        &format!("/api/v1/plugins/webhooks/outbound/{id}"),
+        json_body(json!({"enabled": false, "filter": null})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let v: Value = r.json();
+    assert_eq!(
+        (v["enabled"].clone(), v["filter"].clone()),
+        (json!(false), Value::Null)
+    );
+
+    let r = send(
+        &app,
+        &token,
+        "POST",
+        &format!("/api/v1/plugins/webhooks/outbound/{id}/secret"),
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    assert_ne!(r.json::<Value>()["secret"], created["secret"]);
+
+    let r = send(
+        &app,
+        &token,
+        "DELETE",
+        &format!("/api/v1/plugins/webhooks/outbound/{id}"),
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, 204);
+    let r = send(
+        &app,
+        &token,
+        "DELETE",
+        &format!("/api/v1/plugins/webhooks/outbound/{id}"),
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, 404);
+
+    let stats = send(
+        &app,
+        &token,
+        "GET",
+        "/api/v1/plugins/events/stats",
+        vec![],
+        &[],
+    )
+    .await;
+    stats.assert_ok();
+    assert_eq!(stats.json::<Value>()["dead_letters"], 0);
+    let r = send(
+        &app,
+        &token,
+        "GET",
+        "/api/v1/plugins/events/deliveries?status=bogus",
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, 400);
+    let r = send(
+        &app,
+        &token,
+        "POST",
+        "/api/v1/plugins/events/deliveries/999/retry",
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, 404);
+}
+
+#[tokio::test]
+async fn inbound_webhook_route_is_public_but_reveals_nothing_for_unknown_hooks() {
+    let app = TestApp::new().await;
+    // No session needed; an unknown plugin or hook is a plain 404, never a 401 from the auth layer.
+    let r = app
+        .request(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/plugins/ghost/webhooks/inbound")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(r.status, 404);
+}

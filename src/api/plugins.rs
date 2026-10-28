@@ -29,6 +29,19 @@ use crate::{
 
 const MAX_UPLOAD_BYTES: usize = 40 * 1024 * 1024;
 
+/// Emits a platform event with the acting user as actor; never fails the request.
+async fn emit(state: &AppState, user: &AuthUser, event_type: &str, payload: serde_json::Value) {
+    state
+        .plugin_runtime
+        .events
+        .emit(event_type, payload, EventActor::user(user.username.clone()))
+        .await;
+}
+
+pub fn public_routes() -> Router<AppState> {
+    super::plugin_events::public_routes()
+}
+
 pub fn routes() -> Router<AppState> {
     let upload = Router::new()
         .route("/", post(install))
@@ -37,6 +50,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_plugins))
         .merge(upload)
+        .merge(super::plugin_events::routes())
         .route("/ui/slots", get(ui_slots))
         .route(
             "/ui/contributions/{plugin_id}/{contribution_id}",
@@ -55,7 +69,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Error type of this module: service errors keep their machine-readable code.
-pub enum ApiError {
+pub(super) enum ApiError {
     Plugin(PluginError),
     App(AppError),
 }
@@ -107,7 +121,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-type ApiResult<T> = Result<T, ApiError>;
+pub(super) type ApiResult<T> = Result<T, ApiError>;
 
 async fn allowed(
     state: &AppState,
@@ -123,7 +137,7 @@ async fn allowed(
         .map_err(|e| AppError::internal(format!("Permission check failed: {}", e)))
 }
 
-async fn require(
+pub(super) async fn require(
     state: &AppState,
     user: &AuthUser,
     resource: Resource,
@@ -230,6 +244,13 @@ async fn install(
     let id = out.detail.summary.id.clone();
     let version = out.detail.summary.active_version.clone();
     if let Some(key_id) = &out.trusted_key_id {
+        emit(
+            &state,
+            &user,
+            "plugin.trust.key_added",
+            json!({"key_id": key_id, "during_install_of": id}),
+        )
+        .await;
         state
             .plugin_manager
             .audit(
@@ -262,6 +283,17 @@ async fn install(
             }),
         )
         .await;
+    emit(
+        &state,
+        &user,
+        if out.upgraded_from.is_some() {
+            "plugin.upgraded"
+        } else {
+            "plugin.installed"
+        },
+        json!({"plugin_id": id, "version": version, "upgraded_from": out.upgraded_from}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(out.detail)))
 }
 
@@ -284,7 +316,17 @@ async fn lifecycle(
             json!({"actor": user.username, "outcome": outcome, "error": detail.as_ref().err().map(|e| e.to_string())}),
         )
         .await;
-    Ok(Json(detail?))
+    let detail = detail?;
+    if matches!(action, "plugin.enabled" | "plugin.disabled") {
+        emit(
+            state,
+            user,
+            action,
+            json!({"plugin_id": id, "version": detail.summary.active_version}),
+        )
+        .await;
+    }
+    Ok(Json(detail))
 }
 
 async fn enable(
@@ -379,6 +421,13 @@ async fn add_key(
                    "allowed_plugin_ids": key.allowed_plugin_ids}),
         )
         .await;
+    emit(
+        &state,
+        &user,
+        "plugin.trust.key_added",
+        json!({"key_id": key.key_id, "label": key.label}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(key)))
 }
 
@@ -428,6 +477,13 @@ async fn revoke_key(
             json!({"actor": user.username, "reason": req.reason, "affected_plugins": affected}),
         )
         .await;
+    emit(
+        &state,
+        &user,
+        "plugin.trust.key_revoked",
+        json!({"key_id": key_id, "affected_plugins": affected}),
+    )
+    .await;
     Ok(Json(key))
 }
 

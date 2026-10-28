@@ -105,6 +105,11 @@ impl TestApp {
             8,
         ));
 
+        let plugin_runtime = openvox_webui::services::plugins::PluginRuntime::new(
+            plugin_manager.clone(),
+            Default::default(),
+        );
+
         // Create application state
         let state = AppState {
             config,
@@ -120,6 +125,7 @@ impl TestApp {
             backup_config: None,
             notification_service,
             plugin_manager,
+            plugin_runtime,
         };
 
         // Build the router

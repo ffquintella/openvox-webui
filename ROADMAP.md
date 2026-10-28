@@ -225,9 +225,9 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > phase: P3
 > spec: S21, S23
 
-- [ ] T77 Add event bus with outbox and dispatcher (S21)
-- [ ] T78 Add scheduled plugin jobs (S21)
-- [ ] T79 Add inbound and outbound webhooks (S21)
+- [x] T77 Add event bus with outbox and dispatcher (S21)
+- [x] T78 Add scheduled plugin jobs (S21)
+- [x] T79 Add inbound and outbound webhooks (S21)
 
 ## [M22] Telemetry and Governance
 > outcome: Administrators can monitor plugins, and a failing or abusive plugin is isolated by quotas and a circuit breaker.

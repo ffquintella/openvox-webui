@@ -213,6 +213,7 @@ pub fn check_permission(
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();
+/// let plugin_manager = Arc::new(openvox_webui::services::plugins::PluginManager::new(db.clone(), "/tmp/plugins".into(), 1));
 /// let state = AppState {
 ///     config,
 ///     db: db.clone(),
@@ -231,7 +232,8 @@ pub fn check_permission(
 ///     code_deploy_config: None,
 ///     backup_config: None,
 ///     notification_service: Arc::new(NotificationService::new(db.clone())),
-///     plugin_manager: Arc::new(openvox_webui::services::plugins::PluginManager::new(db.clone(), "/tmp/plugins".into(), 1)),
+///     plugin_manager: plugin_manager.clone(),
+///     plugin_runtime: openvox_webui::services::plugins::PluginRuntime::new(plugin_manager, Default::default()),
 /// };
 ///
 /// let app = Router::<AppState>::new()
