@@ -115,6 +115,9 @@ tar = "0.4"
 ed25519-dalek = "2.2"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 semver = "1"
+# Plugin runtime (M20): sandboxed WASM handlers and per-plugin SQLite limits
+wasmtime = { version = "50", default-features = false, features = ["runtime", "cranelift", "std"] }
+libsqlite3-sys = { version = "0.30", default-features = false }
 
 # SAML 2.0 authentication
 # Without xmlsec feature, no signature verification (development mode)
@@ -139,6 +142,8 @@ wiremock = "0.6"
 fake = { version = "5.1", features = ["derive"] }
 rstest = "0.27"
 bytes = "1.11"
+wat = "1"
+tempfile = "3"
 
 [[bin]]
 name = "openvox-webui"

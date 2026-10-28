@@ -107,6 +107,15 @@ pub enum CapabilityDecl {
 pub struct Capability {
     pub name: String,
     pub scope: Option<Value>,
+    /// The plugin works in a degraded mode without it (`optional: true`).
+    pub optional: bool,
+}
+
+impl Capability {
+    /// Same capability and scope, ignoring whether it is optional.
+    pub fn same_grant(&self, other: &Capability) -> bool {
+        self.name == other.name && self.scope == other.scope
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -310,6 +319,9 @@ impl PluginState {
 pub struct PluginRecord {
     pub id: String,
     pub active_version: Option<String>,
+    /// Newer version waiting for the capabilities it adds to be approved.
+    pub pending_version: Option<String>,
+    pub schema_version: u32,
     pub state: PluginState,
     pub state_reason: Option<String>,
     pub installed_by: Option<String>,
@@ -403,8 +415,39 @@ pub enum RiskLevel {
 pub struct CapabilityInfo {
     pub name: String,
     pub scope: Option<Value>,
+    pub optional: bool,
     pub risk: RiskLevel,
     pub description: String,
+}
+
+/// A declared capability with the administrator's decision.
+#[derive(Debug, Clone, Serialize)]
+pub struct CapabilityApproval {
+    #[serde(flatten)]
+    pub info: CapabilityInfo,
+    pub granted: bool,
+    /// Denied by `plugins.policy` and so impossible to approve.
+    pub blocked_by_policy: bool,
+}
+
+/// One approved capability (`plugin_grants`).
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginGrant {
+    pub plugin_id: String,
+    pub capability: String,
+    pub scope: Option<Value>,
+    pub granted_by: Option<String>,
+    pub granted_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApproveCapabilitiesRequest {
+    /// Version the approval is for; defaults to the pending version if there
+    /// is one, otherwise the active one.
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Capabilities to approve; every other declared one is not granted.
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -442,6 +485,7 @@ pub struct PluginSummary {
     pub active_version: Option<String>,
     pub state: PluginState,
     pub state_reason: Option<String>,
+    pub pending_version: Option<String>,
     pub runtime_kind: Option<RuntimeKind>,
     pub signer_key_id: Option<String>,
     pub signer_label: Option<String>,
@@ -456,6 +500,9 @@ pub struct PluginDetail {
     pub summary: PluginSummary,
     pub manifest: Option<PluginManifest>,
     pub capabilities: Vec<CapabilityInfo>,
+    /// Approval state of the capabilities of the pending version if there
+    /// is one, otherwise of the active version.
+    pub approvals: Vec<CapabilityApproval>,
     pub versions: Vec<PluginVersionRecord>,
 }
 

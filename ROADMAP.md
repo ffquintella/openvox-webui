@@ -16,7 +16,7 @@ OpenVox WebUI is a web interface for managing and monitoring OpenVox infrastruct
 
 Detailed documentation for implemented features is in [docs/implemented-features/](docs/implemented-features/). Reference material that used to live in this file (key features, roles and permissions, API reference, installation, development guidelines, version history, references) is now in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md). The format of this file and `CHANGELOG.md` is defined by the Project Tracking Format (PTF) v1.
 
-Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures) and M21 (events, jobs and webhooks) are done; M20 (WASM runtime and host API) is next and unblocks running WASM handlers for M21.
+Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API) and M21 (events, jobs and webhooks) are done; M22 (telemetry and governance) is next.
 
 ## [M1] Foundation
 > outcome: The project builds, runs, has its RBAC foundation in place and is covered by an automated test setup.
@@ -215,10 +215,10 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > phase: P3
 > spec: S21, S23
 
-- [ ] T73 Add WASM runtime and host API (S21)
-- [ ] T74 Add capability gate and approval flow (S21)
-- [ ] T75 Provide kv and db:own storage with migrations (S21)
-- [ ] T76 Add lifecycle hooks and resource limits (S21)
+- [x] T73 Add WASM runtime and host API (S21)
+- [x] T74 Add capability gate and approval flow (S21)
+- [x] T75 Provide kv and db:own storage with migrations (S21)
+- [x] T76 Add lifecycle hooks and resource limits (S21)
 
 ## [M21] Events, Jobs and Webhooks
 > outcome: Plugins react to events, run scheduled jobs and exchange signed webhooks.

@@ -3,6 +3,7 @@
 
 pub mod events;
 pub mod filter;
+pub mod host;
 pub mod invoke;
 pub mod jobs;
 pub mod manager;
@@ -10,6 +11,8 @@ pub mod manifest;
 pub mod package;
 pub mod registry;
 pub mod runtime;
+pub mod storage;
+pub mod wasm;
 pub mod webhooks;
 
 pub use manager::{

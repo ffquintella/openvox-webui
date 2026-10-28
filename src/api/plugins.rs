@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -66,6 +66,12 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/enable", post(enable))
         .route("/{id}/disable", post(disable))
         .route("/{id}/verify", post(verify))
+        .route(
+            "/{id}/capabilities",
+            get(get_capabilities).put(approve_capabilities),
+        )
+        .route("/{id}/config", get(get_config).put(put_config))
+        .route("/{id}/storage", get(get_storage))
 }
 
 /// Error type of this module: service errors keep their machine-readable code.
@@ -363,9 +369,10 @@ async fn uninstall(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
+    Query(q): Query<UninstallQuery>,
 ) -> ApiResult<StatusCode> {
     require(&state, &user, Resource::Plugins, Action::Admin).await?;
-    state.plugin_manager.uninstall(&id).await?;
+    state.plugin_manager.uninstall(&id, q.purge).await?;
     state
         .plugin_manager
         .audit(
@@ -374,7 +381,7 @@ async fn uninstall(
             AUDIT_PLUGINS,
             "plugin.uninstalled",
             &id,
-            json!({"actor": user.username}),
+            json!({"actor": user.username, "purge": q.purge}),
         )
         .await;
     Ok(StatusCode::NO_CONTENT)
@@ -566,4 +573,121 @@ async fn ui_contribution(
     found
         .map(Json)
         .ok_or_else(|| AppError::not_found("Contribution not found").into())
+}
+
+#[derive(serde::Deserialize, Default)]
+struct UninstallQuery {
+    /// Also delete the plugin's kv entries and private database.
+    #[serde(default)]
+    purge: bool,
+}
+
+async fn get_capabilities(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<CapabilityApproval>>> {
+    require(&state, &user, Resource::Plugins, Action::Read).await?;
+    Ok(Json(state.plugin_manager.get(&id).await?.approvals))
+}
+
+async fn approve_capabilities(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<ApproveCapabilitiesRequest>,
+) -> ApiResult<Json<PluginDetail>> {
+    require(&state, &user, Resource::Plugins, Action::Admin).await?;
+    let r = state
+        .plugin_manager
+        .approve_capabilities(&id, &req, &user.username)
+        .await;
+    if r.is_ok() {
+        emit(
+            &state,
+            &user,
+            "plugin.capabilities_approved",
+            json!({"plugin": id, "capabilities": req.capabilities}),
+        )
+        .await;
+    }
+    Ok(Json(r?))
+}
+
+const MAX_CONFIG_BYTES: usize = 64 * 1024;
+
+async fn get_config(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require(&state, &user, Resource::Plugins, Action::Admin).await?;
+    state.plugin_manager.get(&id).await?;
+    let cfg = crate::db::PluginRepository::new(state.plugin_manager.pool())
+        .get_config(&id)
+        .await
+        .map_err(PluginError::Internal)?;
+    Ok(Json(serde_json::Value::Object(cfg)))
+}
+
+async fn put_config(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(values): Json<serde_json::Map<String, serde_json::Value>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require(&state, &user, Resource::Plugins, Action::Admin).await?;
+    state.plugin_manager.get(&id).await?;
+    let size = serde_json::to_vec(&values)
+        .map(|v| v.len())
+        .unwrap_or(usize::MAX);
+    if size > MAX_CONFIG_BYTES || values.keys().any(|k| k.is_empty() || k.len() > 128) {
+        return Err(PluginError::BadRequest(
+            "Settings are limited to 64 KB and keys of 1 to 128 characters".into(),
+        )
+        .into());
+    }
+    crate::db::PluginRepository::new(state.plugin_manager.pool())
+        .replace_config(&id, &values, &user.username)
+        .await
+        .map_err(PluginError::Internal)?;
+    state
+        .plugin_manager
+        .audit(
+            user.organization_id,
+            Some(user.id),
+            AUDIT_PLUGINS,
+            "plugin.config_changed",
+            &id,
+            json!({"actor": user.username, "keys": values.keys().collect::<Vec<_>>()}),
+        )
+        .await;
+    Ok(Json(serde_json::Value::Object(values)))
+}
+
+async fn get_storage(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require(&state, &user, Resource::Plugins, Action::Read).await?;
+    let detail = state.plugin_manager.get(&id).await?;
+    let Some(storage) = state.plugin_manager.storage() else {
+        return Ok(Json(json!({"available": false})));
+    };
+    let (keys, bytes) = storage
+        .kv_usage(&id)
+        .await
+        .map_err(|e| PluginError::Internal(anyhow::anyhow!(e.to_string())))?;
+    let schema = storage
+        .schema_version(&id)
+        .await
+        .map_err(|e| PluginError::Internal(anyhow::anyhow!(e.to_string())))?;
+    let _ = detail;
+    Ok(Json(json!({
+        "available": true,
+        "kv_keys": keys,
+        "kv_bytes": bytes,
+        "schema_version": schema,
+    })))
 }

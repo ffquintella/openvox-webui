@@ -25,6 +25,19 @@ pub enum HandlerKind {
     Event,
     Job,
     Webhook,
+    /// install, upgrade, enable, disable and uninstall hooks (M20)
+    Lifecycle,
+}
+
+impl HandlerKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HandlerKind::Event => "event",
+            HandlerKind::Job => "job",
+            HandlerKind::Webhook => "webhook",
+            HandlerKind::Lifecycle => "lifecycle",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

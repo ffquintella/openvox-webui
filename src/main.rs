@@ -377,11 +377,55 @@ async fn main() -> Result<()> {
     let _memory_monitor = services::start_memory_monitor(config.memory_monitor.clone());
 
     // Plugin manager: re-verifies enabled plugins and builds the slot registry
-    let plugin_manager = Arc::new(services::plugins::PluginManager::new(
-        db.clone(),
-        config.plugins.data_dir.clone(),
-        config.plugins.max_package_mb,
-    ));
+    let plugin_manager = Arc::new(
+        services::plugins::PluginManager::new(
+            db.clone(),
+            config.plugins.data_dir.clone(),
+            config.plugins.max_package_mb,
+        )
+        .with_policy(config.plugins.policy.clone()),
+    );
+    // WASM runtime: sandboxed handlers with kv and private-database storage
+    {
+        use services::plugins::{
+            host::{HostApiImpl, PackageModuleSource},
+            storage::{PluginStorage, StorageLimits},
+            wasm::{WasmConfig, WasmInvoker},
+        };
+        let w = &config.plugins.wasm;
+        let storage = Arc::new(PluginStorage::new(
+            db.clone(),
+            config.plugins.data_dir.clone(),
+            StorageLimits {
+                kv_max_keys: w.kv_max_keys,
+                kv_max_bytes: w.kv_max_mb * 1024 * 1024,
+                db_max_bytes: w.db_max_mb * 1024 * 1024,
+                ..Default::default()
+            },
+        ));
+        let host = Arc::new(HostApiImpl::new(
+            &plugin_manager,
+            config.plugins.policy.clone(),
+            storage.clone(),
+            puppetdb.clone(),
+        ));
+        let source = Arc::new(PackageModuleSource {
+            data_dir: config.plugins.data_dir.clone(),
+            max_package_bytes: config.plugins.max_package_mb.max(1) * 1024 * 1024,
+        });
+        let wasm_cfg = WasmConfig {
+            default_memory_mb: w.default_memory_mb,
+            max_memory_mb: w.max_memory_mb,
+            default_fuel: w.default_fuel,
+            max_fuel: w.max_fuel,
+            per_plugin_concurrency: config.plugins.events.per_plugin_concurrency,
+            ..Default::default()
+        };
+        match WasmInvoker::new(wasm_cfg, source, host) {
+            Ok(inv) => plugin_manager.attach_wasm(storage, Arc::new(inv)),
+            Err(e) => warn!("WASM plugin runtime unavailable: {}", e),
+        }
+    }
     match plugin_manager.reload().await {
         Ok(failed) if failed.is_empty() => {}
         Ok(failed) => warn!(

@@ -83,6 +83,88 @@ pub struct PluginsConfig {
     /// Event bus, jobs and webhooks
     #[serde(default)]
     pub events: PluginEventsConfig,
+    /// Policy ceiling for approvable capabilities
+    #[serde(default)]
+    pub policy: PluginPolicyConfig,
+    /// WASM runtime limits
+    #[serde(default)]
+    pub wasm: PluginWasmConfig,
+}
+
+/// Capabilities no administrator can approve (the ceiling of
+/// `declared ∩ approved ∩ policy`). Entries match exactly or by a trailing `*`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct PluginPolicyConfig {
+    #[serde(default)]
+    pub denied_capabilities: Vec<String>,
+}
+
+impl PluginPolicyConfig {
+    pub fn denies(&self, capability: &str) -> bool {
+        self.denied_capabilities
+            .iter()
+            .any(|p| match p.strip_suffix('*') {
+                Some(prefix) => capability.starts_with(prefix),
+                None => p == capability,
+            })
+    }
+}
+
+/// Resource ceilings of the WASM runtime (a plugin may ask for less)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginWasmConfig {
+    #[serde(default = "default_wasm_memory_mb")]
+    pub default_memory_mb: u64,
+    #[serde(default = "default_wasm_max_memory_mb")]
+    pub max_memory_mb: u64,
+    #[serde(default = "default_wasm_fuel")]
+    pub default_fuel: u64,
+    #[serde(default = "default_wasm_max_fuel")]
+    pub max_fuel: u64,
+    /// kv quota per plugin
+    #[serde(default = "default_kv_max_keys")]
+    pub kv_max_keys: u64,
+    #[serde(default = "default_kv_max_mb")]
+    pub kv_max_mb: u64,
+    /// db:own size cap per plugin
+    #[serde(default = "default_db_max_mb")]
+    pub db_max_mb: u64,
+}
+
+fn default_wasm_memory_mb() -> u64 {
+    32
+}
+fn default_wasm_max_memory_mb() -> u64 {
+    256
+}
+fn default_wasm_fuel() -> u64 {
+    50_000_000
+}
+fn default_wasm_max_fuel() -> u64 {
+    5_000_000_000
+}
+fn default_kv_max_keys() -> u64 {
+    10_000
+}
+fn default_kv_max_mb() -> u64 {
+    10
+}
+fn default_db_max_mb() -> u64 {
+    64
+}
+
+impl Default for PluginWasmConfig {
+    fn default() -> Self {
+        Self {
+            default_memory_mb: default_wasm_memory_mb(),
+            max_memory_mb: default_wasm_max_memory_mb(),
+            default_fuel: default_wasm_fuel(),
+            max_fuel: default_wasm_max_fuel(),
+            kv_max_keys: default_kv_max_keys(),
+            kv_max_mb: default_kv_max_mb(),
+            db_max_mb: default_db_max_mb(),
+        }
+    }
 }
 
 /// Event bus, scheduled jobs and webhook limits for plugins
@@ -189,6 +271,8 @@ impl Default for PluginsConfig {
             data_dir: default_plugins_dir(),
             max_package_mb: default_plugin_max_package_mb(),
             events: PluginEventsConfig::default(),
+            policy: PluginPolicyConfig::default(),
+            wasm: PluginWasmConfig::default(),
         }
     }
 }

@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 
-use crate::models::{KeyOrigin, PluginRecord, PluginState, PluginVersionRecord, TrustedKeyRecord};
+use crate::models::{
+    KeyOrigin, PluginGrant, PluginRecord, PluginState, PluginVersionRecord, TrustedKeyRecord,
+};
 
 pub struct PluginRepository<'a> {
     pool: &'a SqlitePool,
@@ -20,6 +22,8 @@ fn plugin_from_row(r: &sqlx::sqlite::SqliteRow) -> PluginRecord {
     PluginRecord {
         id: r.get("id"),
         active_version: r.get("active_version"),
+        pending_version: r.get("pending_version"),
+        schema_version: r.get::<i64, _>("schema_version").max(0) as u32,
         state: PluginState::parse(&r.get::<String, _>("state")),
         state_reason: r.get("state_reason"),
         installed_by: r.get("installed_by"),
@@ -296,6 +300,137 @@ impl<'a> PluginRepository<'a> {
             .execute(self.pool)
             .await
             .context("delete key")?;
+        Ok(())
+    }
+
+    // ---- grants, pending version, schema version, config -----------------
+
+    pub async fn list_grants(&self, plugin_id: &str) -> Result<Vec<PluginGrant>> {
+        let rows =
+            sqlx::query("SELECT * FROM plugin_grants WHERE plugin_id = ? ORDER BY capability")
+                .bind(plugin_id)
+                .fetch_all(self.pool)
+                .await
+                .context("list grants")?;
+        Ok(rows
+            .iter()
+            .map(|r| PluginGrant {
+                plugin_id: r.get("plugin_id"),
+                capability: r.get("capability"),
+                scope: r
+                    .get::<Option<String>, _>("scope_json")
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                granted_by: r.get("granted_by"),
+                granted_at: ts(&r.get::<String, _>("granted_at")),
+            })
+            .collect())
+    }
+
+    /// Replaces every grant of the plugin in one transaction.
+    pub async fn replace_grants(
+        &self,
+        plugin_id: &str,
+        grants: &[(String, Option<serde_json::Value>)],
+        granted_by: &str,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM plugin_grants WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .execute(&mut *tx)
+            .await?;
+        let now = Utc::now().to_rfc3339();
+        for (cap, scope) in grants {
+            sqlx::query(
+                "INSERT INTO plugin_grants (plugin_id, capability, scope_json, granted_by, granted_at)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(plugin_id)
+            .bind(cap)
+            .bind(scope.as_ref().map(|v| v.to_string()))
+            .bind(granted_by)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await.context("replace grants")?;
+        Ok(())
+    }
+
+    pub async fn delete_grants(&self, plugin_id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM plugin_grants WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .execute(self.pool)
+            .await
+            .context("delete grants")?;
+        Ok(())
+    }
+
+    pub async fn set_pending_version(&self, id: &str, version: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE plugins SET pending_version = ?, updated_at = ? WHERE id = ?")
+            .bind(version)
+            .bind(Utc::now().to_rfc3339())
+            .bind(id)
+            .execute(self.pool)
+            .await
+            .context("set pending version")?;
+        Ok(())
+    }
+
+    pub async fn set_schema_version(&self, id: &str, v: u32) -> Result<()> {
+        sqlx::query("UPDATE plugins SET schema_version = ? WHERE id = ?")
+            .bind(v as i64)
+            .bind(id)
+            .execute(self.pool)
+            .await
+            .context("set schema version")?;
+        Ok(())
+    }
+
+    pub async fn get_config(
+        &self,
+        plugin_id: &str,
+    ) -> Result<serde_json::Map<String, serde_json::Value>> {
+        let rows = sqlx::query("SELECT key, value_json FROM plugin_config WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .fetch_all(self.pool)
+            .await
+            .context("get config")?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| {
+                let v = serde_json::from_str(&r.get::<String, _>("value_json")).ok()?;
+                Some((r.get::<String, _>("key"), v))
+            })
+            .collect())
+    }
+
+    /// Replaces the plugin settings.
+    pub async fn replace_config(
+        &self,
+        plugin_id: &str,
+        values: &serde_json::Map<String, serde_json::Value>,
+        by: &str,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM plugin_config WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .execute(&mut *tx)
+            .await?;
+        let now = Utc::now().to_rfc3339();
+        for (k, v) in values {
+            sqlx::query(
+                "INSERT INTO plugin_config (plugin_id, key, value_json, updated_by, updated_at)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(plugin_id)
+            .bind(k)
+            .bind(v.to_string())
+            .bind(by)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await.context("replace config")?;
         Ok(())
     }
 }

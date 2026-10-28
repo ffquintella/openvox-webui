@@ -139,6 +139,9 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
         if !safe_package_path(&mig.dir) {
             p.push(format!("migrations.dir '{}' is not a safe path", mig.dir));
         }
+        if !names.contains("db:own") {
+            p.push("migrations need the capability db:own".to_string());
+        }
     }
     p
 }
@@ -483,12 +486,29 @@ pub fn normalize_capability(decl: &CapabilityDecl) -> Result<Capability, String>
         CapabilityDecl::Name(n) => Ok(Capability {
             name: n.clone(),
             scope: None,
+            optional: false,
         }),
         CapabilityDecl::Scoped(map) if map.len() == 1 => {
             let (k, v) = map.iter().next().expect("len checked");
+            // `optional` is a property of the declaration, not of the scope.
+            let mut scope = v.clone();
+            let mut optional = false;
+            if let Some(obj) = scope.as_object_mut() {
+                match obj.remove("optional") {
+                    None => {}
+                    Some(Value::Bool(b)) => optional = b,
+                    Some(_) => {
+                        return Err(format!("capability '{}': optional must be a boolean", k))
+                    }
+                }
+                if obj.is_empty() {
+                    scope = Value::Null;
+                }
+            }
             Ok(Capability {
                 name: k.clone(),
-                scope: Some(v.clone()),
+                scope: (!scope.is_null()).then_some(scope),
+                optional,
             })
         }
         CapabilityDecl::Scoped(_) => {
@@ -695,6 +715,7 @@ pub fn describe_capability(c: &Capability) -> CapabilityInfo {
     CapabilityInfo {
         name: c.name.clone(),
         scope: c.scope.clone(),
+        optional: c.optional,
         risk,
         description: text,
     }

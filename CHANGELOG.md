@@ -11,6 +11,13 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add the WASM runtime and host API for plugins (M20): `wasm` plugins run in wasmtime with a fresh store per call, fuel, a memory ceiling, a wall-clock deadline (epoch interruption), a per-plugin concurrency bulkhead and no WASI, files, network or clock; a trap, timeout or exhausted limit is a handled error that never affects the core or other plugins (T73, T76). Guests use a small JSON-over-memory ABI (`alloc`, `handle`, one `openvox.host_call` import) instead of the Component Model; this also makes `wasm` handlers of M21 events, jobs and webhooks run.
+- Add the capability gate and approval flow (M20): effective capabilities are `declared ∩ approved ∩ plugins.policy`; administrators approve per capability (`GET/PUT /api/v1/plugins/{id}/capabilities`, optional capabilities via `optional: true`), `enable` is refused with `capabilities_not_approved` until every required one is approved, `plugins.policy.denied_capabilities` is a ceiling no approval can exceed, and an upgrade that adds capabilities stays pending (`pending_version`) while the previous version keeps running until it is approved (T74).
+- Add plugin storage (M20): `kv` (quotas of 10,000 keys and 10 MB by default) and `db:own`, a private SQLite file per plugin with no `ATTACH`/`load_extension`/other schemas, a size cap and a per-query deadline, plus declarative `migrations/NNNN_name.up.sql|.down.sql` applied at enable and upgrade in one transaction each with checksums; `DELETE /api/v1/plugins/{id}?purge=true` deletes the data, `GET /api/v1/plugins/{id}/storage` shows usage and `GET/PUT /api/v1/plugins/{id}/config` stores settings (T75).
+- Add plugin lifecycle hooks (`install`, `upgrade`, `enable`, `disable`, `uninstall`) called under the plugin timeout and audited; a failing `install`, `enable` or `upgrade` hook aborts the change (T76).
+- Add the host API for plugins: `kv.*`, `db.query/exec`, `nodes.list/get`, `facts.get`, `reports.query`, `events.publish`, `audit.write`, `log.write`, `config.get` and `http.fetch` (https only, host allowlist, public addresses only after DNS resolution and on every redirect, 1 MiB responses). `email.send`, `notify.send` and `secrets.resolve` answer `unavailable` for now.
+
 ## [0.42.0] - 2026-10-28
 
 ### Added

@@ -6,17 +6,20 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::host::effective_capabilities;
 use super::invoke::{HandlerCall, HandlerInvoker, HookIndex, InvokeError, PluginHooks};
 use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
 use super::registry::Registry;
+use super::storage::{collect_migrations, PluginStorage};
+use super::wasm::WasmInvoker;
 use crate::db::{AuditRepository, PluginEventsRepository, PluginRepository};
 use crate::models::*;
 
@@ -101,6 +104,9 @@ pub struct TrustRequest {
 
 pub struct InstallOutcome {
     pub detail: PluginDetail,
+    /// The new version adds capabilities and waits for approval; the
+    /// previous version stays active.
+    pub pending_approval: bool,
     pub trusted_key_id: Option<String>,
     pub upgraded_from: Option<String>,
 }
@@ -114,7 +120,10 @@ pub struct PluginManager {
     registry: RwLock<Arc<Registry>>,
     hooks: RwLock<Arc<HookIndex>>,
     /// Runs handlers of non-builtin runtimes (supplied by M20).
-    external_invoker: Option<Arc<dyn HandlerInvoker>>,
+    external_invoker: OnceLock<Arc<dyn HandlerInvoker>>,
+    storage: OnceLock<Arc<PluginStorage>>,
+    wasm: OnceLock<Arc<WasmInvoker>>,
+    policy: crate::config::PluginPolicyConfig,
 }
 
 type Failure = (PluginState, &'static str, String);
@@ -129,7 +138,10 @@ impl PluginManager {
             builtin_runtimes: BTreeMap::new(),
             registry: RwLock::new(Arc::new(Registry::default())),
             hooks: RwLock::new(Arc::new(HookIndex::default())),
-            external_invoker: None,
+            external_invoker: OnceLock::new(),
+            storage: OnceLock::new(),
+            wasm: OnceLock::new(),
+            policy: Default::default(),
         }
     }
 
@@ -144,9 +156,30 @@ impl PluginManager {
         self
     }
 
-    pub fn with_invoker(mut self, invoker: Arc<dyn HandlerInvoker>) -> Self {
-        self.external_invoker = Some(invoker);
+    pub fn with_invoker(self, invoker: Arc<dyn HandlerInvoker>) -> Self {
+        let _ = self.external_invoker.set(invoker);
         self
+    }
+
+    pub fn with_policy(mut self, policy: crate::config::PluginPolicyConfig) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    pub fn policy(&self) -> &crate::config::PluginPolicyConfig {
+        &self.policy
+    }
+
+    /// Connects the WASM runtime and plugin storage. Set once at startup,
+    /// after the manager exists, because the host API needs the manager.
+    pub fn attach_wasm(&self, storage: Arc<PluginStorage>, wasm: Arc<WasmInvoker>) {
+        let _ = self.storage.set(storage);
+        let _ = self.external_invoker.set(wasm.clone());
+        let _ = self.wasm.set(wasm);
+    }
+
+    pub fn storage(&self) -> Option<&Arc<PluginStorage>> {
+        self.storage.get()
     }
 
     pub fn pool(&self) -> &SqlitePool {
@@ -412,8 +445,7 @@ impl PluginManager {
         Ok((result, pkg, pk))
     }
 
-    /// A new version of an installed plugin must be newer and must not ask
-    /// for capabilities the installed one lacks (approval arrives with M20).
+    /// A new version of an installed plugin must be newer.
     async fn check_upgrade(
         &self,
         pkg: &PluginPackage,
@@ -435,18 +467,9 @@ impl PluginManager {
         }
         if let Some(rec) = self.repo().get_version(&m.id, active).await? {
             if let Ok(old_m) = serde_json::from_str::<PluginManifest>(&rec.manifest_json) {
-                let had: Vec<_> = capabilities(&old_m);
-                let added: Vec<String> = capabilities(m)
-                    .into_iter()
-                    .filter(|c| !had.contains(c))
-                    .map(|c| c.name)
-                    .collect();
-                if !added.is_empty() {
-                    issues.push(format!(
-                        "adds capabilities that need administrator approval, which is not available yet: {}",
-                        added.join(", ")
-                    ));
-                }
+                // Added capabilities do not block the install: the new version
+                // waits for approval while the old one stays active.
+                let _ = old_m;
             }
         }
         Ok(())
@@ -563,6 +586,9 @@ impl PluginManager {
             signature: serde_json::to_string(&pkg.envelope)
                 .map_err(|e| PluginError::Internal(e.into()))?,
         };
+        let added = self
+            .added_capabilities(&pkg, upgraded_from.as_deref())
+            .await?;
         let db = async {
             if upgraded_from.is_none() {
                 self.repo()
@@ -570,8 +596,10 @@ impl PluginManager {
                     .await?;
             }
             self.repo().insert_version(&record).await?;
-            if upgraded_from.is_some() {
-                self.repo().set_active_version(&m.id, &m.version).await?;
+            if upgraded_from.is_some() && !added.is_empty() {
+                self.repo()
+                    .set_pending_version(&m.id, Some(&m.version))
+                    .await?;
             }
             anyhow::Ok(())
         };
@@ -579,14 +607,299 @@ impl PluginManager {
             let _ = tokio::fs::remove_file(&path).await;
             return Err(PluginError::Internal(e));
         }
-        if upgraded_from.is_some() {
-            self.reload().await?;
+        let pending_approval = upgraded_from.is_some() && !added.is_empty();
+        if let (Some(from), false) = (&upgraded_from, pending_approval) {
+            self.activate_version(&m.id, &m.version, Some(from)).await?;
         }
         Ok(InstallOutcome {
             detail: self.get(&m.id).await?,
+            pending_approval,
             trusted_key_id,
             upgraded_from,
         })
+    }
+
+    /// Capabilities the package declares that the active version did not.
+    async fn added_capabilities(
+        &self,
+        pkg: &PluginPackage,
+        active: Option<&str>,
+    ) -> Result<Vec<String>, PluginError> {
+        let Some(active) = active else {
+            return Ok(Vec::new());
+        };
+        let Some(rec) = self.repo().get_version(&pkg.manifest.id, active).await? else {
+            return Ok(Vec::new());
+        };
+        let Ok(old) = serde_json::from_str::<PluginManifest>(&rec.manifest_json) else {
+            return Ok(Vec::new());
+        };
+        let had = capabilities(&old);
+        Ok(capabilities(&pkg.manifest)
+            .into_iter()
+            .filter(|c| !had.iter().any(|h| h.same_grant(c)))
+            .map(|c| c.name)
+            .collect())
+    }
+
+    // ---- capability approval ----------------------------------------------
+
+    fn approvals_for(&self, m: &PluginManifest, grants: &[PluginGrant]) -> Vec<CapabilityApproval> {
+        capabilities(m)
+            .iter()
+            .map(|c| CapabilityApproval {
+                granted: grants
+                    .iter()
+                    .any(|g| g.capability == c.name && g.scope == c.scope),
+                blocked_by_policy: self.policy.denies(&c.name),
+                info: describe_capability(c),
+            })
+            .collect()
+    }
+
+    async fn manifest_of(&self, id: &str, version: &str) -> Result<PluginManifest, PluginError> {
+        let rec =
+            self.repo().get_version(id, version).await?.ok_or_else(|| {
+                PluginError::NotFound(format!("{} {} is not installed", id, version))
+            })?;
+        serde_json::from_str(&rec.manifest_json).map_err(|e| PluginError::Internal(e.into()))
+    }
+
+    /// Records the administrator's decision for the capabilities of one
+    /// version. Approving the pending version activates it.
+    pub async fn approve_capabilities(
+        &self,
+        id: &str,
+        req: &ApproveCapabilitiesRequest,
+        actor: &str,
+    ) -> Result<PluginDetail, PluginError> {
+        let rec = self.require(id).await?;
+        let target = req
+            .version
+            .clone()
+            .or_else(|| rec.pending_version.clone())
+            .or_else(|| rec.active_version.clone())
+            .ok_or_else(|| conflict("no_active_version", "The plugin has no version"))?;
+        if Some(&target) != rec.pending_version.as_ref()
+            && Some(&target) != rec.active_version.as_ref()
+        {
+            return Err(PluginError::BadRequest(
+                "Capabilities can only be approved for the active or the pending version".into(),
+            ));
+        }
+        let manifest = self.manifest_of(id, &target).await?;
+        let declared = capabilities(&manifest);
+        let mut grants = Vec::new();
+        for name in &req.capabilities {
+            let cap = declared.iter().find(|c| &c.name == name).ok_or_else(|| {
+                PluginError::BadRequest(format!("'{}' is not declared by {} {}", name, id, target))
+            })?;
+            if self.policy.denies(name) {
+                return Err(unprocessable(
+                    "capability_denied_by_policy",
+                    format!(
+                        "'{}' is denied by plugins.policy and cannot be approved",
+                        name
+                    ),
+                ));
+            }
+            if !grants
+                .iter()
+                .any(|(n, _): &(String, Option<Value>)| n == name)
+            {
+                grants.push((cap.name.clone(), cap.scope.clone()));
+            }
+        }
+        self.repo().replace_grants(id, &grants, actor).await?;
+        self.audit(
+            default_organization_uuid(),
+            None,
+            AUDIT_PLUGINS,
+            "plugin.capabilities_approved",
+            id,
+            json!({"version": target, "approved": req.capabilities, "by": actor}),
+        )
+        .await;
+        if Some(&target) == rec.pending_version.as_ref() {
+            let missing = self.missing_required(&manifest, id).await;
+            if !missing.is_empty() {
+                return Err(PluginError::Unprocessable {
+                    code: "capabilities_not_approved",
+                    message: format!(
+                        "Required capabilities are not approved: {}",
+                        missing.join(", ")
+                    ),
+                    details: Some(json!(missing)),
+                });
+            }
+            self.activate_version(id, &target, rec.active_version.as_deref())
+                .await?;
+        }
+        self.get(id).await
+    }
+
+    /// Non-optional declared capabilities that are not approved (or are
+    /// blocked by policy) for the plugin.
+    async fn missing_required(&self, m: &PluginManifest, id: &str) -> Vec<String> {
+        let grants = self.repo().list_grants(id).await.unwrap_or_default();
+        capabilities(m)
+            .into_iter()
+            .filter(|c| !c.optional)
+            .filter(|c| {
+                self.policy.denies(&c.name)
+                    || !grants
+                        .iter()
+                        .any(|g| g.capability == c.name && g.scope == c.scope)
+            })
+            .map(|c| c.name)
+            .collect()
+    }
+
+    pub async fn effective_capabilities(&self, id: &str) -> Vec<Capability> {
+        effective_capabilities(&self.pool, &self.policy, id).await
+    }
+
+    // ---- wasm preparation, hooks and version activation -------------------
+
+    /// Validates the module and brings the plugin database up to date.
+    async fn prepare_wasm(&self, pkg: &PluginPackage) -> Result<(), PluginError> {
+        let m = &pkg.manifest;
+        let (Some(wasm), Some(storage)) = (self.wasm.get(), self.storage.get()) else {
+            return Err(conflict(
+                "runtime_unavailable",
+                "The WASM runtime is not available",
+            ));
+        };
+        let _ = wasm;
+        let entry = m.runtime.entry.clone().unwrap_or_default();
+        let bytes = pkg.files.get(&entry).ok_or_else(|| {
+            unprocessable(
+                "module_missing",
+                format!("'{}' is not in the package", entry),
+            )
+        })?;
+        WasmInvoker::validate_module(bytes).map_err(|e| unprocessable("module_invalid", e))?;
+        if let Some(mig) = &m.migrations {
+            let files: Vec<(String, Vec<u8>)> = pkg
+                .files
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let migrations = collect_migrations(&files, &mig.dir)
+                .map_err(|e| unprocessable("migration_invalid", e))?;
+            let v = storage
+                .migrate_up(&m.id, &migrations, mig.target)
+                .await
+                .map_err(|e| unprocessable("migration_failed", e.to_string()))?;
+            self.repo().set_schema_version(&m.id, v).await?;
+        }
+        Ok(())
+    }
+
+    /// Calls a lifecycle hook of a WASM plugin (install, upgrade, enable,
+    /// disable, uninstall) under its timeout; the run is audited.
+    async fn run_hook(&self, m: &PluginManifest, hook: &str, input: Value) -> Result<(), String> {
+        if m.runtime.kind != RuntimeKind::Wasm {
+            return Ok(());
+        }
+        let handler = match (hook, m.lifecycle.as_ref()) {
+            ("install", Some(l)) => l.on_install.clone(),
+            ("upgrade", Some(l)) => l.on_upgrade.clone(),
+            ("uninstall", Some(l)) => l.on_uninstall.clone(),
+            _ => None,
+        }
+        .unwrap_or_else(|| hook.to_string());
+        let call = HandlerCall {
+            plugin_id: m.id.clone(),
+            version: m.version.clone(),
+            runtime: m.runtime.clone(),
+            handler,
+            kind: super::invoke::HandlerKind::Lifecycle,
+            input,
+        };
+        let timeout = m
+            .runtime
+            .limits
+            .as_ref()
+            .and_then(|l| l.timeout_ms)
+            .unwrap_or(super::invoke::DEFAULT_HANDLER_TIMEOUT_MS);
+        let res = super::invoke::invoke_with_timeout(self, call, timeout).await;
+        self.audit(
+            default_organization_uuid(),
+            None,
+            AUDIT_PLUGINS,
+            "plugin.lifecycle",
+            &m.id,
+            json!({"hook": hook, "version": m.version, "ok": res.is_ok(),
+                   "error": res.as_ref().err().map(|e| e.to_string())}),
+        )
+        .await;
+        res.map(|_| ()).map_err(|e| e.to_string())
+    }
+
+    /// Makes `version` the active one: migrates and runs the upgrade hook
+    /// when the plugin is enabled, and rolls back to the previous version if
+    /// that fails.
+    async fn activate_version(
+        &self,
+        id: &str,
+        version: &str,
+        from: Option<&str>,
+    ) -> Result<(), PluginError> {
+        let rec = self.require(id).await?;
+        let enabled = rec.state == PluginState::Enabled;
+        let pkg = match self.load_verified(id, version).await {
+            Ok((pkg, _)) => pkg,
+            Err((_, code, msg)) => return Err(unprocessable(code, msg)),
+        };
+        if enabled && pkg.manifest.runtime.kind == RuntimeKind::Wasm {
+            let missing = self.missing_required(&pkg.manifest, id).await;
+            if !missing.is_empty() {
+                return Err(PluginError::Unprocessable {
+                    code: "capabilities_not_approved",
+                    message: format!(
+                        "Required capabilities are not approved: {}",
+                        missing.join(", ")
+                    ),
+                    details: Some(json!(missing)),
+                });
+            }
+            self.prepare_wasm(&pkg).await?;
+        }
+        self.repo().set_active_version(id, version).await?;
+        self.repo().set_pending_version(id, None).await?;
+        if let Some(w) = self.wasm.get() {
+            w.forget(id);
+        }
+        self.reload().await?;
+        if enabled {
+            let hook = self
+                .run_hook(
+                    &pkg.manifest,
+                    "upgrade",
+                    json!({"from": from, "to": version}),
+                )
+                .await;
+            if let Err(msg) = hook {
+                if let Some(prev) = from {
+                    self.repo().set_active_version(id, prev).await?;
+                    if let Some(w) = self.wasm.get() {
+                        w.forget(id);
+                    }
+                    self.reload().await?;
+                }
+                return Err(unprocessable(
+                    "lifecycle_failed",
+                    format!("upgrade hook failed: {}", msg),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn active_manifest(&self, rec: &PluginRecord) -> Option<PluginManifest> {
+        let v = rec.active_version.as_ref()?;
+        self.manifest_of(&rec.id, v).await.ok()
     }
 
     // ---- lifecycle --------------------------------------------------------
@@ -639,6 +952,32 @@ impl PluginManager {
                     .on_enable()
                     .map_err(|e| unprocessable("enable_failed", e.to_string()))?;
             }
+            RuntimeKind::Wasm if self.wasm.get().is_some() => {
+                let missing = self.missing_required(m, id).await;
+                if !missing.is_empty() {
+                    return Err(PluginError::Unprocessable {
+                        code: "capabilities_not_approved",
+                        message: format!(
+                            "Required capabilities are not approved: {}",
+                            missing.join(", ")
+                        ),
+                        details: Some(json!(missing)),
+                    });
+                }
+                self.prepare_wasm(&pkg).await?;
+                if rec.state == PluginState::Installed {
+                    self.run_hook(m, "install", json!({"version": version}))
+                        .await
+                        .map_err(|e| {
+                            unprocessable("lifecycle_failed", format!("install hook failed: {}", e))
+                        })?;
+                }
+                self.run_hook(m, "enable", json!({"version": version}))
+                    .await
+                    .map_err(|e| {
+                        unprocessable("lifecycle_failed", format!("enable hook failed: {}", e))
+                    })?;
+            }
             RuntimeKind::Wasm | RuntimeKind::Remote => {
                 return Err(conflict(
                     "runtime_unavailable",
@@ -659,6 +998,9 @@ impl PluginManager {
     pub async fn disable(&self, id: &str) -> Result<PluginDetail, PluginError> {
         let rec = self.require(id).await?;
         self.notify_disable(&rec).await;
+        if let Some(w) = self.wasm.get() {
+            w.forget(id);
+        }
         self.repo()
             .set_state(id, PluginState::Disabled, Some("disabled_by_admin"))
             .await?;
@@ -666,9 +1008,35 @@ impl PluginManager {
         self.get(id).await
     }
 
-    pub async fn uninstall(&self, id: &str) -> Result<(), PluginError> {
+    /// `purge` also deletes the plugin's kv entries and private database;
+    /// without it they are kept for a reinstall.
+    pub async fn uninstall(&self, id: &str, purge: bool) -> Result<(), PluginError> {
         let rec = self.require(id).await?;
+        if rec.state == PluginState::Enabled {
+            if let Some(m) = self.active_manifest(&rec).await {
+                if let Err(e) = self
+                    .run_hook(&m, "uninstall", json!({"purge": purge}))
+                    .await
+                {
+                    tracing::warn!("uninstall hook of {} failed: {}", id, e);
+                }
+            }
+        }
         self.notify_disable(&rec).await;
+        if let Some(w) = self.wasm.get() {
+            w.forget(id);
+        }
+        if purge {
+            if let Some(st) = self.storage.get() {
+                st.purge(id)
+                    .await
+                    .map_err(|e| PluginError::Internal(anyhow::anyhow!(e.to_string())))?;
+            }
+        }
+        self.repo().delete_grants(id).await?;
+        self.repo()
+            .replace_config(id, &Default::default(), "uninstall")
+            .await?;
         self.repo().delete_plugin(id).await?;
         PluginEventsRepository::new(&self.pool)
             .delete_plugin_events(id)
@@ -683,6 +1051,11 @@ impl PluginManager {
             return;
         }
         let Some(v) = &rec.active_version else { return };
+        if let Some(m) = self.active_manifest(rec).await {
+            if let Err(e) = self.run_hook(&m, "disable", json!({"version": v})).await {
+                tracing::warn!("disable hook of {} failed: {}", rec.id, e);
+            }
+        }
         if let Ok(Some(vr)) = self.repo().get_version(&rec.id, v).await {
             if let Ok(m) = serde_json::from_str::<PluginManifest>(&vr.manifest_json) {
                 if let Some(rt) = m
@@ -741,10 +1114,24 @@ impl PluginManager {
             .as_ref()
             .map(|m| capabilities(m).iter().map(describe_capability).collect())
             .unwrap_or_default();
+        let grants = self.repo().list_grants(id).await?;
+        let approval_manifest = match &rec.pending_version {
+            Some(v) => self
+                .manifest_of(id, v)
+                .await
+                .ok()
+                .or_else(|| manifest.clone()),
+            None => manifest.clone(),
+        };
+        let approvals = approval_manifest
+            .as_ref()
+            .map(|m| self.approvals_for(m, &grants))
+            .unwrap_or_default();
         Ok(PluginDetail {
             summary: self.summarize(rec, &keys).await?,
             manifest,
             capabilities,
+            approvals,
             versions,
         })
     }
@@ -778,6 +1165,7 @@ impl PluginManager {
             signer_label: signer.map(|k| k.label.clone()),
             id: p.id,
             active_version: p.active_version,
+            pending_version: p.pending_version,
             state: p.state,
             state_reason: p.state_reason,
             installed_by: p.installed_by,
@@ -1021,7 +1409,7 @@ impl HandlerInvoker for PluginManager {
                 rt.handle(&call)
                     .map_err(|e| InvokeError::Failed(e.to_string()))
             }
-            _ => match &self.external_invoker {
+            _ => match self.external_invoker.get() {
                 Some(inv) => inv.invoke(call).await,
                 None => Err(InvokeError::Unavailable(format!(
                     "the {} runtime is not available",
@@ -1267,7 +1655,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upgrades_must_be_newer_and_cannot_add_capabilities() {
+    async fn upgrades_must_be_newer_and_added_capabilities_wait_for_approval() {
         let (m, _d) = manager(Some(SEED)).await;
         m.install(&package("1.0.0", SEED), "a", None).await.unwrap();
         assert!(m.install(&package("1.0.0", SEED), "a", None).await.is_err());
@@ -1284,10 +1672,31 @@ mod tests {
             2,
             SEED,
         );
-        let err = m.install(&wider, "a", None).await.err().unwrap();
-        assert!(err.to_string().contains("kv:rw"));
+        let out = m.install(&wider, "a", None).await.unwrap();
+        assert!(out.pending_approval);
+        // The previous version stays active until the new capability is approved.
+        assert_eq!(out.detail.summary.active_version.as_deref(), Some("1.0.0"));
+        assert_eq!(out.detail.summary.pending_version.as_deref(), Some("1.1.0"));
+        assert!(out
+            .detail
+            .approvals
+            .iter()
+            .any(|a| a.info.name == "kv:rw" && !a.granted));
+        let req = ApproveCapabilitiesRequest {
+            version: None,
+            capabilities: out
+                .detail
+                .approvals
+                .iter()
+                .map(|a| a.info.name.clone())
+                .collect(),
+        };
+        let d = m.approve_capabilities("demo", &req, "admin").await.unwrap();
+        assert_eq!(d.summary.active_version.as_deref(), Some("1.1.0"));
+        assert!(d.summary.pending_version.is_none());
         let out = m.install(&package("1.2.0", SEED), "a", None).await.unwrap();
-        assert_eq!(out.upgraded_from.as_deref(), Some("1.0.0"));
+        assert_eq!(out.upgraded_from.as_deref(), Some("1.1.0"));
+        assert!(!out.pending_approval);
         assert_eq!(out.detail.summary.active_version.as_deref(), Some("1.2.0"));
     }
 
@@ -1296,7 +1705,7 @@ mod tests {
         let (m, d) = manager(Some(SEED)).await;
         m.install(&package("1.0.0", SEED), "a", None).await.unwrap();
         m.enable("demo").await.unwrap();
-        m.uninstall("demo").await.unwrap();
+        m.uninstall("demo", false).await.unwrap();
         assert!(m.list().await.unwrap().is_empty());
         assert!(!d.path.join("packages/demo").exists());
         assert!(m.registry().is_empty());
