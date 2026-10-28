@@ -254,7 +254,7 @@ Two layers, both accessed **only** via the Host API:
 
 1. **`kv`**: key/value per `plugin_id` with a quota (default 10 MB, 10,000 keys).
 2. **`db:own`**: a SQLite database **dedicated to each plugin** (`<data>/plugins/<plugin>.db`). A file boundary, not a `WHERE` clause: one plugin cannot reach another's data, uninstalling is deleting the file, and per-plugin backup/export is trivial.
-   - The plugin sends parameterized SQL; the host runs it on that file's connection. Restrictions: no `ATTACH`, no `load_extension`, `PRAGMA trusted_schema=OFF`, a size limit (`max_page_count`) and a per-query duration limit. *The exact way to apply an authorizer/limits via sqlx 0.9 (`lock_handle`/libsqlite3-sys) needs a proof of concept.*
+   - The plugin sends parameterized SQL; the host runs it on that file's connection. Restrictions: no `ATTACH`, no `load_extension`, `PRAGMA trusted_schema=OFF`, a size limit (`max_page_count`) and a per-query duration limit. *Proven in the M18 PoC: `lock_handle()` plus libsqlite3-sys for the authorizer and sqlx's progress handler for the time limit (see PLUGIN_POC_RESULTS.md).*
    - Plugins **never** touch the core tables or the `inventory` DB.
 
 Core data only reaches the plugin through the Host API with the corresponding capability. Node data comes from PuppetDB and today the core RBAC controls who sees it; handlers with no user receive whatever the approved `nodes:read` capability allows (no per-organization scoping, see §18).
@@ -1030,7 +1030,7 @@ Out of scope for now. What was recorded, so that coming back does not require re
 
 ## 19. Open questions
 
-1. **wasmtime vs Extism** (§3.1): accept the dependency and the increase in binary size/build time? Is there a build constraint for the RPM/DEB packages?
+1. ~~**wasmtime vs Extism** (§3.1)~~ Resolved by the M18 PoC: wasmtime accepted, about +1.7 to +2.7 MB compressed in the packages and +103 s on a clean build; no RPM/DEB constraint (PLUGIN_POC_RESULTS.md).
 2. **Plugin languages in v1**: only Rust and TypeScript (via jco) or also Go/Python?
 3. **`module` (Module Federation) in the FGV context** (inherited): allow it, or build it out?
 4. **Synchronous interceptors** (§9.2): really needed, or does notify-only serve the known use cases?

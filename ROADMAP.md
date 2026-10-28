@@ -195,9 +195,9 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > phase: P3
 > spec: S21, S23
 
-- [ ] T65 Prove per-plugin SQLite storage with enforced limits (S21)
-- [ ] T66 Prove wasmtime fuel and memory limits inside Axum (S21)
-- [ ] T67 Measure build and binary size impact on RPM and DEB packages (S21)
+- [x] T65 Prove per-plugin SQLite storage with enforced limits (S21)
+- [x] T66 Prove wasmtime fuel and memory limits inside Axum (S21)
+- [x] T67 Measure build and binary size impact on RPM and DEB packages (S21)
 
 ## [M19] Plugin Manager and Signatures
 > outcome: Administrators can install signed plugins and manage trusted keys, and unsigned or untrusted plugins can never be installed or loaded.

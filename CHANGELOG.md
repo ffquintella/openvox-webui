@@ -12,6 +12,7 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 ## [Unreleased]
 
 ### Added
+- Add the M18 plugin platform proofs of concept in `poc/plugin-poc` and record the decisions in `docs/architecture/PLUGIN_POC_RESULTS.md`: per-plugin SQLite storage with enforced size, query-time and statement limits (T65), wasmtime fuel and memory limits inside Axum (T66), and the build and binary size impact of wasmtime (+6.4 MB stripped, about +1.7 to +2.7 MB compressed in the RPM) (T67)
 - Add the plugin platform design documents and the Phase 11 roadmap (M18, S21, S22, S23)
 - Audit update jobs in the shared audit log (`resource_type` `update_jobs`, queryable through `/api/v1/audit-logs`): requested (manual, schedule manual run and scheduled run), approved, rejected, cancelled, dispatched to a node, per-target result, finished and timed out after the maximum runtime (T62)
 
