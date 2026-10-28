@@ -9,7 +9,7 @@ Keep commit messages clean and focused only on describing the changes made.
 
 ## Changelog
 
-**IMPORTANT:** Before committing user-facing changes, update the changelog at `puppet/CHANGELOG.md`:
+**IMPORTANT:** Before committing user-facing changes, update the changelog at `CHANGELOG.md` (PTF v1; keep `ROADMAP.md` consistent, see the format notes in both files):
 1. Add changes under the `[Unreleased]` section
 2. Use appropriate categories: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`
 3. When releasing a version, move unreleased changes to a new version section with date

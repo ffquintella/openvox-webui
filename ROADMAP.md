@@ -1,10 +1,12 @@
-# OpenVox WebUI Roadmap
+---
+ptf: 1
+project: openvox-webui
+---
 
-This document outlines the development roadmap for OpenVox WebUI, a web interface for managing and monitoring OpenVox infrastructure.
+# Roadmap
 
-## Vision
+OpenVox WebUI is a web interface for managing and monitoring OpenVox infrastructure. It provides:
 
-Provide a modern, intuitive web interface for OpenVox that enables:
 - Real-time infrastructure monitoring and visualization
 - Node classification using dynamic groups (similar to Puppet Enterprise)
 - PuppetDB querying with graphical dashboards
@@ -12,572 +14,362 @@ Provide a modern, intuitive web interface for OpenVox that enables:
 - Configuration management through YAML files
 - Role-based access control for secure multi-user environments
 
-> **Note:** Detailed documentation for all implemented features is available in [docs/implemented-features/](docs/implemented-features/). This roadmap provides a high-level overview with phase summaries.
-
----
-
-## Project Status: ✅ ALL PHASES COMPLETE
-
-All phases (1-9) have been completed and deployed to production. This is a summary view for quick reference. For detailed information on any phase, feature, or component, see the [implemented-features/](docs/implemented-features/) directory.
-
----
-
-## Phase Overview & Quick Links
-
-### Phase 1: Foundation ✅
-- [1.1 Project Setup](docs/implemented-features/01-project-setup.md)
-- [1.2 Core Backend Architecture](docs/implemented-features/02-core-backend.md)
-- [1.3 RBAC Foundation](docs/implemented-features/03-rbac-foundation.md)
-- [1.4 Testing Infrastructure](docs/implemented-features/04-testing-infrastructure.md)
-
-### Phase 2: Authentication & Authorization ✅
-- [2.1 User Management](docs/implemented-features/05-user-management.md)
-- [2.2 RBAC Implementation](docs/implemented-features/06-rbac-implementation.md)
-- [2.3-2.5 RBAC Management Tools & API](docs/implemented-features/07-rbac-management.md)
-
-### Phase 3: Infrastructure Integration ✅
-- [3.1 PuppetDB Integration](docs/implemented-features/08-puppetdb-integration.md)
-- [3.2 Data Caching Layer](docs/implemented-features/09-caching-layer.md)
-- [3.3 PuppetDB API Endpoints](docs/implemented-features/10-puppetdb-api.md)
-- [3.4 Puppet CA Management (Backend)](docs/implemented-features/11-puppet-ca-backend.md)
-- [3.5 CA API Endpoints](docs/implemented-features/12-ca-api-endpoints.md)
-
-### Phase 4: Node Classification ✅
-- [Node Classification System](docs/implemented-features/13-node-classification.md)
-
-### Phase 5: Facter Integration ✅
-- [Facter Integration](docs/implemented-features/14-facter-integration.md)
-
-### Phase 6: Dashboard & Visualization ✅
-- [Dashboard & Visualization](docs/implemented-features/15-dashboard-visualization.md)
-
-### Phase 7: Configuration Management ✅
-- [Configuration Management](docs/implemented-features/16-configuration-management.md)
-
-### Phase 7.5: CA Management UI ✅
-- [CA Management UI](docs/implemented-features/17-ca-management-ui.md)
-
-### Phase 8: Advanced Features ✅
-- [Reporting, Alerting & Multi-Tenancy](docs/implemented-features/18-advanced-features.md)
-
-### Phase 9: Production Readiness ✅
-- [Production Readiness](docs/implemented-features/19-production-readiness.md)
-
----
-
-## Key Features Summary
-
-### Authentication & Authorization
-- User registration and management
-- JWT token-based authentication
-- Role-Based Access Control (RBAC)
-- 5 built-in roles with customizable permissions
-- Permission caching for performance
-- Multi-tenancy support with tenant isolation
-- API key management for programmatic access
-
-### Infrastructure Management
-- PuppetDB integration with full query support
-- Puppet CA certificate management
-- Node discovery and classification
-- Group hierarchy with rule-based matching
-- 10 comparison operators for classification rules
-- Fact generation with custom templates
-- Multi-format export (JSON, YAML, Shell)
-
-### Monitoring & Analytics
-- Real-time dashboard with visualizations
-- Node status monitoring and health indicators
-- Report generation (compliance, drift detection, custom)
-- Machine variable assignment reporting with machine, variable-name, and value searches
-- Scheduled report execution
-- Alert rules with multiple notification channels
-- Alert acknowledgment and silencing
-- Comprehensive audit logging
-
-### Configuration
-- YAML-based application configuration
-- Settings management UI with validation
-- Configuration versioning and history
-- Import/export functionality
-- Per-user dashboard preferences
-- Support for PuppetDB, PostgreSQL, and SQLite
-
-### Deployment & Operations
-- Native RPM and DEB packages
-- Puppet module for infrastructure-as-code
-- Docker containerization
-- Systemd service integration
-- Security hardening (TLS 1.3, rate limiting, security headers)
-- Performance optimization (caching, lazy loading, query optimization)
-- Complete documentation and upgrade guides
-
----
-
-## Versioning Strategy
-
-This project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`
-
-### Current Version
-Current release: **v0.41.1**
-
-Check version with: `make version`
-
-### Bump Commands
-```bash
-make bump-patch       # v1.0.1 → v1.0.2 (bug fixes)
-make bump-minor       # v1.0.0 → v1.1.0 (new features)
-make bump-major       # v1.0.0 → v2.0.0 (breaking changes)
-```
-
----
-
-## Default Roles & Permissions
-
-### Built-in Roles
-
-| Role | Description |
-|------|-------------|
-| **Admin** | Full system access |
-| **Operator** | Day-to-day operations (read/write) |
-| **Viewer** | Read-only access |
-| **GroupAdmin** | Manage specific groups |
-| **Auditor** | Compliance and audit logs |
-
-### Permission Scopes
-- **all** - System-wide access
-- **environment** - Environment-specific
-- **group** - Group-specific
-- **owned** - User-owned resources only
-- **specific** - Specific resource IDs
-
----
-
-## API Reference
-
-### Core Endpoints
-- **Auth:** `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`
-- **Roles:** `GET/POST /api/v1/roles`, `GET/PUT/DELETE /api/v1/roles/:id`
-- **Nodes:** `GET /api/v1/nodes`, `GET /api/v1/nodes/:certname`
-- **Groups:** `GET/POST /api/v1/groups`, `GET/PUT/DELETE /api/v1/groups/:id`
-- **Reports:** `GET /api/v1/reports`, `POST /api/v1/analytics/saved-reports`, `GET /api/v1/analytics/variable-assignments`
-- **Alerts:** `GET/POST /api/v1/alerting/*`, `GET /api/v1/alerting/alerts`
-- **CA:** `GET /api/v1/ca/*`, `POST /api/v1/ca/sign/:certname`
-- **Settings:** `GET /api/v1/settings`, `POST /api/v1/settings/import`
-
-For complete API documentation, see the feature-specific documents in [docs/implemented-features/](docs/implemented-features/).
-
----
-
-## Installation & Deployment
-
-### Supported Systems
-- RHEL 8+, CentOS 8+, Rocky Linux 8+
-- Debian 11+, Ubuntu 20.04+
-- Docker containers
-- Standalone binary installations
-
-### Installation Methods
-1. **Native Packages:** RPM (RHEL/CentOS/Fedora) or DEB (Debian/Ubuntu)
-2. **Puppet Module:** Use `openvox-webui` module from Puppet Forge
-3. **Docker:** Pre-built Docker images available
-4. **Manual:** Standalone binary with systemd service
-
-See [docs/INSTALLATION.md](docs/INSTALLATION.md) for detailed setup instructions.
-
----
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [INSTALLATION.md](docs/INSTALLATION.md) | Setup and deployment guide |
-| [CONFIGURATION.md](docs/CONFIGURATION.md) | All configuration options |
-| [UPGRADE.md](docs/UPGRADE.md) | Version upgrade procedures |
-| [BACKUP.md](docs/BACKUP.md) | Data backup and recovery |
-| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and solutions |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development setup and guidelines |
-| [architecture/](docs/architecture/) | System design and architecture |
-
----
-
-## Development Guidelines
-
-### File Organization
-- **Backend (Rust):** `src/` with services, handlers, models, repositories
-- **Frontend (TypeScript):** `frontend/src/` with pages, components, hooks, services
-- **Tests:** `tests/` with unit, integration, and BDD tests
-- **Database:** `migrations/` with SQL migration files
-- **Configuration:** `config/` with schema and example files
-
-### File Size Limits
-- Maximum 1000 lines per source file
-- Split larger files proactively at 800 lines
-- Keep concerns separated (services, models, handlers)
-
-### Testing Requirements
-- Unit tests for all new services
-- Integration tests for API endpoints
-- BDD features for user-facing functionality
-- Aim for 80%+ code coverage
-
----
-
-## Future Enhancements
-
-- Application inventory and update management
-- WebSocket real-time updates
-- GraphQL API support
-- Plugin/extension system (planned as [Phase 11](#phase-11-plugin-platform))
-- Mobile app support
-- Internationalization (i18n)
-- LDAP/SAML/OIDC SSO integration (planned as part of [Phase 11](#phase-11-plugin-platform): MFA, SSO and directory providers)
-- Attribute-based access control (ABAC)
-- OpenBolt orchestration integration
-
----
-
-## Phase 10: Application Inventory & Update Management
-
-Status: In progress. Phases 10.1 through 10.5 are implemented, and Phase 10.6 is in progress with update-job orchestration foundations in place.
-
-### Goal
-- Turn OpenVox WebUI into a central inventory and update management console for Windows, Linux, and macOS nodes managed through the OpenVox Puppet module.
-- Collect application, website, runtime, package, and OS version data from agents, store historical inventory on the server, identify outdated software from default repositories, and provide controlled update operations for single nodes or groups of nodes.
-
-### Scope Summary
-- Inventory collection from Windows, Linux, and macOS nodes
-- Inventory transport through the OpenVox Puppet module back to the server
-- Database schema and APIs for inventory snapshots, application metadata, and update state
-- Node-level UI cards showing OS version, OS patch state, and installed applications
-- Fleet statistics UI for updated and outdated nodes, stale inventory, and update compliance
-- Background jobs to resolve latest versions from vendor-default repositories and package sources
-- On-demand and bulk update workflows with auditability and safety controls
-
-### Inventory Coverage
-
-#### Operating System Data
-- OS family, distribution, edition, architecture, kernel version, OS version, and patch level
-- Last inventory collection time and last successful update time
-- Host package manager and update channel metadata
-
-#### Linux Inventory
-- Installed RPM packages for Oracle Linux, Red Hat, and SUSE families
-- Installed DEB packages for Ubuntu and Debian families
-- Package epoch, version, release, architecture, repository source, and install time when available
-- Service-backed application discovery for Apache HTTPD, NGINX, Tomcat, and JBoss
-- Website and application metadata:
-  - Apache virtual hosts, site roots, enabled modules, bound ports, TLS certificate references
-  - NGINX server blocks, upstreams, document roots, bound ports, TLS certificate references
-  - Tomcat deployed WARs, context paths, app base, connector ports, runtime version
-  - JBoss / WildFly deployed applications, server groups, runtime version, management bindings
-
-#### Windows Inventory
-- Installed applications from registered Windows uninstall sources
-- Product name, publisher, version, install date, uninstall identity, architecture, and install scope
-- IIS website and application inventory:
-  - Sites, applications, virtual directories, bindings, app pools, physical paths, and certificate bindings
-- OS version and patch metadata from Windows management facts
-- Update source metadata aligned to Chocolatey for version intelligence
-
-#### macOS Inventory
-- Installed `.app` bundles from standard application locations
-- Bundle identifier, display name, version, short version, install path, signing metadata when available
-- Homebrew formula and cask inventory with installed versions, tap/source, and install paths
-- macOS version, build number, and available software update metadata
-
-### Delivery Architecture
-
-#### Agent Collection via Puppet Module
-- Extend the `openvox_webui` Puppet module to collect and normalize inventory locally
-- Provide OS-specific collection helpers:
-  - Linux package collectors for RPM and DEB systems
-  - Windows collectors for installed applications and IIS inventory
-  - macOS collectors for app bundles, Homebrew formulas, and casks
-  - Runtime collectors for Apache, NGINX, Tomcat, and JBoss deployments
-- Normalize data into a shared inventory payload schema
-- Send payloads back to the server through authenticated module-driven reporting endpoints
-- Support incremental submissions and full snapshots
-- Track collector version so server-side parsers can handle schema evolution
-
-#### Server-Side Processing
-- Validate, deduplicate, and persist host inventory snapshots
-- Maintain both current-state tables and historical snapshots for trend reporting
-- Correlate package inventory with service/application inventory on the same host
-- Mark stale records when a host has not reported within the expected collection interval
-
-### Database Plan
-
-#### Core Tables
-- `host_inventory_snapshots`
-- `host_os_inventory`
-- `host_package_inventory`
-- `host_application_inventory`
-- `host_web_inventory`
-- `host_runtime_inventory`
-- `host_update_status`
-- `repository_version_catalog`
-- `update_jobs`
-- `update_job_targets`
-- `update_job_results`
-
-#### Data Model Principles
-- Separate canonical software identity from host-specific installed instances
-- Store raw collector payloads for troubleshooting and parser migrations
-- Support multiple inventory records per host for the same product when installed in different locations
-- Preserve historical snapshots for compliance and trend views
-- Record source confidence and discovery method for each inventory item
-
-### API Plan
-- Inventory ingestion endpoint for Puppet module submissions
-- Node inventory endpoints for current state and history
-- Fleet statistics endpoints for update posture and inventory coverage
-- Version intelligence endpoints for latest-known versions by platform and package source
-- Update orchestration endpoints for single-node and bulk update requests
-- Audit endpoints for update job actions, approvals, and outcomes
-
-### UI Plan
-
-#### Node Detail Enhancements
-- Add an inventory summary card with:
-  - OS version
-  - OS patch level
-  - Last inventory time
-  - Last update time
-  - Counts of installed applications, packages, and detected websites
-- Add inventory tabs or sections for:
-  - Packages
-  - Installed applications
-  - Websites and virtual hosts
-  - Application runtimes and deployments
-  - Update status and available updates
-
-#### Fleet Update Dashboard
-- Separate UI section for update and inventory analytics
-- Statistics and charts for:
-  - Updated vs outdated nodes
-  - Nodes missing inventory
-  - Nodes missing update checks
-  - Time since last patch
-  - Top outdated packages and applications
-  - Platform and OS distribution
-- Filters by OS family, environment, group, application, runtime, and update status
-
-#### Update Operations UI
-- Single-node update action
-- Bulk update action for selected nodes or groups
-- Dry-run / preview before execution
-- Scheduling, maintenance window, and approval options
-- Job progress, success/failure breakdown, and rollback guidance where applicable
-
-### Latest Version Intelligence Plan
-
-#### Linux Sources
-- Oracle Linux: DNF/YUM repository metadata from configured default repositories
-- Red Hat / compatible RPM systems: DNF/YUM repository metadata
-- SUSE: Zypper repository metadata
-- Ubuntu and Debian: APT repository metadata
-- Compare installed versions against latest versions visible in default repositories for each node platform
-
-#### Windows Source
-- Use Chocolatey package metadata as the default version source for Windows update intelligence
-- Map installed applications to Chocolatey packages where possible
-- Flag unmatched software separately rather than reporting false update recommendations
-
-#### macOS Source
-- Homebrew formula and cask metadata for managed Homebrew software
-- macOS software update metadata for OS patch visibility
-- App bundle version checking only where a trustworthy managed source exists
-
-### Scheduled Background Jobs
-- Inventory freshness job to detect stale or missing host submissions
-- Repository sync job to refresh latest-version catalogs by platform
-- Version comparison job to compute per-node outdated status
-- Statistics aggregation job for dashboard performance
-- Update execution watcher for long-running update jobs and result rollups
-
-### Update Execution Plan
-
-#### Execution Model
-- Use the Puppet/OpenVox control plane to trigger updates safely on managed nodes
-- Support package-manager-native actions:
-  - `dnf`/`yum` for RPM systems
-  - `apt` for DEB systems
-  - `zypper` for SUSE
-  - `choco` for Windows
-  - `brew` for Homebrew-managed macOS software
-- Distinguish:
-  - OS patch updates
-  - Package updates
-  - Application/runtime updates
-
-#### Safety Controls
-- RBAC permissions for viewing, scheduling, approving, and executing updates
-- Group-scoped update permissions
-- Maintenance window enforcement
-- Maximum concurrency controls
-- Dry-run previews and explicit confirmation for bulk actions
-- Full audit logging of requested, approved, started, completed, and failed updates
-
-### Delivery Phases
-
-#### Phase 10.1: Inventory Schema & Transport (Completed)
-- Define canonical inventory schema and ingestion API
-- Extend Puppet module with inventory submission support
-- Add database tables for OS, packages, applications, websites, runtimes, and snapshots
-
-#### Phase 10.2: OS-Specific Collectors (Completed)
-- Linux RPM/DEB collectors
-- Windows installed applications and IIS collectors
-- macOS app bundle and Homebrew collectors
-- Apache, NGINX, Tomcat, and JBoss discovery collectors
-
-#### Phase 10.3: Node Inventory UI (Completed)
-- Node inventory cards and detailed inventory sections
-- Search, filter, and history views per node
-
-#### Phase 10.4: Version Intelligence & Scheduled Jobs (Completed)
-- Repository sync workers for Linux, Windows, and macOS sources
-- Outdated-version comparison engine
-- Scheduled jobs and stale inventory detection
-
-#### Phase 10.5: Fleet Statistics & Compliance Reporting (Completed)
-- Separate inventory/update dashboard
-- Updated vs outdated statistics
-- Patch aging, coverage, and drift metrics
-
-#### Phase 10.6: Update Orchestration (In Progress)
-- Single-node updates
-- Bulk group updates
-- Scheduling, approvals, execution tracking, and audit logging
-
-### Open Questions
-- Whether unmanaged Windows applications without Chocolatey mapping should be shown as inventory-only or support custom catalog matching
-- Whether Tomcat and JBoss application collection should parse deployment manifests deeply or start with runtime and deployment names only
-- Whether website inventory should also track TLS expiration, certificates, and reverse-proxy upstream dependencies in the first release
-- Whether update execution should use immediate remote actions, queued Puppet runs, or both
-- Whether Homebrew-managed updates should be limited to formulae/casks explicitly marked as managed by policy
-
-### Success Criteria
-- Every managed node reports OS version and inventory on a predictable schedule
-- Operators can see current installed applications and websites directly from the node view
-- Fleet dashboard shows accurate updated/outdated status by platform and group
-- Latest-version checks use trusted default package sources for each supported OS family
-- Operators can safely run single-node and bulk updates with audit trails and RBAC controls
-
----
-
-## Phase 11: Plugin Platform
-
-Status: Proposed (design only, no implementation yet). Design documents: [PLUGIN_PLATFORM.md](docs/architecture/PLUGIN_PLATFORM.md) (platform, sandbox, extension domains, phased delivery) and [PLUGIN_SYSTEM.md](docs/architecture/PLUGIN_SYSTEM.md) (typed extension points: auth, user and secret providers, menus, pages, API proxy).
-
-### Goal
-- Let administrators extend OpenVox WebUI with third-party and first-party plugins without rebuilding the application and without putting the core at risk: untrusted code runs sandboxed, every capability is declared and approved, and every plugin is signed.
-
-### Scope Summary
-- Sandboxed runtimes: WASM (wasmtime) by default for backend logic, remote HTTPS plugins for external services, built-in Rust plugins for first-party providers
-- Mandatory plugin signatures (ed25519) with a UI and API to add, review and revoke trusted keys, under a dedicated `plugins:trust` permission
-- Capability-based permissions declared in a manifest and approved by an administrator, with re-approval when an update adds capabilities
-- Plugin lifecycle: install, configure, enable, disable, upgrade (batch or scheduled), rollback, uninstall with purge; declarative migrations for plugin-owned storage
-- UI extension through named slots (menus, dashboard, node, group and report panels), declarative pages, sandboxed iframes, and theme tokens; Module Federation only for trusted plugins
-- Event bus with a durable outbox, signed inbound and outbound webhooks, and a plugin SDK (Rust and TypeScript)
-- Authentication extensions: MFA engines (TOTP, WebAuthn, push), SSO (OIDC, SAML), step-up authentication, and LDAP/Active Directory as an authentication and user directory provider
-- Report extensions (new report types, export formats, annotations, datasets) and plugin-provided facts (including opt-in export to agents)
-- Advanced classification: expression-based rules, dynamic and generated groups, configurable group behavior, merge strategies, and explainable results with provenance
-- Governance: per-plugin telemetry, quotas, circuit breakers, kill switch, audit trail, and an administrator dashboard
-
-### Out of Scope (deferred)
-- Multi-tenant plugin scoping (per-organization installation, data and branding)
-- Marketplace (catalog, signed index, public and private registries, central revocation)
-- The design keeps both reachable; see "Deferred" in the design document.
-
-### Planned Sub-phases
-The numbering follows the phased delivery table in PLUGIN_PLATFORM.md, section 17.
-
-#### Phase 11.0: Proofs of Concept
-- Per-plugin SQLite storage with enforced limits (sqlx 0.9), wasmtime fuel and memory limits inside Axum, build and binary size impact on the RPM and DEB packages
-
-#### Phase 11.1: Plugin Manager and Signatures
-- Manifest, `.ovxp` package, mandatory signature verification, trusted key management (API and UI), plugin states, admin API, Plugins page, built-in runtime, slot registry for menus, declarative pages
-
-#### Phase 11.2: WASM Runtime and Host API
-- WASM runtime, capability gate and approval flow, `kv` and `db:own` storage, migrations, lifecycle hooks, resource limits
-
-#### Phase 11.3: Events, Jobs and Webhooks
-- Event bus with outbox, dispatcher and filters, scheduled jobs, inbound and outbound webhooks
-
-#### Phase 11.4: Telemetry and Governance
-- Metrics, quotas, circuit breaker, administrator dashboard, Prometheus `/metrics`
-
-#### Phase 11.5: Plugin UI and SDK
-- Sandboxed iframe pages, TypeScript SDK, theme tokens, complete slot catalog
-
-#### Phase 11.6: Updates and Rollback
-- Batch and scheduled updates, stored versions, rollback, local revocation
-
-#### Phase 11.7: Facts and Reports
-- Plugin facts with merged view, opt-in rule usage and agent export, plugin report types, export formats, annotations, datasets
-
-#### Phase 11.8: Advanced Classification (core)
-- Expression engine, group behavior policies, explain and provenance, impact preview. Independent of the plugin runtime and can start earlier; existing BDD classification scenarios must keep passing unchanged
-
-#### Phase 11.9: Classification Extensions for Plugins
-- Pure operators and functions, membership providers and dynamic groups with churn guard, generated groups, merge strategies, safe degradation
-
-#### Phase 11.10: Secret Providers
-- `SecretResolver`, `env` and `file` providers, `secret://` references in configuration
-
-#### Phase 11.11: Authentication Pipeline
-- Challenge and step-up pipeline, built-in TOTP, recovery codes and WebAuthn, OIDC, local and SAML refactored as providers, MFA policies
-
-#### Phase 11.12: Directory Providers
-- Built-in LDAP/Active Directory provider (bind authentication, lookup, JIT provisioning, scheduled sync, group-to-role mapping)
-
-#### Phase 11.13: Advanced Hooks
-- Restricted interceptors, trusted `module` pages (if approved), inbound SCIM
-
-### Open Questions
-- wasmtime versus Extism, and the impact on the packaging pipeline
-- Languages supported for plugin authors in the first release
-- Whether Module Federation is acceptable in the target deployment, or should be compiled out
-- Where plugin facts exported to agents should be delivered from, and whether plugins may write facts to PuppetDB
-- Expression language for classification (CEL subset or a custom AST) and realistic latency budgets for the classification hot path
-- Who owns the project signing key for first-party plugins and how it is rotated
-
-The full list is in PLUGIN_PLATFORM.md, section 19.
-
-### Success Criteria
-- An unsigned plugin, or one signed by an untrusted key, can never be installed or loaded
-- A plugin that exceeds its limits or fails is isolated without affecting the core or other plugins
-- Administrators can see and approve exactly what each plugin may access before it runs
-- Existing classification results are unchanged for existing groups after the engine changes
-- MFA and SSO can be enforced by policy, and the local break-glass administrator remains available
-
----
-
-## Version History
-
-| Version | Status | Key Features |
-|---------|--------|--------------|
-| **0.41.x** | ✅ Current | Searchable machine variable assignment reporting |
-| 1.0.x | Planned | Stable production milestone |
-| 0.9.x | ✅ Released | Performance optimization, security, packages |
-| 0.8.x | ✅ Released | Reporting, alerting, multi-tenancy |
-| 0.7.5.x | ✅ Released | CA management UI |
-| 0.7.x | ✅ Released | Configuration management |
-| 0.6.x | ✅ Released | Dashboard and visualizations |
-| 0.5.x | ✅ Released | Facter integration |
-| 0.4.x | ✅ Released | Node classification |
-| 0.3.x | ✅ Released | PuppetDB integration |
-| 0.2.x | ✅ Released | Authentication and RBAC |
-| 0.1.x | ✅ Released | Foundation and infrastructure |
-
----
-
-## References
-
-- [OpenVox Project](https://voxpupuli.org/openvox/)
-- [OpenVox GitHub](https://github.com/openvoxproject)
-- [PuppetDB API Documentation](https://puppet.com/docs/puppetdb/latest/api/)
-- [Puppet Node Classification](https://www.puppet.com/docs/pe/2023.8/grouping_and_classifying_nodes.html)
-- [NIST RBAC Model](https://csrc.nist.gov/projects/role-based-access-control)
+Detailed documentation for implemented features is in [docs/implemented-features/](docs/implemented-features/). Reference material that used to live in this file (key features, roles and permissions, API reference, installation, development guidelines, version history, references) is now in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md). The format of this file and `CHANGELOG.md` is defined by the Project Tracking Format (PTF) v1.
+
+Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is proposed, design only (M18-M31).
+
+## [M1] Foundation
+> outcome: The project builds, runs, has its RBAC foundation in place and is covered by an automated test setup.
+> phase: P1
+> spec: S1, S2, S3, S4
+
+- [x] T1 Set up project structure and tooling (S1)
+- [x] T2 Build core backend architecture (S2)
+- [x] T3 Add RBAC foundation (S3)
+- [x] T4 Add testing infrastructure (S4)
+
+## [M2] Authentication and Authorization
+> outcome: Users can register and sign in, and every protected resource is guarded by role-based permissions managed through tools and an API.
+> phase: P1
+> spec: S5, S6, S7
+
+- [x] T5 Add user management and JWT authentication (S5)
+- [x] T6 Implement RBAC with roles and permissions (S6)
+- [x] T7 Add RBAC management tools and API (S7)
+
+## [M3] Infrastructure Integration
+> outcome: The application reads PuppetDB data through a cache and manages the Puppet CA through its own API.
+> phase: P1
+> spec: S8, S9, S10, S11, S12
+
+- [x] T8 Integrate PuppetDB (S8)
+- [x] T9 Add data caching layer (S9)
+- [x] T10 Expose PuppetDB API endpoints (S10)
+- [x] T11 Add Puppet CA management backend (S11)
+- [x] T12 Add CA API endpoints (S12)
+
+## [M4] Node Classification
+> outcome: Nodes are classified into hierarchical groups by fact-based rules and pinning, and Puppet agents can fetch their classification.
+> phase: P1
+> spec: S13
+
+- [x] T13 Add rule-based node classification (S13)
+
+## [M5] Facter Integration
+> outcome: Facts can be generated from custom templates and exported in several formats.
+> phase: P1
+> spec: S14
+
+- [x] T14 Add Facter integration and external fact generation (S14)
+
+## [M6] Dashboard and Visualization
+> outcome: Operators see fleet health and node status in a real-time dashboard with visualizations.
+> phase: P1
+> spec: S15
+
+- [x] T15 Add dashboard and visualizations (S15)
+
+## [M7] Configuration Management
+> outcome: Application configuration is managed through YAML files and a validated settings UI with versioning and import/export.
+> phase: P1
+> spec: S16
+
+- [x] T16 Add YAML configuration management with settings UI (S16)
+
+## [M8] CA Management UI
+> outcome: Certificate requests and certificates can be reviewed and managed from the web UI.
+> phase: P1
+> spec: S17
+
+- [x] T17 Add CA management UI (S17)
+
+## [M9] Advanced Features
+> outcome: Reporting, alerting, multi-tenancy, API keys and audit logging are available.
+> phase: P1
+> spec: S18
+
+- [x] T18 Add reporting with compliance and drift baselines (S18)
+- [x] T19 Add alerting with notification channels (S18, S24)
+- [x] T20 Add multi-tenancy and API keys (S18)
+- [x] T21 Add audit logging (S18)
+
+## [M10] Production Readiness
+> outcome: The application is performant, hardened, installable from native packages and a Puppet module, and fully documented.
+> phase: P1
+> spec: S19
+
+- [x] T22 Optimize performance (S19)
+- [x] T23 Harden security (S19)
+- [x] T24 Build RPM and DEB packages (S19)
+- [x] T25 Add Puppet module for automated deployment (S19)
+- [x] T26 Write production documentation suite (S19)
+
+## [M11] Post-launch Enhancements
+> outcome: Operational features added after the original nine phases (agent bootstrap, Windows agents, code deploy, CVE detection, scalability and self-protection) are released.
+> phase: P1
+> note: Added at migration. These features shipped in releases 0.20.0 to 0.41.6 and were not part of the original phase plan.
+
+- [x] T27 Bootstrap Linux agents with a curl command
+- [x] T28 Bootstrap Windows agents with PowerShell
+- [x] T29 Delete nodes with RBAC permission
+- [x] T30 Deploy code with r10k from Code Deploy
+- [x] T31 Authenticate classification with mTLS or shared key
+- [x] T32 Add self-healing ENC watchdog
+- [x] T33 Pre-aggregate report summaries for the dashboard
+- [x] T34 Paginate nodes server-side with fleet-wide stats
+- [x] T35 Report machine variable assignments
+- [x] T36 Track auth sessions and enforce idle timeout
+- [x] T37 Add memory monitor with restart on exhaustion
+- [x] T38 Support Windows agents in the Puppet module
+- [x] T39 Add compliance and drift baseline editors
+- [x] T40 Detect CVE vulnerabilities from NVD and CISA KEV
+- [x] T41 Alert on update-job failures with configurable max runtime
+
+## [M12] Inventory Schema and Transport
+> outcome: Agents submit inventory to an authenticated ingestion API that stores it in a dedicated database.
+> version: 0.28.0
+> phase: P2
+> spec: S20
+
+- [x] T42 Define inventory schema and ingestion API (S20)
+- [x] T43 Add inventory submission to the Puppet module (S20)
+- [x] T44 Store inventory in a dedicated SQLite database (S20)
+
+## [M13] OS-Specific Collectors
+> outcome: Linux, Windows and macOS nodes report packages, applications, websites, runtimes, containers and users.
+> version: 0.28.0
+> phase: P2
+> spec: S20
+
+- [x] T45 Collect Linux RPM and DEB package inventory (S20)
+- [x] T46 Collect Windows applications and IIS inventory (S20)
+- [x] T47 Collect macOS app bundles and Homebrew inventory (S20)
+- [x] T48 Discover Apache, NGINX, Tomcat and JBoss deployments (S20)
+- [x] T49 Collect container and local user inventory (S20)
+
+## [M14] Node Inventory UI
+> outcome: Operators can browse, search and filter a node's inventory and its history on the node detail page.
+> version: 0.28.0
+> phase: P2
+> spec: S20
+
+- [x] T50 Add node inventory cards and detail sections (S20)
+- [x] T51 Add search, filter and history views per node (S20)
+
+## [M15] Version Intelligence and Scheduled Jobs
+> outcome: The server knows the latest available versions per platform, flags outdated software and detects stale inventory on a schedule.
+> version: 0.28.0
+> phase: P2
+> spec: S20
+
+- [x] T52 Sync repository metadata for version catalogs (S20)
+- [x] T53 Compare installed and latest versions per node (S20)
+- [x] T54 Schedule inventory jobs and detect stale inventory (S20)
+
+## [M16] Fleet Statistics and Compliance Reporting
+> outcome: A separate inventory and update dashboard shows updated versus outdated nodes, patch aging, coverage and drift.
+> version: 0.28.0
+> phase: P2
+> spec: S20
+
+- [x] T55 Add inventory and update dashboard (S20)
+- [x] T56 Report updated versus outdated statistics (S20)
+- [x] T57 Report patch aging, coverage and drift metrics (S20)
+
+## [M17] Update Orchestration
+> outcome: Operators can safely run single-node and bulk updates with scheduling, approvals, execution tracking, audit trails and RBAC controls.
+> phase: P2
+> spec: S20
+> note: Old roadmap status "In Progress" (Phase 10.6); foundations shipped in 0.28.0 and the feature set grew through 0.41.x.
+
+- [x] T58 Update single nodes (S20)
+- [x] T59 Update node groups in bulk (S20)
+- [x] T60 Schedule updates with approval workflow (S20)
+- [x] T61 Track update execution and results (S20)
+- [/] T62 Audit update requests, approvals and outcomes (S20)
+  - note: audit logging of update actions was not verified during migration; status inferred from the old "In Progress" milestone
+- [ ] T63 Enforce maintenance windows and concurrency limits (S20)
+- [ ] T64 Provide rollback guidance for update jobs (S20)
+
+## [M18] Plugin PoCs
+> outcome: Proofs of concept show that per-plugin storage limits, wasmtime resource limits and package size impact are acceptable.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T65 Prove per-plugin SQLite storage with enforced limits (S21)
+- [ ] T66 Prove wasmtime fuel and memory limits inside Axum (S21)
+- [ ] T67 Measure build and binary size impact on RPM and DEB packages (S21)
+
+## [M19] Plugin Manager and Signatures
+> outcome: Administrators can install signed plugins and manage trusted keys, and unsigned or untrusted plugins can never be installed or loaded.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T68 Define plugin manifest and .ovxp package (S21)
+- [ ] T69 Verify plugin signatures with ed25519 (S21)
+- [ ] T70 Manage trusted keys through API and UI (S21)
+- [ ] T71 Add plugin admin API and Plugins page (S21)
+- [ ] T72 Add built-in runtime and slot registry for menus and pages (S21)
+
+## [M20] WASM Runtime and Host API
+> outcome: WASM plugins run sandboxed with approved capabilities, own storage and enforced resource limits.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T73 Add WASM runtime and host API (S21)
+- [ ] T74 Add capability gate and approval flow (S21)
+- [ ] T75 Provide kv and db:own storage with migrations (S21)
+- [ ] T76 Add lifecycle hooks and resource limits (S21)
+
+## [M21] Events, Jobs and Webhooks
+> outcome: Plugins react to events, run scheduled jobs and exchange signed webhooks.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T77 Add event bus with outbox and dispatcher (S21)
+- [ ] T78 Add scheduled plugin jobs (S21)
+- [ ] T79 Add inbound and outbound webhooks (S21)
+
+## [M22] Telemetry and Governance
+> outcome: Administrators can monitor plugins, and a failing or abusive plugin is isolated by quotas and a circuit breaker.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T80 Add plugin metrics and quotas (S21)
+- [ ] T81 Add circuit breaker and administrator dashboard (S21)
+- [ ] T82 Expose Prometheus metrics endpoint (S21)
+
+## [M23] Plugin UI and SDK
+> outcome: Plugins contribute sandboxed UI through the full slot catalog and a TypeScript SDK.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T83 Add sandboxed iframe pages (S21)
+- [ ] T84 Add TypeScript plugin SDK (S21)
+- [ ] T85 Add theme tokens and complete slot catalog (S21)
+
+## [M24] Updates and Rollback
+> outcome: Plugins can be upgraded in batch or on schedule, rolled back and locally revoked.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T86 Add batch and scheduled plugin updates (S21)
+- [ ] T87 Store plugin versions and support rollback (S21)
+- [ ] T88 Add local plugin revocation (S21)
+
+## [M25] Facts and Reports
+> outcome: Plugins provide facts and report types, exports, annotations and datasets.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T89 Add plugin facts with merged view and opt-in agent export (S21)
+- [ ] T90 Add plugin report types, export formats, annotations and datasets (S21)
+
+## [M26] Advanced Classification (core)
+> outcome: Classification supports expressions, group behavior policies and explainable results while existing BDD classification scenarios pass unchanged.
+> phase: P3
+> spec: S21, S23
+> note: Independent of the plugin runtime and can start earlier.
+
+- [ ] T91 Add expression engine for classification rules (S21)
+- [ ] T92 Add group behavior policies (S21)
+- [ ] T93 Add explain, provenance and impact preview (S21)
+
+## [M27] Classification Extensions for Plugins
+> outcome: Plugins extend classification with operators, membership providers and generated groups without destabilizing the hot path.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T94 Add pure operators, functions and membership providers (S21)
+- [ ] T95 Add dynamic and generated groups with churn guard (S21)
+- [ ] T96 Add merge strategies and safe degradation (S21)
+
+## [M28] Secret Providers
+> outcome: Configuration can reference secrets through a resolver with env and file providers.
+> phase: P3
+> spec: S21, S22, S23
+
+- [ ] T97 Add SecretResolver with env and file providers (S22)
+- [ ] T98 Resolve secret:// references in configuration (S22)
+
+## [M29] Authentication Pipeline
+> outcome: MFA and SSO can be enforced by policy while the local break-glass administrator remains available.
+> phase: P3
+> spec: S21, S22, S23
+
+- [ ] T99 Add challenge and step-up authentication pipeline (S22)
+- [ ] T100 Add built-in TOTP, recovery codes and WebAuthn (S22)
+- [ ] T101 Add OIDC and refactor local and SAML as providers (S22)
+- [ ] T102 Add MFA policies (S22)
+
+## [M30] Directory Providers
+> outcome: Users authenticate and are provisioned from LDAP or Active Directory with group-to-role mapping.
+> phase: P3
+> spec: S21, S22, S23
+
+- [ ] T103 Add LDAP and Active Directory provider (S22)
+
+## [M31] Advanced Hooks
+> outcome: Restricted interceptors, trusted module pages (if approved) and inbound SCIM are available.
+> phase: P3
+> spec: S21, S23
+
+- [ ] T104 Add restricted interceptors (S21)
+- [ ] T105 Add trusted module pages if approved (S21)
+- [ ] T106 Add inbound SCIM (S21)
+
+## [M32] Stable Production Release
+> outcome: Version 1.0.0 is released as the stable production milestone.
+> version: 1.0.0
+
+- [ ] T107 Release stable 1.0.0
+
+## Backlog
+- [ ] T108 Add WebSocket real-time updates
+- [ ] T109 Add GraphQL API support
+- [ ] T110 Add mobile app support
+- [ ] T111 Add internationalization
+- [ ] T112 Add attribute-based access control
+- [ ] T113 Integrate OpenBolt orchestration
+- [>] T114 Add multi-tenant plugin scoping (S21)
+  - from: M18
+  - why: deferred out of the first plugin platform release; the design keeps it reachable
+- [>] T115 Add plugin marketplace (S21)
+  - from: M18
+  - why: deferred out of the first plugin platform release; the design keeps it reachable
+
+## Specs
+| ID | Title | Path | Status |
+|----|-------|------|--------|
+| S1 | Project setup | docs/implemented-features/01-project-setup.md | approved |
+| S2 | Core backend architecture | docs/implemented-features/02-core-backend.md | approved |
+| S3 | RBAC foundation | docs/implemented-features/03-rbac-foundation.md | approved |
+| S4 | Testing infrastructure | docs/implemented-features/04-testing-infrastructure.md | approved |
+| S5 | User management | docs/implemented-features/05-user-management.md | approved |
+| S6 | RBAC implementation | docs/implemented-features/06-rbac-implementation.md | approved |
+| S7 | RBAC management tools and API | docs/implemented-features/07-rbac-management.md | approved |
+| S8 | PuppetDB integration | docs/implemented-features/08-puppetdb-integration.md | approved |
+| S9 | Data caching layer | docs/implemented-features/09-caching-layer.md | approved |
+| S10 | PuppetDB API endpoints | docs/implemented-features/10-puppetdb-api.md | approved |
+| S11 | Puppet CA management (backend) | docs/implemented-features/11-puppet-ca-backend.md | approved |
+| S12 | CA API endpoints | docs/implemented-features/12-ca-api-endpoints.md | approved |
+| S13 | Node classification | docs/implemented-features/13-node-classification.md | approved |
+| S14 | Facter integration | docs/implemented-features/14-facter-integration.md | approved |
+| S15 | Dashboard and visualization | docs/implemented-features/15-dashboard-visualization.md | approved |
+| S16 | Configuration management | docs/implemented-features/16-configuration-management.md | approved |
+| S17 | CA management UI | docs/implemented-features/17-ca-management-ui.md | approved |
+| S18 | Reporting, alerting and multi-tenancy | docs/implemented-features/18-advanced-features.md | approved |
+| S19 | Production readiness | docs/implemented-features/19-production-readiness.md | approved |
+| S20 | Application inventory and update management plan | docs/architecture/INVENTORY_UPDATES.md | approved |
+| S21 | Plugin platform design | docs/architecture/PLUGIN_PLATFORM.md | draft |
+| S22 | Plugin system extension points | docs/architecture/PLUGIN_SYSTEM.md | draft |
+| S23 | Plugin platform roadmap notes | docs/architecture/PLUGIN_PLATFORM_ROADMAP.md | draft |
+| S24 | Alert rules conditions | docs/ALERT_RULES_CONDITIONS.md | approved |
+| S25 | CA API reference | docs/api/ca.md | approved |
+
+## Phases
+| ID | Title | Outcome | Target |
+|----|-------|---------|--------|
+| P1 | Core platform | Foundation, authentication, integration, classification, facter, dashboard, configuration, CA, advanced features and production readiness are shipped (old Phases 1-9). |  |
+| P2 | Inventory and update management | Operators inventory and update Windows, Linux and macOS nodes from one console (old Phase 10). |  |
+| P3 | Plugin platform | Administrators extend the application with signed, sandboxed plugins (old Phase 11). |  |
