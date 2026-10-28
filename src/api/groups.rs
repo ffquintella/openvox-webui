@@ -662,6 +662,20 @@ async fn run_update_schedule(
         .await
         .map_err(|e| AppError::internal(format!("Failed to create update job: {}", e)))?;
 
+    crate::services::update_audit::record(
+        &state.db,
+        auth_user.organization_id,
+        Some(auth_user.user_id()),
+        crate::services::update_audit::ACTION_REQUESTED,
+        &job.id,
+        crate::services::update_audit::requested_details(
+            &job,
+            &auth_user.username,
+            "schedule_manual_run",
+        ),
+    )
+    .await;
+
     // Update schedule last_run_at
     let _ = inv_repo
         .update_schedule_after_run(

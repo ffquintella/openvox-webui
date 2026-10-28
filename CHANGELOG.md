@@ -13,6 +13,7 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ### Added
 - Add the plugin platform design documents and the Phase 11 roadmap (M18, S21, S22, S23)
+- Audit update jobs in the shared audit log (`resource_type` `update_jobs`, queryable through `/api/v1/audit-logs`): requested (manual, schedule manual run and scheduled run), approved, rejected, cancelled, dispatched to a node, per-target result, finished and timed out after the maximum runtime (T62)
 
 ### Changed
 - Adopt the Project Tracking Format for `ROADMAP.md` and `CHANGELOG.md`, moving roadmap reference material to `docs/PROJECT_OVERVIEW.md`, `docs/architecture/INVENTORY_UPDATES.md` and `docs/architecture/PLUGIN_PLATFORM_ROADMAP.md` (S20, S23)

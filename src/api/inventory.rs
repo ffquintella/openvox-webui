@@ -19,6 +19,7 @@ use crate::{
         UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
         UpdatePreviewTarget,
     },
+    services::update_audit,
     utils::error::{AppError, AppResult},
     AppState,
 };
@@ -312,6 +313,16 @@ async fn create_update_job(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to create update job: {}", e)))?;
 
+    update_audit::record(
+        &state.db,
+        auth_user.organization_id,
+        Some(auth_user.user_id()),
+        update_audit::ACTION_REQUESTED,
+        &job.id,
+        update_audit::requested_details(&job, &auth_user.username, "manual"),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(job)))
 }
 
@@ -335,6 +346,25 @@ async fn approve_update_job(
         .map_err(|e| AppError::Internal(format!("Failed to update job approval state: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Update job '{}' not found", job_id)))?;
 
+    update_audit::record(
+        &state.db,
+        auth_user.organization_id,
+        Some(auth_user.user_id()),
+        if payload.approved {
+            update_audit::ACTION_APPROVED
+        } else {
+            update_audit::ACTION_REJECTED
+        },
+        &job.id,
+        serde_json::json!({
+            "actor": auth_user.username,
+            "requested_by": job.requested_by,
+            "notes": payload.notes,
+            "status": job.status.as_str(),
+        }),
+    )
+    .await;
+
     Ok(Json(job))
 }
 
@@ -351,6 +381,20 @@ async fn cancel_update_job(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to cancel update job: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Update job '{}' not found", job_id)))?;
+
+    update_audit::record(
+        &state.db,
+        auth_user.organization_id,
+        Some(auth_user.user_id()),
+        update_audit::ACTION_CANCELLED,
+        &job.id,
+        serde_json::json!({
+            "actor": auth_user.username,
+            "requested_by": job.requested_by,
+            "status": job.status.as_str(),
+        }),
+    )
+    .await;
 
     Ok(Json(job))
 }

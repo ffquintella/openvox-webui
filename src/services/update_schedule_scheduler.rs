@@ -15,6 +15,7 @@ use crate::db::{repository::GroupRepository, InventoryRepository, SettingsReposi
 use crate::services::notification::NotificationService;
 use crate::services::puppetdb::PuppetDbClient;
 use crate::services::scheduler::calculate_next_run;
+use crate::services::update_audit;
 use crate::services::AlertingService;
 
 type DbPool = SqlitePool;
@@ -223,6 +224,19 @@ async fn process_due_schedules(
             .await
         {
             Ok(job) => {
+                update_audit::record(
+                    main_pool,
+                    org_id,
+                    None,
+                    update_audit::ACTION_REQUESTED,
+                    &job.id,
+                    update_audit::requested_details(
+                        &job,
+                        "update-schedule-scheduler",
+                        "schedule_auto_run",
+                    ),
+                )
+                .await;
                 info!(
                     "Created update job '{}' from schedule '{}' for {} nodes",
                     job.id,
@@ -310,6 +324,19 @@ async fn enforce_update_job_limits_and_alerts(
     // Fail jobs that have been running longer than the configured limit.
     let inv_repo = InventoryRepository::new(state.inventory_pool.clone());
     let failed = inv_repo.fail_overrunning_jobs(max_minutes).await?;
+    for job_id in &failed {
+        update_audit::record(
+            &state.main_pool,
+            crate::models::default_organization_uuid(),
+            None,
+            update_audit::ACTION_TIMED_OUT,
+            job_id,
+            serde_json::json!({
+                "reason": format!("Job exceeded maximum runtime of {max_minutes} minutes"),
+            }),
+        )
+        .await;
+    }
     if !failed.is_empty() {
         warn!(
             "Failed {} update job(s) exceeding the maximum runtime of {} minutes",

@@ -29,6 +29,7 @@ pub mod report_summary_scheduler;
 pub mod reporting;
 pub mod saml;
 pub mod scheduler;
+pub mod update_audit;
 pub mod update_schedule_scheduler;
 
 pub use alerting::AlertingService;

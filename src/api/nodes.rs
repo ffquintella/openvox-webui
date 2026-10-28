@@ -22,6 +22,7 @@ use crate::{
     services::{
         classification::{build_classification_facts, ClassificationService},
         puppetdb::{NodeStats, QueryBuilder, QueryParams, Resource},
+        update_audit,
     },
     utils::error::{AppError, AppResult},
     AppState,
@@ -731,6 +732,22 @@ async fn get_pending_node_update_jobs(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch pending update jobs: {}", e)))?;
 
+    for job in &jobs {
+        update_audit::record(
+            &state.db,
+            default_organization_uuid(),
+            None,
+            update_audit::ACTION_DISPATCHED,
+            &job.job_id,
+            serde_json::json!({
+                "certname": certname,
+                "target_id": job.target_id,
+                "operation_type": job.operation_type,
+            }),
+        )
+        .await;
+    }
+
     Ok(Json(jobs))
 }
 
@@ -755,6 +772,38 @@ async fn submit_node_update_job_result(
                 target_id, certname
             ))
         })?;
+
+    update_audit::record(
+        &state.db,
+        default_organization_uuid(),
+        None,
+        update_audit::ACTION_TARGET_RESULT,
+        &job_id,
+        serde_json::json!({
+            "certname": certname,
+            "target_id": target_id,
+            "result_status": payload.status,
+            "summary": payload.summary,
+            "job_status": job.status.as_str(),
+        }),
+    )
+    .await;
+    if update_audit::is_terminal(job.status) {
+        update_audit::record(
+            &state.db,
+            default_organization_uuid(),
+            None,
+            update_audit::ACTION_FINISHED,
+            &job_id,
+            serde_json::json!({
+                "status": job.status.as_str(),
+                "requested_by": job.requested_by,
+                "approved_by": job.approved_by,
+                "target_count": job.targets.len(),
+            }),
+        )
+        .await;
+    }
 
     Ok(Json(job))
 }
