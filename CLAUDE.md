@@ -14,6 +14,15 @@ Keep commit messages clean and focused only on describing the changes made.
 2. Use appropriate categories: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`
 3. When releasing a version, move unreleased changes to a new version section with date
 
+## Documentation Language
+
+**IMPORTANT:** English is the primary language for all project documentation and specifications. This covers design documents and ADRs (`docs/architecture/`), API and user documentation (`docs/`), feature specifications and plans, the changelog, README and ROADMAP, code comments, commit messages and pull request descriptions.
+
+1. Write new documents and specifications in English, even when the request or the discussion with the user is in another language.
+2. When you edit an existing document written in another language, translate the parts you touch, or the whole document if the change is substantial, and keep the structure and section numbering so existing cross-references stay valid.
+3. Keep identifiers, API paths, configuration keys and code unchanged; only translate prose, comments and human-readable labels.
+4. Replying to the user in their own language in chat is fine; the files you write are what must be in English.
+
 ## Project Overview
 
 OpenVox WebUI is a web interface for managing OpenVox infrastructure. It provides PuppetDB integration, node classification (similar to Puppet Enterprise), facter generation, and dashboard visualization.
