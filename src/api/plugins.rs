@@ -20,7 +20,7 @@ use crate::{
     middleware::AuthUser,
     models::*,
     services::{
-        plugins::{PluginError, TrustRequest, AUDIT_PLUGINS, AUDIT_TRUST},
+        plugins::{slots, ui_assets, PluginError, TrustRequest, AUDIT_PLUGINS, AUDIT_TRUST},
         AuthService,
     },
     utils::{error::ErrorResponse, AppError},
@@ -39,7 +39,7 @@ async fn emit(state: &AppState, user: &AuthUser, event_type: &str, payload: serd
 }
 
 pub fn public_routes() -> Router<AppState> {
-    super::plugin_events::public_routes()
+    super::plugin_events::public_routes().route("/ui-assets/{token}/{*path}", get(ui_asset))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -53,6 +53,8 @@ pub fn routes() -> Router<AppState> {
         .merge(super::plugin_events::routes())
         .merge(super::plugin_governance::routes())
         .route("/ui/slots", get(ui_slots))
+        .route("/ui/catalog", get(ui_catalog))
+        .route("/ui/sessions", post(ui_session))
         .route(
             "/ui/contributions/{plugin_id}/{contribution_id}",
             get(ui_contribution),
@@ -574,6 +576,120 @@ async fn ui_contribution(
     found
         .map(Json)
         .ok_or_else(|| AppError::not_found("Contribution not found").into())
+}
+
+async fn ui_catalog() -> Json<slots::SlotCatalog> {
+    Json(slots::catalog())
+}
+
+#[derive(serde::Deserialize)]
+struct UiSessionRequest {
+    plugin_id: String,
+    contribution_id: String,
+}
+
+#[derive(serde::Serialize)]
+struct UiSessionResponse {
+    /// Where the sandboxed iframe loads from; relative to the host origin.
+    url: String,
+    expires_in_secs: u64,
+    /// Host API areas the page may read through the SDK proxy (approved
+    /// capabilities only; the user's own RBAC still applies to every call).
+    api_scopes: Vec<String>,
+}
+
+/// Capabilities that open a read-only area of the host API to a plugin page.
+const API_SCOPE_CAPABILITIES: &[&str] = &[
+    "nodes:read",
+    "facts:read",
+    "reports:read",
+    "groups:read",
+    "users:read",
+];
+
+fn egress_hosts(caps: &[Capability]) -> Vec<String> {
+    caps.iter()
+        .filter(|c| c.name == "http:egress")
+        .filter_map(|c| c.scope.as_ref()?.get("hosts")?.as_array().cloned())
+        .flatten()
+        .filter_map(|h| h.as_str().map(str::to_string))
+        .collect()
+}
+
+async fn ui_session(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<UiSessionRequest>,
+) -> ApiResult<Json<UiSessionResponse>> {
+    let registry = state.plugin_manager.registry();
+    let vis = visibility(&state, &user, registry.required_permissions()).await?;
+    let allow = check(&vis);
+    let target = registry
+        .find_iframe(&req.plugin_id, &req.contribution_id, &allow)
+        .ok_or_else(|| AppError::not_found("Contribution not found"))?;
+    let caps = state
+        .plugin_manager
+        .effective_capabilities(&req.plugin_id)
+        .await;
+    let api_scopes = API_SCOPE_CAPABILITIES
+        .iter()
+        .filter(|n| caps.iter().any(|c| c.name == **n))
+        .map(|n| n.to_string())
+        .collect();
+    let token = state.plugin_manager.ui_sessions().issue(
+        &target.plugin_id,
+        &target.version,
+        &req.contribution_id,
+        &user.username,
+    );
+    Ok(Json(UiSessionResponse {
+        url: format!("/api/v1/plugins/ui-assets/{}/{}", token, target.src),
+        expires_in_secs: ui_assets::SESSION_TTL.as_secs(),
+        api_scopes,
+    }))
+}
+
+/// Serves one file of a plugin's web bundle. Authorised by the path token
+/// alone (a frame cannot send an Authorization header), so it answers 404 for
+/// anything unknown and never leaks why.
+async fn ui_asset(
+    State(state): State<AppState>,
+    Path((token, path)): Path<(String, String)>,
+) -> Response {
+    let not_found = || StatusCode::NOT_FOUND.into_response();
+    let Some(session) = state.plugin_manager.ui_sessions().lookup(&token) else {
+        return not_found();
+    };
+    let Some(path) = ui_assets::clean_path(&path) else {
+        return not_found();
+    };
+    let Some(ctype) = ui_assets::content_type(&path) else {
+        return not_found();
+    };
+    let registry = state.plugin_manager.registry();
+    let Some(bytes) = registry.bundle_file(&session.plugin_id, &session.version, &path) else {
+        return not_found();
+    };
+    let caps = state
+        .plugin_manager
+        .effective_capabilities(&session.plugin_id)
+        .await;
+    let csp = ui_assets::content_security_policy(&egress_hosts(&caps));
+    let mut headers = HeaderMap::new();
+    let mut put = |k: &'static str, v: &str| {
+        if let Ok(v) = v.parse() {
+            headers.insert(k, v);
+        }
+    };
+    put("content-type", ctype);
+    put("content-security-policy", &csp);
+    put("x-content-type-options", "nosniff");
+    put("referrer-policy", "no-referrer");
+    put("cache-control", "private, no-store");
+    // The frame has an opaque origin: module scripts and fonts need CORS.
+    put("access-control-allow-origin", "*");
+    put("cross-origin-resource-policy", "cross-origin");
+    (StatusCode::OK, headers, bytes.as_ref().clone()).into_response()
 }
 
 #[derive(serde::Deserialize, Default)]

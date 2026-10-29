@@ -144,6 +144,33 @@ export function usePluginSlots() {
   });
 }
 
+/** Contributions of one slot, already filtered by the server for this user. */
+export function usePluginSlot(slot: string) {
+  const { data } = usePluginSlots();
+  return data?.slots[slot] ?? [];
+}
+
+export function usePluginCatalog() {
+  return useQuery({
+    queryKey: ['plugin-ui', 'catalog'],
+    queryFn: () => pluginsApi.getUiCatalog(),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/** Asset session for a sandboxed iframe. Kept for the life of the page so the frame is not reloaded. */
+export function usePluginUiSession(pluginId: string, contributionId: string) {
+  return useQuery({
+    queryKey: ['plugin-ui', 'session', pluginId, contributionId],
+    queryFn: () => pluginsApi.createUiSession(pluginId, contributionId),
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function usePluginContribution(
   pluginId: string | undefined,
   contributionId: string | undefined

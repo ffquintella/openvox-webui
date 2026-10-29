@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
+import PluginSlot from '../components/plugins/PluginSlot';
 import { Report, ResourceEvent } from '../types';
 
 // Helper function to get event status color
@@ -417,6 +418,11 @@ export default function Reports() {
                     <p className="text-sm font-medium text-gray-700 mb-3">Resource Events</p>
                     <ResourceEventsPanel reportHash={report.hash} />
                   </div>
+                  <PluginSlot
+                    slot="report.detail.panels"
+                    params={{ report_hash: report.hash }}
+                    className="mt-4 space-y-4"
+                  />
                 </div>
               )}
             </div>

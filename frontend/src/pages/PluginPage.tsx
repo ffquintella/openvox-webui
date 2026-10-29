@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { Info, Loader2 } from 'lucide-react';
 import { usePluginSlots, usePluginContribution } from '../hooks/usePlugins';
 import DeclarativeRenderer from '../components/plugins/DeclarativeRenderer';
+import PluginFrame from '../components/plugins/PluginFrame';
 
 function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -36,9 +37,12 @@ export default function PluginPage() {
     data: detail,
     isLoading: detailLoading,
     isError,
-  } = usePluginContribution(contribution?.plugin_id, contribution?.id);
+  } = usePluginContribution(
+    contribution?.render === 'declarative' ? contribution.plugin_id : undefined,
+    contribution?.id
+  );
 
-  if (isLoading || (contribution && detailLoading)) {
+  if (isLoading || (contribution?.render === 'declarative' && detailLoading)) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
@@ -54,10 +58,10 @@ export default function PluginPage() {
     );
   }
 
-  if (contribution.render !== 'declarative') {
+  if (contribution.render !== 'declarative' && contribution.render !== 'iframe') {
     return (
       <Notice title={contribution.title ?? contribution.plugin_name}>
-        The {contribution.render} render type is not available yet.
+        The {contribution.render} render type is not supported.
       </Notice>
     );
   }
@@ -73,7 +77,9 @@ export default function PluginPage() {
         </p>
       </div>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        {isError || !detail ? (
+        {contribution.render === 'iframe' ? (
+          <PluginFrame contribution={contribution} slot="page" fill />
+        ) : isError || !detail ? (
           <p className="text-sm text-gray-500">This page could not be loaded.</p>
         ) : (
           <DeclarativeRenderer spec={detail.spec} />

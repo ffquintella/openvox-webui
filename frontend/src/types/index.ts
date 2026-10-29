@@ -2234,12 +2234,7 @@ export interface UpdatePreviewPackage {
 // ============================================================================
 
 export type PluginState =
-  | 'installed'
-  | 'configured'
-  | 'enabled'
-  | 'disabled'
-  | 'error'
-  | 'update_pending';
+  'installed' | 'configured' | 'enabled' | 'disabled' | 'error' | 'update_pending';
 
 export type PluginRuntimeKind = 'wasm' | 'remote' | 'builtin';
 export type PluginRiskLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -2284,12 +2279,7 @@ export interface PluginDetail extends PluginSummary {
 }
 
 export type PluginSignatureStatus =
-  | 'valid'
-  | 'untrusted_key'
-  | 'invalid'
-  | 'key_revoked'
-  | 'key_expired'
-  | 'key_scope';
+  'valid' | 'untrusted_key' | 'invalid' | 'key_revoked' | 'key_expired' | 'key_scope';
 
 export interface PluginSignatureReport {
   status: PluginSignatureStatus;
@@ -2397,6 +2387,29 @@ export interface UiSlots {
 
 export interface UiContributionDetail extends UiContribution {
   spec: unknown | null;
+}
+
+// Plugin UI sessions and slot catalog (M23)
+export type PluginSlotKind = 'menu' | 'page' | 'panel' | 'action' | 'column';
+
+export interface PluginSlotSpec {
+  name: string;
+  kind: PluginSlotKind;
+  context: string[];
+  max_items: number;
+  mounted: boolean;
+  default_height: number;
+}
+
+export interface PluginSlotCatalog {
+  version: number;
+  slots: PluginSlotSpec[];
+}
+
+export interface PluginUiSession {
+  url: string;
+  expires_in_secs: number;
+  api_scopes: string[];
 }
 
 // Plugin governance (M22)

@@ -26,6 +26,7 @@ import {
 import clsx from 'clsx';
 import { api } from '../services/api';
 import NodeAutocomplete from '../components/NodeAutocomplete';
+import PluginSlot from '../components/plugins/PluginSlot';
 import type {
   NodeGroup,
   ClassificationRule,
@@ -2059,6 +2060,11 @@ export default function Groups() {
                   </div>
                 </div>
               )}
+              <PluginSlot
+                slot="group.detail.panels"
+                params={{ group_id: String(selectedGroup.id) }}
+                className="mt-6 space-y-4"
+              />
             </div>
           ) : (
             <div className="card flex items-center justify-center h-96">

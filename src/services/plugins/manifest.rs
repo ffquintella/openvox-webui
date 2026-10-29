@@ -15,31 +15,6 @@ use crate::models::{
 
 pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
 
-/// Slots plugins may contribute to (PLUGIN_PLATFORM.md section 8.1).
-pub const KNOWN_SLOTS: &[&str] = &[
-    "nav.main",
-    "nav.admin",
-    "nav.user-menu",
-    "toolbar.global",
-    "dashboard.widgets",
-    "node.detail.tabs",
-    "node.detail.actions",
-    "group.detail.panels",
-    "report.detail.panels",
-    "footer.global",
-    "settings.sections",
-    "profile.security",
-    "admin.auth",
-    "node.detail.facts",
-    "report.list.columns",
-    "report.export.actions",
-    "reports.builder.sources",
-    "group.rule.editors",
-    "group.members.columns",
-    "classification.explain.panels",
-    "page",
-];
-
 pub const MENU_SECTIONS: &[&str] = &["main", "admin", "user-menu"];
 
 /// Icons a plugin menu item may use (lucide-react names; the frontend keeps
@@ -192,7 +167,7 @@ fn validate_contributions(
     let mut ids = BTreeSet::new();
 
     for s in &m.contributes.slots {
-        if !KNOWN_SLOTS.contains(&s.slot.as_str()) {
+        if !super::slots::is_known(&s.slot) {
             p.push(format!("unknown slot '{}'", s.slot));
         }
         if !valid_local_id(&s.id) {
@@ -568,7 +543,7 @@ fn validate_capability(c: &Capability) -> Result<(), String> {
         return Err(format!("unknown capability '{}'", c.name));
     }
     if let Some(slot) = c.name.strip_prefix("ui:slot:") {
-        if !KNOWN_SLOTS.contains(&slot) {
+        if !super::slots::is_known(slot) {
             return Err(format!("capability '{}' names an unknown slot", c.name));
         }
     }

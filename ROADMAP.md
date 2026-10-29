@@ -16,7 +16,7 @@ OpenVox WebUI is a web interface for managing and monitoring OpenVox infrastruct
 
 Detailed documentation for implemented features is in [docs/implemented-features/](docs/implemented-features/). Reference material that used to live in this file (key features, roles and permissions, API reference, installation, development guidelines, version history, references) is now in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md). The format of this file and `CHANGELOG.md` is defined by the Project Tracking Format (PTF) v1.
 
-Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks) and M22 (telemetry and governance) are done; M23 (plugin UI and SDK) is next.
+Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks), M22 (telemetry and governance) and M23 (plugin UI and SDK) are done; M24 (updates and rollback) is next.
 
 ## [M1] Foundation
 > outcome: The project builds, runs, has its RBAC foundation in place and is covered by an automated test setup.
@@ -243,9 +243,9 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > phase: P3
 > spec: S21, S23
 
-- [ ] T83 Add sandboxed iframe pages (S21)
-- [ ] T84 Add TypeScript plugin SDK (S21)
-- [ ] T85 Add theme tokens and complete slot catalog (S21)
+- [x] T83 Add sandboxed iframe pages (S21)
+- [x] T84 Add TypeScript plugin SDK (S21)
+- [x] T85 Add theme tokens and complete slot catalog (S21)
 
 ## [M24] Updates and Rollback
 > outcome: Plugins can be upgraded in batch or on schedule, rolled back and locally revoked.

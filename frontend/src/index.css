@@ -51,6 +51,42 @@
 @source "../index.html";
 @source "./**/*.{js,ts,jsx,tsx}";
 
+/* Design tokens for plugins (--ov-*). Keep in sync with DEFAULT_TOKENS in utils/pluginTheme.ts. */
+:root {
+  --ov-color-bg: #f9fafb;
+  --ov-color-surface: #ffffff;
+  --ov-color-surface-alt: #f3f4f6;
+  --ov-color-border: #e5e7eb;
+  --ov-color-text: #111827;
+  --ov-color-text-muted: #6b7280;
+  --ov-color-primary: #0284c7;
+  --ov-color-primary-contrast: #ffffff;
+  --ov-color-success: #16a34a;
+  --ov-color-warning: #d97706;
+  --ov-color-danger: #dc2626;
+  --ov-color-info: #0284c7;
+  --ov-font-body: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --ov-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ov-font-size-base: 14px;
+  --ov-radius: 6px;
+  --ov-radius-lg: 12px;
+}
+
+html.dark {
+  --ov-color-bg: #111827;
+  --ov-color-surface: #1f2937;
+  --ov-color-surface-alt: #374151;
+  --ov-color-border: #374151;
+  --ov-color-text: #f3f4f6;
+  --ov-color-text-muted: #9ca3af;
+  --ov-color-primary: #38bdf8;
+  --ov-color-primary-contrast: #0c1a24;
+  --ov-color-success: #4ade80;
+  --ov-color-warning: #fbbf24;
+  --ov-color-danger: #f87171;
+  --ov-color-info: #38bdf8;
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

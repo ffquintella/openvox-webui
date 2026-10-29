@@ -550,3 +550,63 @@ async fn governance_endpoints_enforce_permissions_and_report_aggregates() {
     .await
     .assert_not_found();
 }
+
+#[tokio::test]
+async fn plugin_ui_catalog_and_sessions_need_a_signed_in_user_and_a_real_contribution() {
+    let app = TestApp::new().await;
+    let anon = app
+        .request(
+            Request::builder()
+                .uri("/api/v1/plugins/ui/catalog")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(anon.status, 401);
+
+    let token = admin_token(&app).await;
+    let r = send(
+        &app,
+        &token,
+        "GET",
+        "/api/v1/plugins/ui/catalog",
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, 200);
+    let v: Value = serde_json::from_slice(&r.body).unwrap();
+    assert_eq!(v["version"], 1);
+    let names: Vec<&str> = v["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"node.detail.tabs") && names.contains(&"page"));
+
+    let r = send(
+        &app,
+        &token,
+        "POST",
+        "/api/v1/plugins/ui/sessions",
+        json_body(json!({"plugin_id": "ghost", "contribution_id": "x"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status, 404);
+}
+
+#[tokio::test]
+async fn plugin_ui_assets_are_public_but_a_bad_token_is_a_plain_404() {
+    let app = TestApp::new().await;
+    for uri in [
+        "/api/v1/plugins/ui-assets/deadbeef/ui/app.html",
+        "/api/v1/plugins/ui-assets/deadbeef/..%2Fplugin.yaml",
+    ] {
+        let r = app
+            .request(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await;
+        assert_eq!(r.status, 404, "{uri}");
+    }
+}

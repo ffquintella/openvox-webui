@@ -11,6 +11,11 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
 
     let headers = response.headers_mut();
 
+    // A handler that sets its own Content-Security-Policy (the sandboxed plugin
+    // pages do) keeps it, together with its Referrer-Policy: the defaults below
+    // are far more permissive than what such a response needs.
+    let own_csp = headers.contains_key("Content-Security-Policy");
+
     // Strict-Transport-Security (HSTS)
     // Forces browsers to use HTTPS for all future requests to this domain
     // max-age=31536000 = 1 year, includeSubDomains applies to all subdomains
@@ -37,10 +42,12 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     // Referrer-Policy
     // Controls how much referrer information is included with requests
     // strict-origin-when-cross-origin sends full URL for same-origin, origin only for cross-origin HTTPS
-    headers.insert(
-        "Referrer-Policy",
-        "strict-origin-when-cross-origin".parse().unwrap(),
-    );
+    if !own_csp {
+        headers.insert(
+            "Referrer-Policy",
+            "strict-origin-when-cross-origin".parse().unwrap(),
+        );
+    }
 
     // Permissions-Policy (formerly Feature-Policy)
     // Restricts which browser features can be used
@@ -61,12 +68,14 @@ pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> 
     // - font-src 'self': Allow fonts from same origin
     // - connect-src 'self': Allow XHR/fetch to same origin
     // - frame-ancestors 'self': Only allow framing from same origin (reinforces X-Frame-Options)
-    headers.insert(
+    if !own_csp {
+        headers.insert(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
             .parse()
             .unwrap(),
-    );
+        );
+    }
 
     // Cache-Control for API responses
     // Prevents caching of sensitive data
@@ -135,6 +144,35 @@ mod tests {
             response.headers().get("x-frame-options").unwrap(),
             "SAMEORIGIN"
         );
+    }
+
+    #[tokio::test]
+    async fn a_handler_policy_is_not_overwritten() {
+        async fn own() -> ([(&'static str, &'static str); 2], &'static str) {
+            (
+                [
+                    ("content-security-policy", "default-src 'none'"),
+                    ("referrer-policy", "no-referrer"),
+                ],
+                "x",
+            )
+        }
+        let app = Router::new()
+            .route("/own", get(own))
+            .layer(axum::middleware::from_fn(security_headers_middleware));
+        let response = app
+            .oneshot(Request::builder().uri("/own").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers().get("content-security-policy").unwrap(),
+            "default-src 'none'"
+        );
+        assert_eq!(
+            response.headers().get("referrer-policy").unwrap(),
+            "no-referrer"
+        );
+        assert!(response.headers().contains_key("x-frame-options"));
     }
 
     #[tokio::test]

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PluginSlot from '../components/plugins/PluginSlot';
 import {
   Save,
   Database,
@@ -130,6 +131,12 @@ export default function Settings() {
         {activeTab === 'server' && <ServerInfoTab />}
         {activeTab === 'cve-feeds' && <CveFeedsTab />}
       </div>
+
+      <PluginSlot
+        slot="settings.sections"
+        heading="Plugins"
+        className="max-w-4xl mt-10 space-y-6"
+      />
     </div>
   );
 }

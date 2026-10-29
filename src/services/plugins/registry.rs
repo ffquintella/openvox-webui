@@ -2,16 +2,21 @@
 //! enabled plugins, built from verified packages and served to the UI.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde_json::Value;
 
 use super::manifest::safe_package_path;
 use super::package::PluginPackage;
+use super::slots as catalog;
+use super::ui_assets::is_bundle_file;
 use crate::models::{
     MenuEntry, RenderKind, Requires, UiContribution, UiContributionDetail, UiMenuOp, UiSlots,
 };
 
 const MAX_SPEC_BYTES: usize = 256 * 1024;
+const MAX_BUNDLE_FILE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_PLUGIN_ORDER: i32 = 1000;
 
 #[derive(Debug, Clone)]
@@ -19,12 +24,30 @@ pub struct RegistryEntry {
     pub contribution: UiContribution,
     pub requires: Option<Requires>,
     pub spec: Option<Value>,
+    /// Iframe contributions: the HTML entry inside the plugin's web bundle.
+    pub src: Option<String>,
+}
+
+/// The static files of one enabled plugin that iframe contributions load.
+#[derive(Debug, Clone)]
+pub struct UiBundle {
+    pub version: String,
+    pub files: BTreeMap<String, Arc<Vec<u8>>>,
+}
+
+/// What the host needs to open an iframe contribution.
+#[derive(Debug, Clone)]
+pub struct IframeTarget {
+    pub plugin_id: String,
+    pub version: String,
+    pub src: String,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Registry {
     entries: Vec<RegistryEntry>,
     menu_ops: Vec<UiMenuOp>,
+    bundles: BTreeMap<String, UiBundle>,
 }
 
 impl Registry {
@@ -32,19 +55,46 @@ impl Registry {
         self.entries.is_empty() && self.menu_ops.is_empty()
     }
 
-    /// Adds the contributions of one verified, enabled plugin. Contributions
-    /// whose render type the host cannot serve yet (iframe, module) and specs
-    /// that do not parse are skipped, never served half-working.
+    /// Adds the contributions of one verified, enabled plugin. Trusted
+    /// modules (never allowed at install) and contributions whose spec or
+    /// entry file is unusable are skipped, never served half-working.
     pub fn add_plugin(&mut self, pkg: &PluginPackage) {
         let m = &pkg.manifest;
         for s in &m.contributes.slots {
-            if s.render != RenderKind::Declarative {
-                tracing::debug!(
-                    "plugin {}: contribution '{}' uses render '{}', not served yet",
-                    m.id,
-                    s.id,
-                    s.render.as_str()
-                );
+            if s.render == RenderKind::Module {
+                tracing::debug!("plugin {}: module contribution '{}' skipped", m.id, s.id);
+                continue;
+            }
+            if s.render == RenderKind::Iframe {
+                let Some(src) = s.src.clone().filter(|f| {
+                    is_bundle_file(f)
+                        && f.rsplit_once('.').is_some_and(|(_, e)| {
+                            e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm")
+                        })
+                        && pkg.files.contains_key(f)
+                }) else {
+                    tracing::warn!("plugin {}: entry of '{}' is unusable, skipped", m.id, s.id);
+                    continue;
+                };
+                self.add_bundle(pkg);
+                self.entries.push(RegistryEntry {
+                    contribution: UiContribution {
+                        plugin_id: m.id.clone(),
+                        plugin_name: m.name.clone(),
+                        slot: s.slot.clone(),
+                        id: s.id.clone(),
+                        render: s.render,
+                        title: s.title.clone(),
+                        path: s.path.clone(),
+                        order: s.order.unwrap_or(DEFAULT_PLUGIN_ORDER),
+                        label: None,
+                        icon: None,
+                        href: None,
+                    },
+                    requires: s.requires.clone(),
+                    spec: None,
+                    src: Some(src),
+                });
                 continue;
             }
             let Some(spec) = s.spec.as_deref().and_then(|f| load_spec(pkg, f)) else {
@@ -67,6 +117,7 @@ impl Registry {
                 },
                 requires: s.requires.clone(),
                 spec: Some(spec),
+                src: None,
             });
         }
         for entry in &m.contributes.menus {
@@ -87,6 +138,7 @@ impl Registry {
                     },
                     requires: i.requires.clone(),
                     spec: None,
+                    src: None,
                 }),
                 MenuEntry::Op(o) => self.menu_ops.push(UiMenuOp {
                     plugin_id: m.id.clone(),
@@ -96,6 +148,60 @@ impl Registry {
                 }),
             }
         }
+    }
+
+    fn add_bundle(&mut self, pkg: &PluginPackage) {
+        let id = &pkg.manifest.id;
+        if self.bundles.contains_key(id) {
+            return;
+        }
+        let mut total = 0usize;
+        let mut files = BTreeMap::new();
+        for (path, bytes) in &pkg.files {
+            if !is_bundle_file(path) {
+                continue;
+            }
+            if bytes.len() > MAX_BUNDLE_FILE_BYTES || total + bytes.len() > MAX_BUNDLE_BYTES {
+                tracing::warn!("plugin {id}: web file '{path}' is over the size limit, skipped");
+                continue;
+            }
+            total += bytes.len();
+            files.insert(path.clone(), Arc::new(bytes.clone()));
+        }
+        self.bundles.insert(
+            id.clone(),
+            UiBundle {
+                version: pkg.manifest.version.clone(),
+                files,
+            },
+        );
+    }
+
+    /// One file of a plugin's web bundle, only while that exact version is
+    /// the enabled one.
+    pub fn bundle_file(&self, plugin_id: &str, version: &str, path: &str) -> Option<Arc<Vec<u8>>> {
+        let b = self.bundles.get(plugin_id)?;
+        (b.version == version).then(|| b.files.get(path).cloned())?
+    }
+
+    /// The iframe entry of a contribution the caller may see.
+    pub fn find_iframe(
+        &self,
+        plugin_id: &str,
+        contribution_id: &str,
+        allow: &dyn Fn(&Option<Requires>) -> bool,
+    ) -> Option<IframeTarget> {
+        let e = self.entries.iter().find(|e| {
+            e.contribution.plugin_id == plugin_id
+                && e.contribution.id == contribution_id
+                && e.contribution.render == RenderKind::Iframe
+                && allow(&e.requires)
+        })?;
+        Some(IframeTarget {
+            plugin_id: plugin_id.to_string(),
+            version: self.bundles.get(plugin_id)?.version.clone(),
+            src: e.src.clone()?,
+        })
     }
 
     /// Distinct permissions the registry's contributions are gated on.
@@ -118,10 +224,14 @@ impl Registry {
                 .or_default()
                 .push(e.contribution.clone());
         }
-        for list in slots.values_mut() {
+        for (name, list) in slots.iter_mut() {
             list.sort_by(|a, b| {
                 (a.order, &a.plugin_id, &a.id).cmp(&(b.order, &b.plugin_id, &b.id))
             });
+            // Each slot shows at most `max_items` contributions.
+            if let Some(spec) = catalog::find(name) {
+                list.truncate(spec.max_items);
+            }
         }
         let mut menu_ops = self.menu_ops.clone();
         // `hide` wins over `rename`; otherwise the order of plugin ids is stable.

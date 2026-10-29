@@ -114,3 +114,5 @@ puppet/pkg/
 
 # Graphify knowledge graph output
 graphify-out/
+sdk/typescript/node_modules
+sdk/typescript/dist

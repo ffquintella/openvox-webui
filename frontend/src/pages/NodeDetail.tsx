@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useNodeVulnerabilities } from '../hooks/useCve';
+import { usePluginSlot } from '../hooks/usePlugins';
+import PluginSlot, { PluginContributionView } from '../components/plugins/PluginSlot';
 import { getDeleteNodeErrorMessage } from './nodeDetailErrors';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import type {
@@ -1999,7 +2001,11 @@ export default function NodeDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canDeleteNode = usePermissionsStore((state) => state.hasPermission('nodes', 'delete'));
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId | `plugin:${string}`>('overview');
+  const pluginTabs = usePluginSlot('node.detail.tabs').filter(
+    (c) => c.render === 'declarative' || c.render === 'iframe'
+  );
+  const activePluginTab = pluginTabs.find((c) => `plugin:${c.plugin_id}:${c.id}` === activeTab);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteResult, setDeleteResult] = useState<DeleteNodeResponse | null>(null);
 
@@ -2192,6 +2198,12 @@ export default function NodeDetail() {
           </div>
 
           <div className="flex items-center gap-2">
+            <PluginSlot
+              slot="node.detail.actions"
+              params={{ certname: node.certname, environment: node.catalog_environment || '' }}
+              variant="bare"
+              className="flex items-center gap-2"
+            />
             <button
               onClick={handleRefresh}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -2428,6 +2440,23 @@ export default function NodeDetail() {
               )}
             </button>
           ))}
+          {pluginTabs.map((c) => {
+            const key = `plugin:${c.plugin_id}:${c.id}` as const;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                title={c.plugin_name}
+                className={`flex items-center gap-2 py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === key
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {c.title ?? c.id}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
@@ -2578,6 +2607,15 @@ export default function NodeDetail() {
           ) : (
             <GroupMembership certname={certname!} groups={groups} />
           ))}
+
+        {activePluginTab && (
+          <PluginContributionView
+            contribution={activePluginTab}
+            slot="node.detail.tabs"
+            params={{ certname: node.certname, environment: node.catalog_environment || '' }}
+            variant="bare"
+          />
+        )}
       </div>
     </div>
   );

@@ -12,7 +12,9 @@ pub mod manifest;
 pub mod package;
 pub mod registry;
 pub mod runtime;
+pub mod slots;
 pub mod storage;
+pub mod ui_assets;
 pub mod wasm;
 pub mod webhooks;
 

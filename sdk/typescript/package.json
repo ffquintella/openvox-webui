@@ -1,0 +1,16 @@
+{
+  "name": "@openvox/plugin-sdk",
+  "version": "0.1.0",
+  "description": "SDK for OpenVox WebUI plugin pages that run in a sandboxed iframe",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

@@ -174,6 +174,8 @@ import type {
   RevokeTrustedKeyRequest,
   UiSlots,
   PluginGovernanceOverview,
+  PluginSlotCatalog,
+  PluginUiSession,
   PluginMetrics,
   PluginCircuitView,
   UiContributionDetail,
@@ -1796,6 +1798,25 @@ export const pluginsApi = {
       `/plugins/ui/contributions/${encodeURIComponent(pluginId)}/${encodeURIComponent(contributionId)}`
     );
     return response.data;
+  },
+
+  getUiCatalog: async (): Promise<PluginSlotCatalog> => {
+    const response = await client.get('/plugins/ui/catalog');
+    return response.data;
+  },
+
+  createUiSession: async (pluginId: string, contributionId: string): Promise<PluginUiSession> => {
+    const response = await client.post('/plugins/ui/sessions', {
+      plugin_id: pluginId,
+      contribution_id: contributionId,
+    });
+    return response.data;
+  },
+
+  /** Read-only call to the host API on behalf of a sandboxed plugin page. */
+  proxyGet: async (path: string): Promise<{ status: number; data: unknown }> => {
+    const response = await client.get(path);
+    return { status: response.status, data: response.data };
   },
 
   governance: async (): Promise<PluginGovernanceOverview> => {

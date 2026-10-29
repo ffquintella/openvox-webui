@@ -20,6 +20,7 @@ use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
 use super::registry::Registry;
 use super::storage::{collect_migrations, PluginStorage};
+use super::ui_assets::UiSessions;
 use super::wasm::WasmInvoker;
 use crate::db::{AuditRepository, PluginEventsRepository, PluginRepository};
 use crate::models::*;
@@ -126,6 +127,7 @@ pub struct PluginManager {
     wasm: OnceLock<Arc<WasmInvoker>>,
     policy: crate::config::PluginPolicyConfig,
     governor: Arc<Governor>,
+    ui_sessions: Arc<UiSessions>,
 }
 
 type Failure = (PluginState, &'static str, String);
@@ -145,6 +147,7 @@ impl PluginManager {
             wasm: OnceLock::new(),
             policy: Default::default(),
             governor: Arc::new(Governor::new(Default::default())),
+            ui_sessions: Arc::new(UiSessions::default()),
         }
     }
 
@@ -205,6 +208,11 @@ impl PluginManager {
 
     pub fn registry(&self) -> Arc<Registry> {
         self.registry.read().map(|r| r.clone()).unwrap_or_default()
+    }
+
+    /// Short-lived tokens that let a sandboxed plugin page load its assets.
+    pub fn ui_sessions(&self) -> &UiSessions {
+        &self.ui_sessions
     }
 
     fn repo(&self) -> PluginRepository<'_> {
@@ -1614,6 +1622,78 @@ mod tests {
         let ui = m.registry().to_ui(&|_| true);
         assert_eq!(ui.slots["page"].len(), 1);
         assert_eq!(ui.slots["nav.main"][0].label.as_deref(), Some("Demo"));
+    }
+
+    fn iframe_package(n_widgets: usize) -> Vec<u8> {
+        let mut slots = String::from(
+            "    - { slot: page, id: app, render: iframe, src: ui/app.html, path: /p/demo/app }\n",
+        );
+        for i in 0..n_widgets {
+            slots.push_str(&format!(
+                "    - {{ slot: footer.global, id: f{i}, render: iframe, src: ui/app.html, order: {i} }}\n"
+            ));
+        }
+        let y = format!(
+            "api_version: 2\nid: demo\nname: Demo\nversion: 1.0.0\npublisher: ACME\n\
+             runtime: {{ kind: builtin, entry: demo }}\ncapabilities:\n  - ui:slot:page\n  - ui:slot:footer.global\n\
+             contributes:\n  slots:\n{slots}"
+        );
+        build_signed_package(
+            &[
+                ("plugin.yaml", y.as_bytes()),
+                (
+                    "ui/app.html",
+                    b"<html><script src=\"app.js\"></script></html>",
+                ),
+                ("ui/app.js", b"console.log(1)"),
+                ("ui/notes.exe", b"MZ"),
+            ],
+            "demo",
+            "1.0.0",
+            2,
+            SEED,
+        )
+    }
+
+    #[tokio::test]
+    async fn iframe_contributions_are_served_from_the_web_bundle_only() {
+        let (m, _d) = manager(Some(SEED)).await;
+        m.install(&iframe_package(0), "a", None).await.unwrap();
+        m.enable("demo").await.unwrap();
+        let r = m.registry();
+        let t = r.find_iframe("demo", "app", &|_| true).unwrap();
+        assert_eq!(
+            (t.version.as_str(), t.src.as_str()),
+            ("1.0.0", "ui/app.html")
+        );
+        assert!(r.bundle_file("demo", "1.0.0", "ui/app.js").is_some());
+        // Not web files, and not the version that is enabled.
+        assert!(r.bundle_file("demo", "1.0.0", "plugin.yaml").is_none());
+        assert!(r.bundle_file("demo", "1.0.0", "ui/notes.exe").is_none());
+        assert!(r.bundle_file("demo", "0.9.0", "ui/app.js").is_none());
+        // A permission-gated lookup honours the filter.
+        assert!(r.find_iframe("demo", "app", &|_| false).is_none());
+        // Iframe contributions have no declarative detail.
+        assert!(r.find("demo", "app", &|_| true).is_none());
+        let ui = r.to_ui(&|_| true);
+        assert_eq!(ui.slots["page"][0].render, RenderKind::Iframe);
+        // Disabling takes the bundle out of play.
+        m.disable("demo").await.unwrap();
+        assert!(m
+            .registry()
+            .bundle_file("demo", "1.0.0", "ui/app.js")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn a_slot_shows_at_most_max_items_contributions() {
+        let (m, _d) = manager(Some(SEED)).await;
+        m.install(&iframe_package(3), "a", None).await.unwrap();
+        m.enable("demo").await.unwrap();
+        let ui = m.registry().to_ui(&|_| true);
+        // footer.global allows a single contribution; the lowest order wins.
+        assert_eq!(ui.slots["footer.global"].len(), 1);
+        assert_eq!(ui.slots["footer.global"][0].id, "f0");
     }
 
     #[tokio::test]

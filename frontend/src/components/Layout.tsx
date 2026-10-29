@@ -28,6 +28,8 @@ import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import { usePluginSlots } from '../hooks/usePlugins';
+import PluginSlot from './plugins/PluginSlot';
+import PluginToasts from './plugins/PluginToasts';
 import { mergeMenu, type CoreMenuItem } from '../utils/pluginMenu';
 import NotificationBell from './NotificationBell';
 import NotificationManager from './NotificationManager';
@@ -248,12 +250,20 @@ export default function Layout({ children }: LayoutProps) {
       <main className="pl-64">
         {/* Header */}
         <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-end px-8">
+          <PluginSlot
+            slot="toolbar.global"
+            params={{ route: location.pathname }}
+            variant="bare"
+            className="flex items-center gap-2 mr-4"
+          />
           <NotificationBell />
         </header>
 
         {/* Content */}
         <div className="p-8">{children}</div>
+        <PluginSlot slot="footer.global" variant="bare" className="px-8 pb-4" />
       </main>
+      <PluginToasts />
     </div>
   );
 }
