@@ -384,7 +384,8 @@ async fn main() -> Result<()> {
             config.plugins.max_package_mb,
         )
         .with_policy(config.plugins.policy.clone())
-        .with_governance(config.plugins.governance.clone()),
+        .with_governance(config.plugins.governance.clone())
+        .with_blocked_hashes(&config.plugins.blocked_hashes),
     );
     // WASM runtime: sandboxed handlers with kv and private-database storage
     {
@@ -438,6 +439,10 @@ async fn main() -> Result<()> {
     }
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
     services::plugins::governance::start_governance(plugin_manager.clone());
+    services::plugins::updates::start_update_scheduler(
+        plugin_manager.clone(),
+        config.plugins.updates.clone(),
+    );
     let plugin_runtime = services::plugins::PluginRuntime::new(
         plugin_manager.clone(),
         config.plugins.events.clone(),

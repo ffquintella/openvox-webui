@@ -2239,6 +2239,9 @@ export type PluginState =
 export type PluginRuntimeKind = 'wasm' | 'remote' | 'builtin';
 export type PluginRiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
+/** Which newer stored versions the update scheduler may activate (M24). */
+export type PluginAutoUpdatePolicy = 'off' | 'patch' | 'minor' | 'any';
+
 export interface PluginSummary {
   id: string;
   name: string;
@@ -2246,12 +2249,22 @@ export interface PluginSummary {
   active_version: string | null;
   state: PluginState;
   state_reason: string | null;
+  /** Newer version waiting for the capabilities it adds to be approved. */
+  pending_version: string | null;
   runtime_kind: PluginRuntimeKind | null;
   signer_key_id: string | null;
   signer_label: string | null;
   installed_by: string | null;
   installed_at: string;
   updated_at: string;
+  /** Newest stored version above the active one that may be activated. */
+  available_version: string | null;
+  auto_update: PluginAutoUpdatePolicy;
+  /** Five-field UTC cron expression; null means at any time. */
+  update_window: string | null;
+  /** Version the update scheduler skips (failed automatic update or rollback). */
+  update_hold_version: string | null;
+  update_hold_reason: string | null;
 }
 
 export interface PluginCapabilityInfo {
@@ -2269,6 +2282,9 @@ export interface PluginVersionRecord {
   signed_by_key_id: string;
   signed_at: string;
   revoked: boolean;
+  revoked_reason: string | null;
+  revoked_by: string | null;
+  revoked_at: string | null;
   added_at: string;
 }
 
@@ -2310,6 +2326,10 @@ export interface PluginPreflightResult {
   installed_version: string | null;
   issues: string[];
   can_install: boolean;
+  /** Capabilities this version adds over the installed one (update waits for approval). */
+  added_capabilities: string[];
+  /** Set when going back from this version to the installed one would be blocked. */
+  rollback_warning: string | null;
 }
 
 export interface PluginInstallOptions {
@@ -2318,6 +2338,8 @@ export interface PluginInstallOptions {
   trustKeyLabel?: string;
   /** Current password, required when trusting a key during install. */
   reauthPassword?: string;
+  /** Store a newer version of an installed plugin without activating it. */
+  stage?: boolean;
 }
 
 export interface TrustedKeyView {
@@ -2477,4 +2499,75 @@ export interface PluginMetrics {
   totals: PluginUsageTotals;
   by_version: { version: string; totals: PluginUsageTotals }[];
   series: PluginUsagePoint[];
+}
+
+// ============================================================================
+// Plugin updates, rollback and revocation (M24)
+// ============================================================================
+
+export type PluginVersionRelation = 'active' | 'newer' | 'older';
+
+export interface PluginVersionView extends PluginVersionRecord {
+  relation: PluginVersionRelation;
+  pending: boolean;
+  /** The package hash is listed in plugins.blocked_hashes. */
+  blocked: boolean;
+  schema_level: number;
+  added_capabilities: string[];
+  /** Newer: can be applied now. Older: a rollback to it is possible now. */
+  can_activate: boolean;
+  blocked_reason: string | null;
+  /** Newer only: after this update a rollback to the active version would be blocked. */
+  rollback_warning: string | null;
+  usage: PluginUsageTotals;
+}
+
+export interface PluginUpdateInfo {
+  plugin_id: string;
+  name: string;
+  state: PluginState;
+  active_version: string | null;
+  available_version: string | null;
+  pending_version: string | null;
+  added_capabilities: string[];
+  requires_approval: boolean;
+  rollback_warning: string | null;
+  auto_update: PluginAutoUpdatePolicy;
+  update_window: string | null;
+  next_window_at: string | null;
+  update_hold_version: string | null;
+  update_hold_reason: string | null;
+}
+
+export type PluginUpdateOutcome = 'updated' | 'pending_approval' | 'up_to_date' | 'failed';
+
+export interface PluginUpdateResult {
+  plugin_id: string;
+  outcome: PluginUpdateOutcome;
+  from_version: string | null;
+  to_version: string | null;
+  added_capabilities: string[];
+  code: string | null;
+  message: string | null;
+}
+
+export interface PluginRollbackResult {
+  plugin_id: string;
+  from_version: string;
+  to_version: string;
+  schema_from: number;
+  schema_to: number;
+  plugin: PluginDetail;
+}
+
+export interface PluginRevokeVersionResult {
+  plugin_id: string;
+  version: string;
+  deactivated: boolean;
+  plugin: PluginDetail;
+}
+
+export interface PluginUpdatePolicyRequest {
+  auto_update: PluginAutoUpdatePolicy;
+  update_window: string | null;
 }

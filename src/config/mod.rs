@@ -92,6 +92,40 @@ pub struct PluginsConfig {
     /// Metrics, quotas and the circuit breaker
     #[serde(default)]
     pub governance: PluginGovernanceConfig,
+    /// Batch and scheduled updates (M24)
+    #[serde(default)]
+    pub updates: PluginUpdatesConfig,
+    /// SHA-256 (hex) of `.ovxp` packages that must never be installed or
+    /// loaded (local revocation). A stored version with a listed hash is
+    /// taken out of play at the next load or reload.
+    #[serde(default)]
+    pub blocked_hashes: Vec<String>,
+}
+
+/// Scheduled plugin updates. Each plugin opts in with its own policy and
+/// window (`PUT /api/v1/plugins/{id}/update-policy`); this only controls the
+/// scheduler itself.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginUpdatesConfig {
+    /// Run the update scheduler at all
+    #[serde(default = "default_true_val")]
+    pub scheduler_enabled: bool,
+    /// How often update windows are checked (seconds)
+    #[serde(default = "default_plugin_update_tick_secs")]
+    pub tick_secs: u64,
+}
+
+fn default_plugin_update_tick_secs() -> u64 {
+    60
+}
+
+impl Default for PluginUpdatesConfig {
+    fn default() -> Self {
+        Self {
+            scheduler_enabled: true,
+            tick_secs: default_plugin_update_tick_secs(),
+        }
+    }
 }
 
 /// Telemetry and protection of the host against failing or abusive plugins.
@@ -346,6 +380,8 @@ impl Default for PluginsConfig {
             policy: PluginPolicyConfig::default(),
             wasm: PluginWasmConfig::default(),
             governance: PluginGovernanceConfig::default(),
+            updates: PluginUpdatesConfig::default(),
+            blocked_hashes: Vec::new(),
         }
     }
 }

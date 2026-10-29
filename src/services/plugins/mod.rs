@@ -15,12 +15,14 @@ pub mod runtime;
 pub mod slots;
 pub mod storage;
 pub mod ui_assets;
+pub mod updates;
 pub mod wasm;
 pub mod webhooks;
 
 pub use manager::{
-    BuiltinPlugin, InstallOutcome, PluginError, PluginManager, TrustRequest, AUDIT_PLUGINS,
-    AUDIT_TRUST,
+    BuiltinPlugin, InstallOptions, InstallOutcome, PluginError, PluginManager, TrustRequest,
+    AUDIT_PLUGINS, AUDIT_TRUST,
 };
 pub use registry::Registry;
 pub use runtime::PluginRuntime;
+pub use updates::UpdateActor;

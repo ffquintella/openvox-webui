@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 
 use crate::models::{
-    KeyOrigin, PluginGrant, PluginRecord, PluginState, PluginVersionRecord, TrustedKeyRecord,
+    AutoUpdatePolicy, KeyOrigin, PluginGrant, PluginRecord, PluginState, PluginVersionRecord,
+    TrustedKeyRecord,
 };
 
 pub struct PluginRepository<'a> {
@@ -29,6 +30,10 @@ fn plugin_from_row(r: &sqlx::sqlite::SqliteRow) -> PluginRecord {
         installed_by: r.get("installed_by"),
         installed_at: ts(&r.get::<String, _>("installed_at")),
         updated_at: ts(&r.get::<String, _>("updated_at")),
+        auto_update: AutoUpdatePolicy::parse(&r.get::<String, _>("auto_update")),
+        update_window: r.get("update_window"),
+        update_hold_version: r.get("update_hold_version"),
+        update_hold_reason: r.get("update_hold_reason"),
     }
 }
 
@@ -41,6 +46,9 @@ fn version_from_row(r: &sqlx::sqlite::SqliteRow) -> PluginVersionRecord {
         signed_by_key_id: r.get("signed_by_key_id"),
         signed_at: r.get("signed_at"),
         revoked: r.get::<i64, _>("revoked") != 0,
+        revoked_reason: r.get("revoked_reason"),
+        revoked_by: r.get("revoked_by"),
+        revoked_at: r.get::<Option<String>, _>("revoked_at").map(|s| ts(&s)),
         added_at: ts(&r.get::<String, _>("added_at")),
         manifest_json: r.get("manifest_json"),
         signature: r.get("signature"),
@@ -373,6 +381,72 @@ impl<'a> PluginRepository<'a> {
             .execute(self.pool)
             .await
             .context("set pending version")?;
+        Ok(())
+    }
+
+    // ---- updates, rollback and revocation (M24) ---------------------------
+
+    pub async fn set_update_policy(
+        &self,
+        id: &str,
+        policy: AutoUpdatePolicy,
+        window: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE plugins SET auto_update = ?, update_window = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(policy.as_str())
+        .bind(window)
+        .bind(Utc::now().to_rfc3339())
+        .bind(id)
+        .execute(self.pool)
+        .await
+        .context("set update policy")?;
+        Ok(())
+    }
+
+    /// Marks (or clears, with `None`) the version the update scheduler skips.
+    pub async fn set_update_hold(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE plugins SET update_hold_version = ?, update_hold_reason = ? WHERE id = ?",
+        )
+        .bind(version)
+        .bind(reason)
+        .bind(id)
+        .execute(self.pool)
+        .await
+        .context("set update hold")?;
+        Ok(())
+    }
+
+    pub async fn set_version_revoked(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        revoked: Option<(&str, &str)>,
+    ) -> Result<()> {
+        let (flag, reason, by, at) = match revoked {
+            Some((reason, by)) => (1, Some(reason), Some(by), Some(Utc::now().to_rfc3339())),
+            None => (0, None, None, None),
+        };
+        sqlx::query(
+            "UPDATE plugin_versions SET revoked = ?, revoked_reason = ?, revoked_by = ?,
+                revoked_at = ? WHERE plugin_id = ? AND version = ?",
+        )
+        .bind(flag)
+        .bind(reason)
+        .bind(by)
+        .bind(at)
+        .bind(plugin_id)
+        .bind(version)
+        .execute(self.pool)
+        .await
+        .context("set version revoked")?;
         Ok(())
     }
 

@@ -178,6 +178,12 @@ import type {
   PluginUiSession,
   PluginMetrics,
   PluginCircuitView,
+  PluginVersionView,
+  PluginUpdateInfo,
+  PluginUpdateResult,
+  PluginRollbackResult,
+  PluginRevokeVersionResult,
+  PluginUpdatePolicyRequest,
   UiContributionDetail,
 } from '../types';
 
@@ -1724,6 +1730,7 @@ export const pluginsApi = {
     if (options.reauthPassword) headers['X-Reauth-Password'] = options.reauthPassword;
     const response = await client.post('/plugins', pkg, {
       headers,
+      params: options.stage ? { stage: true } : undefined,
       timeout: PLUGIN_UPLOAD_TIMEOUT_MS,
     });
     return response.data;
@@ -1833,6 +1840,65 @@ export const pluginsApi = {
 
   resetCircuit: async (id: string): Promise<PluginCircuitView> => {
     const response = await client.post(`/plugins/${encodeURIComponent(id)}/circuit/reset`);
+    return response.data;
+  },
+
+  // Updates, rollback and revocation (M24)
+  versions: async (id: string): Promise<PluginVersionView[]> => {
+    const response = await client.get(`/plugins/${encodeURIComponent(id)}/versions`);
+    return response.data;
+  },
+
+  updates: async (): Promise<PluginUpdateInfo[]> => {
+    const response = await client.get('/plugins/updates');
+    return response.data;
+  },
+
+  applyUpdates: async (pluginIds: string[]): Promise<PluginUpdateResult[]> => {
+    const response = await client.post('/plugins/updates/apply', { plugin_ids: pluginIds });
+    return response.data.results;
+  },
+
+  updatePlugin: async (id: string, version?: string): Promise<PluginUpdateResult> => {
+    const response = await client.post(
+      `/plugins/${encodeURIComponent(id)}/update`,
+      version ? { version } : {}
+    );
+    return response.data;
+  },
+
+  rollback: async (id: string, version?: string): Promise<PluginRollbackResult> => {
+    const response = await client.post(
+      `/plugins/${encodeURIComponent(id)}/rollback`,
+      version ? { version } : {}
+    );
+    return response.data;
+  },
+
+  setUpdatePolicy: async (
+    id: string,
+    request: PluginUpdatePolicyRequest
+  ): Promise<PluginSummary> => {
+    const response = await client.put(`/plugins/${encodeURIComponent(id)}/update-policy`, request);
+    return response.data;
+  },
+
+  revokeVersion: async (
+    id: string,
+    version: string,
+    reason: string
+  ): Promise<PluginRevokeVersionResult> => {
+    const response = await client.post(
+      `/plugins/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/revoke`,
+      { reason }
+    );
+    return response.data;
+  },
+
+  unrevokeVersion: async (id: string, version: string): Promise<PluginDetail> => {
+    const response = await client.post(
+      `/plugins/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/unrevoke`
+    );
     return response.data;
   },
 };

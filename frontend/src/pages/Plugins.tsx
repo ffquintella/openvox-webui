@@ -10,6 +10,7 @@ import {
   Trash2,
   Info,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -24,6 +25,8 @@ import { usePermissionsStore } from '../stores/permissionsStore';
 import InstallPluginDialog from '../components/plugins/InstallPluginDialog';
 import TrustedKeysTab from '../components/plugins/TrustedKeysTab';
 import GovernanceTab from '../components/plugins/GovernanceTab';
+import UpdatesTab from '../components/plugins/UpdatesTab';
+import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import { ErrorBox, Modal, RiskBadge, StateBadge } from '../components/plugins/pluginUi';
 import {
   dangerBtn,
@@ -33,9 +36,17 @@ import {
 } from '../components/plugins/pluginHelpers';
 import type { PluginSummary } from '../types';
 
-type TabType = 'installed' | 'governance' | 'keys';
+type TabType = 'installed' | 'updates' | 'governance' | 'keys';
 
-function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
+function PluginDetailDialog({
+  id,
+  canAdmin,
+  onClose,
+}: {
+  id: string;
+  canAdmin: boolean;
+  onClose: () => void;
+}) {
   const { data, isLoading } = usePlugin(id);
   return (
     <Modal title="Plugin details" onClose={onClose} wide>
@@ -70,38 +81,9 @@ function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }
           </section>
           <section>
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Versions</h4>
-            <table className="mt-2 min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase text-gray-500">
-                  <th className="py-1 pr-4">Version</th>
-                  <th className="py-1 pr-4">API</th>
-                  <th className="py-1 pr-4">Signed by</th>
-                  <th className="py-1 pr-4">Signed at</th>
-                  <th className="py-1">SHA-256</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.versions.map((v) => (
-                  <tr key={v.version}>
-                    <td className="py-1 pr-4">
-                      {v.version}
-                      {v.version === data.active_version && (
-                        <span className="ml-2 text-xs text-green-600">active</span>
-                      )}
-                      {v.revoked && <span className="ml-2 text-xs text-red-600">revoked</span>}
-                    </td>
-                    <td className="py-1 pr-4">{v.api_version}</td>
-                    <td className="py-1 pr-4 font-mono text-xs">
-                      {v.signed_by_key_id.slice(0, 8)}
-                    </td>
-                    <td className="py-1 pr-4 text-xs">{v.signed_at}</td>
-                    <td className="py-1 font-mono text-xs" title={v.package_sha256}>
-                      {v.package_sha256.slice(0, 12)}...
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="mt-2">
+              <PluginVersionsPanel pluginId={data.id} canAdmin={canAdmin} />
+            </div>
           </section>
         </div>
       )}
@@ -137,6 +119,12 @@ export default function Plugins() {
 
   const tabs = [
     { id: 'installed' as const, name: 'Installed', icon: Puzzle, badge: plugins.length },
+    {
+      id: 'updates' as const,
+      name: 'Updates',
+      icon: RefreshCw,
+      badge: plugins.filter((p) => p.available_version).length || undefined,
+    },
     { id: 'governance' as const, name: 'Governance', icon: Activity, badge: undefined },
     { id: 'keys' as const, name: 'Trusted keys', icon: KeyRound, badge: undefined },
   ];
@@ -233,7 +221,19 @@ export default function Plugins() {
                           <div className="font-mono text-xs text-gray-500">{p.id}</div>
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-sm">{p.active_version ?? '-'}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {p.active_version ?? '-'}
+                        {p.available_version && (
+                          <div className="text-xs text-blue-600 dark:text-blue-400">
+                            {p.available_version} available
+                          </div>
+                        )}
+                        {p.pending_version && (
+                          <div className="text-xs text-yellow-700 dark:text-yellow-300">
+                            {p.pending_version} waits for approval
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm">{p.publisher}</td>
                       <td className="px-4 py-3 text-sm">{p.runtime_kind ?? '-'}</td>
                       <td className="px-4 py-3 text-sm">
@@ -314,6 +314,8 @@ export default function Plugins() {
         </div>
       )}
 
+      {activeTab === 'updates' && <UpdatesTab canAdmin={canAdmin} />}
+
       {activeTab === 'governance' && <GovernanceTab canAdmin={canAdmin} />}
 
       {activeTab === 'keys' && <TrustedKeysTab canManage={canManageKeys} />}
@@ -321,7 +323,9 @@ export default function Plugins() {
       {showInstall && (
         <InstallPluginDialog canTrustKeys={canManageKeys} onClose={() => setShowInstall(false)} />
       )}
-      {detailId && <PluginDetailDialog id={detailId} onClose={() => setDetailId(null)} />}
+      {detailId && (
+        <PluginDetailDialog id={detailId} canAdmin={canAdmin} onClose={() => setDetailId(null)} />
+      )}
       {confirmUninstall && (
         <Modal title="Uninstall plugin" onClose={() => setConfirmUninstall(null)}>
           <div className="space-y-4">

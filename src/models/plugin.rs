@@ -330,6 +330,61 @@ pub struct PluginRecord {
     pub installed_by: Option<String>,
     pub installed_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Which stored versions the update scheduler may activate (M24).
+    pub auto_update: AutoUpdatePolicy,
+    /// Five-field UTC cron; NULL means at any time.
+    pub update_window: Option<String>,
+    /// Version the scheduler skips (failed automatic update or rollback).
+    pub update_hold_version: Option<String>,
+    pub update_hold_reason: Option<String>,
+}
+
+/// Which newer stored versions the update scheduler may activate on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoUpdatePolicy {
+    /// Updates are applied by an administrator only.
+    #[default]
+    Off,
+    /// Same major and minor version.
+    Patch,
+    /// Same major version.
+    Minor,
+    /// Any newer version.
+    Any,
+}
+
+impl AutoUpdatePolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AutoUpdatePolicy::Off => "off",
+            AutoUpdatePolicy::Patch => "patch",
+            AutoUpdatePolicy::Minor => "minor",
+            AutoUpdatePolicy::Any => "any",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "patch" => AutoUpdatePolicy::Patch,
+            "minor" => AutoUpdatePolicy::Minor,
+            "any" => AutoUpdatePolicy::Any,
+            _ => AutoUpdatePolicy::Off,
+        }
+    }
+
+    /// True when the policy lets the scheduler move from `from` to `to`.
+    pub fn allows(&self, from: &semver::Version, to: &semver::Version) -> bool {
+        if to <= from {
+            return false;
+        }
+        match self {
+            AutoUpdatePolicy::Off => false,
+            AutoUpdatePolicy::Patch => to.major == from.major && to.minor == from.minor,
+            AutoUpdatePolicy::Minor => to.major == from.major,
+            AutoUpdatePolicy::Any => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,6 +396,9 @@ pub struct PluginVersionRecord {
     pub signed_by_key_id: String,
     pub signed_at: String,
     pub revoked: bool,
+    pub revoked_reason: Option<String>,
+    pub revoked_by: Option<String>,
+    pub revoked_at: Option<DateTime<Utc>>,
     pub added_at: DateTime<Utc>,
     #[serde(skip)]
     pub manifest_json: String,
@@ -478,6 +536,12 @@ pub struct PreflightResult {
     pub issues: Vec<String>,
     /// True when the package can be installed now, or after trusting its key.
     pub can_install: bool,
+    /// Capabilities this version declares that the installed one did not;
+    /// the update waits for their approval.
+    pub added_capabilities: Vec<String>,
+    /// Set when going back from this version to the installed one would be
+    /// blocked because a migration has no `.down` file (shown before updating).
+    pub rollback_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -495,6 +559,13 @@ pub struct PluginSummary {
     pub installed_by: Option<String>,
     pub installed_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Newest stored version above the active one that may be activated
+    /// (not revoked, not blocked by hash).
+    pub available_version: Option<String>,
+    pub auto_update: AutoUpdatePolicy,
+    pub update_window: Option<String>,
+    pub update_hold_version: Option<String>,
+    pub update_hold_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -556,6 +627,151 @@ pub struct RevokeTrustedKeyRequest {
     pub reason: String,
     /// Current password of the acting user (step-up re-authentication).
     pub password: String,
+}
+
+// ============================================================================
+// Updates, rollback and local revocation (M24)
+// ============================================================================
+
+/// How a stored version relates to the active one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionRelation {
+    Active,
+    Newer,
+    Older,
+}
+
+/// One stored version with what the administrator can do with it.
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginVersionView {
+    #[serde(flatten)]
+    pub record: PluginVersionRecord,
+    pub relation: VersionRelation,
+    /// Waiting for the capabilities it adds to be approved.
+    pub pending: bool,
+    /// The package hash is listed in `plugins.blocked_hashes`.
+    pub blocked: bool,
+    /// Highest migration of the plugin database this version brings.
+    pub schema_level: u32,
+    /// Capabilities this version declares that the active one does not.
+    pub added_capabilities: Vec<String>,
+    /// Newer: the update can be applied now (it may still wait for approval).
+    /// Older: a rollback to it is possible now.
+    pub can_activate: bool,
+    /// Why the version cannot be activated.
+    pub blocked_reason: Option<String>,
+    /// Newer versions only: once updated, going back to the active version
+    /// would be blocked by a migration without a `.down` file.
+    pub rollback_warning: Option<String>,
+    /// Handler usage of this version over the last 7 days (M22 rollups), so
+    /// a regression after an update can be spotted.
+    pub usage: super::UsageTotals,
+}
+
+/// Update state of one plugin (updates overview and scheduler).
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginUpdateInfo {
+    pub plugin_id: String,
+    pub name: String,
+    pub state: PluginState,
+    pub active_version: Option<String>,
+    pub available_version: Option<String>,
+    pub pending_version: Option<String>,
+    /// Capabilities the available version adds; applying it waits for approval.
+    pub added_capabilities: Vec<String>,
+    pub requires_approval: bool,
+    pub rollback_warning: Option<String>,
+    pub auto_update: AutoUpdatePolicy,
+    pub update_window: Option<String>,
+    /// Next minute (UTC) the update window opens, when automatic updates are on.
+    pub next_window_at: Option<DateTime<Utc>>,
+    pub update_hold_version: Option<String>,
+    pub update_hold_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateOutcome {
+    /// The new version is active.
+    Updated,
+    /// The new version adds capabilities and waits for approval; the
+    /// previous version stays active.
+    PendingApproval,
+    /// No stored version newer than the active one may be activated.
+    UpToDate,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginUpdateResult {
+    pub plugin_id: String,
+    pub outcome: UpdateOutcome,
+    pub from_version: Option<String>,
+    pub to_version: Option<String>,
+    pub added_capabilities: Vec<String>,
+    /// Machine-readable reason of a failure.
+    pub code: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApplyUpdatesRequest {
+    pub plugin_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplyUpdatesResponse {
+    pub results: Vec<PluginUpdateResult>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UpdatePluginRequest {
+    /// Stored version to activate; default: the newest one available.
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RollbackPluginRequest {
+    /// Older stored version to go back to; default: the newest older one
+    /// that is not revoked or blocked.
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RollbackResult {
+    pub plugin_id: String,
+    pub from_version: String,
+    pub to_version: String,
+    /// Plugin database schema before and after the `.down` migrations.
+    pub schema_from: u32,
+    pub schema_to: u32,
+    pub plugin: PluginDetail,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RevokeVersionRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RevokeVersionResult {
+    pub plugin_id: String,
+    pub version: String,
+    /// The revoked version was the running one and the plugin was taken out
+    /// of play.
+    pub deactivated: bool,
+    pub plugin: PluginDetail,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdatePolicyRequest {
+    pub auto_update: AutoUpdatePolicy,
+    /// Five-field UTC cron expression; empty or absent means at any time.
+    #[serde(default)]
+    pub update_window: Option<String>,
 }
 
 fn deserialize_double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>

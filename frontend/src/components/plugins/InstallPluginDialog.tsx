@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Loader2, Upload, ShieldAlert } from 'lucide-react';
+import { Loader2, Upload, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { usePreflightPlugin, useInstallPlugin } from '../../hooks/usePlugins';
-import type { PluginPreflightResult } from '../../types';
+import type { PluginInstallOptions, PluginPreflightResult } from '../../types';
 import { ErrorBox, Modal, RiskBadge } from './pluginUi';
 import {
   TRUST_CONFIRM_LENGTH,
@@ -18,11 +18,7 @@ interface PreflightPanelProps {
   canTrustKeys: boolean;
   installing: boolean;
   installError: string | null;
-  onInstall: (options?: {
-    trustKeyConfirm: string;
-    trustKeyLabel: string;
-    reauthPassword: string;
-  }) => void;
+  onInstall: (options?: PluginInstallOptions) => void;
   onCancel: () => void;
 }
 
@@ -37,8 +33,11 @@ export function PreflightPanel({
   const [typedConfirm, setTypedConfirm] = useState('');
   const [label, setLabel] = useState('');
   const [password, setPassword] = useState('');
+  const [stage, setStage] = useState(false);
 
   const { manifest, signature } = result;
+  const isUpdate = result.installed_version !== null;
+  const stageOption = isUpdate && stage ? { stage: true } : {};
   const untrusted = signature.status === 'untrusted_key';
   const signatureOk = signature.status === 'valid';
   const blocked = !result.can_install || (!signatureOk && !untrusted);
@@ -150,6 +149,31 @@ export function PreflightPanel({
         </section>
       )}
 
+      {isUpdate && (
+        <section className="space-y-2">
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Update</h4>
+          {(result.added_capabilities ?? []).length > 0 && (
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              This version adds {result.added_capabilities.join(', ')}. It waits for your approval
+              while {result.installed_version} keeps running.
+            </p>
+          )}
+          {result.rollback_warning && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-800 dark:text-yellow-200"
+            >
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{result.rollback_warning}</span>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input type="checkbox" checked={stage} onChange={(e) => setStage(e.target.checked)} />
+            Store only; apply later from the Updates tab or in the update window
+          </label>
+        </section>
+      )}
+
       {untrusted && !blocked && (
         <section className="rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 p-4 space-y-3">
           <div className="flex items-start gap-2 text-sm text-yellow-800 dark:text-yellow-200">
@@ -216,9 +240,9 @@ export function PreflightPanel({
             type="button"
             className={primaryBtn}
             disabled={blocked || installing}
-            onClick={() => onInstall()}
+            onClick={() => (isUpdate && stage ? onInstall({ stage: true }) : onInstall())}
           >
-            {installing ? 'Installing...' : 'Install'}
+            {installing ? 'Installing...' : isUpdate && stage ? 'Store version' : 'Install'}
           </button>
         )}
         {untrusted && (
@@ -231,6 +255,7 @@ export function PreflightPanel({
                 trustKeyConfirm: typedConfirm.toLowerCase(),
                 trustKeyLabel: label.trim(),
                 reauthPassword: password,
+                ...stageOption,
               })
             }
           >
@@ -272,11 +297,7 @@ export default function InstallPluginDialog({
     }
   };
 
-  const handleInstall = async (options?: {
-    trustKeyConfirm: string;
-    trustKeyLabel: string;
-    reauthPassword: string;
-  }) => {
+  const handleInstall = async (options?: PluginInstallOptions) => {
     if (!file) return;
     setError(null);
     try {

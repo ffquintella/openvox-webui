@@ -41,6 +41,8 @@ function preflight(
     installed_version: null,
     issues: [],
     can_install: true,
+    added_capabilities: [],
+    rollback_warning: null,
     ...overrides,
   };
 }

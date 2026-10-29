@@ -20,7 +20,9 @@ use crate::{
     middleware::AuthUser,
     models::*,
     services::{
-        plugins::{slots, ui_assets, PluginError, TrustRequest, AUDIT_PLUGINS, AUDIT_TRUST},
+        plugins::{
+            slots, ui_assets, InstallOptions, PluginError, TrustRequest, AUDIT_PLUGINS, AUDIT_TRUST,
+        },
         AuthService,
     },
     utils::{error::ErrorResponse, AppError},
@@ -52,6 +54,7 @@ pub fn routes() -> Router<AppState> {
         .merge(upload)
         .merge(super::plugin_events::routes())
         .merge(super::plugin_governance::routes())
+        .merge(super::plugin_updates::routes())
         .route("/ui/slots", get(ui_slots))
         .route("/ui/catalog", get(ui_catalog))
         .route("/ui/sessions", post(ui_session))
@@ -221,10 +224,19 @@ fn header(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+#[derive(serde::Deserialize, Default)]
+struct InstallQuery {
+    /// For a newer version of an installed plugin: store it without
+    /// activating it (applied later by hand, in a batch or in the window).
+    #[serde(default)]
+    stage: bool,
+}
+
 async fn install(
     State(state): State<AppState>,
     user: AuthUser,
     headers: HeaderMap,
+    Query(q): Query<InstallQuery>,
     body: Bytes,
 ) -> ApiResult<(StatusCode, Json<PluginDetail>)> {
     require(&state, &user, Resource::Plugins, Action::Admin).await?;
@@ -248,10 +260,17 @@ async fn install(
 
     let out = state
         .plugin_manager
-        .install(&body, &user.username, trust)
+        .install_with(
+            &body,
+            &user.username,
+            trust,
+            InstallOptions { stage: q.stage },
+        )
         .await?;
     let id = out.detail.summary.id.clone();
-    let version = out.detail.summary.active_version.clone();
+    let active = out.detail.summary.active_version.clone();
+    // A staged or pending upgrade leaves the previous version running.
+    let version = out.version.clone();
     if let Some(key_id) = &out.trusted_key_id {
         emit(
             &state,
@@ -272,35 +291,36 @@ async fn install(
             )
             .await;
     }
+    let action = match (&out.upgraded_from, out.staged, out.pending_approval) {
+        (None, _, _) => "plugin.installed",
+        (Some(_), true, _) => "plugin.update_staged",
+        (Some(_), false, true) => "plugin.update_pending",
+        (Some(_), false, false) => "plugin.upgraded",
+    };
     state
         .plugin_manager
         .audit(
             user.organization_id,
             Some(user.id),
             AUDIT_PLUGINS,
-            if out.upgraded_from.is_some() {
-                "plugin.upgraded"
-            } else {
-                "plugin.installed"
-            },
+            action,
             &id,
             json!({
                 "actor": user.username,
                 "version": version,
+                "active_version": active,
                 "upgraded_from": out.upgraded_from,
                 "signer_key_id": out.detail.summary.signer_key_id,
+                "trigger": "install",
             }),
         )
         .await;
     emit(
         &state,
         &user,
-        if out.upgraded_from.is_some() {
-            "plugin.upgraded"
-        } else {
-            "plugin.installed"
-        },
-        json!({"plugin_id": id, "version": version, "upgraded_from": out.upgraded_from}),
+        action,
+        json!({"plugin_id": id, "version": version, "active_version": active,
+               "upgraded_from": out.upgraded_from, "trigger": "install"}),
     )
     .await;
     Ok((StatusCode::CREATED, Json(out.detail)))

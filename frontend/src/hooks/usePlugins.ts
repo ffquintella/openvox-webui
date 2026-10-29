@@ -5,6 +5,7 @@ import type {
   AddTrustedKeyRequest,
   UpdateTrustedKeyRequest,
   RevokeTrustedKeyRequest,
+  PluginUpdatePolicyRequest,
 } from '../types';
 
 const UI_SLOTS_STALE_MS = 30_000;
@@ -41,6 +42,9 @@ function useInvalidatePlugins() {
     queryClient.invalidateQueries({ queryKey: ['plugin'] });
     queryClient.invalidateQueries({ queryKey: ['plugin-ui'] });
     queryClient.invalidateQueries({ queryKey: ['plugin-trusted-keys'] });
+    queryClient.invalidateQueries({ queryKey: ['plugin-versions'] });
+    queryClient.invalidateQueries({ queryKey: ['plugin-updates'] });
+    queryClient.invalidateQueries({ queryKey: ['plugin-governance'] });
   };
 }
 
@@ -216,5 +220,78 @@ export function useResetPluginCircuit() {
       queryClient.invalidateQueries({ queryKey: ['plugin-governance'] });
       queryClient.invalidateQueries({ queryKey: ['plugin-metrics'] });
     },
+  });
+}
+
+// ============================================================================
+// Updates, rollback and revocation (M24)
+// ============================================================================
+
+export function usePluginVersions(id: string | null) {
+  return useQuery({
+    queryKey: ['plugin-versions', id],
+    queryFn: () => pluginsApi.versions(id as string),
+    enabled: !!id,
+  });
+}
+
+export function usePluginUpdates(enabled = true) {
+  return useQuery({
+    queryKey: ['plugin-updates'],
+    queryFn: () => pluginsApi.updates(),
+    enabled,
+  });
+}
+
+export function useApplyPluginUpdates() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: (pluginIds: string[]) => pluginsApi.applyUpdates(pluginIds),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdatePlugin() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version?: string }) =>
+      pluginsApi.updatePlugin(id, version),
+    onSettled: invalidate,
+  });
+}
+
+export function useRollbackPlugin() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version?: string }) =>
+      pluginsApi.rollback(id, version),
+    onSettled: invalidate,
+  });
+}
+
+export function useSetPluginUpdatePolicy() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: PluginUpdatePolicyRequest }) =>
+      pluginsApi.setUpdatePolicy(id, request),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRevokePluginVersion() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, version, reason }: { id: string; version: string; reason: string }) =>
+      pluginsApi.revokeVersion(id, version, reason),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUnrevokePluginVersion() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version: string }) =>
+      pluginsApi.unrevokeVersion(id, version),
+    onSuccess: invalidate,
   });
 }

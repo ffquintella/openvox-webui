@@ -4,7 +4,7 @@
 //! signature is valid and the signer is an active, unexpired trusted key that
 //! is allowed to sign that plugin id.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -111,6 +111,18 @@ pub struct InstallOutcome {
     pub pending_approval: bool,
     pub trusted_key_id: Option<String>,
     pub upgraded_from: Option<String>,
+    /// The new version was stored without being activated (M24); it is
+    /// applied later by hand, in a batch or in the update window.
+    pub staged: bool,
+    /// Version carried by the package (not always the active one).
+    pub version: String,
+}
+
+/// Options of an install that the API exposes besides the package itself.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InstallOptions {
+    /// For a newer version of an installed plugin: store it only.
+    pub stage: bool,
 }
 
 pub struct PluginManager {
@@ -128,9 +140,36 @@ pub struct PluginManager {
     policy: crate::config::PluginPolicyConfig,
     governor: Arc<Governor>,
     ui_sessions: Arc<UiSessions>,
+    /// Package hashes refused everywhere (`plugins.blocked_hashes`, M24).
+    blocked_hashes: HashSet<String>,
 }
 
-type Failure = (PluginState, &'static str, String);
+pub(super) type Failure = (PluginState, &'static str, String);
+
+/// Why a stored version may not run: revoked by an administrator or listed
+/// in `plugins.blocked_hashes`.
+pub(super) fn version_refusal(
+    rec: &PluginVersionRecord,
+    blocked: &HashSet<String>,
+) -> Option<(&'static str, String)> {
+    if rec.revoked {
+        let why = rec.revoked_reason.as_deref().unwrap_or("no reason given");
+        return Some((
+            "version_revoked",
+            format!("{} {} was revoked: {}", rec.plugin_id, rec.version, why),
+        ));
+    }
+    if blocked.contains(&rec.package_sha256.to_ascii_lowercase()) {
+        return Some((
+            "version_blocked",
+            format!(
+                "{} {} is blocked by plugins.blocked_hashes",
+                rec.plugin_id, rec.version
+            ),
+        ));
+    }
+    None
+}
 
 impl PluginManager {
     pub fn new(pool: SqlitePool, data_dir: PathBuf, max_package_mb: u64) -> Self {
@@ -148,7 +187,33 @@ impl PluginManager {
             policy: Default::default(),
             governor: Arc::new(Governor::new(Default::default())),
             ui_sessions: Arc::new(UiSessions::default()),
+            blocked_hashes: HashSet::new(),
         }
+    }
+
+    /// Local revocation by package hash (`plugins.blocked_hashes`). Entries
+    /// that are not a SHA-256 in hex are ignored with a warning.
+    pub fn with_blocked_hashes(mut self, hashes: &[String]) -> Self {
+        for h in hashes {
+            let h = h.trim().to_ascii_lowercase();
+            if h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()) {
+                self.blocked_hashes.insert(h);
+            } else {
+                tracing::warn!(
+                    "plugins.blocked_hashes: '{}' is not a SHA-256 in hex and is ignored",
+                    h
+                );
+            }
+        }
+        self
+    }
+
+    pub fn is_blocked_hash(&self, sha256: &str) -> bool {
+        self.blocked_hashes.contains(&sha256.to_ascii_lowercase())
+    }
+
+    pub(super) fn blocked_hashes(&self) -> &HashSet<String> {
+        &self.blocked_hashes
     }
 
     /// Metrics, quotas and breaker settings (M22).
@@ -215,11 +280,15 @@ impl PluginManager {
         &self.ui_sessions
     }
 
-    fn repo(&self) -> PluginRepository<'_> {
+    pub(super) fn repo(&self) -> PluginRepository<'_> {
         PluginRepository::new(&self.pool)
     }
 
-    fn package_path(&self, id: &str, version: &str) -> PathBuf {
+    pub(super) fn wasm_runtime(&self) -> Option<&Arc<WasmInvoker>> {
+        self.wasm.get()
+    }
+
+    pub(super) fn package_path(&self, id: &str, version: &str) -> PathBuf {
         self.data_dir
             .join("packages")
             .join(id)
@@ -321,9 +390,34 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Reads the stored package and checks it against its pinned hash and
+    /// its own file list, without evaluating trust or revocation. Used to
+    /// read the `.down` migrations of the version a rollback leaves.
+    pub(super) async fn read_stored(
+        &self,
+        id: &str,
+        version: &str,
+    ) -> Result<PluginPackage, PluginError> {
+        let rec =
+            self.repo().get_version(id, version).await?.ok_or_else(|| {
+                PluginError::NotFound(format!("{} {} is not installed", id, version))
+            })?;
+        let bytes = tokio::fs::read(self.package_path(id, version))
+            .await
+            .map_err(|e| unprocessable("integrity_failed", format!("package file: {}", e)))?;
+        if package::sha256_hex(&bytes) != rec.package_sha256 {
+            return Err(unprocessable(
+                "integrity_failed",
+                "the stored package no longer matches its pinned hash",
+            ));
+        }
+        Ok(package::read_package(&bytes, self.max_package_bytes)?)
+    }
+
     /// Reads the stored package, checks its pinned hash and its signature
-    /// against the current trust store.
-    async fn load_verified(
+    /// against the current trust store. A revoked or hash-blocked version is
+    /// refused before its package is even read.
+    pub(super) async fn load_verified(
         &self,
         id: &str,
         version: &str,
@@ -335,6 +429,9 @@ impl PluginManager {
             .await
             .map_err(|e| internal(e.to_string()))?
             .ok_or_else(|| internal("version record is missing".into()))?;
+        if let Some((code, msg)) = version_refusal(&rec, &self.blocked_hashes) {
+            return Err((PluginState::Disabled, code, msg));
+        }
         let bytes = tokio::fs::read(self.package_path(id, version))
             .await
             .map_err(|e| {
@@ -407,11 +504,19 @@ impl PluginManager {
         };
 
         let mut issues = Vec::new();
+        if self.is_blocked_hash(&pkg.package_sha256) {
+            issues.push("this package is blocked by plugins.blocked_hashes".to_string());
+        }
         let existing = self.repo().get_plugin(&m.id).await?;
         let installed_version = existing.as_ref().and_then(|p| p.active_version.clone());
+        let mut rollback_warning = None;
         if let Some(active) = &installed_version {
             self.check_upgrade(&pkg, active, &mut issues).await?;
+            rollback_warning = self.rollback_warning_for(&pkg, active).await;
         }
+        let added_capabilities = self
+            .added_capabilities(&pkg, installed_version.as_deref())
+            .await?;
         if let Some(min) = &m.min_webui_version {
             if let (Ok(min), Ok(cur)) = (
                 semver::Version::parse(min),
@@ -462,6 +567,8 @@ impl PluginManager {
             installed_version,
             issues,
             can_install,
+            added_capabilities,
+            rollback_warning,
         };
         Ok((result, pkg, pk))
     }
@@ -501,6 +608,17 @@ impl PluginManager {
         bytes: &[u8],
         actor: &str,
         trust: Option<TrustRequest>,
+    ) -> Result<InstallOutcome, PluginError> {
+        self.install_with(bytes, actor, trust, InstallOptions::default())
+            .await
+    }
+
+    pub async fn install_with(
+        &self,
+        bytes: &[u8],
+        actor: &str,
+        trust: Option<TrustRequest>,
+        options: InstallOptions,
     ) -> Result<InstallOutcome, PluginError> {
         let (pre, pkg, pk) = self.inspect(bytes).await?;
         let m = &pkg.manifest;
@@ -602,6 +720,9 @@ impl PluginManager {
             signed_by_key_id: pkg.envelope.header.key_id.clone(),
             signed_at: pkg.envelope.header.signed_at.clone(),
             revoked: false,
+            revoked_reason: None,
+            revoked_by: None,
+            revoked_at: None,
             added_at: Utc::now(),
             manifest_json: serde_json::to_string(m).map_err(|e| PluginError::Internal(e.into()))?,
             signature: serde_json::to_string(&pkg.envelope)
@@ -610,6 +731,9 @@ impl PluginManager {
         let added = self
             .added_capabilities(&pkg, upgraded_from.as_deref())
             .await?;
+        // Staging only applies to a new version of an installed plugin.
+        let staged = options.stage && upgraded_from.is_some();
+        let pending_approval = upgraded_from.is_some() && !added.is_empty() && !staged;
         let db = async {
             if upgraded_from.is_none() {
                 self.repo()
@@ -617,7 +741,7 @@ impl PluginManager {
                     .await?;
             }
             self.repo().insert_version(&record).await?;
-            if upgraded_from.is_some() && !added.is_empty() {
+            if pending_approval {
                 self.repo()
                     .set_pending_version(&m.id, Some(&m.version))
                     .await?;
@@ -628,8 +752,7 @@ impl PluginManager {
             let _ = tokio::fs::remove_file(&path).await;
             return Err(PluginError::Internal(e));
         }
-        let pending_approval = upgraded_from.is_some() && !added.is_empty();
-        if let (Some(from), false) = (&upgraded_from, pending_approval) {
+        if let (Some(from), false, false) = (&upgraded_from, pending_approval, staged) {
             self.activate_version(&m.id, &m.version, Some(from)).await?;
         }
         Ok(InstallOutcome {
@@ -637,11 +760,13 @@ impl PluginManager {
             pending_approval,
             trusted_key_id,
             upgraded_from,
+            staged,
+            version: m.version.clone(),
         })
     }
 
     /// Capabilities the package declares that the active version did not.
-    async fn added_capabilities(
+    pub(super) async fn added_capabilities(
         &self,
         pkg: &PluginPackage,
         active: Option<&str>,
@@ -655,12 +780,12 @@ impl PluginManager {
         let Ok(old) = serde_json::from_str::<PluginManifest>(&rec.manifest_json) else {
             return Ok(Vec::new());
         };
-        let had = capabilities(&old);
-        Ok(capabilities(&pkg.manifest)
-            .into_iter()
-            .filter(|c| !had.iter().any(|h| h.same_grant(c)))
-            .map(|c| c.name)
-            .collect())
+        let grants = self.repo().list_grants(&pkg.manifest.id).await?;
+        Ok(super::updates::added_unapproved(
+            &old,
+            &pkg.manifest,
+            &grants,
+        ))
     }
 
     // ---- capability approval ----------------------------------------------
@@ -678,7 +803,11 @@ impl PluginManager {
             .collect()
     }
 
-    async fn manifest_of(&self, id: &str, version: &str) -> Result<PluginManifest, PluginError> {
+    pub(super) async fn manifest_of(
+        &self,
+        id: &str,
+        version: &str,
+    ) -> Result<PluginManifest, PluginError> {
         let rec =
             self.repo().get_version(id, version).await?.ok_or_else(|| {
                 PluginError::NotFound(format!("{} {} is not installed", id, version))
@@ -761,7 +890,7 @@ impl PluginManager {
 
     /// Non-optional declared capabilities that are not approved (or are
     /// blocked by policy) for the plugin.
-    async fn missing_required(&self, m: &PluginManifest, id: &str) -> Vec<String> {
+    pub(super) async fn missing_required(&self, m: &PluginManifest, id: &str) -> Vec<String> {
         let grants = self.repo().list_grants(id).await.unwrap_or_default();
         capabilities(m)
             .into_iter()
@@ -783,7 +912,7 @@ impl PluginManager {
     // ---- wasm preparation, hooks and version activation -------------------
 
     /// Validates the module and brings the plugin database up to date.
-    async fn prepare_wasm(&self, pkg: &PluginPackage) -> Result<(), PluginError> {
+    pub(super) async fn prepare_wasm(&self, pkg: &PluginPackage) -> Result<(), PluginError> {
         let m = &pkg.manifest;
         let (Some(wasm), Some(storage)) = (self.wasm.get(), self.storage.get()) else {
             return Err(conflict(
@@ -860,8 +989,9 @@ impl PluginManager {
 
     /// Makes `version` the active one: migrates and runs the upgrade hook
     /// when the plugin is enabled, and rolls back to the previous version if
-    /// that fails.
-    async fn activate_version(
+    /// that fails. The hook input carries `rollback: true` when `version` is
+    /// older than `from`.
+    pub(super) async fn activate_version(
         &self,
         id: &str,
         version: &str,
@@ -894,11 +1024,17 @@ impl PluginManager {
         }
         self.reload().await?;
         if enabled {
+            let rollback = from.is_some_and(|f| {
+                matches!(
+                    (semver::Version::parse(version), semver::Version::parse(f)),
+                    (Ok(to), Ok(f)) if to < f
+                )
+            });
             let hook = self
                 .run_hook(
                     &pkg.manifest,
                     "upgrade",
-                    json!({"from": from, "to": version}),
+                    json!({"from": from, "to": version, "rollback": rollback}),
                 )
                 .await;
             if let Err(msg) = hook {
@@ -1110,7 +1246,7 @@ impl PluginManager {
 
     // ---- queries ----------------------------------------------------------
 
-    async fn require(&self, id: &str) -> Result<PluginRecord, PluginError> {
+    pub(super) async fn require(&self, id: &str) -> Result<PluginRecord, PluginError> {
         self.repo()
             .get_plugin(id)
             .await?
@@ -1175,7 +1311,19 @@ impl PluginManager {
         let signer = version
             .as_ref()
             .and_then(|v| keys.iter().find(|k| k.key_id == v.signed_by_key_id));
+        let stored = self.repo().list_versions(&p.id).await?;
+        let available_version = super::updates::newest_available(
+            &stored,
+            p.active_version.as_deref(),
+            &self.blocked_hashes,
+        )
+        .map(|v| v.version.clone());
         Ok(PluginSummary {
+            available_version,
+            auto_update: p.auto_update,
+            update_window: p.update_window,
+            update_hold_version: p.update_hold_version,
+            update_hold_reason: p.update_hold_reason,
             name: manifest
                 .as_ref()
                 .map(|m| m.name.clone())

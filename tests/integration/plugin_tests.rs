@@ -610,3 +610,244 @@ async fn plugin_ui_assets_are_public_but_a_bad_token_is_a_plain_404() {
         assert_eq!(r.status, 404, "{uri}");
     }
 }
+
+fn remote_version(seed: u8, version: &str) -> Vec<u8> {
+    let yaml = format!(
+        "api_version: 2\nid: demo\nname: Demo\nversion: {version}\npublisher: ACME\n\
+         runtime: {{ kind: remote, endpoint: \"https://demo.example.com\" }}\n"
+    );
+    build_signed_package(
+        &[("plugin.yaml", yaml.as_bytes())],
+        "demo",
+        version,
+        2,
+        [seed; 32],
+    )
+}
+
+#[tokio::test]
+async fn updates_rollback_and_revocation_endpoints() {
+    let app = TestApp::new().await;
+    for uri in ["/api/v1/plugins/updates", "/api/v1/plugins/demo/versions"] {
+        app.get(uri).await.assert_unauthorized();
+    }
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    let policy = json!({"auto_update": "off"});
+    for (method, uri, body) in [
+        ("GET", "/api/v1/plugins/updates", json!({})),
+        (
+            "POST",
+            "/api/v1/plugins/updates/apply",
+            json!({"plugin_ids": ["demo"]}),
+        ),
+        ("GET", "/api/v1/plugins/demo/versions", json!({})),
+        ("POST", "/api/v1/plugins/demo/update", json!({})),
+        ("POST", "/api/v1/plugins/demo/rollback", json!({})),
+        ("PUT", "/api/v1/plugins/demo/update-policy", policy),
+        (
+            "POST",
+            "/api/v1/plugins/demo/versions/1.0.0/revoke",
+            json!({"reason": "x"}),
+        ),
+        (
+            "POST",
+            "/api/v1/plugins/demo/versions/1.0.0/unrevoke",
+            json!({}),
+        ),
+    ] {
+        send(&app, &viewer, method, uri, json_body(body), JSON)
+            .await
+            .assert_forbidden();
+    }
+
+    // Install 1.0.0 (trusting the key), then stage 1.1.0.
+    let t = admin_token(&app).await;
+    let pre: Value = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/preflight",
+        remote_version(9, "1.0.0"),
+        &[],
+    )
+    .await
+    .json();
+    let prefix = pre["signature"]["key_id"].as_str().unwrap()[..8].to_string();
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins",
+        remote_version(9, "1.0.0"),
+        &[
+            ("X-Trust-Key-Confirm", &prefix),
+            ("X-Reauth-Password", PASSWORD),
+        ],
+    )
+    .await
+    .assert_created();
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins?stage=true",
+        remote_version(9, "1.1.0"),
+        &[],
+    )
+    .await;
+    r.assert_created();
+    let d: Value = r.json();
+    assert_eq!(d["active_version"], "1.0.0");
+    assert_eq!(d["available_version"], "1.1.0");
+
+    let r = send(&app, &t, "GET", "/api/v1/plugins/updates", vec![], &[]).await;
+    r.assert_ok();
+    let u: Value = r.json();
+    assert_eq!(u[0]["available_version"], "1.1.0");
+    assert_eq!(u[0]["requires_approval"], false);
+    assert_eq!(u[0]["auto_update"], "off");
+
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/updates/apply",
+        json_body(json!({"plugin_ids": ["demo", "missing"]})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let res: Value = r.json();
+    assert_eq!(res["results"][0]["outcome"], "updated");
+    assert_eq!(res["results"][0]["to_version"], "1.1.0");
+    assert_eq!(res["results"][1]["outcome"], "failed");
+
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/plugins/demo/versions",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let v: Value = r.json();
+    assert_eq!(v[0]["version"], "1.1.0");
+    assert_eq!(v[0]["relation"], "active");
+    assert_eq!(v[1]["relation"], "older");
+    assert_eq!(v[1]["can_activate"], true);
+
+    // Rollback without a body goes to the previous version.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/rollback",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let rb: Value = r.json();
+    assert_eq!(rb["to_version"], "1.0.0");
+    assert_eq!(rb["plugin"]["update_hold_version"], "1.1.0");
+    // An explicit update to an older version is refused.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/update",
+        json_body(json!({"version": "0.1.0"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 404);
+
+    // Update policy: the window must be a five-field cron expression.
+    let r = send(
+        &app,
+        &t,
+        "PUT",
+        "/api/v1/plugins/demo/update-policy",
+        json_body(json!({"auto_update": "patch", "update_window": "nightly"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 400);
+    let r = send(
+        &app,
+        &t,
+        "PUT",
+        "/api/v1/plugins/demo/update-policy",
+        json_body(json!({"auto_update": "minor", "update_window": "* 2-3 * * 6"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>()["auto_update"], "minor");
+
+    // Revocation needs a reason and is reversible.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/versions/1.1.0/revoke",
+        json_body(json!({"reason": ""})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 400);
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/versions/1.1.0/revoke",
+        json_body(json!({"reason": "bad build"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let rv: Value = r.json();
+    assert_eq!(rv["deactivated"], false);
+    assert!(rv["plugin"]["available_version"].is_null());
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/versions/1.1.0/unrevoke",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>()["available_version"], "1.1.0");
+
+    let logs = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/audit-logs?resource_type=plugins",
+        vec![],
+        &[],
+    )
+    .await
+    .text();
+    for action in [
+        "plugin.update_staged",
+        "plugin.upgraded",
+        "plugin.rolled_back",
+        "plugin.update_policy_changed",
+        "plugin.version_revoked",
+        "plugin.version_unrevoked",
+    ] {
+        assert!(logs.contains(action), "missing audit entry {action}");
+    }
+}

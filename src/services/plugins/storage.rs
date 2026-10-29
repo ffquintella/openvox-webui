@@ -395,6 +395,14 @@ impl PluginStorage {
         Ok(v.unwrap_or(0).max(0) as u32)
     }
 
+    /// Numbers of the migrations applied to the plugin database, ascending.
+    pub async fn applied_numbers(&self, plugin: &str) -> Result<Vec<u32>, StorageError> {
+        check_plugin(plugin)?;
+        let mut n: Vec<u32> = self.applied(plugin).await?.into_keys().collect();
+        n.sort_unstable();
+        Ok(n)
+    }
+
     async fn applied(&self, plugin: &str) -> Result<HashMap<u32, String>, StorageError> {
         let rows: Vec<(i64, String)> =
             sqlx::query_as("SELECT number, checksum FROM plugin_migrations WHERE plugin_id = ?")

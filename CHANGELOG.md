@@ -11,6 +11,15 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add batch and scheduled plugin updates (M24): a newer package uploaded with `POST /api/v1/plugins?stage=true` (the "Store only" option of the install dialog) is kept as a stored version without being activated; `GET /api/v1/plugins/updates` lists the available version of every plugin with the capabilities it would add and a rollback warning, `POST /api/v1/plugins/updates/apply` updates the selected plugins in one batch (per-plugin outcome `updated`, `pending_approval`, `up_to_date` or `failed`) and `POST /api/v1/plugins/{id}/update` updates one plugin, optionally to a given version; `PUT /api/v1/plugins/{id}/update-policy` sets an automatic update policy (`off`, `patch`, `minor`, `any`) and a five-field UTC cron update window, applied by a new scheduler (`plugins.updates.scheduler_enabled`, `plugins.updates.tick_secs`) that skips a version after it failed or was rolled back; an update that adds a capability not yet approved waits in `pending_version` while the previous version keeps running. The Plugins page has a new Updates tab with batch selection and the policy dialog (T86)
+- Add stored plugin versions and rollback (M24): `GET /api/v1/plugins/{id}/versions` lists every stored version with its relation to the active one, schema level, added capabilities, revocation, 7-day usage and whether it can be activated; `POST /api/v1/plugins/{id}/rollback` reactivates the previous (or a given older) version after reverting the plugin database with the `.down` migrations of the version it leaves, and is refused with `rollback_blocked` before anything changes when one is missing; preflight and the versions list warn before an update whose migrations could not be reverted. The plugin details dialog shows the versions with update, rollback and revocation actions (T87)
+- Add local plugin revocation (M24): `POST /api/v1/plugins/{id}/versions/{version}/revoke` (reason required) and `.../unrevoke` mark a stored version revoked; a revoked running version is taken out of play at once (`disabled`, reason `version_revoked`, no hooks run) and can no longer be enabled, updated to or rolled back to. Package hashes listed in `plugins.blocked_hashes` in `config.yaml` are refused at preflight and install and disabled (`version_blocked`) at the next load, reload or integrity check (T88)
+
+### Changed
+- Installing a newer version now records `plugin.update_pending` (audit and event) instead of `plugin.upgraded` when it waits for capability approval, and `plugin.update_staged` when it is only stored; updates, rollbacks and revocations emit `plugin.upgraded`, `plugin.update_pending`, `plugin.update_failed`, `plugin.rolled_back`, `plugin.version_revoked` and `plugin.version_unrevoked`, and every one of them, plus `plugin.rollback_failed` and `plugin.update_policy_changed`, is audited
+- A capability added by a newer version no longer asks for approval again when the same capability with the same scope is already approved for the plugin (for example after a rollback and a new update)
+
 ## [0.44.0] - 2026-10-29
 
 ### Added
