@@ -173,6 +173,9 @@ import type {
   UpdateTrustedKeyRequest,
   RevokeTrustedKeyRequest,
   UiSlots,
+  PluginGovernanceOverview,
+  PluginMetrics,
+  PluginCircuitView,
   UiContributionDetail,
 } from '../types';
 
@@ -1792,6 +1795,23 @@ export const pluginsApi = {
     const response = await client.get(
       `/plugins/ui/contributions/${encodeURIComponent(pluginId)}/${encodeURIComponent(contributionId)}`
     );
+    return response.data;
+  },
+
+  governance: async (): Promise<PluginGovernanceOverview> => {
+    const response = await client.get('/plugins/governance');
+    return response.data;
+  },
+
+  metrics: async (id: string, hours = 24): Promise<PluginMetrics> => {
+    const response = await client.get(`/plugins/${encodeURIComponent(id)}/metrics`, {
+      params: { hours },
+    });
+    return response.data;
+  },
+
+  resetCircuit: async (id: string): Promise<PluginCircuitView> => {
+    const response = await client.post(`/plugins/${encodeURIComponent(id)}/circuit/reset`);
     return response.data;
   },
 };

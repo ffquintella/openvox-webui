@@ -908,6 +908,7 @@ mod tests {
             memory_mb,
             fuel_per_call: fuel,
             timeout_ms,
+            invocations_per_minute: None,
         })
     }
 

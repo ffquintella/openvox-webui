@@ -3,6 +3,7 @@
 
 pub mod events;
 pub mod filter;
+pub mod governance;
 pub mod host;
 pub mod invoke;
 pub mod jobs;

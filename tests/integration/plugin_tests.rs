@@ -487,3 +487,66 @@ async fn inbound_webhook_route_is_public_but_reveals_nothing_for_unknown_hooks()
         .await;
     assert_eq!(r.status, 404);
 }
+
+#[tokio::test]
+async fn governance_endpoints_enforce_permissions_and_report_aggregates() {
+    let app = TestApp::new().await;
+    for uri in [
+        "/api/v1/plugins/governance",
+        "/api/v1/plugins/metrics",
+        "/api/v1/plugins/demo/metrics",
+    ] {
+        app.get(uri).await.assert_unauthorized();
+    }
+
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    for (method, uri) in [
+        ("GET", "/api/v1/plugins/governance"),
+        ("GET", "/api/v1/plugins/metrics"),
+        ("GET", "/api/v1/plugins/demo/metrics"),
+        ("POST", "/api/v1/plugins/demo/circuit/reset"),
+    ] {
+        send(&app, &viewer, method, uri, vec![], &[])
+            .await
+            .assert_forbidden();
+    }
+
+    let t = admin_token(&app).await;
+    let r = send(&app, &t, "GET", "/api/v1/plugins/governance", vec![], &[]).await;
+    r.assert_ok();
+    let body = r.json::<Value>();
+    assert_eq!(body["plugins"], json!([]));
+    assert_eq!(body["open_circuits"], 0);
+
+    let r = send(&app, &t, "GET", "/api/v1/plugins/metrics", vec![], &[]).await;
+    r.assert_ok();
+    assert!(r.headers["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("text/plain; version=0.0.4"));
+    assert!(r
+        .text()
+        .contains("# TYPE openvox_plugin_invocations_total counter"));
+    assert!(r.text().contains("openvox_plugin_events_pending 0"));
+
+    send(&app, &t, "GET", "/api/v1/plugins/demo/metrics", vec![], &[])
+        .await
+        .assert_not_found();
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/demo/circuit/reset",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_not_found();
+}

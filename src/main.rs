@@ -383,7 +383,8 @@ async fn main() -> Result<()> {
             config.plugins.data_dir.clone(),
             config.plugins.max_package_mb,
         )
-        .with_policy(config.plugins.policy.clone()),
+        .with_policy(config.plugins.policy.clone())
+        .with_governance(config.plugins.governance.clone()),
     );
     // WASM runtime: sandboxed handlers with kv and private-database storage
     {
@@ -436,6 +437,7 @@ async fn main() -> Result<()> {
         Err(e) => warn!("Plugin manager startup failed: {}", e),
     }
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
+    services::plugins::governance::start_governance(plugin_manager.clone());
     let plugin_runtime = services::plugins::PluginRuntime::new(
         plugin_manager.clone(),
         config.plugins.events.clone(),

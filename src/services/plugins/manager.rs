@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::governance::{classify, Governor};
 use super::host::effective_capabilities;
 use super::invoke::{HandlerCall, HandlerInvoker, HookIndex, InvokeError, PluginHooks};
 use super::manifest::{capabilities, describe_capability};
@@ -124,6 +125,7 @@ pub struct PluginManager {
     storage: OnceLock<Arc<PluginStorage>>,
     wasm: OnceLock<Arc<WasmInvoker>>,
     policy: crate::config::PluginPolicyConfig,
+    governor: Arc<Governor>,
 }
 
 type Failure = (PluginState, &'static str, String);
@@ -142,7 +144,18 @@ impl PluginManager {
             storage: OnceLock::new(),
             wasm: OnceLock::new(),
             policy: Default::default(),
+            governor: Arc::new(Governor::new(Default::default())),
         }
+    }
+
+    /// Metrics, quotas and breaker settings (M22).
+    pub fn with_governance(mut self, cfg: crate::config::PluginGovernanceConfig) -> Self {
+        self.governor = Arc::new(Governor::new(cfg));
+        self
+    }
+
+    pub fn governor(&self) -> &Arc<Governor> {
+        &self.governor
     }
 
     /// OpenVox project keys embedded in the host (cannot be removed at runtime).
@@ -991,6 +1004,7 @@ impl PluginManager {
         self.repo()
             .set_state(id, PluginState::Enabled, None)
             .await?;
+        self.clear_governance(id, false).await;
         self.reload().await?;
         self.get(id).await
     }
@@ -1004,6 +1018,7 @@ impl PluginManager {
         self.repo()
             .set_state(id, PluginState::Disabled, Some("disabled_by_admin"))
             .await?;
+        self.clear_governance(id, false).await;
         self.reload().await?;
         self.get(id).await
     }
@@ -1038,6 +1053,7 @@ impl PluginManager {
             .replace_config(id, &Default::default(), "uninstall")
             .await?;
         self.repo().delete_plugin(id).await?;
+        self.clear_governance(id, true).await;
         PluginEventsRepository::new(&self.pool)
             .delete_plugin_events(id)
             .await?;
@@ -1398,7 +1414,46 @@ fn validate_scope(ids: Option<&[String]>) -> Result<(), PluginError> {
 
 #[async_trait::async_trait]
 impl HandlerInvoker for PluginManager {
+    /// Every handler call passes the governor: refused while the plugin's
+    /// breaker is open or its call quota is used up, measured otherwise.
     async fn invoke(&self, call: HandlerCall) -> Result<Value, InvokeError> {
+        let plugin_id = call.plugin_id.clone();
+        let version = call.version.clone();
+        let kind = call.kind.as_str();
+        let requested = call
+            .runtime
+            .limits
+            .as_ref()
+            .and_then(|l| l.invocations_per_minute);
+        if let Err(rejection) =
+            self.governor
+                .admit(&plugin_id, &version, kind, requested, Utc::now())
+        {
+            return Err(InvokeError::Unavailable(rejection.to_string()));
+        }
+        let started = std::time::Instant::now();
+        let result = self.dispatch(call).await;
+        if let Some(outcome) = classify(&result) {
+            let error = result.as_ref().err().map(|e| e.to_string());
+            let transition = self.governor.record(
+                &plugin_id,
+                &version,
+                kind,
+                outcome,
+                started.elapsed().as_millis() as u64,
+                error.as_deref(),
+                Utc::now(),
+            );
+            if let Some(t) = transition {
+                self.on_transition(&plugin_id, &version, t).await;
+            }
+        }
+        result
+    }
+}
+
+impl PluginManager {
+    async fn dispatch(&self, call: HandlerCall) -> Result<Value, InvokeError> {
         use crate::models::RuntimeKind;
         match call.runtime.kind {
             RuntimeKind::Builtin => {

@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add plugin telemetry and governance (M22): every handler call (events, jobs, webhooks, lifecycle hooks) is measured per plugin, version and kind (calls, errors, traps, timeouts, latency histogram) and rolled up hourly into `plugin_usage_hourly` (T80); a per-plugin call quota (`plugins.governance.max_invocations_per_minute`, lowered by `runtime.limits.invocations_per_minute` in the manifest) refuses calls over the limit; a circuit breaker isolates a failing plugin (`plugins.governance.breaker_*`): it goes to `error` with its extension points out of play, an audit entry and a `plugin.circuit.opened` event are written, and it is tried again half open after an exponential backoff and closed after successful calls, or reset by an administrator (`POST /api/v1/plugins/{id}/circuit/reset`) (T81); `GET /api/v1/plugins/governance` and `GET /api/v1/plugins/{id}/metrics` feed a new Governance tab on the Plugins page with health, usage, breaker state and top consumers (T81); `GET /api/v1/plugins/metrics` exposes Prometheus metrics (`openvox_plugin_*`) for a scraper using an API key with `plugins:read` (T82)
+
 ## [0.43.0] - 2026-10-29
 
 ### Added

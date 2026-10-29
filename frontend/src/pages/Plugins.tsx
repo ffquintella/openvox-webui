@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Trash2,
   Info,
+  Activity,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -22,6 +23,7 @@ import {
 import { usePermissionsStore } from '../stores/permissionsStore';
 import InstallPluginDialog from '../components/plugins/InstallPluginDialog';
 import TrustedKeysTab from '../components/plugins/TrustedKeysTab';
+import GovernanceTab from '../components/plugins/GovernanceTab';
 import { ErrorBox, Modal, RiskBadge, StateBadge } from '../components/plugins/pluginUi';
 import {
   dangerBtn,
@@ -31,7 +33,7 @@ import {
 } from '../components/plugins/pluginHelpers';
 import type { PluginSummary } from '../types';
 
-type TabType = 'installed' | 'keys';
+type TabType = 'installed' | 'governance' | 'keys';
 
 function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const { data, isLoading } = usePlugin(id);
@@ -135,6 +137,7 @@ export default function Plugins() {
 
   const tabs = [
     { id: 'installed' as const, name: 'Installed', icon: Puzzle, badge: plugins.length },
+    { id: 'governance' as const, name: 'Governance', icon: Activity, badge: undefined },
     { id: 'keys' as const, name: 'Trusted keys', icon: KeyRound, badge: undefined },
   ];
 
@@ -310,6 +313,8 @@ export default function Plugins() {
           )}
         </div>
       )}
+
+      {activeTab === 'governance' && <GovernanceTab canAdmin={canAdmin} />}
 
       {activeTab === 'keys' && <TrustedKeysTab canManage={canManageKeys} />}
 

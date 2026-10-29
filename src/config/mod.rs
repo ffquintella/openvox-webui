@@ -89,6 +89,78 @@ pub struct PluginsConfig {
     /// WASM runtime limits
     #[serde(default)]
     pub wasm: PluginWasmConfig,
+    /// Metrics, quotas and the circuit breaker
+    #[serde(default)]
+    pub governance: PluginGovernanceConfig,
+}
+
+/// Telemetry and protection of the host against failing or abusive plugins.
+/// A plugin may ask for lower quotas in its manifest; the lower value applies.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginGovernanceConfig {
+    /// Handler calls per minute per plugin (0 = unlimited)
+    #[serde(default = "default_gov_invocations_per_minute")]
+    pub max_invocations_per_minute: u32,
+    /// Failures (errors, traps, timeouts) inside the window that open the breaker
+    #[serde(default = "default_gov_failure_threshold")]
+    pub breaker_failure_threshold: u32,
+    /// Length of the failure window (seconds)
+    #[serde(default = "default_gov_window_secs")]
+    pub breaker_window_secs: u64,
+    /// First wait before a tripped plugin is tried again (seconds); doubles per trip
+    #[serde(default = "default_gov_backoff_base_secs")]
+    pub breaker_backoff_base_secs: u64,
+    #[serde(default = "default_gov_backoff_max_secs")]
+    pub breaker_backoff_max_secs: u64,
+    /// Successful calls in the half-open state that close the breaker
+    #[serde(default = "default_gov_close_after")]
+    pub breaker_close_after_successes: u32,
+    /// How often usage is flushed and breakers are checked (seconds)
+    #[serde(default = "default_gov_tick_secs")]
+    pub tick_secs: u64,
+    /// Days of hourly usage to keep
+    #[serde(default = "default_gov_retention_days")]
+    pub usage_retention_days: u32,
+}
+
+fn default_gov_invocations_per_minute() -> u32 {
+    600
+}
+fn default_gov_failure_threshold() -> u32 {
+    5
+}
+fn default_gov_window_secs() -> u64 {
+    60
+}
+fn default_gov_backoff_base_secs() -> u64 {
+    60
+}
+fn default_gov_backoff_max_secs() -> u64 {
+    3600
+}
+fn default_gov_close_after() -> u32 {
+    3
+}
+fn default_gov_tick_secs() -> u64 {
+    30
+}
+fn default_gov_retention_days() -> u32 {
+    30
+}
+
+impl Default for PluginGovernanceConfig {
+    fn default() -> Self {
+        Self {
+            max_invocations_per_minute: default_gov_invocations_per_minute(),
+            breaker_failure_threshold: default_gov_failure_threshold(),
+            breaker_window_secs: default_gov_window_secs(),
+            breaker_backoff_base_secs: default_gov_backoff_base_secs(),
+            breaker_backoff_max_secs: default_gov_backoff_max_secs(),
+            breaker_close_after_successes: default_gov_close_after(),
+            tick_secs: default_gov_tick_secs(),
+            usage_retention_days: default_gov_retention_days(),
+        }
+    }
 }
 
 /// Capabilities no administrator can approve (the ceiling of
@@ -273,6 +345,7 @@ impl Default for PluginsConfig {
             events: PluginEventsConfig::default(),
             policy: PluginPolicyConfig::default(),
             wasm: PluginWasmConfig::default(),
+            governance: PluginGovernanceConfig::default(),
         }
     }
 }

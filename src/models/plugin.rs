@@ -91,6 +91,9 @@ pub struct RuntimeLimits {
     pub fuel_per_call: Option<u64>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Handler calls per minute the plugin asks for; the host ceiling still applies
+    #[serde(default)]
+    pub invocations_per_minute: Option<u32>,
 }
 
 /// A capability as written in the manifest: a bare name or a one-entry map

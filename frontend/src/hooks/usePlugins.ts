@@ -155,3 +155,39 @@ export function usePluginContribution(
     staleTime: UI_SLOTS_STALE_MS,
   });
 }
+
+// ============================================================================
+// Governance (M22)
+// ============================================================================
+
+const GOVERNANCE_REFRESH_MS = 30_000;
+
+export function usePluginGovernance(enabled = true) {
+  return useQuery({
+    queryKey: ['plugin-governance'],
+    queryFn: () => pluginsApi.governance(),
+    enabled,
+    refetchInterval: GOVERNANCE_REFRESH_MS,
+  });
+}
+
+export function usePluginMetrics(id: string | null, hours = 24) {
+  return useQuery({
+    queryKey: ['plugin-metrics', id, hours],
+    queryFn: () => pluginsApi.metrics(id as string, hours),
+    enabled: !!id,
+  });
+}
+
+export function useResetPluginCircuit() {
+  const invalidate = useInvalidatePlugins();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => pluginsApi.resetCircuit(id),
+    onSuccess: () => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['plugin-governance'] });
+      queryClient.invalidateQueries({ queryKey: ['plugin-metrics'] });
+    },
+  });
+}

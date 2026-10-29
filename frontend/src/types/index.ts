@@ -2398,3 +2398,70 @@ export interface UiSlots {
 export interface UiContributionDetail extends UiContribution {
   spec: unknown | null;
 }
+
+// Plugin governance (M22)
+export type PluginCircuitState = 'closed' | 'half_open' | 'open';
+export type PluginHealth = 'healthy' | 'degraded' | 'circuit_open' | 'disabled' | 'error';
+
+export interface PluginCircuitView {
+  state: PluginCircuitState;
+  trips: number;
+  retry_at: string | null;
+  last_error: string | null;
+}
+
+export interface PluginUsageTotals {
+  calls: number;
+  errors: number;
+  traps: number;
+  timeouts: number;
+  quota_rejections: number;
+  circuit_rejections: number;
+  error_rate: number;
+  avg_ms: number | null;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+  max_ms: number;
+}
+
+export interface PluginGovernanceEntry {
+  id: string;
+  name: string;
+  version: string | null;
+  state: string;
+  state_reason: string | null;
+  health: PluginHealth;
+  circuit: PluginCircuitView;
+  invocations_per_minute_limit: number | null;
+  last_hour: PluginUsageTotals;
+  last_24h: PluginUsageTotals;
+  revoked_versions: string[];
+}
+
+export interface PluginGovernanceOverview {
+  plugins: PluginGovernanceEntry[];
+  top_consumers: string[];
+  open_circuits: number;
+  generated_at: string;
+}
+
+export interface PluginUsagePoint {
+  hour: string;
+  calls: number;
+  errors: number;
+  traps: number;
+  timeouts: number;
+  quota_rejections: number;
+  circuit_rejections: number;
+  p95_ms: number | null;
+}
+
+export interface PluginMetrics {
+  plugin_id: string;
+  hours: number;
+  circuit: PluginCircuitView;
+  totals: PluginUsageTotals;
+  by_version: { version: string; totals: PluginUsageTotals }[];
+  series: PluginUsagePoint[];
+}

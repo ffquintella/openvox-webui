@@ -51,6 +51,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(list_plugins))
         .merge(upload)
         .merge(super::plugin_events::routes())
+        .merge(super::plugin_governance::routes())
         .route("/ui/slots", get(ui_slots))
         .route(
             "/ui/contributions/{plugin_id}/{contribution_id}",

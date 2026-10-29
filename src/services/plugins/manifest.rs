@@ -173,6 +173,9 @@ fn validate_runtime(p: &mut Vec<String>, m: &PluginManifest, files: &BTreeSet<St
         if l.timeout_ms.is_some_and(|v| v == 0 || v > 60_000) {
             p.push("runtime.limits.timeout_ms must be between 1 and 60000".to_string());
         }
+        if l.invocations_per_minute.is_some_and(|v| v == 0) {
+            p.push("runtime.limits.invocations_per_minute must be positive".to_string());
+        }
         if l.fuel_per_call.is_some_and(|v| v == 0) {
             p.push("runtime.limits.fuel_per_call must be positive".to_string());
         }
