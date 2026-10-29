@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-10-29
+
 ### Added
 - Add batch and scheduled plugin updates (M24): a newer package uploaded with `POST /api/v1/plugins?stage=true` (the "Store only" option of the install dialog) is kept as a stored version without being activated; `GET /api/v1/plugins/updates` lists the available version of every plugin with the capabilities it would add and a rollback warning, `POST /api/v1/plugins/updates/apply` updates the selected plugins in one batch (per-plugin outcome `updated`, `pending_approval`, `up_to_date` or `failed`) and `POST /api/v1/plugins/{id}/update` updates one plugin, optionally to a given version; `PUT /api/v1/plugins/{id}/update-policy` sets an automatic update policy (`off`, `patch`, `minor`, `any`) and a five-field UTC cron update window, applied by a new scheduler (`plugins.updates.scheduler_enabled`, `plugins.updates.tick_secs`) that skips a version after it failed or was rolled back; an update that adds a capability not yet approved waits in `pending_version` while the previous version keeps running. The Plugins page has a new Updates tab with batch selection and the policy dialog (T86)
 - Add stored plugin versions and rollback (M24): `GET /api/v1/plugins/{id}/versions` lists every stored version with its relation to the active one, schema level, added capabilities, revocation, 7-day usage and whether it can be activated; `POST /api/v1/plugins/{id}/rollback` reactivates the previous (or a given older) version after reverting the plugin database with the `.down` migrations of the version it leaves, and is refused with `rollback_blocked` before anything changes when one is missing; preflight and the versions list warn before an update whose migrations could not be reverted. The plugin details dialog shows the versions with update, rollback and revocation actions (T87)
@@ -549,7 +551,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 - Add initial admin account setup to the Puppet module (T25)
 - Support RHEL 8/9, CentOS 8/9, Rocky 8/9, AlmaLinux 8/9, Fedora 38/39/40, Debian 11/12 and Ubuntu 22.04/24.04 in the Puppet module (T25)
 
-[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.45.0
 [0.44.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.44.0
 [0.43.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.43.0
 [0.42.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.42.0
