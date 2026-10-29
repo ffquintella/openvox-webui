@@ -168,6 +168,9 @@ pub struct ClassificationExplain {
     pub groups: Vec<GroupExplanation>,
     pub provenance: Provenance,
     pub merge_errors: Vec<String>,
+    /// Plugin extensions that were unavailable and what that changed (M27).
+    #[serde(default)]
+    pub degraded: Vec<String>,
 }
 
 #[cfg(test)]

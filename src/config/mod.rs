@@ -101,6 +101,10 @@ pub struct PluginsConfig {
     /// Plugin report types, export formats, annotations and datasets (M25)
     #[serde(default)]
     pub reports: PluginReportsConfig,
+    /// Plugin classification extensions: hot-path budgets, membership
+    /// refresh and generated groups (M27)
+    #[serde(default)]
+    pub classification: PluginClassificationConfig,
     /// SHA-256 (hex) of `.ovxp` packages that must never be installed or
     /// loaded (local revocation). A stored version with a listed hash is
     /// taken out of play at the next load or reload.
@@ -158,6 +162,78 @@ impl Default for PluginReportsConfig {
             max_dataset_rows: default_report_max_rows(),
             retention_days: default_report_retention_days(),
             watch_secs: default_report_watch_secs(),
+        }
+    }
+}
+
+/// Classification extensions (M27). Plugin functions, operators and merge
+/// strategies run on the classification hot path, so they are pure, cached
+/// and bounded by a small budget per node.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginClassificationConfig {
+    /// Deadline of one plugin function, operator or merge call (milliseconds)
+    #[serde(default = "default_class_call_timeout_ms")]
+    pub call_timeout_ms: u64,
+    /// Fuel of one such call; the plugin's own limit is lowered to this
+    #[serde(default = "default_class_fuel")]
+    pub fuel_per_call: u64,
+    /// Total time plugin calls may take while classifying one node
+    /// (milliseconds); once spent, further calls are unavailable
+    #[serde(default = "default_class_node_budget_ms")]
+    pub node_budget_ms: u64,
+    /// Results of pure calls kept in memory
+    #[serde(default = "default_class_cache_entries")]
+    pub cache_entries: usize,
+    /// How long a cached result is used (seconds)
+    #[serde(default = "default_class_cache_ttl_secs")]
+    pub cache_ttl_secs: u64,
+    /// How often membership refresh schedules are checked (seconds, minimum 10, 0 = off)
+    #[serde(default = "default_class_refresh_tick_secs")]
+    pub refresh_tick_secs: u64,
+    /// How often generated groups are reconciled (seconds, minimum 30, 0 = off)
+    #[serde(default = "default_class_template_secs")]
+    pub template_secs: u64,
+    /// Deadline of a membership provider refresh (milliseconds)
+    #[serde(default = "default_class_refresh_timeout_ms")]
+    pub refresh_timeout_ms: u64,
+}
+
+fn default_class_call_timeout_ms() -> u64 {
+    200
+}
+fn default_class_fuel() -> u64 {
+    5_000_000
+}
+fn default_class_node_budget_ms() -> u64 {
+    20
+}
+fn default_class_cache_entries() -> usize {
+    50_000
+}
+fn default_class_cache_ttl_secs() -> u64 {
+    300
+}
+fn default_class_refresh_tick_secs() -> u64 {
+    30
+}
+fn default_class_template_secs() -> u64 {
+    300
+}
+fn default_class_refresh_timeout_ms() -> u64 {
+    30_000
+}
+
+impl Default for PluginClassificationConfig {
+    fn default() -> Self {
+        Self {
+            call_timeout_ms: default_class_call_timeout_ms(),
+            fuel_per_call: default_class_fuel(),
+            node_budget_ms: default_class_node_budget_ms(),
+            cache_entries: default_class_cache_entries(),
+            cache_ttl_secs: default_class_cache_ttl_secs(),
+            refresh_tick_secs: default_class_refresh_tick_secs(),
+            template_secs: default_class_template_secs(),
+            refresh_timeout_ms: default_class_refresh_timeout_ms(),
         }
     }
 }
@@ -497,6 +573,7 @@ impl Default for PluginsConfig {
             updates: PluginUpdatesConfig::default(),
             facts: PluginFactsConfig::default(),
             reports: PluginReportsConfig::default(),
+            classification: PluginClassificationConfig::default(),
             blocked_hashes: Vec::new(),
         }
     }

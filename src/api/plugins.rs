@@ -56,6 +56,7 @@ pub fn routes() -> Router<AppState> {
         .merge(super::plugin_governance::routes())
         .merge(super::plugin_updates::routes())
         .merge(super::plugin_facts::routes())
+        .merge(super::plugin_classification::routes())
         .route("/ui/slots", get(ui_slots))
         .route("/ui/catalog", get(ui_catalog))
         .route("/ui/sessions", post(ui_session))

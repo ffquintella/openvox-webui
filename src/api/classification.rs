@@ -1,7 +1,8 @@
 //! Classification catalogs (M26): the vocabulary the group editor offers.
 
-use axum::{routing::get, Json, Router};
+use axum::{extract::State, routing::get, Json, Router};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::{
     middleware::AuthUser,
@@ -20,12 +21,51 @@ pub fn routes() -> Router<AppState> {
         .route("/merge-strategies", get(merge_strategies))
 }
 
-async fn functions(_auth: AuthUser) -> Json<Vec<FunctionInfo>> {
-    Json(function_catalog())
+fn tagged<T: Serialize>(items: Vec<T>) -> Vec<Value> {
+    items
+        .into_iter()
+        .filter_map(|i| serde_json::to_value(i).ok())
+        .map(|mut v| {
+            if let Some(o) = v.as_object_mut() {
+                o.insert("source".into(), json!("core"));
+            }
+            v
+        })
+        .collect()
 }
 
-async fn operators(_auth: AuthUser) -> Json<Vec<OperatorInfo>> {
-    Json(operator_catalog())
+/// Core functions plus those of the enabled plugins (M27).
+async fn functions(State(state): State<AppState>, _auth: AuthUser) -> Json<Vec<Value>> {
+    let mut out = tagged::<FunctionInfo>(function_catalog());
+    for f in state.plugin_manager.extension_catalog().functions {
+        out.push(json!({
+            "name": f.id,
+            "min_args": f.args.len(),
+            "max_args": f.args.len(),
+            "returns": if f.returns == Some(crate::models::ValueType::Bool) { "bool" } else { "value" },
+            "description": f.description.unwrap_or_default(),
+            "example": json!({"fn": f.id, "args": f.args.iter().map(|_| json!(null)).collect::<Vec<_>>()}).to_string(),
+            "source": "plugin",
+            "plugin_id": f.plugin_id,
+            "arg_types": f.args,
+        }));
+    }
+    Json(out)
+}
+
+/// Core operators plus those of the enabled plugins (M27).
+async fn operators(State(state): State<AppState>, _auth: AuthUser) -> Json<Vec<Value>> {
+    let mut out = tagged::<OperatorInfo>(operator_catalog());
+    for o in state.plugin_manager.extension_catalog().operators {
+        out.push(json!({
+            "op": o.id,
+            "description": o.description.unwrap_or_default(),
+            "source": "plugin",
+            "plugin_id": o.plugin_id,
+            "arg_types": o.args,
+        }));
+    }
+    Json(out)
 }
 
 #[derive(Serialize)]
@@ -81,9 +121,9 @@ struct Strategy {
     description: &'static str,
 }
 
-async fn merge_strategies(_auth: AuthUser) -> Json<Vec<Strategy>> {
+async fn merge_strategies(State(state): State<AppState>, _auth: AuthUser) -> Json<Vec<Value>> {
     let s = |name, description| Strategy { name, description };
-    Json(vec![
+    let mut out = tagged(vec![
         s(
             "deep",
             "Deep merge of class parameters; the group's value wins (default)",
@@ -100,5 +140,14 @@ async fn merge_strategies(_auth: AuthUser) -> Json<Vec<Strategy>> {
             "fail_on_conflict",
             "A different value for an existing key is an error; the first value is kept",
         ),
-    ])
+    ]);
+    for m in state.plugin_manager.extension_catalog().merge_strategies {
+        out.push(json!({
+            "name": m.id,
+            "description": m.description.unwrap_or_default(),
+            "source": "plugin",
+            "plugin_id": m.plugin_id,
+        }));
+    }
+    Json(out)
 }

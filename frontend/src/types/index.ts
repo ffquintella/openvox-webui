@@ -637,7 +637,23 @@ export interface GroupMatchMode {
   k?: number;
 }
 
-export type MergeStrategyName = 'deep' | 'replace' | 'union' | 'fail_on_conflict';
+/** `deep`, `replace`, `union`, `fail_on_conflict` or `plugin:<plugin-id>:<strategy>` (M27). */
+export type MergeStrategyName = string;
+
+export type GroupKind = 'static' | 'dynamic' | 'generated';
+
+/** The membership provider that feeds a dynamic group (M27). */
+export interface DynamicGroupConfig {
+  plugin_id: string;
+  provider_id: string;
+  params: Record<string, unknown>;
+}
+
+/** A group kept by a group template; read-only (M27). */
+export interface GeneratedGroupInfo {
+  instance_id: string;
+  key: string;
+}
 
 export interface GroupBehavior {
   inheritance: GroupInheritance;
@@ -648,7 +664,15 @@ export interface GroupBehavior {
   active_from?: string | null;
   /** RFC3339 */
   expires_at?: string | null;
+  /** Omitted for static groups (M27) */
+  kind?: GroupKind;
+  membership?: DynamicGroupConfig | null;
+  owner_plugin_id?: string | null;
+  generated?: GeneratedGroupInfo | null;
 }
+
+/** Where a catalog entry comes from (M27). */
+export type CatalogSource = 'core' | 'plugin';
 
 export interface ClassificationFunctionInfo {
   name: string;
@@ -657,16 +681,157 @@ export interface ClassificationFunctionInfo {
   returns: 'bool' | 'value';
   description: string;
   example: string;
+  source?: CatalogSource;
+  plugin_id?: string;
 }
 
 export interface ClassificationOperatorInfo {
   op: string;
   description: string;
+  source?: CatalogSource;
+  plugin_id?: string;
 }
 
 export interface ClassificationMergeStrategyInfo {
   name: string;
   description: string;
+  source?: CatalogSource;
+  plugin_id?: string;
+}
+
+export type ClassificationValueType = 'string' | 'number' | 'bool' | 'list' | 'any';
+
+export type OnStalePolicy = 'keep' | 'drop' | 'freeze';
+
+export interface MembershipProviderDecl {
+  id: string;
+  label: string;
+  description?: string | null;
+  refresh?: { cron: string } | null;
+  max_stale_s?: number | null;
+  on_stale?: OnStalePolicy | null;
+  churn_limit_pct?: number | null;
+  max_members?: number | null;
+  params_schema?: Record<string, unknown> | null;
+  handler: string;
+}
+
+export interface MembershipProviderStatus {
+  group_id: string;
+  plugin_id: string;
+  provider_id: string;
+  last_refresh_at: string | null;
+  /** never | ok | failed | held */
+  last_status: string;
+  last_error: string | null;
+  members: number;
+  stale: boolean;
+  held: boolean;
+}
+
+export interface HeldMembership {
+  group_id: string;
+  plugin_id: string;
+  provider_id: string;
+  added: string[];
+  removed: string[];
+  current: number;
+  proposed: number;
+  churn_pct: number;
+  limit_pct: number;
+  created_at: string;
+}
+
+export interface GroupTemplateInstance {
+  id: string;
+  plugin_id: string;
+  template_id: string;
+  name: string;
+  parent_id: string | null;
+  classes: Record<string, unknown>;
+  variables: Record<string, unknown>;
+  approved: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_status: string | null;
+  generated_groups: number;
+  created_at: string;
+}
+
+export interface GroupTemplateDecl {
+  id: string;
+  label?: string | null;
+  group_by: string;
+  max_groups?: number | null;
+  requires_approval?: boolean | null;
+}
+
+export interface PluginClassificationProvider extends MembershipProviderDecl {
+  groups: MembershipProviderStatus[];
+}
+
+export interface PluginClassificationTemplate extends GroupTemplateDecl {
+  instances: GroupTemplateInstance[];
+}
+
+export interface PluginClassificationView {
+  plugin_id: string;
+  version: string;
+  functions: {
+    id: string;
+    description?: string | null;
+    args: ClassificationValueType[];
+    returns: ClassificationValueType;
+    handler: string;
+  }[];
+  operators: {
+    id: string;
+    description?: string | null;
+    arg_types: ClassificationValueType[];
+    handler: string;
+  }[];
+  merge_strategies: { id: string; description?: string | null; handler: string }[];
+  providers: PluginClassificationProvider[];
+  templates: PluginClassificationTemplate[];
+}
+
+export interface PluginClassificationOverview {
+  plugins: PluginClassificationView[];
+  held: HeldMembership[];
+  /** Group name -> why it needs a plugin that is not enabled */
+  unavailable: Record<string, string[]>;
+}
+
+export interface GroupMemberEntry {
+  certname: string;
+  source: 'pinned' | 'dynamic' | 'rule';
+  computed_at: string | null;
+}
+
+export interface MembershipOutcome {
+  applied: boolean;
+  held: boolean;
+  added: number;
+  removed: number;
+  members: number;
+  churn_pct: number;
+}
+
+export interface CreateTemplateInstanceRequest {
+  name: string;
+  parent_id?: string | null;
+  classes?: Record<string, unknown>;
+  variables?: Record<string, unknown>;
+}
+
+export interface TemplateRun {
+  created: number;
+  updated: number;
+  removed: number;
+  groups: number;
+  truncated: boolean;
 }
 
 export interface ClassificationBehaviorInfo {
@@ -731,6 +896,8 @@ export interface ClassificationExplain {
   groups: ExplainGroup[];
   provenance: ExplainProvenance;
   merge_errors: string[];
+  /** Plugin extensions that were unavailable and what that changed (M27) */
+  degraded?: string[];
 }
 
 export interface GroupPreviewRequest {

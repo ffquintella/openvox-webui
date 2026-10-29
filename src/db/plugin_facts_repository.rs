@@ -135,6 +135,23 @@ impl<'a> PluginFactsRepository<'a> {
         Ok(rows.iter().map(record).collect())
     }
 
+    /// The distinct, non-expired values of a fact name across plugins and
+    /// nodes (group templates).
+    pub async fn distinct_values(&self, name: &str, now: DateTime<Utc>) -> Result<Vec<Value>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT value_json FROM plugin_facts \
+             WHERE name = ? AND (expires_at IS NULL OR expires_at > ?) LIMIT 10000",
+        )
+        .bind(name)
+        .bind(super::plugin_events_repository::fmt(now))
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| serde_json::from_str(&r.get::<String, _>("value_json")).ok())
+            .collect())
+    }
+
     /// Values of one fact across nodes, newest first.
     pub async fn values_of(
         &self,

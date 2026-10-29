@@ -27,6 +27,7 @@ mod nodes;
 mod notifications;
 mod organizations;
 mod permissions;
+mod plugin_classification;
 mod plugin_events;
 mod plugin_facts;
 mod plugin_governance;

@@ -2,6 +2,7 @@
 //! and the slot registry.
 
 pub mod bootstrap;
+pub mod classification;
 pub mod events;
 pub mod facts;
 pub mod filter;

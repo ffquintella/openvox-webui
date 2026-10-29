@@ -7,6 +7,7 @@ import type {
   RevokeTrustedKeyRequest,
   PluginUpdatePolicyRequest,
   PluginFactSettingsRequest,
+  CreateTemplateInstanceRequest,
 } from '../types';
 
 const UI_SLOTS_STALE_MS = 30_000;
@@ -308,6 +309,92 @@ export function usePluginFactCatalogs(enabled = true) {
     queryKey: ['plugin-facts'],
     queryFn: () => pluginsApi.getPluginFactCatalogs(),
     enabled,
+  });
+}
+
+// ============================================================================
+// Classification extensions (M27)
+// ============================================================================
+
+export function usePluginClassification(enabled = true) {
+  return useQuery({
+    queryKey: ['plugin-classification'],
+    queryFn: () => pluginsApi.getPluginClassification(),
+    enabled,
+    staleTime: 10_000,
+  });
+}
+
+function useClassificationMutation<TVars, TResult>(fn: (vars: TVars) => Promise<TResult>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plugin-classification'] });
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['held-membership'] });
+      queryClient.invalidateQueries({ queryKey: ['group-members'] });
+    },
+  });
+}
+
+export function useCreateTemplateInstance() {
+  return useClassificationMutation(
+    ({
+      pluginId,
+      templateId,
+      request,
+    }: {
+      pluginId: string;
+      templateId: string;
+      request: CreateTemplateInstanceRequest;
+    }) => pluginsApi.createTemplateInstance(pluginId, templateId, request)
+  );
+}
+
+export function useApproveTemplateInstance() {
+  return useClassificationMutation((id: string) => pluginsApi.approveTemplateInstance(id));
+}
+
+export function useRunTemplateInstance() {
+  return useClassificationMutation((id: string) => pluginsApi.runTemplateInstance(id));
+}
+
+export function useSetTemplateInstanceEnabled() {
+  return useClassificationMutation(({ id, enabled }: { id: string; enabled: boolean }) =>
+    pluginsApi.setTemplateInstanceEnabled(id, enabled)
+  );
+}
+
+export function useDeleteTemplateInstance() {
+  return useClassificationMutation((id: string) => pluginsApi.deleteTemplateInstance(id));
+}
+
+export function useRefreshGroupMembership() {
+  return useClassificationMutation((groupId: string) => pluginsApi.refreshGroupMembership(groupId));
+}
+
+export function useApproveHeldMembership() {
+  return useClassificationMutation((groupId: string) => pluginsApi.approveHeldMembership(groupId));
+}
+
+export function useRejectHeldMembership() {
+  return useClassificationMutation((groupId: string) => pluginsApi.rejectHeldMembership(groupId));
+}
+
+export function useHeldMembership(groupId: string | null) {
+  return useQuery({
+    queryKey: ['held-membership', groupId],
+    queryFn: () => pluginsApi.getHeldMembership(groupId as string),
+    enabled: !!groupId,
+  });
+}
+
+export function useGroupMembers(groupId: string | null) {
+  return useQuery({
+    queryKey: ['group-members', groupId],
+    queryFn: () => pluginsApi.getGroupMembers(groupId as string),
+    enabled: !!groupId,
   });
 }
 

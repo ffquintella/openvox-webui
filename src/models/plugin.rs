@@ -152,6 +152,10 @@ pub struct Contributes {
     /// Datasets the plugin provides to reports and other plugins (M25).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datasets: Vec<super::DatasetDecl>,
+    /// Classification extensions: functions, operators, membership
+    /// providers, group templates and merge strategies (M27).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification: Option<super::ClassificationContribution>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

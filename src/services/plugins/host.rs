@@ -116,6 +116,35 @@ fn report_error(e: ReportError) -> HostError {
     }
 }
 
+fn classification_error(e: super::classification::ClassificationError) -> HostError {
+    use super::classification::ClassificationError as E;
+    let code = match &e {
+        E::NotFound(_) => "not_found",
+        E::Invalid(_) => "invalid",
+        E::Conflict(_) => "forbidden",
+        E::Failed(_) => "failed",
+    };
+    HostError {
+        code: code.into(),
+        message: e.to_string(),
+    }
+}
+
+fn certname_list(req: &Value, name: &str) -> Result<Vec<String>, HostError> {
+    match req.get(name) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| invalid(format!("'{name}' must be a list of certnames")))
+            })
+            .collect(),
+        Some(_) => Err(invalid(format!("'{name}' must be a list of certnames"))),
+    }
+}
+
 fn str_field<'a>(req: &'a Value, name: &str) -> Result<&'a str, HostError> {
     req.get(name)
         .and_then(Value::as_str)
@@ -316,6 +345,33 @@ impl HostApiImpl {
                     )
                     .map_err(report_error)?;
                 Ok(json!({ "rows": total }))
+            }
+            "membership.replace" | "membership.add" | "membership.remove" => {
+                // M27: only for dynamic groups bound to one of the plugin's
+                // providers; large changes are held by the churn guard.
+                self.require(plugin, "classification:membership").await?;
+                let group_id = uuid::Uuid::parse_str(str_field(&req, "group_id")?)
+                    .map_err(|_| invalid("'group_id' is not a group id"))?;
+                let certnames = certname_list(&req, "certnames")?;
+                let change = match op {
+                    "membership.replace" => {
+                        super::classification::MembershipChange::Replace(certnames)
+                    }
+                    "membership.add" => super::classification::MembershipChange::Patch {
+                        add: certnames,
+                        remove: Vec::new(),
+                    },
+                    _ => super::classification::MembershipChange::Patch {
+                        add: Vec::new(),
+                        remove: certnames,
+                    },
+                };
+                let outcome = self
+                    .manager()?
+                    .push_membership(plugin, group_id, change)
+                    .await
+                    .map_err(classification_error)?;
+                Ok(serde_json::to_value(outcome).unwrap_or(Value::Null))
             }
             "datasets.put" => {
                 self.require(plugin, "reports:provide").await?;

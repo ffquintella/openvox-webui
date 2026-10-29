@@ -16,6 +16,13 @@ pub struct GroupRepository<'a> {
     pool: &'a SqlitePool,
 }
 
+impl<'a> GroupRepository<'a> {
+    /// The pool the repository reads from.
+    pub fn pool(&self) -> &'a SqlitePool {
+        self.pool
+    }
+}
+
 /// Row returned from node_groups table
 #[derive(Debug, sqlx::FromRow)]
 struct GroupRow {

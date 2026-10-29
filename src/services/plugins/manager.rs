@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::classification::ClassificationRuntime;
 use super::facts::FactsRuntime;
 use super::governance::{classify, Governor};
 use super::host::effective_capabilities;
@@ -148,6 +149,7 @@ pub struct PluginManager {
     facts: Arc<FactsRuntime>,
     /// Limits and running jobs of plugin reports (M25).
     reports: Arc<ReportsRuntime>,
+    classification: Arc<ClassificationRuntime>,
 }
 
 pub(super) type Failure = (PluginState, &'static str, String);
@@ -196,7 +198,18 @@ impl PluginManager {
             blocked_hashes: HashSet::new(),
             facts: Arc::new(FactsRuntime::new(Default::default())),
             reports: Arc::new(ReportsRuntime::new(Default::default())),
+            classification: Arc::new(ClassificationRuntime::new(Default::default())),
         }
+    }
+
+    /// Hot-path budgets, membership refresh and generated groups (M27).
+    pub fn with_classification(mut self, cfg: crate::config::PluginClassificationConfig) -> Self {
+        self.classification = Arc::new(ClassificationRuntime::new(cfg));
+        self
+    }
+
+    pub fn classification_runtime(&self) -> &Arc<ClassificationRuntime> {
+        &self.classification
     }
 
     /// Report job, export, dataset and retention limits of plugin reports (M25).
@@ -1244,6 +1257,7 @@ impl PluginManager {
         self.clear_governance(id, true).await;
         self.forget_plugin_facts(id, purge).await;
         self.forget_plugin_reports(id, purge).await;
+        self.forget_plugin_classification(id, purge).await;
         PluginEventsRepository::new(&self.pool)
             .delete_plugin_events(id)
             .await?;

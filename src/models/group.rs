@@ -110,8 +110,10 @@ pub enum MatchMode {
 }
 
 /// How the group's classes and variables merge into what was inherited (M26).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
+///
+/// Serialized as a string: `deep`, `replace`, `union`, `fail_on_conflict` or
+/// `plugin:<plugin-id>:<strategy>` (M27).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum MergeStrategy {
     /// Deep merge of class parameters, the group's value wins (today's behavior).
     #[default]
@@ -122,6 +124,57 @@ pub enum MergeStrategy {
     Union,
     /// A different value for an existing key is an error; the first value is kept.
     FailOnConflict,
+    /// A pure merge strategy contributed by a plugin, applied per top-level key.
+    /// When it is unavailable the key is merged with `deep` and the result is
+    /// marked degraded.
+    Plugin(super::ExtRef),
+}
+
+impl MergeStrategy {
+    pub fn as_string(&self) -> String {
+        match self {
+            MergeStrategy::Deep => "deep".into(),
+            MergeStrategy::Replace => "replace".into(),
+            MergeStrategy::Union => "union".into(),
+            MergeStrategy::FailOnConflict => "fail_on_conflict".into(),
+            MergeStrategy::Plugin(r) => r.full(),
+        }
+    }
+}
+
+impl Serialize for MergeStrategy {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.as_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for MergeStrategy {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = String::deserialize(d)?;
+        match v.as_str() {
+            "deep" => Ok(MergeStrategy::Deep),
+            "replace" => Ok(MergeStrategy::Replace),
+            "union" => Ok(MergeStrategy::Union),
+            "fail_on_conflict" => Ok(MergeStrategy::FailOnConflict),
+            other => super::ExtRef::parse(other)
+                .map(MergeStrategy::Plugin)
+                .ok_or_else(|| {
+                    serde::de::Error::custom(format!(
+                        "unknown merge strategy '{other}': use deep, replace, union, fail_on_conflict or plugin:<plugin-id>:<strategy>"
+                    ))
+                }),
+        }
+    }
+}
+
+/// A group created and kept up to date by a group template (M27).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedGroupInfo {
+    /// The template instance that owns the group.
+    pub instance_id: Uuid,
+    /// The value of the template's fact this group stands for.
+    pub key: String,
 }
 
 /// Per-group behavior policies (M26). Every field defaults to the engine's
@@ -139,6 +192,23 @@ pub struct GroupBehavior {
     pub active_from: Option<chrono::DateTime<chrono::Utc>>,
     /// The group does not match from this instant on.
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `static` (rules, expression, pinned), `dynamic` (members from a plugin
+    /// membership provider) or `generated` (kept by a group template) (M27).
+    #[serde(skip_serializing_if = "is_static_kind")]
+    pub kind: super::GroupKind,
+    /// Dynamic groups: the provider that feeds the group.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership: Option<super::DynamicGroupConfig>,
+    /// The plugin that owns the group; set by the host, never by the API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_plugin_id: Option<String>,
+    /// Generated groups: the template instance and fact value; set by the host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated: Option<GeneratedGroupInfo>,
+}
+
+fn is_static_kind(k: &super::GroupKind) -> bool {
+    *k == super::GroupKind::Static
 }
 
 impl GroupBehavior {
@@ -168,6 +238,23 @@ impl GroupBehavior {
             if to <= from {
                 return Err("expires_at must be after active_from".into());
             }
+        }
+        match (self.kind, &self.membership) {
+            (super::GroupKind::Dynamic, None) => {
+                return Err("a dynamic group needs a membership provider".into())
+            }
+            (super::GroupKind::Dynamic, Some(m)) => {
+                if m.plugin_id.is_empty() || m.provider_id.is_empty() {
+                    return Err("membership needs plugin_id and provider_id".into());
+                }
+            }
+            (_, Some(_)) => {
+                return Err("only a dynamic group can have a membership provider".into())
+            }
+            _ => {}
+        }
+        if (self.kind == super::GroupKind::Generated) != self.generated.is_some() {
+            return Err("generated groups are created by group templates only".into());
         }
         Ok(())
     }
@@ -208,7 +295,7 @@ pub enum RuleMatchType {
 }
 
 /// Request to create a new node group
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateGroupRequest {
     pub name: String,
     pub description: Option<String>,

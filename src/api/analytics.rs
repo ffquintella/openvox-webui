@@ -27,10 +27,7 @@ use crate::models::{
     UpdateDriftBaselineRequest, UpdateSavedReportRequest, UpdateScheduleRequest,
 };
 use crate::services::plugins::reports::{DatasetReader, ReportError};
-use crate::services::{
-    classification::{build_classification_facts_with_plugins, ClassificationService},
-    ReportingService,
-};
+use crate::services::{classification::build_classification_facts_with_plugins, ReportingService};
 use crate::utils::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -302,7 +299,7 @@ async fn list_variable_assignments(
         .get_all(auth_user.organization_id)
         .await
         .map_err(|e| AppError::internal(format!("Failed to load classification groups: {e}")))?;
-    let classification_service = ClassificationService::new(groups);
+    let classification_service = state.plugin_manager.classification_service(groups).await;
     let plugin_facts = state.plugin_manager.usable_facts_snapshot().await;
 
     let machine_filter = normalized_filter(query.machine.as_deref());

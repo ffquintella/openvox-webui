@@ -384,6 +384,10 @@ async fn main() -> Result<()> {
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
     services::plugins::governance::start_governance(plugin_manager.clone());
     services::plugins::facts::start_fact_sweeper(plugin_manager.clone());
+    services::plugins::classification::start_classification_scheduler(
+        plugin_manager.clone(),
+        puppetdb.clone(),
+    );
     services::plugins::reports::start_report_maintenance(plugin_manager.clone(), puppetdb.clone());
     services::plugins::updates::start_update_scheduler(
         plugin_manager.clone(),

@@ -17,7 +17,7 @@ use crate::{
         UpdateFactTemplateRequest,
     },
     services::{
-        classification::{build_classification_facts, ClassificationService},
+        classification::build_classification_facts,
         facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
         plugins::facts::agent_names_of,
     },
@@ -271,7 +271,10 @@ async fn generate_facts(
     })?;
 
     // Classify the node to get variables from matched groups
-    let classification_service = ClassificationService::new(all_groups);
+    let classification_service = state
+        .plugin_manager
+        .classification_service(all_groups)
+        .await;
     let classification = classification_service.classify(&payload.certname, &existing_facts);
 
     // Create facter service with the template
@@ -359,7 +362,10 @@ async fn export_facts(
 
             // Classify the node to get variables from matched groups (with the
             // plugin facts enabled for rules, as the agent's classification)
-            let classification_service = ClassificationService::new(all_groups.clone());
+            let classification_service = state
+                .plugin_manager
+                .classification_service(all_groups.clone())
+                .await;
             let classification = state
                 .plugin_manager
                 .classify_with_plugin_facts(

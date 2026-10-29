@@ -111,6 +111,7 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
     validate_hooks(&mut p, m, &names);
     validate_facts(&mut p, m, &names);
     validate_reports(&mut p, m, &names);
+    validate_classification(&mut p, m, &names);
 
     if let Some(mig) = &m.migrations {
         if !safe_package_path(&mig.dir) {
@@ -568,6 +569,160 @@ fn check_params_schema(p: &mut Vec<String>, id: &str, schema: &Value) {
             "report type '{}': params_schema must be an object schema with at most 50 properties",
             id
         )),
+    }
+}
+
+/// Ids of functions, operators, providers, templates and strategies:
+/// lower case, digits, `_` and `-`, starting with a letter (they appear inside
+/// `plugin:<plugin-id>:<id>`, so no `:`).
+pub fn valid_classification_id(id: &str) -> bool {
+    let b = id.as_bytes();
+    (1..=64).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(*c, b'_' | b'-'))
+}
+
+/// `contributes.classification` (M27): pure functions and operators, membership
+/// providers, group templates and merge strategies, each under its capability.
+fn validate_classification(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<String>) {
+    let Some(c) = &m.contributes.classification else {
+        return;
+    };
+    let need = |p: &mut Vec<String>, what: &str, cap: &str| {
+        if !caps.contains(cap) {
+            p.push(format!(
+                "classification.{} needs the capability {}",
+                what, cap
+            ));
+        }
+    };
+    if !c.functions.is_empty() {
+        need(p, "functions", "classification:operators");
+    }
+    if !c.operators.is_empty() {
+        need(p, "operators", "classification:operators");
+    }
+    if !c.membership_providers.is_empty() {
+        need(p, "membership_providers", "classification:membership");
+    }
+    if !c.group_templates.is_empty() {
+        need(p, "group_templates", "classification:templates");
+    }
+    if !c.merge_strategies.is_empty() {
+        need(p, "merge_strategies", "classification:behaviors");
+    }
+    if !c.group_behaviors.is_empty() {
+        p.push("classification.group_behaviors is not supported yet".to_string());
+    }
+    if !c.transformers.is_empty() {
+        p.push("classification.transformers is not supported yet".to_string());
+    }
+    let limit = |p: &mut Vec<String>, what: &str, n: usize, max: usize| {
+        if n > max {
+            p.push(format!(
+                "classification.{} declares more than {}",
+                what, max
+            ));
+        }
+    };
+    limit(p, "functions", c.functions.len(), 64);
+    limit(p, "operators", c.operators.len(), 32);
+    limit(p, "membership_providers", c.membership_providers.len(), 16);
+    limit(p, "group_templates", c.group_templates.len(), 16);
+    limit(p, "merge_strategies", c.merge_strategies.len(), 16);
+
+    let id_ok =
+        |p: &mut Vec<String>, what: &str, id: &str, seen: &mut BTreeSet<String>, handler: &str| {
+            if !valid_classification_id(id) || !seen.insert(id.to_string()) {
+                p.push(format!("{} id '{}' is invalid or repeated", what, id));
+            }
+            if !valid_local_id(handler) {
+                p.push(format!(
+                    "{} '{}': handler '{}' is invalid",
+                    what, id, handler
+                ));
+            }
+        };
+    let describe = |p: &mut Vec<String>, what: &str, d: &Option<String>| {
+        if let Some(d) = d {
+            check_text(p, &format!("{} description", what), d, 200);
+        }
+    };
+
+    let mut seen = BTreeSet::new();
+    for f in &c.functions {
+        id_ok(p, "function", &f.id, &mut seen, &f.handler);
+        describe(p, "function", &f.description);
+        if f.args.len() > 8 {
+            p.push(format!("function '{}' takes more than 8 arguments", f.id));
+        }
+    }
+    let mut seen = BTreeSet::new();
+    for o in &c.operators {
+        id_ok(p, "operator", &o.id, &mut seen, &o.handler);
+        describe(p, "operator", &o.description);
+    }
+    let mut seen = BTreeSet::new();
+    for s in &c.merge_strategies {
+        id_ok(p, "merge strategy", &s.id, &mut seen, &s.handler);
+        describe(p, "merge strategy", &s.description);
+    }
+    let mut seen = BTreeSet::new();
+    for mp in &c.membership_providers {
+        id_ok(p, "membership provider", &mp.id, &mut seen, &mp.handler);
+        check_text(p, "membership provider label", &mp.label, 80);
+        describe(p, "membership provider", &mp.description);
+        if let Some(r) = &mp.refresh {
+            if let Err(e) = parse_cron(&r.cron) {
+                p.push(format!("membership provider '{}': {}", mp.id, e));
+            }
+        }
+        if mp.max_stale_s == Some(0) {
+            p.push(format!(
+                "membership provider '{}': max_stale_s must be positive",
+                mp.id
+            ));
+        }
+        if mp.churn_limit_pct.is_some_and(|n| n > 100) {
+            p.push(format!(
+                "membership provider '{}': churn_limit_pct is at most 100",
+                mp.id
+            ));
+        }
+        if mp.max_members == Some(0) {
+            p.push(format!(
+                "membership provider '{}': max_members must be positive",
+                mp.id
+            ));
+        }
+        if let Some(schema) = &mp.params_schema {
+            check_params_schema(p, &mp.id, schema);
+        }
+    }
+    let mut seen = BTreeSet::new();
+    for t in &c.group_templates {
+        if !valid_classification_id(&t.id) || !seen.insert(t.id.clone()) {
+            p.push(format!(
+                "group template id '{}' is invalid or repeated",
+                t.id
+            ));
+        }
+        if let Some(l) = &t.label {
+            check_text(p, "group template label", l, 80);
+        }
+        if t.fact_path().is_none() {
+            p.push(format!(
+                "group template '{}': group_by must be fact('<path>')",
+                t.id
+            ));
+        }
+        if t.max_groups == Some(0) || t.max_groups.is_some_and(|n| n > 1000) {
+            p.push(format!(
+                "group template '{}': max_groups is 1 to 1000",
+                t.id
+            ));
+        }
     }
 }
 
@@ -1329,6 +1484,97 @@ contributes:
             (
                 REPORTS.replace("id: asset-compliance", "id: \"Bad:Id\""),
                 "report type id",
+            ),
+        ];
+        for (yaml, needle) in cases {
+            let p = match parse_and_validate(yaml.as_bytes(), &files(&[])) {
+                Ok(_) => Vec::new(),
+                Err(e) => e,
+            };
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
+    }
+
+    const CLASSIFICATION: &str = r#"
+api_version: 2
+id: acme-cls
+name: ACME classification
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-cls }
+capabilities:
+  - classification:operators
+  - classification:membership
+  - classification:templates
+  - classification:behaviors
+contributes:
+  classification:
+    functions:
+      - { id: semver_ok, args: [string, string], returns: bool, handler: fn_semver }
+    operators:
+      - { id: cidr_contains, arg_types: [string, string], handler: op_cidr }
+    membership_providers:
+      - { id: cmdb-critical, label: Critical CMDB assets, refresh: { cron: "*/15 * * * *" }, max_stale_s: 3600, on_stale: keep, churn_limit_pct: 20, handler: members }
+    group_templates:
+      - { id: by-datacenter, group_by: "fact('datacenter')", max_groups: 100, requires_approval: true }
+    merge_strategies:
+      - { id: unique_list, handler: merge_unique }
+"#;
+
+    #[test]
+    fn accepts_classification_extensions() {
+        let m = parse_and_validate(CLASSIFICATION.as_bytes(), &files(&[])).unwrap();
+        let c = m.contributes.classification.unwrap();
+        assert_eq!(c.functions[0].id, "semver_ok");
+        assert_eq!(c.membership_providers[0].churn_limit(), 20);
+        assert_eq!(c.group_templates[0].fact_path().unwrap(), "datacenter");
+    }
+
+    #[test]
+    fn classification_extensions_need_capabilities_and_valid_declarations() {
+        let cases = [
+            (
+                CLASSIFICATION.replace("  - classification:operators\n", ""),
+                "classification:operators",
+            ),
+            (
+                CLASSIFICATION.replace("  - classification:membership\n", ""),
+                "classification:membership",
+            ),
+            (
+                CLASSIFICATION.replace("  - classification:templates\n", ""),
+                "classification:templates",
+            ),
+            (
+                CLASSIFICATION.replace("  - classification:behaviors\n", ""),
+                "classification:behaviors",
+            ),
+            (
+                CLASSIFICATION.replace("id: semver_ok", "id: \"Bad:Id\""),
+                "function id",
+            ),
+            (CLASSIFICATION.replace("*/15 * * * *", "every hour"), "cron"),
+            (
+                CLASSIFICATION.replace("churn_limit_pct: 20", "churn_limit_pct: 150"),
+                "churn_limit_pct",
+            ),
+            (
+                CLASSIFICATION.replace("fact('datacenter')", "datacenter"),
+                "group_by",
+            ),
+            (
+                CLASSIFICATION.replace("handler: op_cidr", "handler: \"a b\""),
+                "handler",
+            ),
+            (
+                CLASSIFICATION.replace(
+                    "    merge_strategies:",
+                    "    group_behaviors: [ { id: canary } ]\n    merge_strategies:",
+                ),
+                "not supported yet",
             ),
         ];
         for (yaml, needle) in cases {

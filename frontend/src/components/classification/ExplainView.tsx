@@ -35,6 +35,20 @@ export default function ExplainView({ explain }: { explain: ClassificationExplai
         </div>
       )}
 
+      {(explain.degraded?.length ?? 0) > 0 && (
+        <div className="rounded border border-yellow-300 bg-yellow-50 p-3" role="alert">
+          <p className="text-sm font-medium text-yellow-800 flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4" />
+            Degraded: a plugin extension was unavailable ({explain.degraded?.length})
+          </p>
+          <ul className="text-xs text-yellow-800 list-disc list-inside space-y-0.5">
+            {explain.degraded?.map((message, index) => (
+              <li key={index}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="space-y-2">
         <h4 className="text-sm font-medium text-gray-700">Groups ({explain.groups.length})</h4>
         {explain.groups.map((group) => (

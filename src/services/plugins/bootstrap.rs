@@ -31,6 +31,7 @@ pub async fn build_plugin_manager(
         .with_governance(config.plugins.governance.clone())
         .with_facts(config.plugins.facts.clone())
         .with_reports(config.plugins.reports.clone())
+        .with_classification(config.plugins.classification.clone())
         .with_blocked_hashes(&config.plugins.blocked_hashes),
     );
     // WASM runtime: sandboxed handlers with kv and private-database storage

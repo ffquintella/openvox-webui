@@ -2,6 +2,7 @@ import type {
   ClassificationExpression,
   ClassificationRule,
   GroupBehavior,
+  GroupKind,
   InheritanceMode,
   MatchModeKind,
   MergeStrategyName,
@@ -57,7 +58,17 @@ export function behaviorOf(behavior: GroupBehavior | undefined | null): GroupBeh
     merge: behavior.merge ?? base.merge,
     active_from: behavior.active_from ?? null,
     expires_at: behavior.expires_at ?? null,
+    // Dynamic and generated groups (M27); static groups send none of these
+    ...(behavior.kind && behavior.kind !== 'static' ? { kind: behavior.kind } : {}),
+    ...(behavior.membership ? { membership: behavior.membership } : {}),
+    ...(behavior.owner_plugin_id ? { owner_plugin_id: behavior.owner_plugin_id } : {}),
+    ...(behavior.generated ? { generated: behavior.generated } : {}),
   };
+}
+
+/** Generated groups belong to their template instance and cannot be edited. */
+export function isGeneratedGroup(behavior: GroupBehavior | undefined | null): boolean {
+  return !!behavior && (behavior.kind === 'generated' || !!behavior.generated);
 }
 
 /** Convert the group's flat rules to the equivalent composite expression. */
@@ -141,6 +152,23 @@ export interface BehaviorFormState {
   /** `datetime-local` value (local time), empty when unset */
   activeFrom: string;
   expiresAt: string;
+  /** `static` (rules, expression, pinned) or `dynamic` (members from a plugin provider) */
+  kind: Exclude<GroupKind, 'generated'>;
+  /** `<plugin-id>/<provider-id>`, empty when none is chosen */
+  provider: string;
+  /** JSON object text of the provider parameters */
+  providerParams: string;
+}
+
+/** `<plugin-id>/<provider-id>` of a provider, the value of the provider select. */
+export function providerKey(pluginId: string, providerId: string): string {
+  return `${pluginId}/${providerId}`;
+}
+
+export function splitProviderKey(key: string): { plugin_id: string; provider_id: string } | null {
+  const i = key.indexOf('/');
+  if (i <= 0 || i === key.length - 1) return null;
+  return { plugin_id: key.slice(0, i), provider_id: key.slice(i + 1) };
 }
 
 export function rfc3339ToLocalInput(value: string | null | undefined): string {
@@ -173,6 +201,12 @@ export function behaviorToForm(behavior: GroupBehavior | undefined | null): Beha
     merge: b.merge,
     activeFrom: rfc3339ToLocalInput(b.active_from),
     expiresAt: rfc3339ToLocalInput(b.expires_at),
+    kind: b.kind === 'dynamic' ? 'dynamic' : 'static',
+    provider: b.membership ? providerKey(b.membership.plugin_id, b.membership.provider_id) : '',
+    providerParams:
+      b.membership && Object.keys(b.membership.params ?? {}).length > 0
+        ? JSON.stringify(b.membership.params, null, 2)
+        : '',
   };
 }
 
@@ -199,7 +233,24 @@ export function formToBehavior(form: BehaviorFormState): GroupBehavior {
     merge: form.merge,
     active_from: localInputToRfc3339(form.activeFrom),
     expires_at: localInputToRfc3339(form.expiresAt),
+    ...membershipOf(form),
   };
+}
+
+function membershipOf(form: BehaviorFormState): Pick<GroupBehavior, 'kind' | 'membership'> {
+  const provider = splitProviderKey(form.provider);
+  if (form.kind !== 'dynamic' || !provider) return {};
+  let params: Record<string, unknown> = {};
+  try {
+    const parsed: unknown =
+      form.providerParams.trim() === '' ? {} : JSON.parse(form.providerParams);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      params = parsed as Record<string, unknown>;
+    }
+  } catch {
+    // reported by validateBehaviorForm
+  }
+  return { kind: 'dynamic', membership: { ...provider, params } };
 }
 
 /** Client-side checks; returns human readable problems (empty when fine). */
@@ -211,6 +262,20 @@ export function validateBehaviorForm(form: BehaviorFormState): string[] {
   if (form.matchMode === 'n_of') {
     const k = Number.parseInt(form.matchK, 10);
     if (Number.isNaN(k) || k < 1) errors.push('"At least N" needs N of 1 or more.');
+  }
+  if (form.kind === 'dynamic') {
+    if (!splitProviderKey(form.provider))
+      errors.push('A dynamic group needs a membership provider.');
+    if (form.providerParams.trim() !== '') {
+      try {
+        const parsed: unknown = JSON.parse(form.providerParams);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          errors.push('Provider parameters must be a JSON object.');
+        }
+      } catch {
+        errors.push('Provider parameters are not valid JSON.');
+      }
+    }
   }
   const from = localInputToRfc3339(form.activeFrom);
   const to = localInputToRfc3339(form.expiresAt);

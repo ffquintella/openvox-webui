@@ -20,7 +20,6 @@ use crate::{
         Resource as RbacResource, SubmitUpdateJobResultRequest, UpdateJob,
     },
     services::{
-        classification::ClassificationService,
         plugins::facts::{agent_names_of, collides},
         puppetdb::{NodeStats, QueryBuilder, QueryParams, Resource},
         update_audit,
@@ -574,7 +573,10 @@ async fn get_node_classification(
         .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
 
     // Classify the node (with the plugin facts enabled for rules, if any)
-    let classification_service = ClassificationService::new(all_groups.clone());
+    let classification_service = state
+        .plugin_manager
+        .classification_service(all_groups.clone())
+        .await;
     let explanation = std::sync::Mutex::new(None);
     let classification = state
         .plugin_manager
@@ -622,7 +624,10 @@ async fn classify_for_agent(
     catalog_environment: Option<&str>,
     all_groups: Vec<crate::models::NodeGroup>,
 ) -> ClassificationResult {
-    let classification_service = ClassificationService::new(all_groups.clone());
+    let classification_service = state
+        .plugin_manager
+        .classification_service(all_groups.clone())
+        .await;
     state
         .plugin_manager
         .classify_with_plugin_facts(

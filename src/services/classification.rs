@@ -11,7 +11,9 @@ use crate::models::{
     MergeStrategy, NodeGroup, Origin, Provenance, RuleEvaluation, RuleExplanation, RuleMatchType,
     RuleOperator,
 };
-use crate::services::classification_expr::{EvalContext, Expr};
+use crate::models::{DynamicMembers, GroupKind};
+use crate::services::classification_expr::{ClassificationExtensions, EvalContext, Expr};
+use std::sync::Arc;
 
 /// Classification service for matching nodes to groups
 pub struct ClassificationService {
@@ -20,6 +22,10 @@ pub struct ClassificationService {
     expressions: HashMap<Uuid, Result<Expr, String>>,
     /// Supplied to expressions and group windows, minute granularity.
     now: DateTime<Utc>,
+    /// Functions, operators and merge strategies from plugins (M27).
+    ext: Option<Arc<dyn ClassificationExtensions>>,
+    /// Materialized members of the dynamic groups (M27).
+    members: HashMap<Uuid, DynamicMembers>,
 }
 
 /// Result of evaluating one group for one node.
@@ -59,7 +65,32 @@ impl ClassificationService {
             groups,
             expressions,
             now: truncate_to_minute(Utc::now()),
+            ext: None,
+            members: HashMap::new(),
         }
+    }
+
+    /// Plugin functions, operators and merge strategies (M27).
+    pub fn with_extensions(mut self, ext: Arc<dyn ClassificationExtensions>) -> Self {
+        self.ext = Some(ext);
+        self
+    }
+
+    /// Materialized members of dynamic groups (M27), already filtered by the
+    /// stale policy of each group.
+    pub fn with_members(mut self, members: HashMap<Uuid, DynamicMembers>) -> Self {
+        self.members = members;
+        self
+    }
+
+    fn with_shared(
+        mut self,
+        ext: Option<Arc<dyn ClassificationExtensions>>,
+        members: HashMap<Uuid, DynamicMembers>,
+    ) -> Self {
+        self.ext = ext;
+        self.members = members;
+        self
     }
 
     /// Fix the instant used for expressions and group windows (tests, previews).
@@ -116,7 +147,8 @@ impl ClassificationService {
         for (org_id, groups) in &org_groups {
             let org_service =
                 ClassificationService::new(groups.iter().map(|g| (*g).clone()).collect())
-                    .with_now(self.now);
+                    .with_now(self.now)
+                    .with_shared(self.ext.clone(), self.members.clone());
             let result = org_service
                 .classify_internal(certname, facts, Some(*org_id), false)
                 .0;
@@ -208,6 +240,42 @@ impl ClassificationService {
                     "the node is pinned to the group".into(),
                 )
             };
+        }
+
+        // Dynamic groups: membership comes from the materialized provider data
+        // (no I/O on this path); rules and expressions do not apply.
+        if group.behavior.kind == GroupKind::Dynamic {
+            let node_environment_ok = group.is_environment_group
+                || group.environment.as_deref().is_none_or(|env| {
+                    env == "*"
+                        || env.eq_ignore_ascii_case("all")
+                        || env.eq_ignore_ascii_case("any")
+                        || node_environment == Some(env)
+                });
+            if !node_environment_ok {
+                return eval(
+                    GroupOutcome::EnvironmentMismatch,
+                    "the node is not in the group's environment".into(),
+                );
+            }
+            let member = self
+                .members
+                .get(&group.id)
+                .is_some_and(|m| m.certnames.contains(certname));
+            return eval(
+                if member {
+                    GroupOutcome::Matched
+                } else {
+                    GroupOutcome::NotMatched
+                },
+                match (member, self.members.get(&group.id).is_some_and(|m| m.stale)) {
+                    (true, false) => "member of the dynamic group".to_string(),
+                    (true, true) => {
+                        "member of the dynamic group (provider data is stale)".to_string()
+                    }
+                    (false, _) => "not a member of the dynamic group".to_string(),
+                },
+            );
         }
 
         // Environment groups ASSIGN environments instead of filtering by them.
@@ -309,6 +377,8 @@ impl ClassificationService {
                 let ctx = EvalContext {
                     facts,
                     now: self.now,
+                    ext: self.ext.as_deref(),
+                    unavailable: Default::default(),
                 };
                 let expr_matched = if explain {
                     let trace = expr.trace(&ctx);
@@ -383,6 +453,9 @@ impl ClassificationService {
         explain: bool,
     ) -> (ClassificationResult, Option<ClassificationExplain>) {
         let started = std::time::Instant::now();
+        if let Some(ext) = &self.ext {
+            ext.begin_node();
+        }
         let mut matched_groups: Vec<GroupMatch> = vec![];
         let mut environment: Option<String> = None;
         let mut environment_origin: Option<Origin> = None;
@@ -672,6 +745,7 @@ impl ClassificationService {
                 groups: explanations,
                 provenance,
                 merge_errors: merge_errors.clone(),
+                degraded: self.ext.as_ref().map(|e| e.degraded()).unwrap_or_default(),
             }
         });
 
@@ -748,11 +822,12 @@ impl ClassificationService {
         let mut provenance = Provenance::default();
         let mut errors: Vec<String> = Vec::new();
         for a in &applied {
-            let strategy = a.group.behavior.merge;
+            let strategy = &a.group.behavior.merge;
             let class_conflicts = merge_classes_with(
                 &mut classes,
                 &a.classes,
                 strategy,
+                self.ext.as_deref(),
                 &a.group.name,
                 &mut errors,
             );
@@ -760,6 +835,7 @@ impl ClassificationService {
                 &mut variables,
                 &a.variables,
                 strategy,
+                self.ext.as_deref(),
                 &a.group.name,
                 &mut errors,
             );
@@ -897,14 +973,18 @@ fn merge_checked(
 fn merge_classes_with(
     target: &mut serde_json::Value,
     source: &serde_json::Value,
-    strategy: MergeStrategy,
+    strategy: &MergeStrategy,
+    ext: Option<&dyn ClassificationExtensions>,
     group: &str,
     errors: &mut Vec<String>,
 ) -> HashSet<String> {
     let mut rejected = HashSet::new();
     match strategy {
         MergeStrategy::Deep => merge_classes(target, source),
-        MergeStrategy::Replace | MergeStrategy::Union | MergeStrategy::FailOnConflict => {
+        MergeStrategy::Replace
+        | MergeStrategy::Union
+        | MergeStrategy::FailOnConflict
+        | MergeStrategy::Plugin(_) => {
             let (Some(t), Some(s)) = (target.as_object_mut(), source.as_object()) else {
                 return rejected;
             };
@@ -915,6 +995,14 @@ fn merge_classes_with(
                     }
                     (MergeStrategy::Replace, Some(existing)) => *existing = params.clone(),
                     (MergeStrategy::Union, Some(existing)) => union_merge(existing, params),
+                    (MergeStrategy::Plugin(r), Some(existing)) => {
+                        match ext.map(|e| e.merge(r, name, existing, params)) {
+                            Some(Ok(v)) => *existing = v,
+                            // Unavailable strategy: fall back to the default
+                            // deep merge of this key (the provider records why)
+                            _ => deep_merge(existing, params),
+                        }
+                    }
                     (_, Some(existing)) => {
                         if merge_checked(&format!("class {name}"), existing, params, group, errors)
                         {
@@ -933,7 +1021,8 @@ fn merge_classes_with(
 fn merge_variables_with(
     target: &mut serde_json::Value,
     source: &serde_json::Value,
-    strategy: MergeStrategy,
+    strategy: &MergeStrategy,
+    ext: Option<&dyn ClassificationExtensions>,
     group: &str,
     errors: &mut Vec<String>,
 ) -> HashSet<String> {
@@ -947,6 +1036,12 @@ fn merge_variables_with(
                 t.insert(key.clone(), value.clone());
             }
             (MergeStrategy::Union, Some(existing)) => union_merge(existing, value),
+            (MergeStrategy::Plugin(r), Some(existing)) => {
+                match ext.map(|e| e.merge(r, key, existing, value)) {
+                    Some(Ok(v)) => *existing = v,
+                    _ => *existing = value.clone(),
+                }
+            }
             (MergeStrategy::FailOnConflict, Some(existing)) => {
                 if merge_checked(&format!("variable {key}"), existing, value, group, errors) {
                     rejected.insert(key.clone());

@@ -201,6 +201,13 @@ import type {
   PluginFactInfo,
   PluginFactSettingsRequest,
   PluginFactPreview,
+  PluginClassificationOverview,
+  CreateTemplateInstanceRequest,
+  GroupTemplateInstance,
+  GroupMemberEntry,
+  MembershipOutcome,
+  HeldMembership,
+  TemplateRun,
   FactPathEntry,
   UiContributionDetail,
 } from '../types';
@@ -2026,6 +2033,67 @@ export const pluginsApi = {
       { params: { limit } }
     );
     return response.data;
+  },
+
+  // ---- Classification extensions (M27) ------------------------------------
+
+  getPluginClassification: async (): Promise<PluginClassificationOverview> => {
+    const response = await client.get('/plugins/classification');
+    return response.data;
+  },
+
+  createTemplateInstance: async (
+    pluginId: string,
+    templateId: string,
+    request: CreateTemplateInstanceRequest
+  ): Promise<GroupTemplateInstance> => {
+    const response = await client.post(
+      `/plugins/${encodeURIComponent(pluginId)}/classification/templates/${encodeURIComponent(templateId)}/instances`,
+      request
+    );
+    return response.data;
+  },
+
+  approveTemplateInstance: async (instanceId: string): Promise<void> => {
+    await client.post(`/plugins/classification/instances/${instanceId}/approve`);
+  },
+
+  runTemplateInstance: async (instanceId: string): Promise<TemplateRun> => {
+    const response = await client.post(`/plugins/classification/instances/${instanceId}/run`);
+    return response.data;
+  },
+
+  setTemplateInstanceEnabled: async (instanceId: string, enabled: boolean): Promise<void> => {
+    await client.put(`/plugins/classification/instances/${instanceId}`, { enabled });
+  },
+
+  deleteTemplateInstance: async (instanceId: string): Promise<{ removed_groups: number }> => {
+    const response = await client.delete(`/plugins/classification/instances/${instanceId}`);
+    return response.data;
+  },
+
+  getGroupMembers: async (groupId: string): Promise<GroupMemberEntry[]> => {
+    const response = await client.get(`/groups/${groupId}/members`);
+    return response.data;
+  },
+
+  refreshGroupMembership: async (groupId: string): Promise<MembershipOutcome> => {
+    const response = await client.post(`/groups/${groupId}/membership/refresh`);
+    return response.data;
+  },
+
+  getHeldMembership: async (groupId: string): Promise<HeldMembership | null> => {
+    const response = await client.get(`/groups/${groupId}/membership/held`);
+    return response.data ?? null;
+  },
+
+  approveHeldMembership: async (groupId: string): Promise<MembershipOutcome> => {
+    const response = await client.post(`/groups/${groupId}/membership/approve-held`);
+    return response.data;
+  },
+
+  rejectHeldMembership: async (groupId: string): Promise<void> => {
+    await client.delete(`/groups/${groupId}/membership/held`);
   },
 
   /** Fact path entries contributed by plugins (works without PuppetDB). */

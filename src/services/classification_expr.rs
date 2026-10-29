@@ -13,7 +13,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::models::{ExprTrace, RuleOperator};
+use crate::models::{ExprTrace, ExtRef, RuleOperator};
 
 /// Maximum nesting depth of an expression.
 pub const MAX_DEPTH: usize = 16;
@@ -23,6 +23,8 @@ pub const MAX_NODES: usize = 200;
 pub const MAX_JSON_BYTES: usize = 16 * 1024;
 /// Compiled regex size limit (the engine is linear time; this bounds memory).
 const REGEX_SIZE_LIMIT: usize = 1 << 20;
+/// Most arguments of a plugin function.
+const MAX_PLUGIN_ARGS: usize = 8;
 
 /// What a function returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -222,11 +224,77 @@ pub fn operator_catalog() -> Vec<OperatorInfo> {
     .collect()
 }
 
+/// Pure functions, operators and merge strategies provided by plugins (M27).
+///
+/// Implementations must not do I/O of their own beyond running the plugin's
+/// sandboxed pure handler, and must be bounded in time. An `Err` means the
+/// extension is unavailable (missing, failing, over budget): the comparison
+/// or call that needed it does not match and the result is marked degraded.
+/// `Ok(None)` from a function means it does not apply to these values (a fact
+/// of another type): the value is missing, which is not a failure.
+pub trait ClassificationExtensions: Send + Sync {
+    fn call_function(&self, ext: &ExtRef, args: &[Value]) -> Result<Option<Value>, String>;
+    fn call_operator(&self, ext: &ExtRef, left: &Value, right: &Value) -> Result<bool, String>;
+    fn merge(
+        &self,
+        ext: &ExtRef,
+        key: &str,
+        current: &Value,
+        incoming: &Value,
+    ) -> Result<Value, String>;
+
+    /// A new node is about to be classified: resets the per-node budget.
+    fn begin_node(&self) {}
+
+    /// Why extensions were unavailable while this instance was in use.
+    fn degraded(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
 /// Inputs of an evaluation. Everything an expression can read is here.
 pub struct EvalContext<'a> {
     pub facts: &'a Value,
     /// Supplied by the host, minute granularity.
     pub now: DateTime<Utc>,
+    /// Plugin vocabulary; without it `plugin:` references are unavailable.
+    pub ext: Option<&'a dyn ClassificationExtensions>,
+    /// Set when a plugin function or operator was unavailable: the whole
+    /// expression then does not match (fail closed), also under `not`.
+    pub unavailable: std::cell::Cell<bool>,
+}
+
+/// What a call runs: a core function or one a plugin contributes.
+#[derive(Debug, Clone)]
+enum Callee {
+    Core(&'static FnSpec),
+    Plugin(ExtRef),
+}
+
+impl Callee {
+    fn name(&self) -> String {
+        match self {
+            Callee::Core(s) => s.name.to_string(),
+            Callee::Plugin(r) => r.full(),
+        }
+    }
+}
+
+/// A use of a plugin function or operator in a parsed expression, for the
+/// API to check against the catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginUse {
+    pub ext: ExtRef,
+    pub kind: PluginUseKind,
+    pub args: usize,
+    /// A function used as a whole condition must return a boolean.
+    pub as_condition: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginUseKind {
+    Function,
+    Operator,
 }
 
 /// A value an expression reads or computes.
@@ -235,7 +303,7 @@ enum Operand {
     Literal(Value),
     Fact(String),
     Now,
-    Call(&'static FnSpec, Vec<Operand>),
+    Call(Callee, Vec<Operand>),
 }
 
 /// A parsed, validated expression.
@@ -254,7 +322,12 @@ enum Node {
         /// Compiled once when the right side is a literal pattern.
         regex: Option<Regex>,
     },
-    Call(&'static FnSpec, Vec<Operand>),
+    PluginCompare {
+        ext: ExtRef,
+        left: Operand,
+        right: Operand,
+    },
+    Call(Callee, Vec<Operand>),
 }
 
 struct Budget {
@@ -282,16 +355,30 @@ impl Expr {
         parse_node(value, "expression", 1, &mut budget).map(Expr)
     }
 
+    /// Every plugin function and operator the expression uses.
+    pub fn plugin_uses(&self) -> Vec<PluginUse> {
+        let mut out = Vec::new();
+        collect_node(&self.0, &mut out);
+        out
+    }
+
     /// Evaluate without a trace (the hot path).
     pub fn matches(&self, ctx: &EvalContext) -> bool {
-        eval_node(&self.0, ctx, false).0
+        let matched = eval_node(&self.0, ctx, false).0;
+        matched && !ctx.unavailable.get()
     }
 
     /// Evaluate and report every sub-expression with the values it saw.
     pub fn trace(&self, ctx: &EvalContext) -> ExprTrace {
         let (matched, trace) = eval_node(&self.0, ctx, true);
         let mut trace = trace.expect("trace requested");
-        trace.matched = matched;
+        trace.matched = matched && !ctx.unavailable.get();
+        if ctx.unavailable.get() && trace.error.is_none() {
+            trace.error = Some(
+                "a plugin function or operator is unavailable; the expression does not match"
+                    .into(),
+            );
+        }
         trace
     }
 }
@@ -299,6 +386,52 @@ impl Expr {
 /// Validate an expression and return its error, for the API.
 pub fn validate(value: &Value) -> Result<(), String> {
     Expr::parse(value).map(|_| ())
+}
+
+fn collect_operand(op: &Operand, out: &mut Vec<PluginUse>) {
+    if let Operand::Call(callee, args) = op {
+        if let Callee::Plugin(ext) = callee {
+            out.push(PluginUse {
+                ext: ext.clone(),
+                kind: PluginUseKind::Function,
+                args: args.len(),
+                as_condition: false,
+            });
+        }
+        args.iter().for_each(|a| collect_operand(a, out));
+    }
+}
+
+fn collect_node(node: &Node, out: &mut Vec<PluginUse>) {
+    match node {
+        Node::All(c) | Node::Any(c) => c.iter().for_each(|n| collect_node(n, out)),
+        Node::Not(n) => collect_node(n, out),
+        Node::Compare { left, right, .. } => {
+            collect_operand(left, out);
+            collect_operand(right, out);
+        }
+        Node::PluginCompare { ext, left, right } => {
+            out.push(PluginUse {
+                ext: ext.clone(),
+                kind: PluginUseKind::Operator,
+                args: 2,
+                as_condition: false,
+            });
+            collect_operand(left, out);
+            collect_operand(right, out);
+        }
+        Node::Call(callee, args) => {
+            if let Callee::Plugin(ext) = callee {
+                out.push(PluginUse {
+                    ext: ext.clone(),
+                    kind: PluginUseKind::Function,
+                    args: args.len(),
+                    as_condition: true,
+                });
+            }
+            args.iter().for_each(|a| collect_operand(a, out));
+        }
+    }
 }
 
 fn object<'a>(
@@ -354,14 +487,16 @@ fn parse_node(v: &Value, path: &str, depth: usize, budget: &mut Budget) -> Resul
         return Ok(Node::Not(Box::new(inner)));
     }
     if obj.contains_key("fn") {
-        let (spec, args) = parse_call(v, path, depth, budget)?;
-        if spec.returns != Returns::Bool {
-            return Err(format!(
-                "{path}: function '{}' returns a value; compare it with an operator",
-                spec.name
-            ));
+        let (callee, args) = parse_call(v, path, depth, budget)?;
+        if let Callee::Core(spec) = &callee {
+            if spec.returns != Returns::Bool {
+                return Err(format!(
+                    "{path}: function '{}' returns a value; compare it with an operator",
+                    spec.name
+                ));
+            }
         }
-        return Ok(Node::Call(spec, args));
+        return Ok(Node::Call(callee, args));
     }
     if obj.contains_key("op") {
         if obj.contains_key("fact") {
@@ -373,18 +508,18 @@ fn parse_node(v: &Value, path: &str, depth: usize, budget: &mut Budget) -> Resul
             let value = obj
                 .get("value")
                 .ok_or_else(|| format!("{path}: missing 'value'"))?;
-            let op = parse_op(&obj["op"], path)?;
             budget.take(path)?;
             budget.take(path)?;
-            return compare(
+            let (left, right) = (
                 Operand::Fact(fact.to_string()),
-                op,
                 Operand::Literal(value.clone()),
-                path,
             );
+            if let Some(ext) = plugin_op(&obj["op"], path)? {
+                return Ok(Node::PluginCompare { ext, left, right });
+            }
+            return compare(left, parse_op(&obj["op"], path)?, right, path);
         }
         let obj = object(v, path, &["op", "left", "right"])?;
-        let op = parse_op(&obj["op"], path)?;
         let left = obj
             .get("left")
             .ok_or_else(|| format!("{path}: missing 'left'"))?;
@@ -393,11 +528,24 @@ fn parse_node(v: &Value, path: &str, depth: usize, budget: &mut Budget) -> Resul
             .ok_or_else(|| format!("{path}: missing 'right'"))?;
         let left = parse_operand(left, &format!("{path}.left"), depth + 1, budget)?;
         let right = parse_operand(right, &format!("{path}.right"), depth + 1, budget)?;
-        return compare(left, op, right, path);
+        if let Some(ext) = plugin_op(&obj["op"], path)? {
+            return Ok(Node::PluginCompare { ext, left, right });
+        }
+        return compare(left, parse_op(&obj["op"], path)?, right, path);
     }
     Err(format!(
         "{path}: expected one of all, any, not, fn or a comparison (op)"
     ))
+}
+
+/// `Some` when the operator is `plugin:<plugin-id>:<id>`.
+fn plugin_op(v: &Value, path: &str) -> Result<Option<ExtRef>, String> {
+    match v.as_str() {
+        Some(s) if s.starts_with(crate::models::PLUGIN_REF_PREFIX) => ExtRef::parse(s)
+            .map(Some)
+            .ok_or_else(|| format!("{path}.op: expected plugin:<plugin-id>:<operator>")),
+        _ => Ok(None),
+    }
 }
 
 fn parse_op(v: &Value, path: &str) -> Result<RuleOperator, String> {
@@ -441,12 +589,11 @@ fn parse_call(
     path: &str,
     depth: usize,
     budget: &mut Budget,
-) -> Result<(&'static FnSpec, Vec<Operand>), String> {
+) -> Result<(Callee, Vec<Operand>), String> {
     let obj = object(v, path, &["fn", "args"])?;
     let name = obj["fn"]
         .as_str()
         .ok_or_else(|| format!("{path}.fn: expected a function name"))?;
-    let spec = find_fn(name).ok_or_else(|| format!("{path}: unknown function '{name}'"))?;
     let raw = match obj.get("args") {
         Some(a) => a
             .as_array()
@@ -454,6 +601,22 @@ fn parse_call(
             .as_slice(),
         None => &[],
     };
+    if name.starts_with(crate::models::PLUGIN_REF_PREFIX) {
+        let ext = ExtRef::parse(name)
+            .ok_or_else(|| format!("{path}.fn: expected plugin:<plugin-id>:<function>"))?;
+        if raw.len() > MAX_PLUGIN_ARGS {
+            return Err(format!(
+                "{path}: '{name}' takes at most {MAX_PLUGIN_ARGS} arguments"
+            ));
+        }
+        let args = raw
+            .iter()
+            .enumerate()
+            .map(|(i, a)| parse_operand(a, &format!("{path}.args[{i}]"), depth + 1, budget))
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok((Callee::Plugin(ext), args));
+    }
+    let spec = find_fn(name).ok_or_else(|| format!("{path}: unknown function '{name}'"))?;
     if raw.len() < spec.min_args || raw.len() > spec.max_args {
         return Err(format!(
             "{path}: '{name}' takes {} to {} arguments, got {}",
@@ -478,7 +641,7 @@ fn parse_call(
             }
         }
     }
-    Ok((spec, args))
+    Ok((Callee::Core(spec), args))
 }
 
 fn parse_operand(
@@ -501,8 +664,8 @@ fn parse_operand(
                     .ok_or_else(|| format!("{path}.fact: expected a fact path"))?;
                 Ok(Operand::Fact(fact.to_string()))
             } else if obj.contains_key("fn") {
-                let (spec, args) = parse_call(v, path, depth, budget)?;
-                Ok(Operand::Call(spec, args))
+                let (callee, args) = parse_call(v, path, depth, budget)?;
+                Ok(Operand::Call(callee, args))
             } else if obj.contains_key("now") {
                 let obj = object(v, path, &["now"])?;
                 if obj["now"] != Value::Bool(true) {
@@ -605,12 +768,51 @@ fn eval_node(node: &Node, ctx: &EvalContext, trace: bool) -> (bool, Option<ExprT
             });
             (result, t)
         }
-        Node::Call(spec, args) => {
-            let value = call(spec, args, ctx);
+        Node::PluginCompare { ext, left, right } => {
+            let l = eval_operand(left, ctx);
+            let r = eval_operand(right, ctx);
+            let outcome = match (&l, &r, ctx.ext) {
+                (Some(l), Some(r), Some(e)) => Some(e.call_operator(ext, l, r)),
+                (Some(_), Some(_), None) => {
+                    ctx.unavailable.set(true);
+                    None
+                }
+                _ => None,
+            };
+            if matches!(outcome, Some(Err(_))) {
+                ctx.unavailable.set(true);
+            }
+            let result = matches!(outcome, Some(Ok(true)));
+            let t = trace.then(|| ExprTrace {
+                kind: "compare".into(),
+                label: format!(
+                    "{} {} {}",
+                    operand_label(left),
+                    ext.full(),
+                    operand_label(right)
+                ),
+                matched: result,
+                left: l.clone(),
+                right: r.clone(),
+                value: None,
+                error: match &outcome {
+                    Some(Err(e)) => Some(format!("{} is unavailable: {}", ext.full(), e)),
+                    None if ctx.ext.is_none() => {
+                        Some(format!("{} is unavailable: no plugin runtime", ext.full()))
+                    }
+                    None => Some("an operand has no value".to_string()),
+                    _ => None,
+                },
+                children: Vec::new(),
+            });
+            (result, t)
+        }
+        Node::Call(callee, args) => {
+            let value = call(callee, args, ctx);
             let result = value == Some(Value::Bool(true));
             let t = trace.then(|| ExprTrace {
                 kind: "fn".into(),
-                label: call_label(spec, args),
+                label: call_label(callee, args),
                 matched: result,
                 left: None,
                 right: None,
@@ -638,11 +840,31 @@ fn eval_operand(op: &Operand, ctx: &EvalContext) -> Option<Value> {
         Operand::Now => Some(Value::String(
             ctx.now.to_rfc3339_opts(SecondsFormat::Secs, true),
         )),
-        Operand::Call(spec, args) => call(spec, args, ctx),
+        Operand::Call(callee, args) => call(callee, args, ctx),
     }
 }
 
-fn call(spec: &FnSpec, args: &[Operand], ctx: &EvalContext) -> Option<Value> {
+fn call(callee: &Callee, args: &[Operand], ctx: &EvalContext) -> Option<Value> {
+    let spec = match callee {
+        Callee::Core(spec) => spec,
+        Callee::Plugin(ext) => {
+            let mut values = Vec::with_capacity(args.len());
+            for a in args {
+                values.push(eval_operand(a, ctx)?);
+            }
+            let Some(e) = ctx.ext else {
+                ctx.unavailable.set(true);
+                return None;
+            };
+            return match e.call_function(ext, &values) {
+                Ok(v) => v,
+                Err(_) => {
+                    ctx.unavailable.set(true);
+                    None
+                }
+            };
+        }
+    };
     match spec.name {
         "exists" => {
             let present = eval_operand(&args[0], ctx).is_some_and(|v| !v.is_null());
@@ -848,13 +1070,13 @@ fn operand_label(op: &Operand) -> String {
         Operand::Literal(v) => v.to_string(),
         Operand::Fact(p) => p.clone(),
         Operand::Now => "now".into(),
-        Operand::Call(spec, args) => call_label(spec, args),
+        Operand::Call(callee, args) => call_label(callee, args),
     }
 }
 
-fn call_label(spec: &FnSpec, args: &[Operand]) -> String {
+fn call_label(callee: &Callee, args: &[Operand]) -> String {
     let args: Vec<String> = args.iter().map(operand_label).collect();
-    format!("{}({})", spec.name, args.join(", "))
+    format!("{}({})", callee.name(), args.join(", "))
 }
 
 #[cfg(test)]
@@ -868,6 +1090,8 @@ mod tests {
             facts,
             // Wednesday 2026-10-28 03:15 UTC
             now: Utc.with_ymd_and_hms(2026, 10, 28, 3, 15, 0).unwrap(),
+            ext: None,
+            unavailable: Default::default(),
         }
     }
 
@@ -1118,5 +1342,113 @@ mod tests {
             );
         }
         assert_eq!(operator_catalog().len(), 10);
+    }
+
+    /// A plugin vocabulary for tests: `plugin:t:big` (len > n), `plugin:t:pre`
+    /// operator (starts with) and a merge that sums.
+    struct Fake {
+        fail: bool,
+    }
+
+    impl ClassificationExtensions for Fake {
+        fn call_function(&self, ext: &ExtRef, args: &[Value]) -> Result<Option<Value>, String> {
+            if self.fail {
+                return Err("down".into());
+            }
+            match ext.id.as_str() {
+                "big" => Ok(Some(Value::Bool(
+                    args[0].as_str().map_or(0, str::len) as u64 > args[1].as_u64().unwrap_or(0),
+                ))),
+                "twice" => Ok(Some(Value::from(args[0].as_i64().unwrap_or(0) * 2))),
+                "picky" => Ok(args[0].as_str().map(|_| Value::Bool(true))),
+                _ => Err("unknown".into()),
+            }
+        }
+
+        fn call_operator(&self, _ext: &ExtRef, l: &Value, r: &Value) -> Result<bool, String> {
+            if self.fail {
+                return Err("down".into());
+            }
+            Ok(l.as_str()
+                .zip(r.as_str())
+                .is_some_and(|(l, r)| l.starts_with(r)))
+        }
+
+        fn merge(&self, _: &ExtRef, _: &str, _: &Value, _: &Value) -> Result<Value, String> {
+            Err("not used".into())
+        }
+    }
+
+    fn eval_with(expr: Value, ext: Option<&dyn ClassificationExtensions>) -> (bool, ExprTrace) {
+        let f = facts();
+        let mut c = ctx(&f);
+        c.ext = ext;
+        c.unavailable = Default::default();
+        let e = Expr::parse(&expr).expect("valid");
+        (e.matches(&c), e.trace(&c))
+    }
+
+    #[test]
+    fn plugin_function_operator_and_nested_value_are_evaluated() {
+        let fake = Fake { fail: false };
+        let expr = json!({"all": [
+            {"fn": "plugin:t:big", "args": [{"fact": "hostname"}, 3]},
+            {"op": "plugin:t:pre", "left": {"fact": "certname"}, "right": "web"},
+            {"op": "=", "left": {"fn": "plugin:t:twice", "args": [21]}, "right": 42},
+        ]});
+        assert!(eval_with(expr.clone(), Some(&fake)).0);
+        let uses = Expr::parse(&expr).unwrap().plugin_uses();
+        assert_eq!(uses.len(), 3);
+        assert!(uses
+            .iter()
+            .any(|u| u.kind == PluginUseKind::Operator && u.ext.id == "pre"));
+        assert!(uses
+            .iter()
+            .any(|u| u.ext.id == "big" && u.as_condition && u.args == 2));
+        assert!(uses.iter().any(|u| u.ext.id == "twice" && !u.as_condition));
+    }
+
+    #[test]
+    fn unavailable_plugin_vocabulary_never_matches_even_under_not() {
+        let expr = json!({"op": "plugin:t:pre", "left": {"fact": "certname"}, "right": "web"});
+        for ext in [
+            None,
+            Some(&Fake { fail: true } as &dyn ClassificationExtensions),
+        ] {
+            let (m, trace) = eval_with(expr.clone(), ext);
+            assert!(!m);
+            assert!(trace.error.unwrap().contains("unavailable"));
+        }
+        // Fail closed: also under `not`, where a plain false would flip to a match
+        let f = Fake { fail: true };
+        let call = json!({"fn": "plugin:t:big", "args": [{"fact": "hostname"}, 3]});
+        assert!(!eval_with(call.clone(), Some(&f)).0);
+        let negated = json!({"not": call});
+        let (m, trace) = eval_with(negated, Some(&f));
+        assert!(!m && !trace.matched && trace.error.is_some());
+        // `all` always evaluates the plugin operator (no short-circuit skips it)
+        let all = json!({"all": [
+            {"fact": "virtual", "op": "=", "value": "kvm"},
+            {"not": {"op": "plugin:t:pre", "left": {"fact": "certname"}, "right": "web"}},
+        ]});
+        assert!(!eval_with(all, Some(&f)).0);
+
+        // A fact of another type is not a failure: the value is just missing
+        let ok = Fake { fail: false };
+        let applies = json!({"op": "=", "left": {"fn": "plugin:t:picky", "args": [{"fact": "memory"}]}, "right": true});
+        let (m, trace) = eval_with(applies, Some(&ok));
+        assert!(!m && trace.error.unwrap().contains("no value"));
+    }
+
+    #[test]
+    fn plugin_references_are_parsed_strictly() {
+        for bad in [
+            json!({"fn": "plugin:nope", "args": []}),
+            json!({"fn": "plugin:a:b:c", "args": []}),
+            json!({"op": "plugin:", "left": 1, "right": 2}),
+            json!({"fn": "plugin:t:f", "args": [1, 2, 3, 4, 5, 6, 7, 8, 9]}),
+        ] {
+            assert!(Expr::parse(&bad).is_err(), "{bad}");
+        }
     }
 }

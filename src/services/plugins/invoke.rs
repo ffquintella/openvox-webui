@@ -16,8 +16,8 @@ use super::filter::{pattern_matches, Filter};
 use super::manifest::parse_cron;
 use super::package::PluginPackage;
 use crate::models::{
-    AnnotationDecl, DatasetDecl, ExportFormatDecl, FactsContribution, JobDecl, ReportTypeDecl,
-    RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
+    AnnotationDecl, ClassificationContribution, DatasetDecl, ExportFormatDecl, FactsContribution,
+    JobDecl, ReportTypeDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
 };
 
 pub const DEFAULT_HANDLER_TIMEOUT_MS: u64 = 5_000;
@@ -34,6 +34,9 @@ pub enum HandlerKind {
     Fact,
     /// report generation and export rendering (M25)
     Report,
+    /// pure functions, operators and merge strategies on the classification
+    /// hot path, and membership provider refreshes (M27)
+    Classification,
 }
 
 impl HandlerKind {
@@ -45,6 +48,7 @@ impl HandlerKind {
             HandlerKind::Lifecycle => "lifecycle",
             HandlerKind::Fact => "fact",
             HandlerKind::Report => "report",
+            HandlerKind::Classification => "classification",
         }
     }
 }
@@ -118,6 +122,9 @@ pub struct PluginHooks {
     pub export_formats: Vec<ExportFormatDecl>,
     pub report_annotations: Vec<AnnotationDecl>,
     pub datasets: Vec<DatasetDecl>,
+    /// Classification functions, operators, providers, templates and merge
+    /// strategies (M27).
+    pub classification: Option<ClassificationContribution>,
 }
 
 impl PluginHooks {
@@ -162,6 +169,7 @@ impl PluginHooks {
             export_formats: m.contributes.export_formats.clone(),
             report_annotations: m.contributes.report_annotations.clone(),
             datasets: m.contributes.datasets.clone(),
+            classification: m.contributes.classification.clone(),
         }
     }
 
