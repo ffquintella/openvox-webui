@@ -1,12 +1,13 @@
 //! Node classification service
 
+use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 
 use crate::models::{
-    ClassificationResult, ClassificationRule, Fact, GroupMatch, MatchType, NodeGroup,
-    RuleEvaluation, RuleMatchType, RuleOperator,
+    ClassificationPluginFact, ClassificationResult, ClassificationRule, Fact, GroupMatch,
+    MatchType, NodeGroup, RuleEvaluation, RuleMatchType, RuleOperator,
 };
 
 /// Classification service for matching nodes to groups
@@ -525,10 +526,46 @@ pub fn build_classification_facts(
     certname: &str,
     catalog_environment: Option<&str>,
 ) -> serde_json::Value {
+    build_classification_facts_with_plugins(facts, certname, catalog_environment, &[], Utc::now())
+}
+
+/// Same as [`build_classification_facts`], plus the plugin facts an
+/// administrator enabled for rules (M25).
+///
+/// A plugin fact never overwrites what the agent reported: it is skipped when
+/// PuppetDB has a fact with the same name or a top-level fact named like its
+/// namespace. A value older than its `max_stale_s` at `now` counts as missing,
+/// so a rule on it does not match (as for any absent fact).
+pub fn build_classification_facts_with_plugins(
+    facts: Vec<Fact>,
+    certname: &str,
+    catalog_environment: Option<&str>,
+    plugin_facts: &[ClassificationPluginFact],
+    now: DateTime<Utc>,
+) -> serde_json::Value {
     let mut root = serde_json::Map::new();
 
+    let mut agent_names: HashSet<String> = HashSet::new();
     for fact in facts {
+        if !plugin_facts.is_empty() {
+            agent_names.insert(fact.name.clone());
+            if let Some((top, _)) = fact.name.split_once('.') {
+                agent_names.insert(top.to_string());
+            }
+        }
         insert_fact_value(&mut root, &fact.name, fact.value);
+    }
+
+    for pf in plugin_facts {
+        let namespace = pf.name.split('.').next().unwrap_or_default();
+        if agent_names.contains(&pf.name) || agent_names.contains(namespace) {
+            continue;
+        }
+        let max_stale = Duration::seconds(pf.max_stale_s.min(i64::MAX as u64) as i64);
+        if now.signed_duration_since(pf.computed_at) > max_stale {
+            continue;
+        }
+        insert_fact_value(&mut root, &pf.name, pf.value.clone());
     }
 
     root.insert(
@@ -740,6 +777,66 @@ mod tests {
 
         let value = get_fact_value(&facts, "missing");
         assert_eq!(value, None);
+    }
+
+    #[test]
+    fn plugin_facts_never_override_agent_facts_and_stale_ones_are_missing() {
+        let now = Utc::now();
+        let agent = |name: &str, v: serde_json::Value| Fact {
+            certname: "n1".into(),
+            name: name.into(),
+            value: v,
+            environment: None,
+        };
+        let pf = |name: &str, v: serde_json::Value, age_s: i64| ClassificationPluginFact {
+            plugin_id: "cmdb".into(),
+            name: name.into(),
+            value: v,
+            computed_at: now - Duration::seconds(age_s),
+            max_stale_s: 600,
+        };
+        let facts = vec![
+            agent("os.family", serde_json::json!("RedHat")),
+            agent("dup.owner", serde_json::json!("agent")),
+        ];
+        let plugin = vec![
+            pf("acme.tier", serde_json::json!(1), 10),
+            pf("acme.owner", serde_json::json!("ops"), 10),
+            pf("acme.old", serde_json::json!(true), 601),
+            pf("os.custom", serde_json::json!("x"), 10),
+            pf("dup.owner", serde_json::json!("plugin"), 10),
+        ];
+        let json = build_classification_facts_with_plugins(facts, "n1", None, &plugin, now);
+        assert_eq!(
+            get_fact_value(&json, "acme.tier"),
+            Some(serde_json::json!(1))
+        );
+        assert_eq!(
+            get_fact_value(&json, "acme.owner"),
+            Some(serde_json::json!("ops"))
+        );
+        // Older than max_stale_s: missing.
+        assert_eq!(get_fact_value(&json, "acme.old"), None);
+        // A namespace or name reported by the agent is never overwritten.
+        assert_eq!(get_fact_value(&json, "os.custom"), None);
+        assert_eq!(
+            get_fact_value(&json, "os.family"),
+            Some(serde_json::json!("RedHat"))
+        );
+        assert_eq!(
+            get_fact_value(&json, "dup.owner"),
+            Some(serde_json::json!("agent"))
+        );
+        // Without plugin facts the payload is what it always was.
+        let plain = build_classification_facts(
+            vec![agent("os.family", serde_json::json!("RedHat"))],
+            "n1",
+            None,
+        );
+        assert_eq!(
+            plain,
+            serde_json::json!({"os": {"family": "RedHat"}, "clientcert": "n1", "certname": "n1"})
+        );
     }
 
     #[test]

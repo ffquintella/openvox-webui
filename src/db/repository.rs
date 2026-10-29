@@ -1038,7 +1038,7 @@ impl<'a> SavedReportRepository<'a> {
     }
 
     /// Get saved reports by type
-    pub async fn get_by_type(&self, report_type: ReportType) -> Result<Vec<SavedReport>> {
+    pub async fn get_by_type(&self, report_type: &ReportType) -> Result<Vec<SavedReport>> {
         let rows = sqlx::query_as::<_, SavedReportRow>(
             r#"
             SELECT id, name, description, report_type, query_config,
@@ -1048,7 +1048,7 @@ impl<'a> SavedReportRepository<'a> {
             ORDER BY name
             "#,
         )
-        .bind(report_type.as_str())
+        .bind(report_type.id())
         .fetch_all(self.pool)
         .await
         .context("Failed to fetch saved reports")?;
@@ -1093,7 +1093,7 @@ impl<'a> SavedReportRepository<'a> {
         .bind(id.to_string())
         .bind(&req.name)
         .bind(&req.description)
-        .bind(req.report_type.as_str())
+        .bind(req.report_type.id())
         .bind(&query_config)
         .bind(user_id.to_string())
         .bind(req.is_public)
@@ -1985,7 +1985,7 @@ impl<'a> ReportTemplateRepository<'a> {
     }
 
     /// Get templates by type
-    pub async fn get_by_type(&self, report_type: ReportType) -> Result<Vec<ReportTemplate>> {
+    pub async fn get_by_type(&self, report_type: &ReportType) -> Result<Vec<ReportTemplate>> {
         let rows = sqlx::query_as::<_, ReportTemplateRow>(
             r#"
             SELECT id, name, description, report_type, query_config, is_system, created_at
@@ -1994,7 +1994,7 @@ impl<'a> ReportTemplateRepository<'a> {
             ORDER BY is_system DESC, name
             "#,
         )
-        .bind(report_type.as_str())
+        .bind(report_type.id())
         .fetch_all(self.pool)
         .await
         .context("Failed to fetch report templates")?;

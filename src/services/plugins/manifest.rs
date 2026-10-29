@@ -109,6 +109,8 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
 
     validate_contributions(&mut p, m, files, &names);
     validate_hooks(&mut p, m, &names);
+    validate_facts(&mut p, m, &names);
+    validate_reports(&mut p, m, &names);
 
     if let Some(mig) = &m.migrations {
         if !safe_package_path(&mig.dir) {
@@ -388,6 +390,340 @@ fn validate_hooks(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<Strin
                 }
             }
         }
+    }
+}
+
+/// Top-level names a fact namespace may not take: they are injected by the
+/// host or are core Puppet/Facter names.
+pub const RESERVED_FACT_NAMESPACES: &[&str] = &[
+    "certname",
+    "clientcert",
+    "catalog_environment",
+    "environment",
+    "trusted",
+    "server_facts",
+    "facts",
+    "facterversion",
+    "puppetversion",
+    "openvox",
+];
+
+/// Lowercase identifier: a letter, then letters, digits and `_`.
+pub fn valid_fact_identifier(s: &str) -> bool {
+    let b = s.as_bytes();
+    (1..=64).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_')
+}
+
+/// `contributes.facts` (M25): mandatory namespace, typed items, `secret`
+/// refused, export needs `facts:export:external`, pull needs a handler.
+fn validate_facts(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<String>) {
+    use crate::models::{FactMode, PluginFactType, MAX_PLUGIN_FACTS_PER_NODE};
+    let Some(f) = &m.contributes.facts else {
+        if caps.contains("facts:export:external") {
+            p.push("facts:export:external needs contributes.facts".to_string());
+        }
+        return;
+    };
+    if !caps.contains("facts:provide") {
+        p.push("contributes.facts needs the capability facts:provide".to_string());
+    }
+    if !valid_fact_identifier(&f.namespace) || f.namespace.len() < 2 {
+        p.push(format!(
+            "facts.namespace '{}' is invalid: use 2 to 64 characters of a-z, 0-9 and '_', starting with a letter",
+            f.namespace
+        ));
+    } else if RESERVED_FACT_NAMESPACES.contains(&f.namespace.as_str()) {
+        p.push(format!("facts.namespace '{}' is reserved", f.namespace));
+    }
+    if f.items.is_empty() {
+        p.push("facts.items must declare at least one fact".to_string());
+    }
+    if f.items.len() > MAX_PLUGIN_FACTS_PER_NODE {
+        p.push(format!(
+            "facts.items declares more than {} facts",
+            MAX_PLUGIN_FACTS_PER_NODE
+        ));
+    }
+    if f.ttl_s.is_some_and(|v| v == 0) {
+        p.push("facts.ttl_s must be positive".to_string());
+    }
+    if let Some(ms) = f.max_stale_s {
+        if ms == 0 {
+            p.push("facts.max_stale_s must be positive".to_string());
+        } else if f.ttl_s.is_some_and(|t| t > ms) {
+            p.push("facts.max_stale_s must not be shorter than facts.ttl_s".to_string());
+        }
+    }
+    match (f.mode, &f.handler) {
+        (FactMode::Pull, Some(h)) if valid_local_id(h) => {}
+        (FactMode::Pull, _) => p.push("facts in pull mode need a valid handler".to_string()),
+        (FactMode::Push, Some(_)) => p.push("facts.handler is only valid in pull mode".to_string()),
+        (FactMode::Push, None) => {}
+    }
+    let mut seen = BTreeSet::new();
+    for item in &f.items {
+        if !valid_fact_identifier(&item.name) {
+            p.push(format!(
+                "fact name '{}' is invalid: use a-z, 0-9 and '_', starting with a letter",
+                item.name
+            ));
+        }
+        if !seen.insert(item.name.clone()) {
+            p.push(format!("fact '{}' is declared twice", item.name));
+        }
+        if let Some(d) = &item.description {
+            check_text(p, "fact description", d, 200);
+        }
+        if item.ttl_s.is_some_and(|v| v == 0) {
+            p.push(format!("fact '{}': ttl_s must be positive", item.name));
+        }
+        match item.sensitivity.as_str() {
+            "none" | "pii" => {}
+            "secret" => p.push(format!(
+                "fact '{}': sensitivity 'secret' is not allowed (facts are visible to catalogs and to many users)",
+                item.name
+            )),
+            other => p.push(format!(
+                "fact '{}': sensitivity '{}' must be none or pii",
+                item.name, other
+            )),
+        }
+        if let Some(values) = &item.enum_values {
+            let scalar = matches!(
+                item.fact_type,
+                PluginFactType::String | PluginFactType::Integer | PluginFactType::Float
+            );
+            if !scalar {
+                p.push(format!(
+                    "fact '{}': enum is only valid for string, integer and float",
+                    item.name
+                ));
+            } else if values.is_empty() || values.len() > 100 {
+                p.push(format!(
+                    "fact '{}': enum must list 1 to 100 values",
+                    item.name
+                ));
+            } else if values.iter().any(|v| !item.fact_type.matches(v)) {
+                p.push(format!(
+                    "fact '{}': every enum value must be a {}",
+                    item.name,
+                    item.fact_type.as_str()
+                ));
+            }
+        }
+        if item.exportable && !caps.contains("facts:export:external") {
+            p.push(format!(
+                "fact '{}' is exportable and needs the capability facts:export:external",
+                item.name
+            ));
+        }
+        check_requires(p, &m.id, item.requires.as_ref());
+    }
+}
+
+const SCHEMA_TYPES: &[&str] = &["string", "integer", "number", "boolean", "array"];
+const SCALAR_TYPES: &[&str] = &["string", "integer", "float", "bool"];
+
+/// The JSON Schema subset the host renders as a form: an object whose
+/// properties are strings, integers, numbers, booleans or arrays.
+fn check_params_schema(p: &mut Vec<String>, id: &str, schema: &Value) {
+    let ok_type = schema.get("type").and_then(Value::as_str) == Some("object");
+    let props = schema.get("properties").and_then(Value::as_object);
+    match (ok_type, props) {
+        (true, Some(props)) if props.len() <= 50 => {
+            for (name, prop) in props {
+                if !valid_fact_identifier(name) {
+                    p.push(format!(
+                        "report type '{}': parameter '{}' is invalid",
+                        id, name
+                    ));
+                }
+                let t = prop.get("type").and_then(Value::as_str).unwrap_or("");
+                if !SCHEMA_TYPES.contains(&t) {
+                    p.push(format!(
+                        "report type '{}': parameter '{}' must have a type among {}",
+                        id,
+                        name,
+                        SCHEMA_TYPES.join(", ")
+                    ));
+                }
+            }
+            if let Some(req) = schema.get("required") {
+                let names_ok = req.as_array().is_some_and(|a| {
+                    a.iter()
+                        .all(|r| r.as_str().is_some_and(|r| props.contains_key(r)))
+                });
+                if !names_ok {
+                    p.push(format!(
+                        "report type '{}': required must list declared parameters",
+                        id
+                    ));
+                }
+            }
+        }
+        _ => p.push(format!(
+            "report type '{}': params_schema must be an object schema with at most 50 properties",
+            id
+        )),
+    }
+}
+
+/// Report types, export formats, annotations and datasets (M25, T90).
+fn validate_reports(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<String>) {
+    use crate::models::EXPORT_CONTENT_TYPES;
+    let c = &m.contributes;
+    let need = |p: &mut Vec<String>, what: &str, cap: &str| {
+        if !caps.contains(cap) {
+            p.push(format!("{} needs the capability {}", what, cap));
+        }
+    };
+    if !c.report_types.is_empty() {
+        need(p, "report_types", "reports:provide");
+    }
+    if c.report_types.len() > 32 {
+        p.push("more than 32 report types declared".to_string());
+    }
+    let mut seen = BTreeSet::new();
+    for t in &c.report_types {
+        if !valid_plugin_id(&t.id) || !seen.insert(t.id.clone()) {
+            p.push(format!("report type id '{}' is invalid or repeated", t.id));
+        }
+        check_text(p, "report type label", &t.label, 80);
+        if let Some(d) = &t.description {
+            check_text(p, "report type description", d, 200);
+        }
+        if let Some(schema) = &t.params_schema {
+            check_params_schema(p, &t.id, schema);
+        }
+        if !valid_local_id(&t.handler) {
+            p.push(format!("report type handler '{}' is invalid", t.handler));
+        }
+        check_requires(p, &m.id, t.requires.as_ref());
+    }
+
+    if !c.export_formats.is_empty() {
+        need(p, "export_formats", "reports:export:format");
+    }
+    if c.export_formats.len() > 16 {
+        p.push("more than 16 export formats declared".to_string());
+    }
+    let mut seen = BTreeSet::new();
+    for f in &c.export_formats {
+        if !valid_plugin_id(&f.id) || !seen.insert(f.id.clone()) {
+            p.push(format!(
+                "export format id '{}' is invalid or repeated",
+                f.id
+            ));
+        }
+        check_text(p, "export format label", &f.label, 80);
+        if !EXPORT_CONTENT_TYPES.contains(&f.content_type.as_str()) {
+            p.push(format!(
+                "export format '{}': content type '{}' is not allowed",
+                f.id, f.content_type
+            ));
+        }
+        let ext_ok = (1..=10).contains(&f.extension.len())
+            && f.extension
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        if !ext_ok {
+            p.push(format!(
+                "export format '{}': extension must be 1 to 10 characters of a-z and 0-9",
+                f.id
+            ));
+        }
+        if !valid_local_id(&f.handler) {
+            p.push(format!("export format handler '{}' is invalid", f.handler));
+        }
+    }
+
+    if !c.report_annotations.is_empty() {
+        need(p, "report_annotations", "reports:annotate");
+    }
+    if c.report_annotations.len() > 32 {
+        p.push("more than 32 report annotations declared".to_string());
+    }
+    let mut seen = BTreeSet::new();
+    for a in &c.report_annotations {
+        if !valid_fact_identifier(&a.key) || !seen.insert(a.key.clone()) {
+            p.push(format!("annotation key '{}' is invalid or repeated", a.key));
+        }
+        if !SCALAR_TYPES.contains(&a.value_type.as_str()) {
+            p.push(format!(
+                "annotation '{}': type must be one of {}",
+                a.key,
+                SCALAR_TYPES.join(", ")
+            ));
+        }
+        check_text(p, "annotation label", &a.label, 40);
+        let places_ok = !a.show_in.is_empty()
+            && a.show_in
+                .iter()
+                .all(|s| s == "list_column" || s == "detail_panel");
+        if !places_ok {
+            p.push(format!(
+                "annotation '{}': show_in must list list_column and/or detail_panel",
+                a.key
+            ));
+        }
+        if (a.sortable || a.filterable) && !a.show_in.iter().any(|s| s == "list_column") {
+            p.push(format!(
+                "annotation '{}': sortable and filterable need show_in list_column",
+                a.key
+            ));
+        }
+    }
+
+    if !c.datasets.is_empty() {
+        need(p, "datasets", "reports:provide");
+    }
+    if c.datasets.len() > 16 {
+        p.push("more than 16 datasets declared".to_string());
+    }
+    let mut seen = BTreeSet::new();
+    for d in &c.datasets {
+        if !valid_plugin_id(&d.id) || !seen.insert(d.id.clone()) {
+            p.push(format!("dataset id '{}' is invalid or repeated", d.id));
+        }
+        if let Some(l) = &d.label {
+            check_text(p, "dataset label", l, 80);
+        }
+        if let Some(t) = &d.description {
+            check_text(p, "dataset description", t, 200);
+        }
+        let cols = &d.schema.columns;
+        if cols.is_empty() || cols.len() > 64 {
+            p.push(format!("dataset '{}' must declare 1 to 64 columns", d.id));
+        }
+        let mut names = BTreeSet::new();
+        for col in cols {
+            if !valid_fact_identifier(&col.name) || !names.insert(col.name.clone()) {
+                p.push(format!(
+                    "dataset '{}': column '{}' is invalid or repeated",
+                    d.id, col.name
+                ));
+            }
+            if !SCALAR_TYPES.contains(&col.column_type.as_str()) {
+                p.push(format!(
+                    "dataset '{}': column '{}' type must be one of {}",
+                    d.id,
+                    col.name,
+                    SCALAR_TYPES.join(", ")
+                ));
+            }
+            if let Some(l) = &col.label {
+                check_text(p, "dataset column label", l, 80);
+            }
+        }
+        if let Some(k) = &d.key {
+            if !names.contains(k) {
+                p.push(format!("dataset '{}': key '{}' is not a column", d.id, k));
+            }
+        }
+        check_requires(p, &m.id, d.requires.as_ref());
     }
 }
 
@@ -672,6 +1008,27 @@ pub fn describe_capability(c: &Capability) -> CapabilityInfo {
             RiskLevel::High,
             "Change what agents receive from this server".to_string(),
         ),
+        "reports:provide" => (
+            RiskLevel::Medium,
+            "Provide report types and datasets (report jobs run with limits)".to_string(),
+        ),
+        "reports:annotate" => (
+            RiskLevel::Low,
+            "Add annotations to Puppet run reports (the reports are not changed)".to_string(),
+        ),
+        "reports:export:format" => (
+            RiskLevel::Medium,
+            "Render report results as downloadable files".to_string(),
+        ),
+        "datasets:read" => (
+            RiskLevel::Medium,
+            "Read datasets provided by other plugins".to_string(),
+        ),
+        "facts:provide" => (
+            RiskLevel::Medium,
+            "Provide node facts in its own namespace (can change classification once an administrator enables it)"
+                .to_string(),
+        ),
         n if n.starts_with("ui:slot:") => (
             RiskLevel::Low,
             format!("Add interface elements to '{}'", &n["ui:slot:".len()..]),
@@ -790,6 +1147,200 @@ contributes:
             "menus:\n    - { target: \"core:settings\", op: hide }\n",
         );
         assert!(parse_and_validate(m.as_bytes(), &files(&["ui/home.json"])).is_err());
+    }
+
+    const FACTS: &str = r#"
+api_version: 2
+id: acme-cmdb
+name: ACME CMDB
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-cmdb }
+capabilities:
+  - facts:provide
+  - facts:export:external
+contributes:
+  facts:
+    namespace: acme_cmdb
+    mode: push
+    ttl_s: 3600
+    max_stale_s: 86400
+    items:
+      - { name: owner, type: string, sensitivity: pii, description: "Asset owner" }
+      - { name: criticality, type: integer, enum: [1, 2, 3, 4], usable_in_rules: true, exportable: true,
+          requires: { resource: plugin.acme-cmdb.facts, action: read } }
+"#;
+
+    fn facts_problems(yaml: &str) -> Vec<String> {
+        match parse_and_validate(yaml.as_bytes(), &files(&[])) {
+            Ok(_) => Vec::new(),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn accepts_a_valid_facts_contribution() {
+        let m = parse_and_validate(FACTS.as_bytes(), &files(&[])).unwrap();
+        let f = m.contributes.facts.unwrap();
+        assert_eq!(f.namespace, "acme_cmdb");
+        assert_eq!(f.items.len(), 2);
+        assert!(f.items[0].is_pii());
+        assert_eq!(f.full_name(&f.items[1]), "acme_cmdb.criticality");
+    }
+
+    #[test]
+    fn facts_need_their_capabilities_and_a_safe_schema() {
+        let cases = [
+            (FACTS.replace("  - facts:provide\n", ""), "facts:provide"),
+            (
+                FACTS.replace("  - facts:export:external\n", ""),
+                "facts:export:external",
+            ),
+            (
+                FACTS.replace("sensitivity: pii", "sensitivity: secret"),
+                "'secret'",
+            ),
+            (
+                FACTS.replace("namespace: acme_cmdb", "namespace: Acme-CMDB"),
+                "namespace",
+            ),
+            (
+                FACTS.replace("namespace: acme_cmdb", "namespace: trusted"),
+                "reserved",
+            ),
+            (FACTS.replace("enum: [1, 2, 3, 4]", "enum: [a, b]"), "enum"),
+            (FACTS.replace("name: owner", "name: owner.x"), "fact name"),
+            (FACTS.replace("mode: push", "mode: pull"), "handler"),
+            (
+                FACTS.replace("mode: push", "mode: push\n    handler: resolve"),
+                "only valid in pull",
+            ),
+            (
+                FACTS.replace("max_stale_s: 86400", "max_stale_s: 60"),
+                "max_stale_s",
+            ),
+            (FACTS.replace("type: string", "type: blob"), "manifest"),
+            (
+                FACTS.replace("name: criticality", "name: owner"),
+                "declared twice",
+            ),
+        ];
+        for (yaml, needle) in cases {
+            let p = facts_problems(&yaml);
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
+        let pull = FACTS.replace("mode: push", "mode: pull\n    handler: resolve_facts");
+        assert!(facts_problems(&pull).is_empty());
+    }
+
+    const REPORTS: &str = r#"
+api_version: 2
+id: acme-cmdb
+name: ACME CMDB
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-cmdb }
+capabilities:
+  - reports:provide
+  - reports:annotate
+  - reports:export:format
+contributes:
+  report_types:
+    - id: asset-compliance
+      label: Asset compliance
+      params_schema: { type: object, properties: { since: { type: string, format: date } }, required: [since] }
+      handler: generate_asset_compliance
+      requires: { resource: plugin.acme-cmdb.reports, action: read }
+  export_formats:
+    - { id: xlsx, label: Excel, content_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", extension: xlsx, handler: render_xlsx }
+  report_annotations:
+    - { key: risk_score, type: integer, label: Risk, show_in: [list_column, detail_panel], sortable: true, filterable: true }
+  datasets:
+    - id: assets
+      schema: { columns: [ { name: certname, type: string }, { name: owner, type: string } ] }
+"#;
+
+    #[test]
+    fn accepts_report_types_formats_annotations_and_datasets() {
+        let m = parse_and_validate(REPORTS.as_bytes(), &files(&[])).unwrap();
+        assert_eq!(m.contributes.report_types[0].id, "asset-compliance");
+        assert_eq!(m.contributes.datasets[0].key_column(), Some("certname"));
+    }
+
+    #[test]
+    fn report_contributions_need_capabilities_and_safe_declarations() {
+        let cases = [
+            (
+                REPORTS.replace("  - reports:provide\n", ""),
+                "reports:provide",
+            ),
+            (
+                REPORTS.replace("  - reports:annotate\n", ""),
+                "reports:annotate",
+            ),
+            (
+                REPORTS.replace("  - reports:export:format\n", ""),
+                "reports:export:format",
+            ),
+            (
+                REPORTS.replace(
+                    "\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"",
+                    "text/html",
+                ),
+                "not allowed",
+            ),
+            (
+                REPORTS.replace("extension: xlsx", "extension: \"x/y\""),
+                "extension",
+            ),
+            (
+                REPORTS.replace("type: object, properties", "type: array, properties"),
+                "params_schema",
+            ),
+            (
+                REPORTS.replace("required: [since]", "required: [until]"),
+                "required",
+            ),
+            (
+                REPORTS.replace("format: date", "format: date }, x: { type: blob"),
+                "type among",
+            ),
+            (
+                REPORTS.replace("type: integer, label: Risk", "type: object, label: Risk"),
+                "type must be",
+            ),
+            (
+                REPORTS.replace(
+                    "show_in: [list_column, detail_panel]",
+                    "show_in: [detail_panel]",
+                ),
+                "need show_in list_column",
+            ),
+            (
+                REPORTS.replace(
+                    "{ name: owner, type: string }",
+                    "{ name: owner, type: blob }",
+                ),
+                "column 'owner' type",
+            ),
+            (
+                REPORTS.replace("id: asset-compliance", "id: \"Bad:Id\""),
+                "report type id",
+            ),
+        ];
+        for (yaml, needle) in cases {
+            let p = match parse_and_validate(yaml.as_bytes(), &files(&[])) {
+                Ok(_) => Vec::new(),
+                Err(e) => e,
+            };
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
     }
 
     #[test]

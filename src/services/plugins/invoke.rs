@@ -15,7 +15,10 @@ use serde_json::Value;
 use super::filter::{pattern_matches, Filter};
 use super::manifest::parse_cron;
 use super::package::PluginPackage;
-use crate::models::{JobDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER};
+use crate::models::{
+    AnnotationDecl, DatasetDecl, ExportFormatDecl, FactsContribution, JobDecl, ReportTypeDecl,
+    RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
+};
 
 pub const DEFAULT_HANDLER_TIMEOUT_MS: u64 = 5_000;
 pub const MAX_HANDLER_TIMEOUT_MS: u64 = 60_000;
@@ -27,6 +30,10 @@ pub enum HandlerKind {
     Webhook,
     /// install, upgrade, enable, disable and uninstall hooks (M20)
     Lifecycle,
+    /// pull-mode fact resolution (M25)
+    Fact,
+    /// report generation and export rendering (M25)
+    Report,
 }
 
 impl HandlerKind {
@@ -36,6 +43,8 @@ impl HandlerKind {
             HandlerKind::Job => "job",
             HandlerKind::Webhook => "webhook",
             HandlerKind::Lifecycle => "lifecycle",
+            HandlerKind::Fact => "fact",
+            HandlerKind::Report => "report",
         }
     }
 }
@@ -102,6 +111,13 @@ pub struct PluginHooks {
     pub publish: Vec<String>,
     pub jobs: Vec<PluginJob>,
     pub webhooks: Vec<WebhookDecl>,
+    /// Facts the plugin provides (M25).
+    pub facts: Option<FactsContribution>,
+    /// Report types, export formats, annotation keys and datasets (M25).
+    pub report_types: Vec<ReportTypeDecl>,
+    pub export_formats: Vec<ExportFormatDecl>,
+    pub report_annotations: Vec<AnnotationDecl>,
+    pub datasets: Vec<DatasetDecl>,
 }
 
 impl PluginHooks {
@@ -141,6 +157,11 @@ impl PluginHooks {
             publish: events.publish,
             jobs,
             webhooks: m.webhook_decls().unwrap_or_default(),
+            facts: m.contributes.facts.clone(),
+            report_types: m.contributes.report_types.clone(),
+            export_formats: m.contributes.export_formats.clone(),
+            report_annotations: m.contributes.report_annotations.clone(),
+            datasets: m.contributes.datasets.clone(),
         }
     }
 

@@ -27,6 +27,8 @@ import clsx from 'clsx';
 import { api } from '../services/api';
 import NodeAutocomplete from '../components/NodeAutocomplete';
 import PluginSlot from '../components/plugins/PluginSlot';
+import { usePluginFactSources } from '../hooks/usePlugins';
+import { namespaceSources, ruleDependsOnPlugin } from '../components/plugins/factHelpers';
 import type {
   NodeGroup,
   ClassificationRule,
@@ -83,6 +85,9 @@ export default function Groups() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<NodeGroup | null>(null);
+  // Rules whose fact is provided by a plugin depend on that plugin (empty when unreadable).
+  const { data: pluginFactSources } = usePluginFactSources();
+  const pluginNamespaces = useMemo(() => namespaceSources(pluginFactSources), [pluginFactSources]);
   const [activeTab, setActiveTab] = useState<
     'rules' | 'pinned' | 'classes' | 'variables' | 'schedules'
   >('rules');
@@ -1284,6 +1289,14 @@ export default function Groups() {
                                 <span className="text-primary-600 dark:text-primary-400 font-medium">
                                   {rule.fact_path}
                                 </span>
+                                {ruleDependsOnPlugin(rule.fact_path, pluginNamespaces) && (
+                                  <span
+                                    className="px-2 py-0.5 rounded-full text-xs font-sans font-medium bg-amber-100 text-amber-800"
+                                    title={`Depends on plugin ${ruleDependsOnPlugin(rule.fact_path, pluginNamespaces)}`}
+                                  >
+                                    Plugin fact
+                                  </span>
+                                )}
                                 <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
                                   {rule.operator}
                                 </span>

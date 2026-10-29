@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Report types supported by the system
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
+///
+/// Serialized as a string: the core snake_case names, or
+/// `plugin:<plugin-id>:<type-id>` for a type provided by a plugin (M25).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ReportType {
     /// Node health and status reports
     #[default]
@@ -22,16 +24,42 @@ pub enum ReportType {
     DriftDetection,
     /// Custom user-defined reports
     Custom,
+    /// A report type provided by a plugin
+    Plugin { plugin_id: String, type_id: String },
 }
 
 impl ReportType {
-    pub fn as_str(&self) -> &'static str {
+    /// Core report types, in catalog order.
+    pub const CORE: [ReportType; 5] = [
+        ReportType::NodeHealth,
+        ReportType::Compliance,
+        ReportType::ChangeTracking,
+        ReportType::DriftDetection,
+        ReportType::Custom,
+    ];
+
+    /// Textual id stored in the database and used by the API.
+    pub fn id(&self) -> String {
         match self {
-            ReportType::NodeHealth => "node_health",
-            ReportType::Compliance => "compliance",
-            ReportType::ChangeTracking => "change_tracking",
-            ReportType::DriftDetection => "drift_detection",
-            ReportType::Custom => "custom",
+            ReportType::NodeHealth => "node_health".to_string(),
+            ReportType::Compliance => "compliance".to_string(),
+            ReportType::ChangeTracking => "change_tracking".to_string(),
+            ReportType::DriftDetection => "drift_detection".to_string(),
+            ReportType::Custom => "custom".to_string(),
+            ReportType::Plugin { plugin_id, type_id } => {
+                format!("plugin:{}:{}", plugin_id, type_id)
+            }
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            ReportType::NodeHealth => "Node health".to_string(),
+            ReportType::Compliance => "Compliance".to_string(),
+            ReportType::ChangeTracking => "Change tracking".to_string(),
+            ReportType::DriftDetection => "Drift detection".to_string(),
+            ReportType::Custom => "Custom".to_string(),
+            ReportType::Plugin { type_id, .. } => type_id.clone(),
         }
     }
 
@@ -42,8 +70,25 @@ impl ReportType {
             "change_tracking" => Some(ReportType::ChangeTracking),
             "drift_detection" => Some(ReportType::DriftDetection),
             "custom" => Some(ReportType::Custom),
-            _ => None,
+            other => super::parse_plugin_ref(other).map(|(p, t)| ReportType::Plugin {
+                plugin_id: p.to_string(),
+                type_id: t.to_string(),
+            }),
         }
+    }
+}
+
+impl Serialize for ReportType {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.id())
+    }
+}
+
+impl<'de> Deserialize<'de> for ReportType {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        ReportType::from_str(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown report type '{}'", s)))
     }
 }
 
@@ -601,6 +646,9 @@ pub enum ReportResult {
     DriftDetection(DriftReport),
     #[serde(rename = "custom")]
     Custom(serde_json::Value),
+    /// Structured result of a plugin report type (M25)
+    #[serde(rename = "plugin")]
+    Plugin(super::PluginReportResult),
 }
 
 #[cfg(test)]
@@ -615,6 +663,28 @@ mod tests {
 
         let deserialized: ReportType = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, ReportType::NodeHealth);
+    }
+
+    #[test]
+    fn plugin_report_types_round_trip_as_text() {
+        let t = ReportType::from_str("plugin:acme-cmdb:asset-compliance").unwrap();
+        assert_eq!(
+            t,
+            ReportType::Plugin {
+                plugin_id: "acme-cmdb".into(),
+                type_id: "asset-compliance".into()
+            }
+        );
+        let json = serde_json::to_string(&t).unwrap();
+        assert_eq!(json, "\"plugin:acme-cmdb:asset-compliance\"");
+        assert_eq!(serde_json::from_str::<ReportType>(&json).unwrap(), t);
+        for bad in ["plugin:", "plugin:x", "plugin::y", "plugin:x:y:z", "nope"] {
+            assert!(ReportType::from_str(bad).is_none(), "{bad}");
+        }
+        assert!(serde_json::from_str::<ReportType>("\"nope\"").is_err());
+        for t in ReportType::CORE {
+            assert_eq!(ReportType::from_str(&t.id()), Some(t));
+        }
     }
 
     #[test]

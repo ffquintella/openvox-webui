@@ -6,6 +6,7 @@ import type {
   UpdateTrustedKeyRequest,
   RevokeTrustedKeyRequest,
   PluginUpdatePolicyRequest,
+  PluginFactSettingsRequest,
 } from '../types';
 
 const UI_SLOTS_STALE_MS = 30_000;
@@ -293,5 +294,77 @@ export function useUnrevokePluginVersion() {
     mutationFn: ({ id, version }: { id: string; version: string }) =>
       pluginsApi.unrevokeVersion(id, version),
     onSuccess: invalidate,
+  });
+}
+
+// ============================================================================
+// Plugin facts (M25)
+// ============================================================================
+
+const FACT_SOURCES_STALE_MS = 5 * 60_000;
+
+export function usePluginFactCatalogs(enabled = true) {
+  return useQuery({
+    queryKey: ['plugin-facts'],
+    queryFn: () => pluginsApi.getPluginFactCatalogs(),
+    enabled,
+  });
+}
+
+export function usePluginFacts(id: string | null) {
+  return useQuery({
+    queryKey: ['plugin-facts', id],
+    queryFn: () => pluginsApi.getPluginFacts(id as string),
+    enabled: !!id,
+  });
+}
+
+export function useUpdatePluginFactSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      name,
+      request,
+    }: {
+      id: string;
+      name: string;
+      request: PluginFactSettingsRequest;
+    }) => pluginsApi.updatePluginFactSettings(id, name, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plugin-facts'] });
+      queryClient.invalidateQueries({ queryKey: ['plugin-fact-preview'] });
+      queryClient.invalidateQueries({ queryKey: ['plugin-fact-sources'] });
+    },
+  });
+}
+
+export function usePluginFactPreview(id: string, name: string, enabled = true) {
+  return useQuery({
+    queryKey: ['plugin-fact-preview', id, name],
+    queryFn: () => pluginsApi.getPluginFactPreview(id, name),
+    enabled,
+    // The dialog must show the values as they are right now.
+    gcTime: 0,
+    staleTime: 0,
+  });
+}
+
+/**
+ * Fact path entries contributed by plugins, used to badge plugin facts on other
+ * pages. It must never break them: errors (403 for viewers, 503) just leave it empty.
+ */
+export function usePluginFactSources() {
+  return useQuery({
+    queryKey: ['plugin-fact-sources'],
+    queryFn: async () => {
+      try {
+        return await pluginsApi.getPluginFactSources();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: FACT_SOURCES_STALE_MS,
+    retry: false,
   });
 }

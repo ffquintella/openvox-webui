@@ -12,6 +12,19 @@ import {
 import clsx from 'clsx';
 import { api } from '../services/api';
 import PluginSlot from '../components/plugins/PluginSlot';
+import {
+  AnnotationFields,
+  AnnotationToolbar,
+  AnnotationsPanel,
+  type AnnotationSort,
+} from '../components/reports/ReportAnnotations';
+import {
+  annotationColumnKey,
+  annotationColumnsFor,
+  filterByAnnotation,
+  sortByAnnotation,
+} from '../components/analytics/pluginReportHelpers';
+import { useReportAnnotationColumns, useReportAnnotationLookup } from '../hooks/useAnalytics';
 import { Report, ResourceEvent } from '../types';
 
 // Helper function to get event status color
@@ -252,6 +265,32 @@ export default function Reports() {
     queryFn: () => api.getReports({ status: statusFilter === 'all' ? undefined : statusFilter }),
   });
 
+  // Plugin annotation columns: nothing extra is rendered when no plugin declares one.
+  const { data: annotationColumns } = useReportAnnotationColumns();
+  const listColumns = useMemo(
+    () => annotationColumnsFor(annotationColumns, 'list_column'),
+    [annotationColumns]
+  );
+  const { data: annotations } = useReportAnnotationLookup(
+    reports.map((r: Report) => r.hash),
+    listColumns.length > 0
+  );
+  const [sort, setSort] = useState<AnnotationSort | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const setFilter = (key: string, text: string) => setFilters((f) => ({ ...f, [key]: text }));
+
+  const visibleReports = useMemo(() => {
+    let rows: Report[] = reports;
+    for (const c of listColumns) {
+      rows = filterByAnnotation(rows, annotations, c, filters[annotationColumnKey(c)] ?? '');
+    }
+    const sortColumn = sort && listColumns.find((c) => annotationColumnKey(c) === sort.column);
+    if (sort && sortColumn?.sortable) {
+      rows = sortByAnnotation(rows, annotations, sortColumn, sort.direction);
+    }
+    return rows;
+  }, [reports, listColumns, annotations, filters, sort]);
+
   const getStatusIcon = (status?: string) => {
     switch (status) {
       case 'changed':
@@ -287,9 +326,17 @@ export default function Reports() {
         </select>
       </div>
 
+      <AnnotationToolbar
+        columns={listColumns}
+        sort={sort}
+        onSort={setSort}
+        filters={filters}
+        onFilter={setFilter}
+      />
+
       {/* Reports List */}
       <div className="space-y-4">
-        {reports.map((report: Report) => {
+        {visibleReports.map((report: Report) => {
           const isExpanded = expandedReport === report.hash;
 
           return (
@@ -326,6 +373,11 @@ export default function Reports() {
                         : '-'}
                     </span>
                   </div>
+                  <AnnotationFields
+                    columns={listColumns}
+                    annotations={annotations}
+                    hash={report.hash}
+                  />
                   <div
                     className={clsx(
                       'px-3 py-1 rounded-full text-xs font-medium',
@@ -418,6 +470,7 @@ export default function Reports() {
                     <p className="text-sm font-medium text-gray-700 mb-3">Resource Events</p>
                     <ResourceEventsPanel reportHash={report.hash} />
                   </div>
+                  <AnnotationsPanel hash={report.hash} />
                   <PluginSlot
                     slot="report.detail.panels"
                     params={{ report_hash: report.hash }}
@@ -429,7 +482,7 @@ export default function Reports() {
           );
         })}
 
-        {reports.length === 0 && (
+        {visibleReports.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
             No reports found

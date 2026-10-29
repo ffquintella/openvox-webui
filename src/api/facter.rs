@@ -19,6 +19,7 @@ use crate::{
     services::{
         classification::{build_classification_facts, ClassificationService},
         facter::{ExportFormat as ServiceExportFormat, FacterService, GeneratedFacts},
+        plugins::facts::agent_names_of,
     },
     utils::{
         validation::{format_validation_errors, validate_fact_template},
@@ -293,13 +294,16 @@ struct ExportQuery {
     /// Export format (json, yaml, shell)
     #[serde(default)]
     format: ExportFormat,
-    /// Template name
-    template: String,
+    /// Template name; without one only the exportable plugin facts are sent
+    template: Option<String>,
     /// Optional organization override (super_admin only)
     organization_id: Option<Uuid>,
 }
 
 /// Export facts for a node in the specified format
+///
+/// The plugin facts an administrator made exportable are added (M25); a
+/// template fact with the same name wins. Templates only see PuppetDB facts.
 async fn export_facts(
     State(state): State<AppState>,
     auth_user: AuthUser,
@@ -309,50 +313,89 @@ async fn export_facts(
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
     // Get the template
-    let repo = FactTemplateRepository::new(&state.db);
-    let template = repo
-        .get_by_name(org_id, &query.template)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get fact template: {}", e);
-            AppError::internal("Failed to get fact template")
-        })?;
-
-    let template = template
-        .ok_or_else(|| AppError::not_found(format!("Template '{}' not found", query.template)))?;
+    let template = match &query.template {
+        Some(name) => {
+            let repo = FactTemplateRepository::new(&state.db);
+            let template = repo.get_by_name(org_id, name).await.map_err(|e| {
+                tracing::error!("Failed to get fact template: {}", e);
+                AppError::internal("Failed to get fact template")
+            })?;
+            Some(
+                template
+                    .ok_or_else(|| AppError::not_found(format!("Template '{}' not found", name)))?,
+            )
+        }
+        None => None,
+    };
 
     // Get existing facts from PuppetDB if available
-    let existing_facts = if let Some(ref puppetdb) = state.puppetdb {
+    let puppetdb_facts = if let Some(ref puppetdb) = state.puppetdb {
         match puppetdb.get_node_facts(&certname).await {
-            Ok(facts) => build_classification_facts(facts, &certname, None),
+            Ok(facts) => facts,
             Err(e) => {
                 tracing::warn!("Failed to get facts from PuppetDB: {}", e);
-                serde_json::json!({})
+                Vec::new()
             }
         }
     } else {
-        serde_json::json!({})
+        Vec::new()
+    };
+    let agent_names = agent_names_of(puppetdb_facts.iter().map(|f| f.name.as_str()));
+
+    let mut generated = match (template, &query.template) {
+        (Some(template), Some(template_name)) => {
+            let existing_facts = if state.puppetdb.is_some() {
+                build_classification_facts(puppetdb_facts.clone(), &certname, None)
+            } else {
+                serde_json::json!({})
+            };
+
+            // Get all groups for classification
+            let group_repo = GroupRepository::new(&state.db);
+            let all_groups = group_repo.get_all(org_id).await.map_err(|e| {
+                tracing::error!("Failed to get groups for classification: {}", e);
+                AppError::internal("Failed to get groups for classification")
+            })?;
+
+            // Classify the node to get variables from matched groups (with the
+            // plugin facts enabled for rules, as the agent's classification)
+            let classification_service = ClassificationService::new(all_groups.clone());
+            let classification = state
+                .plugin_manager
+                .classify_with_plugin_facts(
+                    &certname,
+                    &org_id.to_string(),
+                    puppetdb_facts,
+                    None,
+                    &all_groups,
+                    false,
+                    |facts_json| classification_service.classify(&certname, facts_json),
+                )
+                .await;
+
+            // Generate facts
+            let service = FacterService::new(vec![template]);
+            service
+                .generate_facts(&classification, &existing_facts, template_name)
+                .map_err(|e| {
+                    tracing::error!("Failed to generate facts: {}", e);
+                    AppError::internal(format!("Failed to generate facts: {}", e))
+                })?
+        }
+        _ => GeneratedFacts {
+            certname: certname.clone(),
+            template: String::new(),
+            facts: Default::default(),
+        },
     };
 
-    // Get all groups for classification
-    let group_repo = GroupRepository::new(&state.db);
-    let all_groups = group_repo.get_all(org_id).await.map_err(|e| {
-        tracing::error!("Failed to get groups for classification: {}", e);
-        AppError::internal("Failed to get groups for classification")
-    })?;
-
-    // Classify the node to get variables from matched groups
-    let classification_service = ClassificationService::new(all_groups);
-    let classification = classification_service.classify(&certname, &existing_facts);
-
-    // Generate facts
-    let service = FacterService::new(vec![template]);
-    let generated = service
-        .generate_facts(&classification, &existing_facts, &query.template)
-        .map_err(|e| {
-            tracing::error!("Failed to generate facts: {}", e);
-            AppError::internal(format!("Failed to generate facts: {}", e))
-        })?;
+    let plugin_facts: Vec<(String, serde_json::Value)> = state
+        .plugin_manager
+        .exportable_facts_for_node(&certname, &agent_names)
+        .await
+        .into_iter()
+        .filter(|(name, _)| !generated.facts.contains_key(name))
+        .collect();
 
     // Convert format
     let service_format = match query.format {
@@ -360,10 +403,56 @@ async fn export_facts(
         ExportFormat::Yaml => ServiceExportFormat::Yaml,
         ExportFormat::Shell => ServiceExportFormat::Shell,
     };
+    if service_format != ServiceExportFormat::Shell {
+        generated.facts.extend(plugin_facts.iter().cloned());
+    }
 
     // Export in requested format
-    FacterService::export_facts(&generated, service_format).map_err(|e| {
+    let mut out = FacterService::export_facts(&generated, service_format).map_err(|e| {
         tracing::error!("Failed to export facts: {}", e);
         AppError::internal(format!("Failed to export facts: {}", e))
-    })
+    })?;
+    if service_format == ServiceExportFormat::Shell {
+        for (name, value) in &plugin_facts {
+            out.push_str(&shell_export_line(name, value));
+        }
+    }
+    Ok(out)
+}
+
+/// `export FACTER_<NAME>='<value>'` with the name reduced to `[A-Z0-9_]` and
+/// the value single-quoted, so a plugin value is never evaluated by the shell.
+fn shell_export_line(name: &str, value: &serde_json::Value) -> String {
+    let var: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let text = match value {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    format!("export FACTER_{}='{}'\n", var, text.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plugin_shell_lines_are_single_quoted() {
+        assert_eq!(
+            shell_export_line("acme_cmdb.owner", &serde_json::json!("a'b $(rm -rf /)")),
+            "export FACTER_ACME_CMDB_OWNER='a'\\''b $(rm -rf /)'\n"
+        );
+        assert_eq!(
+            shell_export_line("acme_cmdb.tier", &serde_json::json!(3)),
+            "export FACTER_ACME_CMDB_TIER='3'\n"
+        );
+    }
 }

@@ -25,6 +25,10 @@ import {
 } from '../components/charts';
 import UpdatesTab from '../components/analytics/UpdatesTab';
 import VariableAssignmentsTab from '../components/analytics/VariableAssignmentsTab';
+import NewReportModal from '../components/analytics/NewReportModal';
+import ExecutionResult from '../components/analytics/ExecutionResult';
+import PluginReportView, { RowsTable } from '../components/analytics/PluginReportView';
+import { reportTypeLabel } from '../components/analytics/pluginReportHelpers';
 import {
   useSavedReports,
   useReportTemplates,
@@ -35,6 +39,7 @@ import {
   useDeleteSavedReport,
   useExecuteReport,
   useGenerateReportByType,
+  useReportTypes,
   useCreateComplianceBaseline,
   useUpdateComplianceBaseline,
   useDeleteComplianceBaseline,
@@ -51,6 +56,7 @@ import type {
   DriftBaseline,
   NodeGroup,
   ReportResult,
+  ReportExecution,
   NodeHealthReport,
   ComplianceReport,
   ChangeTrackingReport,
@@ -249,6 +255,10 @@ export default function Analytics() {
   const [editingDriftBaseline, setEditingDriftBaseline] = useState<DriftBaseline | null>(null);
   const [reportResult, setReportResult] = useState<ReportResult | null>(null);
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
+  const [runningExecution, setRunningExecution] = useState<{
+    reportId: string;
+    execution: ReportExecution;
+  } | null>(null);
 
   // Existing analytics queries
   // Aggregate fleet counts (total, by environment) — computed server-side so
@@ -328,6 +338,7 @@ export default function Analytics() {
   // Mutations
   const createReport = useCreateSavedReport();
   const deleteReport = useDeleteSavedReport();
+  const { data: reportTypes } = useReportTypes();
   const executeReport = useExecuteReport();
   const generateReport = useGenerateReportByType();
   const createComplianceBaseline = useCreateComplianceBaseline();
@@ -362,6 +373,7 @@ export default function Analytics() {
     setGeneratingReport(reportType);
     try {
       const result = await generateReport.mutateAsync({ reportType });
+      setRunningExecution(null);
       setReportResult(result as ReportResult);
     } catch (error) {
       console.error('Failed to generate report:', error);
@@ -373,9 +385,9 @@ export default function Analytics() {
   const handleExecuteReport = async (reportId: string) => {
     try {
       const execution = await executeReport.mutateAsync({ id: reportId });
-      if (execution.output_data) {
-        setReportResult(execution.output_data as ReportResult);
-      }
+      // Plugin reports answer 'running'; ExecutionResult polls until they finish.
+      setReportResult(null);
+      setRunningExecution({ reportId, execution });
     } catch (error) {
       console.error('Failed to execute report:', error);
     }
@@ -586,18 +598,30 @@ export default function Analytics() {
           </div>
 
           {/* Report Result */}
-          {reportResult && (
+          {(reportResult || runningExecution) && (
             <div className="card">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">Report Result</h3>
                 <button
-                  onClick={() => setReportResult(null)}
+                  onClick={() => {
+                    setReportResult(null);
+                    setRunningExecution(null);
+                  }}
+                  aria-label="Close result"
                   className="text-gray-400 hover:text-gray-600"
                 >
                   &times;
                 </button>
               </div>
-              <ReportResultView result={reportResult} />
+              {reportResult && <ReportResultView result={reportResult} />}
+              {runningExecution && (
+                <ExecutionResult
+                  key={runningExecution.execution.id}
+                  reportId={runningExecution.reportId}
+                  initial={runningExecution.execution}
+                  render={(output) => <ReportResultView result={output as ReportResult} />}
+                />
+              )}
             </div>
           )}
 
@@ -659,7 +683,7 @@ export default function Analytics() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
-                            {REPORT_TYPE_LABELS[report.report_type]}
+                            {reportTypeLabel(report.report_type, reportTypes)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
@@ -725,7 +749,7 @@ export default function Analytics() {
                     </div>
                     <div className="mt-3">
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                        {REPORT_TYPE_LABELS[template.report_type]}
+                        {reportTypeLabel(template.report_type, reportTypes)}
                       </span>
                     </div>
                   </div>
@@ -1170,118 +1194,27 @@ function ReportResultView({ result }: { result: ReportResult }) {
     );
   }
 
+  if (result.report_type === 'plugin') {
+    return <PluginReportView result={result} />;
+  }
+
+  if (result.report_type === 'custom' && result.dataset && Array.isArray(result.rows)) {
+    const columns = (result.columns ?? []).map((c) => ({ key: c.name, label: c.label || c.name }));
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-gray-500">
+          Dataset <span className="font-mono">{result.dataset}</span>: showing {result.rows.length}{' '}
+          of {result.total ?? result.rows.length} rows
+        </p>
+        <RowsTable columns={columns} rows={result.rows} />
+      </div>
+    );
+  }
+
   return (
     <pre className="text-sm bg-gray-50 p-4 rounded-lg overflow-auto">
       {JSON.stringify(result, null, 2)}
     </pre>
-  );
-}
-
-// New Report Modal
-function NewReportModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (data: {
-    name: string;
-    description?: string;
-    report_type: ReportType;
-    query_config: Record<string, unknown>;
-    is_public?: boolean;
-  }) => Promise<void>;
-}) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [reportType, setReportType] = useState<ReportType>('node_health');
-  const [isPublic, setIsPublic] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await onCreate({
-        name,
-        description: description || undefined,
-        report_type: reportType,
-        query_config: {},
-        is_public: isPublic,
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">New Saved Report</h3>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="px-6 py-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
-              <select
-                value={reportType}
-                onChange={(e) => setReportType(e.target.value as ReportType)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              >
-                {Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="isPublic"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <label htmlFor="isPublic" className="ml-2 text-sm text-gray-700">
-                Make this report public
-              </label>
-            </div>
-          </div>
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button type="submit" disabled={isSubmitting || !name} className="btn-primary">
-              {isSubmitting ? 'Creating...' : 'Create Report'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 

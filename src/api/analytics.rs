@@ -16,14 +16,19 @@ use crate::db::repository::{
 };
 use crate::middleware::auth::AuthUser;
 use crate::models::{
+    parse_plugin_ref, DatasetInfo, DatasetQueryRequest, DatasetQueryResult, ExportFormatInfo,
+    ReportTypeInfo, Requires,
+};
+use crate::models::{
     ClassificationResult, ComplianceBaseline, CreateComplianceBaselineRequest,
     CreateDriftBaselineRequest, CreateSavedReportRequest, CreateScheduleRequest, DriftBaseline,
     ExecuteReportRequest, OutputFormat, ReportExecution, ReportQueryConfig, ReportResult,
     ReportSchedule, ReportTemplate, ReportType, SavedReport, UpdateComplianceBaselineRequest,
     UpdateDriftBaselineRequest, UpdateSavedReportRequest, UpdateScheduleRequest,
 };
+use crate::services::plugins::reports::{DatasetReader, ReportError};
 use crate::services::{
-    classification::{build_classification_facts, ClassificationService},
+    classification::{build_classification_facts_with_plugins, ClassificationService},
     ReportingService,
 };
 use crate::utils::error::{AppError, AppResult};
@@ -88,6 +93,153 @@ pub fn routes() -> Router<AppState> {
         )
         // Export
         .route("/executions/{id}/export", get(export_execution))
+        // Catalogs of core and plugin report types and export formats, and
+        // plugin datasets for the custom report builder (M25)
+        .route("/report-types", get(list_report_types))
+        .route("/export-formats", get(list_export_formats))
+        .route("/datasets", get(list_datasets))
+        .route("/datasets/query", post(query_dataset))
+}
+
+// ==================== Plugin reports (M25) ====================
+
+/// Which `requires` of plugin report types and datasets the user satisfies.
+async fn plugin_report_visibility(
+    state: &AppState,
+    user: &AuthUser,
+) -> AppResult<std::collections::HashMap<(String, String), bool>> {
+    let mut needed: Vec<Requires> = Vec::new();
+    for h in state.plugin_manager.hooks().plugins() {
+        let reqs = h
+            .report_types
+            .iter()
+            .filter_map(|t| t.requires.clone())
+            .chain(h.datasets.iter().filter_map(|d| d.requires.clone()));
+        for r in reqs {
+            if !needed.contains(&r) {
+                needed.push(r);
+            }
+        }
+    }
+    if needed.is_empty() {
+        return Ok(Default::default());
+    }
+    super::plugins::visibility(state, user, needed).await
+}
+
+fn report_app_error(e: &ReportError) -> AppError {
+    match e {
+        ReportError::NotFound(m) => AppError::not_found(m.clone()),
+        ReportError::Invalid(m) => AppError::bad_request(m.clone()),
+        ReportError::Forbidden(m) => AppError::forbidden(m.clone()),
+        ReportError::Failed(m) => {
+            AppError::service_unavailable(format!("The plugin report failed: {}", m))
+        }
+    }
+}
+
+/// Plugin errors keep their meaning; everything else stays an internal error.
+fn generation_error(e: anyhow::Error) -> AppError {
+    match e.downcast_ref::<ReportError>() {
+        Some(r) => report_app_error(r),
+        None => AppError::Internal(e.to_string()),
+    }
+}
+
+/// A plugin report type or a custom report on a dataset must be visible to
+/// the user, and plugin parameters must fit the declared schema.
+async fn check_report_request(
+    state: &AppState,
+    user: &AuthUser,
+    report_type: &ReportType,
+    config: &ReportQueryConfig,
+) -> AppResult<()> {
+    let vis = plugin_report_visibility(state, user).await?;
+    let allow = super::plugins::check(&vis);
+    match report_type {
+        ReportType::Plugin { plugin_id, type_id } => state
+            .plugin_manager
+            .check_plugin_report(
+                plugin_id,
+                type_id,
+                config
+                    .custom_params
+                    .as_ref()
+                    .unwrap_or(&serde_json::Value::Null),
+                &allow,
+            )
+            .map_err(|e| report_app_error(&e)),
+        ReportType::Custom => {
+            let Some(dataset) = config
+                .custom_params
+                .as_ref()
+                .and_then(|p| p.get("dataset"))
+                .and_then(serde_json::Value::as_str)
+            else {
+                return Ok(());
+            };
+            let req = DatasetQueryRequest {
+                dataset: dataset.to_string(),
+                limit: Some(1),
+                ..Default::default()
+            };
+            state
+                .plugin_manager
+                .query_dataset(DatasetReader::User(&allow), &req)
+                .await
+                .map(|_| ())
+                .map_err(|e| report_app_error(&e))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// GET /analytics/report-types: core types and the visible plugin types.
+async fn list_report_types(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> AppResult<Json<Vec<ReportTypeInfo>>> {
+    let vis = plugin_report_visibility(&state, &auth_user).await?;
+    let allow = super::plugins::check(&vis);
+    Ok(Json(state.plugin_manager.report_type_catalog(&allow)))
+}
+
+/// GET /analytics/export-formats: core formats and plugin formats.
+async fn list_export_formats(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<ExportFormatInfo>>> {
+    Ok(Json(state.plugin_manager.export_format_catalog().await))
+}
+
+/// GET /analytics/datasets: plugin datasets the user may read.
+async fn list_datasets(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> AppResult<Json<Vec<DatasetInfo>>> {
+    let vis = plugin_report_visibility(&state, &auth_user).await?;
+    let allow = super::plugins::check(&vis);
+    Ok(Json(state.plugin_manager.dataset_catalog(&allow).await))
+}
+
+/// POST /analytics/datasets/query
+async fn query_dataset(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Json(req): Json<DatasetQueryRequest>,
+) -> AppResult<Json<DatasetQueryResult>> {
+    let vis = plugin_report_visibility(&state, &auth_user).await?;
+    let allow = super::plugins::check(&vis);
+    state
+        .plugin_manager
+        .query_dataset(DatasetReader::User(&allow), &req)
+        .await
+        .map(Json)
+        .map_err(|e| report_app_error(&e))
+}
+
+fn reporting(state: &AppState) -> ReportingService {
+    ReportingService::new(state.db.clone(), state.puppetdb.clone())
+        .with_plugins(state.plugin_manager.clone())
 }
 
 // ==================== Query Parameters ====================
@@ -151,6 +303,7 @@ async fn list_variable_assignments(
         .await
         .map_err(|e| AppError::internal(format!("Failed to load classification groups: {e}")))?;
     let classification_service = ClassificationService::new(groups);
+    let plugin_facts = state.plugin_manager.usable_facts_snapshot().await;
 
     let machine_filter = normalized_filter(query.machine.as_deref());
     let mut nodes = puppetdb
@@ -167,13 +320,16 @@ async fn list_variable_assignments(
     let classifications: Vec<ClassificationResult> = stream::iter(nodes)
         .map(|node| {
             let classification_service = &classification_service;
+            let plugin_facts = &plugin_facts;
             async move {
                 match puppetdb.get_node_facts(&node.certname).await {
                     Ok(facts) => {
-                        let facts = build_classification_facts(
+                        let facts = build_classification_facts_with_plugins(
                             facts,
                             &node.certname,
                             node.catalog_environment.as_deref(),
+                            plugin_facts.for_node(&node.certname),
+                            chrono::Utc::now(),
                         );
                         Some(classification_service.classify(&node.certname, &facts))
                     }
@@ -277,7 +433,7 @@ async fn list_saved_reports(
     let reports = if let Some(type_str) = query.report_type {
         let report_type = ReportType::from_str(&type_str)
             .ok_or_else(|| AppError::bad_request("Invalid report type"))?;
-        repo.get_by_type(report_type).await?
+        repo.get_by_type(&report_type).await?
     } else {
         repo.get_by_user(auth_user.user_id()).await?
     };
@@ -305,6 +461,7 @@ async fn create_saved_report(
     auth_user: AuthUser,
     Json(req): Json<CreateSavedReportRequest>,
 ) -> AppResult<Json<SavedReport>> {
+    check_report_request(&state, &auth_user, &req.report_type, &req.query_config).await?;
     let repo = SavedReportRepository::new(&state.db);
     let report = repo.create(&req, auth_user.user_id()).await?;
     Ok(Json(report))
@@ -354,7 +511,9 @@ async fn execute_saved_report(
         .await?
         .ok_or_else(|| AppError::not_found("Saved report not found"))?;
 
-    let service = ReportingService::new(state.db.clone(), state.puppetdb.clone());
+    // Plugin report types run as a background job: the execution is returned
+    // as running and completed by the job.
+    let service = reporting(&state).in_background();
     let execution = service
         .execute_report(&report, &req, Some(auth_user.user_id()))
         .await?;
@@ -385,7 +544,7 @@ async fn list_report_templates(
     let templates = if let Some(type_str) = query.report_type {
         let report_type = ReportType::from_str(&type_str)
             .ok_or_else(|| AppError::bad_request("Invalid report type"))?;
-        repo.get_by_type(report_type).await?
+        repo.get_by_type(&report_type).await?
     } else {
         repo.get_all().await?
     };
@@ -495,26 +654,32 @@ pub struct GenerateReportRequest {
 /// Generate a report on-demand (without saving)
 async fn generate_report(
     State(state): State<AppState>,
+    auth_user: AuthUser,
     Json(req): Json<GenerateReportRequest>,
 ) -> AppResult<Json<ReportResult>> {
-    let service = ReportingService::new(state.db.clone(), state.puppetdb.clone());
-    let (result, _) = service
-        .generate_report(req.report_type, &req.config)
-        .await?;
+    check_report_request(&state, &auth_user, &req.report_type, &req.config).await?;
+    let (result, _) = reporting(&state)
+        .generate_on_demand(&req.report_type, &req.config, Some(auth_user.user_id()))
+        .await
+        .map_err(generation_error)?;
     Ok(Json(result))
 }
 
 /// Generate a specific type of report
 async fn generate_report_by_type(
     State(state): State<AppState>,
+    auth_user: AuthUser,
     Path(report_type): Path<String>,
     Json(config): Json<ReportQueryConfig>,
 ) -> AppResult<Json<ReportResult>> {
     let report_type = ReportType::from_str(&report_type)
         .ok_or_else(|| AppError::bad_request("Invalid report type"))?;
 
-    let service = ReportingService::new(state.db.clone(), state.puppetdb.clone());
-    let (result, _) = service.generate_report(report_type, &config).await?;
+    check_report_request(&state, &auth_user, &report_type, &config).await?;
+    let (result, _) = reporting(&state)
+        .generate_on_demand(&report_type, &config, Some(auth_user.user_id()))
+        .await
+        .map_err(generation_error)?;
     Ok(Json(result))
 }
 
@@ -655,10 +820,52 @@ async fn delete_drift_baseline(
 // ==================== Export ====================
 
 /// Export an execution result in the specified format
+///
+/// `format=plugin:<id>:<format>` renders with a plugin export format: the
+/// declared content type, always as an attachment and with `nosniff`.
 async fn export_execution(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Query(query): Query<ExportQuery>,
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    if let Some((plugin_id, format_id)) = query.format.as_deref().and_then(parse_plugin_ref) {
+        let repo = ReportExecutionRepository::new(&state.db);
+        let execution = repo
+            .get_by_id(id)
+            .await?
+            .ok_or_else(|| AppError::not_found("Execution not found"))?;
+        let output_data = execution
+            .output_data
+            .ok_or_else(|| AppError::bad_request("Execution has no output data"))?;
+        let result: ReportResult = serde_json::from_value(output_data)
+            .map_err(|_| AppError::internal("Failed to parse stored report data"))?;
+        let file = state
+            .plugin_manager
+            .render_plugin_export(plugin_id, format_id, &result, &format!("report-{}", id))
+            .await
+            .map_err(|e| report_app_error(&e))?;
+        return Ok((
+            axum::http::StatusCode::OK,
+            [
+                ("Content-Type".to_string(), file.content_type),
+                (
+                    "Content-Disposition".to_string(),
+                    format!("attachment; filename=\"{}\"", file.filename),
+                ),
+                ("X-Content-Type-Options".to_string(), "nosniff".to_string()),
+            ],
+            file.bytes,
+        )
+            .into_response());
+    }
+    Ok(export_core(state, id, query).await?.into_response())
+}
+
+async fn export_core(
+    state: AppState,
+    id: Uuid,
+    query: ExportQuery,
 ) -> AppResult<(axum::http::StatusCode, [(String, String); 2], Vec<u8>)> {
     let repo = ReportExecutionRepository::new(&state.db);
     let execution = repo

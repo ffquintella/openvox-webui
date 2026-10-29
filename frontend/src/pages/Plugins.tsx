@@ -11,6 +11,7 @@ import {
   Info,
   Activity,
   RefreshCw,
+  Database,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -26,6 +27,7 @@ import InstallPluginDialog from '../components/plugins/InstallPluginDialog';
 import TrustedKeysTab from '../components/plugins/TrustedKeysTab';
 import GovernanceTab from '../components/plugins/GovernanceTab';
 import UpdatesTab from '../components/plugins/UpdatesTab';
+import FactsTab from '../components/plugins/FactsTab';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import { ErrorBox, Modal, RiskBadge, StateBadge } from '../components/plugins/pluginUi';
 import {
@@ -36,7 +38,7 @@ import {
 } from '../components/plugins/pluginHelpers';
 import type { PluginSummary } from '../types';
 
-type TabType = 'installed' | 'updates' | 'governance' | 'keys';
+type TabType = 'installed' | 'updates' | 'facts' | 'governance' | 'keys';
 
 function PluginDetailDialog({
   id,
@@ -125,6 +127,7 @@ export default function Plugins() {
       icon: RefreshCw,
       badge: plugins.filter((p) => p.available_version).length || undefined,
     },
+    { id: 'facts' as const, name: 'Facts', icon: Database, badge: undefined },
     { id: 'governance' as const, name: 'Governance', icon: Activity, badge: undefined },
     { id: 'keys' as const, name: 'Trusted keys', icon: KeyRound, badge: undefined },
   ];
@@ -315,6 +318,8 @@ export default function Plugins() {
       )}
 
       {activeTab === 'updates' && <UpdatesTab canAdmin={canAdmin} />}
+
+      {activeTab === 'facts' && <FactsTab canAdmin={canAdmin} />}
 
       {activeTab === 'governance' && <GovernanceTab canAdmin={canAdmin} />}
 

@@ -14,10 +14,12 @@ use sqlx::SqlitePool;
 use tokio::runtime::Handle;
 
 use super::events::EventBus;
+use super::facts::FactError;
 use super::filter::pattern_matches;
 use super::manager::PluginManager;
 use super::manifest::capabilities;
 use super::package;
+use super::reports::ReportError;
 use super::storage::{PluginStorage, StorageError};
 use super::wasm::{HostApi, HostContext, HostError, ModuleSource};
 use crate::config::PluginPolicyConfig;
@@ -98,6 +100,19 @@ impl From<StorageError> for HostError {
             code: code.into(),
             message: e.to_string(),
         }
+    }
+}
+
+fn report_error(e: ReportError) -> HostError {
+    let code = match &e {
+        ReportError::NotFound(_) => "not_found",
+        ReportError::Invalid(_) => "invalid",
+        ReportError::Forbidden(_) => "forbidden",
+        ReportError::Failed(_) => "failed",
+    };
+    HostError {
+        code: code.into(),
+        message: e.to_string(),
     }
 }
 
@@ -243,6 +258,104 @@ impl HostApiImpl {
                     Ok(json!({ "facts": f }))
                 }
             }
+            "facts.put" => {
+                // Push mode (M25): only the plugin's own declared facts.
+                self.require(plugin, "facts:provide").await?;
+                let certname = str_field(&req, "certname")?;
+                let facts = req
+                    .get("facts")
+                    .and_then(Value::as_object)
+                    .ok_or_else(|| invalid("'facts' must be an object"))?;
+                let manager = self
+                    .manager
+                    .upgrade()
+                    .ok_or_else(|| failed("host is shutting down"))?;
+                let stored = manager
+                    .put_plugin_facts(plugin, certname, facts, crate::models::FactMode::Push)
+                    .await
+                    .map_err(|e| match e {
+                        FactError::Invalid(_) => invalid(e.to_string()),
+                        FactError::NotProvider(_) => HostError {
+                            code: "forbidden".into(),
+                            message: e.to_string(),
+                        },
+                        FactError::Failed(_) => failed(e.to_string()),
+                    })?;
+                Ok(json!({ "stored": stored }))
+            }
+            "reports.annotate" => {
+                self.require(plugin, "reports:annotate").await?;
+                let manager = self.manager()?;
+                let stored = manager
+                    .annotate_report(
+                        plugin,
+                        str_field(&req, "report_hash")?,
+                        str_field(&req, "key")?,
+                        req.get("value").unwrap_or(&Value::Null),
+                        req.get("severity").and_then(Value::as_str),
+                    )
+                    .await
+                    .map_err(report_error)?;
+                Ok(json!({ "stored": stored }))
+            }
+            "reports.emit_rows" => {
+                self.require(plugin, "reports:provide").await?;
+                let rows = req
+                    .get("rows")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .ok_or_else(|| invalid("'rows' must be an array"))?;
+                let total = self
+                    .manager()?
+                    .reports_runtime()
+                    .emit_rows(
+                        plugin,
+                        str_field(&req, "job_id")?,
+                        str_field(&req, "section")?,
+                        rows,
+                    )
+                    .map_err(report_error)?;
+                Ok(json!({ "rows": total }))
+            }
+            "datasets.put" => {
+                self.require(plugin, "reports:provide").await?;
+                let rows = req
+                    .get("rows")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let delete: Vec<String> = req
+                    .get("delete")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let stored = self
+                    .manager()?
+                    .put_dataset_rows(
+                        plugin,
+                        str_field(&req, "dataset")?,
+                        &rows,
+                        req.get("replace").and_then(Value::as_bool).unwrap_or(false),
+                        &delete,
+                    )
+                    .await
+                    .map_err(report_error)?;
+                Ok(json!({ "stored": stored }))
+            }
+            "datasets.query" => {
+                let q: crate::models::DatasetQueryRequest = serde_json::from_value(req.clone())
+                    .map_err(|e| invalid(format!("invalid dataset query: {}", e)))?;
+                let r = self
+                    .manager()?
+                    .query_dataset(super::reports::DatasetReader::Plugin(plugin), &q)
+                    .await
+                    .map_err(report_error)?;
+                Ok(serde_json::to_value(r).unwrap_or(Value::Null))
+            }
             "reports.query" => {
                 self.require(plugin, "reports:read").await?;
                 let certname = str_field(&req, "certname")?;
@@ -341,6 +454,12 @@ impl HostApiImpl {
                 message: format!("unknown host operation '{}'", op),
             }),
         }
+    }
+
+    fn manager(&self) -> Result<Arc<PluginManager>, HostError> {
+        self.manager
+            .upgrade()
+            .ok_or_else(|| failed("host is shutting down"))
     }
 
     fn puppetdb(&self) -> Result<&Arc<PuppetDbClient>, HostError> {
@@ -877,6 +996,127 @@ mod tests {
         assert_eq!(e.storage.kv_get("keep", "k").await.unwrap(), None);
         assert!(!db_file.exists());
         assert_eq!(e.storage.schema_version("keep").await.unwrap(), 0);
+    }
+
+    fn facts_package(id: &str, caps: &str, req: &str) -> Vec<u8> {
+        let y = format!(
+            "{}contributes:\n  facts:\n    namespace: {}_ns\n    items:\n      - {{ name: owner, type: string }}\n",
+            manifest(id, caps, false),
+            id
+        );
+        let wasm = guest("facts.put", req);
+        build_signed_package(
+            &[("plugin.yaml", y.as_bytes()), ("plugin.wasm", &wasm)],
+            id,
+            "1.0.0",
+            2,
+            SEED,
+        )
+    }
+
+    #[tokio::test]
+    async fn facts_put_needs_the_capability_and_stays_in_the_own_namespace() {
+        let e = env(Default::default()).await;
+        // Approved: the value is stored under the plugin namespace.
+        let ok = facts_package(
+            "fpush",
+            "  - facts:provide\n",
+            r#"{"certname":"n1","facts":{"owner":"ops"}}"#,
+        );
+        e.manager.install(&ok, "admin", None).await.unwrap();
+        e.manager
+            .approve_capabilities("fpush", &approve(&["facts:provide"]), "admin")
+            .await
+            .unwrap();
+        e.manager.enable("fpush").await.unwrap();
+        assert_eq!(run(&e, "fpush").await["ok"]["stored"], 1);
+        let facts = e.manager.node_plugin_facts("n1", false).await;
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].name, "fpush_ns.owner");
+
+        // Another namespace is refused.
+        let other = facts_package(
+            "fother",
+            "  - facts:provide\n",
+            r#"{"certname":"n1","facts":{"fpush_ns.owner":"x"}}"#,
+        );
+        e.manager.install(&other, "admin", None).await.unwrap();
+        e.manager
+            .approve_capabilities("fother", &approve(&["facts:provide"]), "admin")
+            .await
+            .unwrap();
+        e.manager.enable("fother").await.unwrap();
+        assert_eq!(run(&e, "fother").await["error"]["code"], "invalid");
+
+        // Declared but not approved: forbidden.
+        let unapproved = facts_package(
+            "fnone",
+            "  - facts:provide: { optional: true }\n",
+            r#"{"certname":"n1","facts":{"owner":"x"}}"#,
+        );
+        e.manager.install(&unapproved, "admin", None).await.unwrap();
+        e.manager.enable("fnone").await.unwrap();
+        assert_eq!(run(&e, "fnone").await["error"]["code"], "forbidden");
+        assert_eq!(e.manager.node_plugin_facts("n1", false).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn reports_annotate_needs_the_capability_and_a_declared_key() {
+        let e = env(Default::default()).await;
+        let hash = "0123456789abcdef0123456789abcdef01234567";
+        let pkg = |id: &str, caps: &str, key: &str| {
+            let y = format!(
+                "{}contributes:\n  report_annotations:\n    - {{ key: risk, type: integer, label: Risk }}\n",
+                manifest(id, caps, false)
+            );
+            let req =
+                format!(r#"{{"report_hash":"{hash}","key":"{key}","value":3,"severity":"high"}}"#);
+            let wasm = guest("reports.annotate", &req);
+            build_signed_package(
+                &[("plugin.yaml", y.as_bytes()), ("plugin.wasm", &wasm)],
+                id,
+                "1.0.0",
+                2,
+                SEED,
+            )
+        };
+        for (id, caps, key, approve_it, expect) in [
+            ("annok", "  - reports:annotate\n", "risk", true, None),
+            (
+                "annkey",
+                "  - reports:annotate\n",
+                "other",
+                true,
+                Some("invalid"),
+            ),
+            (
+                "annno",
+                "  - reports:annotate: { optional: true }\n",
+                "risk",
+                false,
+                Some("forbidden"),
+            ),
+        ] {
+            e.manager
+                .install(&pkg(id, caps, key), "admin", None)
+                .await
+                .unwrap();
+            if approve_it {
+                e.manager
+                    .approve_capabilities(id, &approve(&["reports:annotate"]), "admin")
+                    .await
+                    .unwrap();
+            }
+            e.manager.enable(id).await.unwrap();
+            let out = run(&e, id).await;
+            match expect {
+                None => assert_eq!(out["ok"]["stored"], true, "{out}"),
+                Some(code) => assert_eq!(out["error"]["code"], code, "{out}"),
+            }
+        }
+        let list = e.manager.report_annotations(hash).await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].plugin_id, "annok");
     }
 
     #[tokio::test]

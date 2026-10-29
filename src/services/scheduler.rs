@@ -13,17 +13,38 @@ use tracing::{error, info, warn};
 
 use crate::db::repository::{ReportScheduleRepository, SavedReportRepository};
 use crate::models::{ExecuteReportRequest, ReportSchedule};
+use crate::services::plugins::PluginManager;
 use crate::services::{PuppetDbClient, ReportingService};
 
 /// Report scheduler that executes due scheduled reports
 pub struct ReportScheduler {
     pool: SqlitePool,
     puppetdb: Option<Arc<PuppetDbClient>>,
+    plugins: Option<Arc<PluginManager>>,
 }
 
 impl ReportScheduler {
     pub fn new(pool: SqlitePool, puppetdb: Option<Arc<PuppetDbClient>>) -> Self {
-        Self { pool, puppetdb }
+        Self {
+            pool,
+            puppetdb,
+            plugins: None,
+        }
+    }
+
+    /// Lets scheduled runs generate plugin report types and read plugin
+    /// datasets (M25); they wait for the plugin job to finish.
+    pub fn with_plugins(mut self, plugins: Arc<PluginManager>) -> Self {
+        self.plugins = Some(plugins);
+        self
+    }
+
+    fn reporting(&self) -> ReportingService {
+        let svc = ReportingService::new(self.pool.clone(), self.puppetdb.clone());
+        match &self.plugins {
+            Some(p) => svc.with_plugins(p.clone()),
+            None => svc,
+        }
     }
 
     /// Run all due scheduled reports
@@ -33,7 +54,7 @@ impl ReportScheduler {
     pub async fn run_due_schedules(&self) -> Result<Vec<ScheduleExecutionResult>> {
         let schedule_repo = ReportScheduleRepository::new(&self.pool);
         let report_repo = SavedReportRepository::new(&self.pool);
-        let reporting_service = ReportingService::new(self.pool.clone(), self.puppetdb.clone());
+        let reporting_service = self.reporting();
 
         let schedules = schedule_repo.get_due().await?;
         let mut results = Vec::new();
@@ -146,7 +167,7 @@ impl ReportScheduler {
     pub async fn run_schedule(&self, schedule_id: uuid::Uuid) -> Result<ScheduleExecutionResult> {
         let schedule_repo = ReportScheduleRepository::new(&self.pool);
         let report_repo = SavedReportRepository::new(&self.pool);
-        let reporting_service = ReportingService::new(self.pool.clone(), self.puppetdb.clone());
+        let reporting_service = self.reporting();
 
         let schedule = schedule_repo
             .get_by_id(schedule_id)

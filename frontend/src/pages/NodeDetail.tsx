@@ -33,6 +33,7 @@ import {
 import { api } from '../services/api';
 import { useNodeVulnerabilities } from '../hooks/useCve';
 import { usePluginSlot } from '../hooks/usePlugins';
+import { pluginIdFromSource } from '../components/plugins/factHelpers';
 import PluginSlot, { PluginContributionView } from '../components/plugins/PluginSlot';
 import { getDeleteNodeErrorMessage } from './nodeDetailErrors';
 import { usePermissionsStore } from '../stores/permissionsStore';
@@ -136,15 +137,21 @@ interface PuppetDBFact {
   name: string;
   value: unknown;
   environment?: string;
+  /** "plugin:<id>" on plugin facts; absent on PuppetDB facts. */
+  source?: string;
+  stale?: boolean;
 }
 
 // Facts Browser Component
 function FactsBrowser({
   facts,
   groupFactNames,
+  pluginFacts,
 }: {
   facts: Record<string, unknown>;
   groupFactNames?: Set<string>;
+  /** Fact name to plugin id and staleness, for facts provided by plugins. */
+  pluginFacts?: Map<string, { pluginId: string; stale: boolean }>;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['']));
@@ -341,6 +348,26 @@ function FactsBrowser({
                           <FolderTree className="w-3 h-3" />
                           Group fact
                         </span>
+                      )}
+
+                      {/* Plugin fact badges */}
+                      {fact.depth === 0 && pluginFacts?.get(fact.path) && (
+                        <>
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-blue-100 text-blue-700"
+                            title="This fact is provided by a plugin"
+                          >
+                            plugin: {pluginFacts.get(fact.path)?.pluginId}
+                          </span>
+                          {pluginFacts.get(fact.path)?.stale && (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800"
+                              title="The plugin has not refreshed this value within its maximum age"
+                            >
+                              stale
+                            </span>
+                          )}
+                        </>
                       )}
 
                       {/* Value */}
@@ -2135,6 +2162,18 @@ export default function NodeDetail() {
     return facts as Record<string, unknown>;
   }, [facts]);
 
+  // Facts provided by plugins carry `source: "plugin:<id>"`; PuppetDB facts have none.
+  const pluginFacts = useMemo(() => {
+    const result = new Map<string, { pluginId: string; stale: boolean }>();
+    if (Array.isArray(facts)) {
+      for (const fact of facts as PuppetDBFact[]) {
+        const pluginId = pluginIdFromSource(fact?.source);
+        if (pluginId) result.set(fact.name, { pluginId, stale: fact.stale === true });
+      }
+    }
+    return result;
+  }, [facts]);
+
   const isLoading = nodeLoading || factsLoading;
 
   if (isLoading) {
@@ -2573,7 +2612,11 @@ export default function NodeDetail() {
         )}
 
         {activeTab === 'facts' && (
-          <FactsBrowser facts={normalizedFacts} groupFactNames={groupFactNames} />
+          <FactsBrowser
+            facts={normalizedFacts}
+            groupFactNames={groupFactNames}
+            pluginFacts={pluginFacts}
+          />
         )}
 
         {activeTab === 'inventory' &&

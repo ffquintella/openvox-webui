@@ -19,7 +19,9 @@ pub mod migrations;
 pub mod node_removal_repository;
 pub mod organization_repository;
 pub mod plugin_events_repository;
+pub mod plugin_facts_repository;
 pub mod plugin_governance_repository;
+pub mod plugin_reports_repository;
 pub mod plugin_repository;
 pub mod report_summary_repository;
 pub mod repository;
@@ -41,7 +43,9 @@ pub use inventory_repository::InventoryRepository;
 pub use node_removal_repository::NodeRemovalRepository;
 pub use organization_repository::OrganizationRepository;
 pub use plugin_events_repository::PluginEventsRepository;
+pub use plugin_facts_repository::PluginFactsRepository;
 pub use plugin_governance_repository::PluginGovernanceRepository;
+pub use plugin_reports_repository::PluginReportsRepository;
 pub use plugin_repository::PluginRepository;
 pub use report_summary_repository::{
     ActivityHeatmapCell, ReportDailySummary, ReportHourlySummary, ReportSummaryRepository,

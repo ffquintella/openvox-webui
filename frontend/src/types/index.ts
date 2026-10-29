@@ -575,6 +575,10 @@ export interface Fact {
   name: string;
   value: unknown;
   environment?: string | null;
+  /** "plugin:<id>" for plugin facts; absent for PuppetDB facts. */
+  source?: string;
+  computed_at?: string;
+  stale?: boolean;
 }
 
 // Classification types
@@ -1143,7 +1147,8 @@ export interface SavedReport {
   id: string;
   name: string;
   description?: string;
-  report_type: ReportType;
+  /** Core type id or a plugin type id (`plugin:<plugin-id>:<type-id>`). */
+  report_type: ReportType | string;
   query_config: ReportQueryConfig;
   created_by: string;
   is_public: boolean;
@@ -1154,7 +1159,7 @@ export interface SavedReport {
 export interface CreateSavedReportRequest {
   name: string;
   description?: string;
-  report_type: ReportType;
+  report_type: ReportType | string;
   query_config: ReportQueryConfig;
   is_public?: boolean;
 }
@@ -1222,7 +1227,7 @@ export interface ReportTemplate {
   id: string;
   name: string;
   description?: string;
-  report_type: ReportType;
+  report_type: ReportType | string;
   query_config: ReportQueryConfig;
   is_system: boolean;
   created_at: string;
@@ -1424,17 +1429,172 @@ export interface DriftReport {
   drifted_nodes: DriftedNode[];
 }
 
+// Custom report; with a plugin dataset as its data source it carries the rows.
+export interface CustomReportResult {
+  report_type: 'custom';
+  data?: unknown;
+  dataset?: string;
+  columns?: DatasetColumn[];
+  rows?: Record<string, unknown>[];
+  total?: number;
+}
+
 export type ReportResult =
   | ({ report_type: 'node_health' } & NodeHealthReport)
   | ({ report_type: 'compliance' } & ComplianceReport)
   | ({ report_type: 'change_tracking' } & ChangeTrackingReport)
   | ({ report_type: 'drift_detection' } & DriftReport)
-  | { report_type: 'custom'; data: unknown };
+  | CustomReportResult
+  | PluginReportResult;
 
 export interface GenerateReportRequest {
-  report_type: ReportType;
+  report_type: ReportType | string;
   config?: ReportQueryConfig;
   output_format?: OutputFormat;
+}
+
+// Plugin report types, export formats and datasets (M25)
+
+export interface JsonSchemaProperty {
+  type?: string;
+  title?: string;
+  description?: string;
+  enum?: unknown[];
+  format?: string;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+}
+
+export interface JsonSchema {
+  type?: string;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+}
+
+export interface ReportTypeInfo {
+  id: string;
+  label: string;
+  description: string | null;
+  /** 'core' or 'plugin:<plugin-id>' */
+  source: string;
+  params_schema: JsonSchema | null;
+  schedulable: boolean;
+}
+
+export interface PluginReportKpiItem {
+  label: string;
+  value: number | string;
+  unit?: string | null;
+}
+
+export interface PluginReportColumn {
+  key: string;
+  label: string;
+  type?: string | null;
+}
+
+export interface PluginReportSeries {
+  name: string;
+  points: { x: string | number; y: number }[];
+}
+
+export type PluginReportSection =
+  | { kind: 'kpi'; id: string; title: string | null; items: PluginReportKpiItem[] }
+  | {
+      kind: 'table';
+      id: string;
+      title: string | null;
+      columns: PluginReportColumn[];
+      rows: Record<string, unknown>[];
+    }
+  | {
+      kind: 'chart';
+      id: string;
+      title: string | null;
+      chart: 'bar' | 'line' | 'pie';
+      series: PluginReportSeries[];
+    }
+  | { kind: 'text'; id: string; title: string | null; text: string };
+
+export interface PluginReportResult {
+  report_type: 'plugin';
+  /** plugin:<plugin-id>:<type-id> */
+  type_id: string;
+  plugin_id: string;
+  title: string | null;
+  generated_at: string;
+  params: Record<string, unknown>;
+  row_count: number;
+  truncated: boolean;
+  sections: PluginReportSection[];
+}
+
+export interface ExportFormatInfo {
+  id: string;
+  label: string;
+  content_type: string;
+  extension: string;
+  /** 'core' or 'plugin:<plugin-id>' */
+  source: string;
+}
+
+export interface DatasetColumn {
+  name: string;
+  type: string;
+  label: string | null;
+}
+
+export interface DatasetInfo {
+  /** plugin:<plugin-id>:<dataset-id> */
+  id: string;
+  plugin_id: string;
+  dataset_id: string;
+  label: string;
+  description: string | null;
+  columns: DatasetColumn[];
+  rows: number;
+  updated_at: string | null;
+}
+
+export interface DatasetQueryRequest {
+  dataset: string;
+  filter?: Record<string, string | number | boolean>;
+  limit?: number;
+  offset?: number;
+}
+
+export interface DatasetQueryResponse {
+  dataset: string;
+  columns: DatasetColumn[];
+  rows: Record<string, unknown>[];
+  total: number;
+}
+
+// Plugin annotations on Puppet run reports (M25)
+
+export type AnnotationShowIn = 'list_column' | 'detail_panel';
+export type AnnotationSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface ReportAnnotationColumn {
+  plugin_id: string;
+  key: string;
+  label: string;
+  type: string;
+  show_in: AnnotationShowIn[];
+  sortable: boolean;
+  filterable: boolean;
+}
+
+export interface ReportAnnotation {
+  plugin_id: string;
+  key: string;
+  label: string;
+  type: string;
+  value: unknown;
+  severity: AnnotationSeverity | null;
+  created_at: string;
+  show_in: string[];
 }
 
 // ============================================================================
@@ -2570,4 +2730,97 @@ export interface PluginRevokeVersionResult {
 export interface PluginUpdatePolicyRequest {
   auto_update: PluginAutoUpdatePolicy;
   update_window: string | null;
+}
+
+// ============================================================================
+// Plugin facts (M25)
+// ============================================================================
+
+export type PluginFactType = 'string' | 'integer' | 'float' | 'bool' | 'list' | 'object';
+export type PluginFactSensitivity = 'none' | 'pii';
+export type PluginFactExportCapability =
+  'approved' | 'not_approved' | 'not_declared' | 'denied_by_policy';
+
+export interface PluginFactInfo {
+  /** Full name, for example "acme_cmdb.owner". */
+  name: string;
+  local_name: string;
+  type: PluginFactType;
+  description: string | null;
+  enum: unknown[] | null;
+  ttl_s: number;
+  max_stale_s: number;
+  sensitivity: PluginFactSensitivity;
+  /** The manifest offers usable_in_rules (an administrator may enable it). */
+  offers_rules: boolean;
+  /** The manifest offers exportable (an administrator may enable it). */
+  offers_export: boolean;
+  usable_in_rules: boolean;
+  exportable: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  requires: { resource: string; action: string } | null;
+  /** Nodes with a stored value. */
+  nodes: number;
+  /** Of those, nodes whose value is older than max_stale_s. */
+  stale_nodes: number;
+  /** Collides with a fact reported by agents: PuppetDB wins, the plugin value is hidden. */
+  conflict: boolean;
+}
+
+export interface PluginFactProviderStatus {
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error: string | null;
+  failures: number;
+  rejected: number;
+}
+
+export interface PluginFactCatalog {
+  plugin_id: string;
+  plugin_name: string;
+  state: PluginState;
+  active_version: string | null;
+  namespace: string;
+  mode: 'push' | 'pull';
+  handler: string | null;
+  ttl_s: number;
+  max_stale_s: number;
+  export_capability: PluginFactExportCapability;
+  facts: PluginFactInfo[];
+  provider: PluginFactProviderStatus;
+  /** False when conflicts could not be checked (PuppetDB unavailable). */
+  puppetdb_checked: boolean;
+}
+
+export interface PluginFactSettingsRequest {
+  usable_in_rules?: boolean;
+  exportable?: boolean;
+  /** Full fact name; required when enabling exportable. */
+  confirm?: string;
+}
+
+export interface PluginFactPreviewRow {
+  certname: string;
+  value: unknown;
+  computed_at: string;
+  stale: boolean;
+  bytes: number;
+}
+
+export interface PluginFactPreview {
+  plugin_id: string;
+  name: string;
+  sensitivity: PluginFactSensitivity;
+  exportable: boolean;
+  total: number;
+  limit: number;
+  rows: PluginFactPreviewRow[];
+}
+
+/** One entry of GET /facts/paths; `source` is set on plugin entries only. */
+export interface FactPathEntry {
+  path: string[];
+  type: string;
+  source?: string;
 }

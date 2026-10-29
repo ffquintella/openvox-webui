@@ -1,7 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Database } from 'lucide-react';
 import { api } from '../services/api';
+import { usePluginFactSources } from '../hooks/usePlugins';
+import { namespaceSources, ruleDependsOnPlugin } from '../components/plugins/factHelpers';
+
+function PluginBadge({ pluginId }: { pluginId: string }) {
+  return (
+    <span
+      className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700"
+      title={`Provided by the plugin ${pluginId}`}
+    >
+      plugin: {pluginId}
+    </span>
+  );
+}
 
 export default function Facts() {
   const [search, setSearch] = useState('');
@@ -22,6 +35,12 @@ export default function Facts() {
     queryFn: () => api.getFacts({ name: selectedFact! }),
     enabled: !!selectedFact,
   });
+
+  // Plugin facts live under the namespace of their plugin. The map is empty when the
+  // sources cannot be read (no permission, PuppetDB or plugins unavailable).
+  const { data: pluginSources } = usePluginFactSources();
+  const namespaces = useMemo(() => namespaceSources(pluginSources), [pluginSources]);
+  const pluginOf = (name: string) => ruleDependsOnPlugin(name, namespaces);
 
   const filteredNames = factNames.filter((name: string) =>
     name.toLowerCase().includes(search.toLowerCase())
@@ -91,6 +110,7 @@ export default function Facts() {
                     }`}
                   >
                     {name}
+                    {pluginOf(name) && <PluginBadge pluginId={pluginOf(name) as string} />}
                   </button>
                 </li>
               ))}
@@ -108,6 +128,9 @@ export default function Facts() {
               <h2 className="text-lg font-semibold mb-4 flex items-center">
                 <Database className="w-5 h-5 mr-2 text-primary-600" />
                 {selectedFact}
+                {pluginOf(selectedFact) && (
+                  <PluginBadge pluginId={pluginOf(selectedFact) as string} />
+                )}
               </h2>
               {valuesLoading ? (
                 <div className="flex-1 flex items-center justify-center">

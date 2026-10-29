@@ -121,8 +121,17 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Plugin runtime, so plugin report types and datasets can run (M25)
+    let plugins = openvox_webui::services::plugins::bootstrap::build_plugin_manager(
+        &config,
+        pool.clone(),
+        puppetdb.clone(),
+    )
+    .await;
+
     // Create scheduler
-    let scheduler = openvox_webui::services::ReportScheduler::new(pool.clone(), puppetdb);
+    let scheduler =
+        openvox_webui::services::ReportScheduler::new(pool.clone(), puppetdb).with_plugins(plugins);
 
     if dry_run {
         info!("Dry run mode - showing what would be executed");

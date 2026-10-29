@@ -95,11 +95,125 @@ pub struct PluginsConfig {
     /// Batch and scheduled updates (M24)
     #[serde(default)]
     pub updates: PluginUpdatesConfig,
+    /// Plugin facts: pull resolution, stale sweep and export limits (M25)
+    #[serde(default)]
+    pub facts: PluginFactsConfig,
+    /// Plugin report types, export formats, annotations and datasets (M25)
+    #[serde(default)]
+    pub reports: PluginReportsConfig,
     /// SHA-256 (hex) of `.ovxp` packages that must never be installed or
     /// loaded (local revocation). A stored version with a listed hash is
     /// taken out of play at the next load or reload.
     #[serde(default)]
     pub blocked_hashes: Vec<String>,
+}
+
+/// Plugin reports (M25): limits of report jobs, exports and datasets, the
+/// retention of plugin report results and the `report.received` watcher.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginReportsConfig {
+    /// Most table rows one plugin report may produce (returned and emitted)
+    #[serde(default = "default_report_max_rows")]
+    pub max_rows: u64,
+    /// Largest stored result of one plugin report (megabytes)
+    #[serde(default = "default_report_max_result_mb")]
+    pub max_result_mb: u64,
+    /// Largest file a plugin export format may render (megabytes)
+    #[serde(default = "default_report_max_export_mb")]
+    pub max_export_mb: u64,
+    /// Most rows one plugin dataset may hold
+    #[serde(default = "default_report_max_rows")]
+    pub max_dataset_rows: u64,
+    /// Days executions of plugin report types are kept (0 keeps them forever)
+    #[serde(default = "default_report_retention_days")]
+    pub retention_days: u32,
+    /// How often PuppetDB is polled for new reports to publish
+    /// `report.received` while a plugin subscribes to it (seconds, 0 = off)
+    #[serde(default = "default_report_watch_secs")]
+    pub watch_secs: u64,
+}
+
+fn default_report_max_rows() -> u64 {
+    100_000
+}
+fn default_report_max_result_mb() -> u64 {
+    16
+}
+fn default_report_max_export_mb() -> u64 {
+    10
+}
+fn default_report_retention_days() -> u32 {
+    90
+}
+fn default_report_watch_secs() -> u64 {
+    60
+}
+
+impl Default for PluginReportsConfig {
+    fn default() -> Self {
+        Self {
+            max_rows: default_report_max_rows(),
+            max_result_mb: default_report_max_result_mb(),
+            max_export_mb: default_report_max_export_mb(),
+            max_dataset_rows: default_report_max_rows(),
+            retention_days: default_report_retention_days(),
+            watch_secs: default_report_watch_secs(),
+        }
+    }
+}
+
+/// Plugin facts (M25). Value size (16 KB) and facts per node and plugin
+/// (200) are fixed by the platform and are not configurable.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginFactsConfig {
+    /// Deadline of a pull-mode `resolve` call (milliseconds, 100 to 10000).
+    /// A slower or failing provider makes its facts missing or stale; it
+    /// never fails a node, fact or classification request.
+    #[serde(default = "default_fact_pull_timeout_ms")]
+    pub pull_timeout_ms: u64,
+    /// Concurrent `resolve` calls per plugin (bulkhead); extra requests use
+    /// the cached values
+    #[serde(default = "default_fact_pull_concurrency")]
+    pub pull_concurrency: u32,
+    /// After a failed `resolve` for a node, use the cached values for this
+    /// long before calling the plugin again (seconds)
+    #[serde(default = "default_fact_pull_backoff_secs")]
+    pub pull_failure_backoff_secs: u64,
+    /// How often values older than `max_stale_s` are looked for and
+    /// `plugin.fact.stale` is published (seconds, minimum 30)
+    #[serde(default = "default_fact_sweep_secs")]
+    pub sweep_secs: u64,
+    /// Largest total size of the plugin facts added to one export (bytes)
+    #[serde(default = "default_fact_max_export_bytes")]
+    pub max_export_bytes: usize,
+}
+
+fn default_fact_pull_timeout_ms() -> u64 {
+    2000
+}
+fn default_fact_pull_concurrency() -> u32 {
+    4
+}
+fn default_fact_pull_backoff_secs() -> u64 {
+    30
+}
+fn default_fact_sweep_secs() -> u64 {
+    300
+}
+fn default_fact_max_export_bytes() -> usize {
+    64 * 1024
+}
+
+impl Default for PluginFactsConfig {
+    fn default() -> Self {
+        Self {
+            pull_timeout_ms: default_fact_pull_timeout_ms(),
+            pull_concurrency: default_fact_pull_concurrency(),
+            pull_failure_backoff_secs: default_fact_pull_backoff_secs(),
+            sweep_secs: default_fact_sweep_secs(),
+            max_export_bytes: default_fact_max_export_bytes(),
+        }
+    }
 }
 
 /// Scheduled plugin updates. Each plugin opts in with its own policy and
@@ -381,6 +495,8 @@ impl Default for PluginsConfig {
             wasm: PluginWasmConfig::default(),
             governance: PluginGovernanceConfig::default(),
             updates: PluginUpdatesConfig::default(),
+            facts: PluginFactsConfig::default(),
+            reports: PluginReportsConfig::default(),
             blocked_hashes: Vec::new(),
         }
     }
@@ -1613,6 +1729,12 @@ pub struct ClassificationConfig {
     /// Disabled by default for security.
     #[serde(default)]
     pub disable_authentication: bool,
+    /// When a plugin providing facts used in rules is unavailable (resolve
+    /// failure or data older than `max_stale_s`), keep the node's last
+    /// classification computed with plugin facts instead of reclassifying it
+    /// without them (M25).
+    #[serde(default)]
+    pub freeze_on_provider_failure: bool,
 }
 
 /// Inventory/version intelligence configuration

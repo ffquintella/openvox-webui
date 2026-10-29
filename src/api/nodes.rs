@@ -16,11 +16,12 @@ use crate::{
     middleware::{AuthUser, OptionalClientCert},
     models::{
         default_organization_uuid, Action, ClassificationResult, Fact, InventoryPayload,
-        InventorySnapshotSummary, Node, NodeInventory, NodePendingUpdateJob, Report,
+        InventorySnapshotSummary, MergedFact, Node, NodeInventory, NodePendingUpdateJob, Report,
         Resource as RbacResource, SubmitUpdateJobResultRequest, UpdateJob,
     },
     services::{
-        classification::{build_classification_facts, ClassificationService},
+        classification::ClassificationService,
+        plugins::facts::{agent_names_of, collides},
         puppetdb::{NodeStats, QueryBuilder, QueryParams, Resource},
         update_audit,
     },
@@ -29,6 +30,15 @@ use crate::{
 };
 
 const POST_INGEST_CATALOG_REFRESH_DEBOUNCE_SECS: i64 = 120;
+
+/// `classification.freeze_on_provider_failure` (M25).
+fn freeze_on_provider_failure(state: &AppState) -> bool {
+    state
+        .config
+        .classification
+        .as_ref()
+        .is_some_and(|c| c.freeze_on_provider_failure)
+}
 
 /// Create routes for node endpoints (protected, requires JWT auth)
 pub fn routes() -> Router<AppState> {
@@ -214,11 +224,16 @@ pub struct NodeFactsQuery {
 ///
 /// Query parameters:
 /// - `name`: Filter by fact name
+///
+/// The facts of enabled plugin providers the user may see are appended with
+/// `source`, `computed_at` and `stale` (M25); a pull provider that fails or is
+/// slow only leaves its facts out or stale. An agent fact always wins.
 async fn get_node_facts(
     State(state): State<AppState>,
+    user: AuthUser,
     Path(certname): Path<String>,
     Query(query): Query<NodeFactsQuery>,
-) -> AppResult<Json<Vec<Fact>>> {
+) -> AppResult<Json<Vec<MergedFact>>> {
     let puppetdb = state
         .puppetdb
         .as_ref()
@@ -250,7 +265,34 @@ async fn get_node_facts(
             .map_err(|e| AppError::Internal(format!("Failed to fetch facts: {}", e)))?
     };
 
-    Ok(Json(facts))
+    let found = !facts.is_empty();
+    let agent = agent_names_of(facts.iter().map(|f| f.name.as_str()));
+    let mut merged: Vec<MergedFact> = facts.into_iter().map(MergedFact::from).collect();
+    let wants_plugins = match query.name.as_deref() {
+        Some(name) => {
+            !found
+                && state
+                    .plugin_manager
+                    .declared_plugin_facts()
+                    .iter()
+                    .any(|(_, n, _)| n == name)
+        }
+        None => true,
+    };
+    if wants_plugins {
+        let plugin = state
+            .plugin_manager
+            .node_plugin_facts(&certname, true)
+            .await
+            .into_iter()
+            .filter(|f| query.name.as_deref().is_none_or(|n| n == f.name))
+            .filter(|f| !collides(&f.name, &agent))
+            .collect();
+        let plugin = super::facts::filter_visible(&state, &user, plugin).await?;
+        merged.extend(plugin.iter().map(|f| f.to_merged()));
+    }
+
+    Ok(Json(merged))
 }
 
 /// Query parameters for node reports
@@ -510,11 +552,7 @@ async fn get_node_classification(
         .get_node(&certname)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
-    let facts_json = build_classification_facts(
-        facts,
-        &certname,
-        node.and_then(|n| n.catalog_environment).as_deref(),
-    );
+    let catalog_environment = node.and_then(|n| n.catalog_environment);
 
     // Get organization ID from authenticated user, or allow override for super_admin
     let org_id = query.organization_id.unwrap_or(auth_user.organization_id);
@@ -526,11 +564,52 @@ async fn get_node_classification(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
 
-    // Classify the node
-    let classification_service = ClassificationService::new(all_groups);
-    let classification = classification_service.classify(&certname, &facts_json);
+    // Classify the node (with the plugin facts enabled for rules, if any)
+    let classification_service = ClassificationService::new(all_groups.clone());
+    let classification = state
+        .plugin_manager
+        .classify_with_plugin_facts(
+            &certname,
+            &org_id.to_string(),
+            facts,
+            catalog_environment.as_deref(),
+            &all_groups,
+            freeze_on_provider_failure(&state),
+            |facts_json| classification_service.classify(&certname, facts_json),
+        )
+        .await;
 
     Ok(Json(classification))
+}
+
+/// Cross-organization classification served to agents (`/classify` and
+/// `/environment`), with the plugin facts enabled for rules (scope `all`).
+async fn classify_for_agent(
+    state: &AppState,
+    certname: &str,
+    facts: Vec<Fact>,
+    catalog_environment: Option<&str>,
+    all_groups: Vec<crate::models::NodeGroup>,
+) -> ClassificationResult {
+    let classification_service = ClassificationService::new(all_groups.clone());
+    state
+        .plugin_manager
+        .classify_with_plugin_facts(
+            certname,
+            "all",
+            facts,
+            catalog_environment,
+            &all_groups,
+            freeze_on_provider_failure(state),
+            |facts_json| {
+                classification_service.classify_across_organizations(
+                    certname,
+                    facts_json,
+                    default_organization_uuid(),
+                )
+            },
+        )
+        .await
 }
 
 /// Public classification endpoint for Puppet agents
@@ -633,11 +712,7 @@ async fn get_node_classification_public(
         .get_node(&certname)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
-    let facts_json = build_classification_facts(
-        facts,
-        &certname,
-        node.and_then(|n| n.catalog_environment).as_deref(),
-    );
+    let catalog_environment = node.and_then(|n| n.catalog_environment);
 
     // Get ALL groups from ALL organizations for cross-org classification
     let group_repo = GroupRepository::new(&state.db);
@@ -649,12 +724,14 @@ async fn get_node_classification_public(
     // Classify the node against all organizations
     // This will detect if the node matches groups from multiple orgs (conflict)
     // and use the default org if no matches are found
-    let classification_service = ClassificationService::new(all_groups);
-    let classification = classification_service.classify_across_organizations(
+    let classification = classify_for_agent(
+        &state,
         &certname,
-        &facts_json,
-        default_organization_uuid(),
-    );
+        facts,
+        catalog_environment.as_deref(),
+        all_groups,
+    )
+    .await;
 
     Ok(Json(classification))
 }
@@ -851,11 +928,7 @@ async fn get_node_environment_public(
         .get_node(&certname)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch node: {}", e)))?;
-    let facts_json = build_classification_facts(
-        facts,
-        &certname,
-        node.and_then(|n| n.catalog_environment).as_deref(),
-    );
+    let catalog_environment = node.and_then(|n| n.catalog_environment);
 
     // Get ALL groups from ALL organizations for cross-org classification
     let group_repo = GroupRepository::new(&state.db);
@@ -865,12 +938,14 @@ async fn get_node_environment_public(
         .map_err(|e| AppError::Internal(format!("Failed to get groups: {}", e)))?;
 
     // Classify the node to determine environment
-    let classification_service = ClassificationService::new(all_groups);
-    let classification = classification_service.classify_across_organizations(
+    let classification = classify_for_agent(
+        &state,
         &certname,
-        &facts_json,
-        default_organization_uuid(),
-    );
+        facts,
+        catalog_environment.as_deref(),
+        all_groups,
+    )
+    .await;
 
     Ok(Json(EnvironmentResponse {
         certname,

@@ -137,6 +137,21 @@ pub struct Contributes {
     /// Webhooks (acted on from M21).
     #[serde(default)]
     pub webhooks: Vec<Value>,
+    /// Facts provided by the plugin (M25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facts: Option<super::FactsContribution>,
+    /// Report types provided by the plugin (M25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub report_types: Vec<super::ReportTypeDecl>,
+    /// Export formats for report results (M25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub export_formats: Vec<super::ExportFormatDecl>,
+    /// Annotation keys the plugin writes on Puppet run reports (M25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub report_annotations: Vec<super::AnnotationDecl>,
+    /// Datasets the plugin provides to reports and other plugins (M25).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datasets: Vec<super::DatasetDecl>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

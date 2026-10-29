@@ -4,14 +4,14 @@
 
 use axum::{
     extract::{Path, Query, State},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
 
 use crate::{
     db::{ActivityHeatmapCell, ReportDailySummary, ReportHourlySummary, ReportSummaryRepository},
-    models::{Report, ResourceEvent},
+    models::{AnnotationColumn, AnnotationLookupRequest, Report, ReportAnnotation, ResourceEvent},
     services::puppetdb::{QueryBuilder, QueryParams},
     utils::error::{AppError, AppResult},
     AppState,
@@ -26,6 +26,43 @@ pub fn routes() -> Router<AppState> {
         .route("/activity-heatmap", get(get_activity_heatmap))
         .route("/{hash}", get(get_report))
         .route("/{hash}/events", get(get_report_events))
+        // Plugin annotations (M25): the PuppetDB report itself is unchanged
+        .route("/annotation-columns", get(annotation_columns))
+        .route("/annotations/lookup", post(lookup_annotations))
+        .route("/{hash}/annotations", get(report_annotations))
+}
+
+/// GET /api/v1/reports/annotation-columns
+///
+/// Annotation keys declared by enabled plugins, with where they are shown
+/// (`list_column`, `detail_panel`) and whether the list may sort or filter
+/// on them.
+async fn annotation_columns(State(state): State<AppState>) -> Json<Vec<AnnotationColumn>> {
+    Json(state.plugin_manager.annotation_columns())
+}
+
+/// POST /api/v1/reports/annotations/lookup
+///
+/// Annotations of up to 500 reports at once, keyed by report hash (reports
+/// without annotations are left out).
+async fn lookup_annotations(
+    State(state): State<AppState>,
+    Json(req): Json<AnnotationLookupRequest>,
+) -> AppResult<Json<std::collections::BTreeMap<String, Vec<ReportAnnotation>>>> {
+    if req.hashes.len() > 500 {
+        return Err(AppError::bad_request("At most 500 report hashes"));
+    }
+    Ok(Json(
+        state.plugin_manager.lookup_annotations(&req.hashes).await,
+    ))
+}
+
+/// GET /api/v1/reports/:hash/annotations
+async fn report_annotations(
+    State(state): State<AppState>,
+    Path(hash): Path<String>,
+) -> Json<Vec<ReportAnnotation>> {
+    Json(state.plugin_manager.report_annotations(&hash).await)
 }
 
 /// Query parameters for the daily summary endpoint.

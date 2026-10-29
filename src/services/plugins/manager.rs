@@ -13,12 +13,14 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::facts::FactsRuntime;
 use super::governance::{classify, Governor};
 use super::host::effective_capabilities;
 use super::invoke::{HandlerCall, HandlerInvoker, HookIndex, InvokeError, PluginHooks};
 use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
 use super::registry::Registry;
+use super::reports::ReportsRuntime;
 use super::storage::{collect_migrations, PluginStorage};
 use super::ui_assets::UiSessions;
 use super::wasm::WasmInvoker;
@@ -142,6 +144,10 @@ pub struct PluginManager {
     ui_sessions: Arc<UiSessions>,
     /// Package hashes refused everywhere (`plugins.blocked_hashes`, M24).
     blocked_hashes: HashSet<String>,
+    /// Pull bulkheads, resolution cache and backoff of fact providers (M25).
+    facts: Arc<FactsRuntime>,
+    /// Limits and running jobs of plugin reports (M25).
+    reports: Arc<ReportsRuntime>,
 }
 
 pub(super) type Failure = (PluginState, &'static str, String);
@@ -188,7 +194,29 @@ impl PluginManager {
             governor: Arc::new(Governor::new(Default::default())),
             ui_sessions: Arc::new(UiSessions::default()),
             blocked_hashes: HashSet::new(),
+            facts: Arc::new(FactsRuntime::new(Default::default())),
+            reports: Arc::new(ReportsRuntime::new(Default::default())),
         }
+    }
+
+    /// Report job, export, dataset and retention limits of plugin reports (M25).
+    pub fn with_reports(mut self, cfg: crate::config::PluginReportsConfig) -> Self {
+        self.reports = Arc::new(ReportsRuntime::new(cfg));
+        self
+    }
+
+    pub fn reports_runtime(&self) -> &Arc<ReportsRuntime> {
+        &self.reports
+    }
+
+    /// Pull timeout, bulkhead, stale sweep and export limits of plugin facts (M25).
+    pub fn with_facts(mut self, cfg: crate::config::PluginFactsConfig) -> Self {
+        self.facts = Arc::new(FactsRuntime::new(cfg));
+        self
+    }
+
+    pub fn facts_runtime(&self) -> &Arc<FactsRuntime> {
+        &self.facts
     }
 
     /// Local revocation by package hash (`plugins.blocked_hashes`). Entries
@@ -532,6 +560,14 @@ impl PluginManager {
         {
             issues.push("built-in plugins must be signed by an OpenVox project key".into());
         }
+        if let Some(f) = &m.contributes.facts {
+            if let Some(owner) = self.fact_namespaces_except(&m.id).await.get(&f.namespace) {
+                issues.push(format!(
+                    "the fact namespace '{}' is already used by the plugin '{}'",
+                    f.namespace, owner
+                ));
+            }
+        }
 
         let can_install = issues.is_empty()
             && matches!(
@@ -563,7 +599,15 @@ impl PluginManager {
                 .telemetry
                 .as_ref()
                 .map(|t| t.declared_pii_fields.clone())
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .chain(m.contributes.facts.iter().flat_map(|f| {
+                    f.items
+                        .iter()
+                        .filter(|i| i.is_pii())
+                        .map(|i| format!("fact {}", f.full_name(i)))
+                }))
+                .collect(),
             installed_version,
             issues,
             can_install,
@@ -1198,6 +1242,8 @@ impl PluginManager {
             .await?;
         self.repo().delete_plugin(id).await?;
         self.clear_governance(id, true).await;
+        self.forget_plugin_facts(id, purge).await;
+        self.forget_plugin_reports(id, purge).await;
         PluginEventsRepository::new(&self.pool)
             .delete_plugin_events(id)
             .await?;

@@ -22,20 +22,60 @@ use crate::models::{
     ReportExecution, ReportQueryConfig, ReportResult, ReportType, SavedReport, SeverityBreakdown,
     SeverityLevel,
 };
+use crate::models::{DatasetQueryRequest, EventActor, PluginReportResult, ReportSection};
+use crate::services::plugins::events::EventBus;
+use crate::services::plugins::reports::DatasetReader;
+use crate::services::plugins::PluginManager;
 use crate::services::PuppetDbClient;
 
 /// Service for generating and executing reports
+#[derive(Clone)]
 pub struct ReportingService {
     pool: SqlitePool,
     puppetdb: Option<Arc<PuppetDbClient>>,
+    /// Plugin report types and datasets (M25); `None` where no plugin
+    /// runtime exists, and then plugin report types fail.
+    plugins: Option<Arc<PluginManager>>,
+    /// Run plugin report executions as background jobs (API requests)
+    /// instead of waiting for them (scheduled runs).
+    background: bool,
+}
+
+/// Who asked for a report, for the `report.generated` event.
+fn requester(user_id: Option<Uuid>) -> String {
+    user_id
+        .map(|u| u.to_string())
+        .unwrap_or_else(|| "schedule".to_string())
 }
 
 impl ReportingService {
     pub fn new(pool: SqlitePool, puppetdb: Option<Arc<PuppetDbClient>>) -> Self {
-        Self { pool, puppetdb }
+        Self {
+            pool,
+            puppetdb,
+            plugins: None,
+            background: false,
+        }
+    }
+
+    /// Enables plugin report types, export formats and datasets.
+    pub fn with_plugins(mut self, plugins: Arc<PluginManager>) -> Self {
+        self.plugins = Some(plugins);
+        self
+    }
+
+    /// Plugin report executions return at once and complete in the background.
+    pub fn in_background(mut self) -> Self {
+        self.background = true;
+        self
     }
 
     /// Execute a saved report
+    ///
+    /// Core report types run to completion before returning. A plugin report
+    /// type runs as a background job when the service was built with
+    /// [`in_background`](Self::in_background): the execution is returned as
+    /// `running` and completed (or failed) by the job.
     pub async fn execute_report(
         &self,
         report: &SavedReport,
@@ -52,53 +92,182 @@ impl ReportingService {
         // Mark as running
         exec_repo.mark_running(execution.id).await?;
 
-        let start_time = std::time::Instant::now();
-
         // Use override config if provided, otherwise use report's config
         let config = req
             .query_config_override
-            .as_ref()
-            .unwrap_or(&report.query_config);
+            .clone()
+            .unwrap_or_else(|| report.query_config.clone());
 
-        // Generate the report
-        let result = self.generate_report(report.report_type, config).await;
+        if self.background && matches!(report.report_type, ReportType::Plugin { .. }) {
+            let svc = self.clone();
+            let report = report.clone();
+            let id = execution.id;
+            tokio::spawn(async move {
+                if let Err(e) = svc.run_execution(id, &report, &config, user_id).await {
+                    tracing::error!("plugin report execution {} could not be stored: {}", id, e);
+                }
+            });
+            execution.status = crate::models::ExecutionStatus::Running;
+            return Ok(execution);
+        }
 
+        let (status, row_count, output_data, error, execution_time_ms) = self
+            .run_execution(execution.id, report, &config, user_id)
+            .await?;
+        execution.status = status;
+        if status == crate::models::ExecutionStatus::Completed {
+            execution.output_data = output_data;
+            execution.row_count = Some(row_count);
+        } else {
+            execution.error_message = error;
+        }
+        execution.execution_time_ms = Some(execution_time_ms);
+        Ok(execution)
+    }
+
+    /// Generates the report of one execution and stores its outcome.
+    #[allow(clippy::type_complexity)]
+    async fn run_execution(
+        &self,
+        execution_id: Uuid,
+        report: &SavedReport,
+        config: &ReportQueryConfig,
+        user_id: Option<Uuid>,
+    ) -> Result<(
+        crate::models::ExecutionStatus,
+        i32,
+        Option<serde_json::Value>,
+        Option<String>,
+        i32,
+    )> {
+        let exec_repo = ReportExecutionRepository::new(&self.pool);
+        let start_time = std::time::Instant::now();
+        let result = self
+            .generate_report_as(&report.report_type, config, &requester(user_id))
+            .await;
         let execution_time_ms = start_time.elapsed().as_millis() as i32;
-
-        match result {
+        let outcome = match result {
             Ok((report_result, row_count)) => {
                 let output_data = serde_json::to_value(&report_result).ok();
                 exec_repo
                     .complete(
-                        execution.id,
+                        execution_id,
                         row_count,
                         output_data.clone(),
                         None,
                         execution_time_ms,
                     )
                     .await?;
-                execution.output_data = output_data;
-                execution.row_count = Some(row_count);
-                execution.status = crate::models::ExecutionStatus::Completed;
+                (
+                    crate::models::ExecutionStatus::Completed,
+                    row_count,
+                    output_data,
+                    None,
+                    execution_time_ms,
+                )
             }
             Err(e) => {
                 exec_repo
-                    .fail(execution.id, &e.to_string(), execution_time_ms)
+                    .fail(execution_id, &e.to_string(), execution_time_ms)
                     .await?;
-                execution.error_message = Some(e.to_string());
-                execution.status = crate::models::ExecutionStatus::Failed;
+                (
+                    crate::models::ExecutionStatus::Failed,
+                    0,
+                    None,
+                    Some(e.to_string()),
+                    execution_time_ms,
+                )
             }
-        }
+        };
+        self.emit_generated(
+            &report.report_type,
+            config,
+            Some(report.id),
+            Some(execution_id),
+            &requester(user_id),
+            outcome.0.as_str(),
+            outcome.1,
+            execution_time_ms,
+        )
+        .await;
+        Ok(outcome)
+    }
 
-        execution.execution_time_ms = Some(execution_time_ms);
-        Ok(execution)
+    /// Publishes `report.generated` (M25); never fails the report.
+    #[allow(clippy::too_many_arguments)]
+    async fn emit_generated(
+        &self,
+        report_type: &ReportType,
+        config: &ReportQueryConfig,
+        report_id: Option<Uuid>,
+        execution_id: Option<Uuid>,
+        requested_by: &str,
+        status: &str,
+        row_count: i32,
+        duration_ms: i32,
+    ) {
+        EventBus::new(self.pool.clone())
+            .emit(
+                "report.generated",
+                serde_json::json!({
+                    "report_type": report_type.id(),
+                    "report_id": report_id,
+                    "execution_id": execution_id,
+                    "parameters": config,
+                    "status": status,
+                    "row_count": row_count,
+                    "duration_ms": duration_ms,
+                    "requested_by": requested_by,
+                }),
+                EventActor::system(),
+            )
+            .await;
+    }
+
+    /// On-demand generation (no saved report) that also publishes
+    /// `report.generated`.
+    pub async fn generate_on_demand(
+        &self,
+        report_type: &ReportType,
+        config: &ReportQueryConfig,
+        user_id: Option<Uuid>,
+    ) -> Result<(ReportResult, i32)> {
+        let started = std::time::Instant::now();
+        let result = self
+            .generate_report_as(report_type, config, &requester(user_id))
+            .await;
+        let (status, rows) = match &result {
+            Ok((_, n)) => ("completed", *n),
+            Err(_) => ("failed", 0),
+        };
+        self.emit_generated(
+            report_type,
+            config,
+            None,
+            None,
+            &requester(user_id),
+            status,
+            rows,
+            started.elapsed().as_millis() as i32,
+        )
+        .await;
+        result
     }
 
     /// Generate a report based on type and configuration
     pub async fn generate_report(
         &self,
-        report_type: ReportType,
+        report_type: &ReportType,
         config: &ReportQueryConfig,
+    ) -> Result<(ReportResult, i32)> {
+        self.generate_report_as(report_type, config, "system").await
+    }
+
+    async fn generate_report_as(
+        &self,
+        report_type: &ReportType,
+        config: &ReportQueryConfig,
+        requested_by: &str,
     ) -> Result<(ReportResult, i32)> {
         match report_type {
             ReportType::NodeHealth => {
@@ -122,8 +291,58 @@ impl ReportingService {
                 Ok((ReportResult::DriftDetection(report), row_count))
             }
             ReportType::Custom => {
-                // For custom reports, return an empty object
-                Ok((ReportResult::Custom(serde_json::json!({})), 0))
+                // A custom report reads a plugin dataset when one is chosen
+                // (M25); otherwise it stays an empty object.
+                let dataset = config
+                    .custom_params
+                    .as_ref()
+                    .and_then(|p| p.get("dataset"))
+                    .and_then(serde_json::Value::as_str);
+                match (dataset, &self.plugins) {
+                    (Some(dataset), Some(plugins)) => {
+                        let p = config.custom_params.clone().unwrap_or_default();
+                        let req = DatasetQueryRequest {
+                            dataset: dataset.to_string(),
+                            filter: p
+                                .get("filter")
+                                .and_then(serde_json::Value::as_object)
+                                .cloned()
+                                .unwrap_or_default(),
+                            limit: p
+                                .get("limit")
+                                .and_then(serde_json::Value::as_u64)
+                                .map(|l| l.min(u32::MAX as u64) as u32),
+                            offset: None,
+                        };
+                        let r = plugins
+                            .query_dataset(DatasetReader::System, &req)
+                            .await
+                            .map_err(anyhow::Error::new)?;
+                        let rows = r.rows.len() as i32;
+                        Ok((ReportResult::Custom(serde_json::to_value(&r)?), rows))
+                    }
+                    (Some(_), None) => Err(anyhow::anyhow!(
+                        "plugin datasets are not available in this process"
+                    )),
+                    (None, _) => Ok((ReportResult::Custom(serde_json::json!({})), 0)),
+                }
+            }
+            ReportType::Plugin { plugin_id, type_id } => {
+                let plugins = self.plugins.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("plugin report types are not available in this process")
+                })?;
+                let params = config
+                    .custom_params
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null);
+                let (result, rows) = plugins
+                    .generate_plugin_report(plugin_id, type_id, &params, requested_by)
+                    .await
+                    .map_err(anyhow::Error::new)?;
+                Ok((
+                    ReportResult::Plugin(result),
+                    rows.min(i32::MAX as u64) as i32,
+                ))
             }
         }
     }
@@ -665,6 +884,7 @@ impl ReportingService {
                 "Custom Report",
                 serde_json::to_string_pretty(data).unwrap_or_default(),
             ),
+            ReportResult::Plugin(report) => ("Plugin Report", plugin_report_text(report)),
         };
 
         // Create PDF document
@@ -1045,10 +1265,175 @@ impl ReportingService {
             ReportResult::Custom(data) => {
                 csv.push_str(&serde_json::to_string_pretty(data).unwrap_or_default());
             }
+            ReportResult::Plugin(report) => csv.push_str(&plugin_report_csv(report)),
         }
 
         Ok(csv)
     }
+}
+
+/// One CSV cell: quoted when needed, and prefixed with `'` when it would
+/// start a spreadsheet formula (plugin values are not trusted).
+fn csv_cell(v: &serde_json::Value) -> String {
+    let text = match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    let text = if text.starts_with(['=', '+', '-', '@', '\t', '\r']) && !v.is_number() {
+        format!("'{}", text)
+    } else {
+        text
+    };
+    if text.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", text.replace('"', "\"\""))
+    } else {
+        text
+    }
+}
+
+fn csv_text(s: &str) -> String {
+    csv_cell(&serde_json::Value::String(s.to_string()))
+}
+
+/// CSV of a plugin report: one block per section (M25).
+fn plugin_report_csv(r: &PluginReportResult) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{}\nGenerated At,{}\n",
+        csv_text(r.title.as_deref().unwrap_or(&r.type_id)),
+        r.generated_at
+    ));
+    for s in &r.sections {
+        out.push('\n');
+        match s {
+            ReportSection::Kpi { id, title, items } => {
+                out.push_str(&format!(
+                    "{}\nMetric,Value,Unit\n",
+                    csv_text(title.as_deref().unwrap_or(id))
+                ));
+                for i in items {
+                    out.push_str(&format!(
+                        "{},{},{}\n",
+                        csv_text(&i.label),
+                        csv_cell(&i.value),
+                        csv_text(i.unit.as_deref().unwrap_or(""))
+                    ));
+                }
+            }
+            ReportSection::Table {
+                id,
+                title,
+                columns,
+                rows,
+            } => {
+                out.push_str(&format!("{}\n", csv_text(title.as_deref().unwrap_or(id))));
+                let header: Vec<String> = columns.iter().map(|c| csv_text(&c.label)).collect();
+                out.push_str(&header.join(","));
+                out.push('\n');
+                for row in rows {
+                    let cells: Vec<String> = columns
+                        .iter()
+                        .map(|c| csv_cell(row.get(&c.key).unwrap_or(&serde_json::Value::Null)))
+                        .collect();
+                    out.push_str(&cells.join(","));
+                    out.push('\n');
+                }
+            }
+            ReportSection::Chart {
+                id, title, series, ..
+            } => {
+                out.push_str(&format!(
+                    "{}\nSeries,X,Y\n",
+                    csv_text(title.as_deref().unwrap_or(id))
+                ));
+                for se in series {
+                    for p in &se.points {
+                        out.push_str(&format!(
+                            "{},{},{}\n",
+                            csv_text(&se.name),
+                            csv_cell(&p.x),
+                            p.y
+                        ));
+                    }
+                }
+            }
+            ReportSection::Text { id, title, text } => {
+                out.push_str(&format!(
+                    "{}\n{}\n",
+                    csv_text(title.as_deref().unwrap_or(id)),
+                    csv_text(text)
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Plain text lines of a plugin report for the PDF export (M25).
+fn plugin_report_text(r: &PluginReportResult) -> String {
+    let mut out = format!(
+        "{}\nGenerated: {}\n",
+        r.title.as_deref().unwrap_or(&r.type_id),
+        r.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    let cell = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    for s in &r.sections {
+        match s {
+            ReportSection::Kpi { id, title, items } => {
+                out.push_str(&format!("=== {} ===\n", title.as_deref().unwrap_or(id)));
+                for i in items {
+                    out.push_str(&format!(
+                        "{}: {} {}\n",
+                        i.label,
+                        cell(&i.value),
+                        i.unit.as_deref().unwrap_or("")
+                    ));
+                }
+            }
+            ReportSection::Table {
+                id,
+                title,
+                columns,
+                rows,
+            } => {
+                out.push_str(&format!("=== {} ===\n", title.as_deref().unwrap_or(id)));
+                let header: Vec<&str> = columns.iter().map(|c| c.label.as_str()).collect();
+                out.push_str(&format!("--- {} ---\n", header.join(" | ")));
+                for row in rows {
+                    let cells: Vec<String> = columns
+                        .iter()
+                        .map(|c| row.get(&c.key).map(cell).unwrap_or_default())
+                        .collect();
+                    out.push_str(&format!("{}\n", cells.join(" | ")));
+                }
+            }
+            ReportSection::Chart {
+                id, title, series, ..
+            } => {
+                out.push_str(&format!("=== {} ===\n", title.as_deref().unwrap_or(id)));
+                for se in series {
+                    let points: Vec<String> = se
+                        .points
+                        .iter()
+                        .map(|p| format!("{}={}", cell(&p.x), p.y))
+                        .collect();
+                    out.push_str(&format!("{}: {}\n", se.name, points.join(", ")));
+                }
+            }
+            ReportSection::Text { id, title, text } => {
+                out.push_str(&format!(
+                    "=== {} ===\n{}\n",
+                    title.as_deref().unwrap_or(id),
+                    text
+                ));
+            }
+        }
+    }
+    out
 }
 
 /// Helper struct for parsing resource events

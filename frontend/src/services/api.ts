@@ -13,6 +13,13 @@ import type {
   NodeGroup,
   Report,
   ResourceEvent,
+  ReportTypeInfo,
+  ExportFormatInfo,
+  DatasetInfo,
+  DatasetQueryRequest,
+  DatasetQueryResponse,
+  ReportAnnotationColumn,
+  ReportAnnotation,
   CreateGroupRequest,
   UpdateGroupRequest,
   CreateRuleRequest,
@@ -184,6 +191,11 @@ import type {
   PluginRollbackResult,
   PluginRevokeVersionResult,
   PluginUpdatePolicyRequest,
+  PluginFactCatalog,
+  PluginFactInfo,
+  PluginFactSettingsRequest,
+  PluginFactPreview,
+  FactPathEntry,
   UiContributionDetail,
 } from '../types';
 
@@ -668,6 +680,24 @@ export const api = {
     return response.data;
   },
 
+  // Plugin annotations on run reports
+  getReportAnnotationColumns: async (): Promise<ReportAnnotationColumn[]> => {
+    const response = await client.get('/reports/annotation-columns');
+    return response.data;
+  },
+
+  lookupReportAnnotations: async (
+    hashes: string[]
+  ): Promise<Record<string, ReportAnnotation[]>> => {
+    const response = await client.post('/reports/annotations/lookup', { hashes });
+    return response.data;
+  },
+
+  getReportAnnotations: async (hash: string): Promise<ReportAnnotation[]> => {
+    const response = await client.get(`/reports/${encodeURIComponent(hash)}/annotations`);
+    return response.data;
+  },
+
   getReportEvents: async (
     hash: string,
     params?: { status?: string; type?: string }
@@ -969,7 +999,7 @@ export const api = {
     return response.data;
   },
 
-  getSavedReports: async (reportType?: ReportType): Promise<SavedReport[]> => {
+  getSavedReports: async (reportType?: ReportType | string): Promise<SavedReport[]> => {
     const params = reportType ? { report_type: reportType } : {};
     const response = await client.get('/analytics/saved-reports', { params });
     return response.data;
@@ -1008,7 +1038,7 @@ export const api = {
     return response.data;
   },
 
-  getReportTemplates: async (reportType?: ReportType): Promise<ReportTemplate[]> => {
+  getReportTemplates: async (reportType?: ReportType | string): Promise<ReportTemplate[]> => {
     const params = reportType ? { report_type: reportType } : {};
     const response = await client.get('/analytics/templates', { params });
     return response.data;
@@ -1049,7 +1079,7 @@ export const api = {
   },
 
   generateReportByType: async (
-    reportType: ReportType,
+    reportType: ReportType | string,
     config?: ReportQueryConfig
   ): Promise<unknown> => {
     const response = await client.post(`/analytics/generate/${reportType}`, config || {});
@@ -1118,6 +1148,27 @@ export const api = {
       params,
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  // Plugin report types, export formats and datasets
+  getReportTypes: async (): Promise<ReportTypeInfo[]> => {
+    const response = await client.get('/analytics/report-types');
+    return response.data;
+  },
+
+  getExportFormats: async (): Promise<ExportFormatInfo[]> => {
+    const response = await client.get('/analytics/export-formats');
+    return response.data;
+  },
+
+  getDatasets: async (): Promise<DatasetInfo[]> => {
+    const response = await client.get('/analytics/datasets');
+    return response.data;
+  },
+
+  queryDataset: async (request: DatasetQueryRequest): Promise<DatasetQueryResponse> => {
+    const response = await client.post('/analytics/datasets/query', request);
     return response.data;
   },
 
@@ -1900,5 +1951,46 @@ export const pluginsApi = {
       `/plugins/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/unrevoke`
     );
     return response.data;
+  },
+
+  // Plugin facts (M25)
+  getPluginFactCatalogs: async (): Promise<PluginFactCatalog[]> => {
+    const response = await client.get('/plugins/facts');
+    return response.data;
+  },
+
+  getPluginFacts: async (id: string): Promise<PluginFactCatalog> => {
+    const response = await client.get(`/plugins/${encodeURIComponent(id)}/facts`);
+    return response.data;
+  },
+
+  updatePluginFactSettings: async (
+    id: string,
+    name: string,
+    request: PluginFactSettingsRequest
+  ): Promise<PluginFactInfo> => {
+    const response = await client.put(
+      `/plugins/${encodeURIComponent(id)}/facts/${encodeURIComponent(name)}/settings`,
+      request
+    );
+    return response.data;
+  },
+
+  getPluginFactPreview: async (
+    id: string,
+    name: string,
+    limit = 50
+  ): Promise<PluginFactPreview> => {
+    const response = await client.get(
+      `/plugins/${encodeURIComponent(id)}/facts/${encodeURIComponent(name)}/preview`,
+      { params: { limit } }
+    );
+    return response.data;
+  },
+
+  /** Fact path entries contributed by plugins (works without PuppetDB). */
+  getPluginFactSources: async (): Promise<FactPathEntry[]> => {
+    const response = await client.get('/facts/paths', { params: { source: 'plugins' } });
+    return Array.isArray(response.data) ? response.data : (response.data?.paths ?? []);
   },
 };

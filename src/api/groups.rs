@@ -17,7 +17,8 @@ use crate::{
         CreateGroupUpdateScheduleRequest, CreateRuleRequest, GroupUpdateSchedule, NodeGroup,
         Resource, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest, UpdateJob,
     },
-    services::classification::{build_classification_facts, ClassificationService},
+    services::classification::{build_classification_facts_with_plugins, ClassificationService},
+    services::plugins::facts::UsableFactsSnapshot,
     services::puppetdb::PuppetDbClient,
     utils::AppError,
     AppState,
@@ -226,6 +227,18 @@ pub(crate) async fn classify_group_members(
     org_id: Uuid,
     group_id: Uuid,
 ) -> anyhow::Result<Vec<String>> {
+    classify_group_members_with(repo, puppetdb, org_id, group_id, &Default::default()).await
+}
+
+/// Same as [`classify_group_members`], with the stored plugin facts enabled
+/// for rules (M25) added to each node's facts.
+pub(crate) async fn classify_group_members_with(
+    repo: &GroupRepository<'_>,
+    puppetdb: Option<&PuppetDbClient>,
+    org_id: Uuid,
+    group_id: Uuid,
+    plugin_facts: &UsableFactsSnapshot,
+) -> anyhow::Result<Vec<String>> {
     // Start with pinned nodes
     let mut matched_nodes: Vec<String> = repo.get_pinned_nodes(group_id).await?;
 
@@ -249,10 +262,12 @@ pub(crate) async fn classify_group_members(
 
             // Get facts for the node
             let facts = match puppetdb.get_node_facts(&node.certname).await {
-                Ok(facts) => build_classification_facts(
+                Ok(facts) => build_classification_facts_with_plugins(
                     facts,
                     &node.certname,
                     node.catalog_environment.as_deref(),
+                    plugin_facts.for_node(&node.certname),
+                    chrono::Utc::now(),
                 ),
                 Err(e) => {
                     tracing::warn!("Failed to get facts for {}: {}", node.certname, e);
@@ -313,12 +328,19 @@ pub(crate) async fn resolve_group_member_certnames(
         return Err(AppError::not_found("Group not found"));
     }
 
-    classify_group_members(&repo, state.puppetdb.as_deref(), org_id, group_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to resolve group members: {}", e);
-            AppError::internal("Failed to resolve group members")
-        })
+    let plugin_facts = state.plugin_manager.usable_facts_snapshot().await;
+    classify_group_members_with(
+        &repo,
+        state.puppetdb.as_deref(),
+        org_id,
+        group_id,
+        &plugin_facts,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to resolve group members: {}", e);
+        AppError::internal("Failed to resolve group members")
+    })
 }
 
 /// Get nodes in a specific group (pinned + classified by rules)

@@ -55,6 +55,7 @@ pub fn routes() -> Router<AppState> {
         .merge(super::plugin_events::routes())
         .merge(super::plugin_governance::routes())
         .merge(super::plugin_updates::routes())
+        .merge(super::plugin_facts::routes())
         .route("/ui/slots", get(ui_slots))
         .route("/ui/catalog", get(ui_catalog))
         .route("/ui/sessions", post(ui_session))
@@ -546,7 +547,7 @@ async fn delete_key(
 /// A contribution without `requires` is visible to any signed-in user. One
 /// that names a plugin-owned permission is visible to plugin administrators
 /// only, until plugin permissions can be assigned to roles (M20).
-async fn visibility(
+pub(super) async fn visibility(
     state: &AppState,
     user: &AuthUser,
     needed: Vec<Requires>,
@@ -566,7 +567,9 @@ async fn visibility(
     Ok(out)
 }
 
-fn check<'a>(map: &'a HashMap<(String, String), bool>) -> impl Fn(&Option<Requires>) -> bool + 'a {
+pub(super) fn check<'a>(
+    map: &'a HashMap<(String, String), bool>,
+) -> impl Fn(&Option<Requires>) -> bool + 'a {
     move |r| match r {
         None => true,
         Some(r) => map

@@ -851,3 +851,618 @@ async fn updates_rollback_and_revocation_endpoints() {
         assert!(logs.contains(action), "missing audit entry {action}");
     }
 }
+
+fn facts_package(seed: u8) -> Vec<u8> {
+    let yaml = "api_version: 2\nid: cmdb\nname: CMDB\nversion: 1.0.0\npublisher: ACME\n\
+                runtime: { kind: remote, endpoint: \"https://cmdb.example.com\" }\n\
+                capabilities:\n  - facts:provide\n  - facts:export:external: { optional: true }\n\
+                contributes:\n  facts:\n    namespace: acme_cmdb\n    mode: push\n    items:\n\
+                \x20     - { name: owner, type: string, sensitivity: pii, exportable: true }\n\
+                \x20     - { name: tier, type: integer, usable_in_rules: true,\n\
+                \x20         requires: { resource: plugin.cmdb.facts, action: read } }\n";
+    build_signed_package(
+        &[("plugin.yaml", yaml.as_bytes())],
+        "cmdb",
+        "1.0.0",
+        2,
+        [seed; 32],
+    )
+}
+
+#[tokio::test]
+async fn plugin_facts_catalog_settings_preview_export_and_merged_views() {
+    let app = TestApp::new().await;
+    app.get("/api/v1/plugins/facts").await.assert_unauthorized();
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    for (method, uri, body) in [
+        ("GET", "/api/v1/plugins/facts", json!({})),
+        ("GET", "/api/v1/plugins/cmdb/facts", json!({})),
+        (
+            "PUT",
+            "/api/v1/plugins/cmdb/facts/acme_cmdb.tier/settings",
+            json!({"usable_in_rules": true}),
+        ),
+        (
+            "GET",
+            "/api/v1/plugins/cmdb/facts/acme_cmdb.owner/preview",
+            json!({}),
+        ),
+    ] {
+        send(&app, &viewer, method, uri, json_body(body), JSON)
+            .await
+            .assert_forbidden();
+    }
+
+    // Install the provider (trusting its key).
+    let t = admin_token(&app).await;
+    let pre: Value = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/preflight",
+        facts_package(21),
+        &[],
+    )
+    .await
+    .json();
+    assert!(pre["declared_pii_fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f.as_str().unwrap().contains("acme_cmdb.owner")));
+    let prefix = pre["signature"]["key_id"].as_str().unwrap()[..8].to_string();
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins",
+        facts_package(21),
+        &[
+            ("X-Trust-Key-Confirm", &prefix),
+            ("X-Reauth-Password", PASSWORD),
+        ],
+    )
+    .await
+    .assert_created();
+
+    let r = send(&app, &t, "GET", "/api/v1/plugins/facts", vec![], &[]).await;
+    r.assert_ok();
+    let cat: Value = r.json();
+    assert_eq!(cat[0]["namespace"], "acme_cmdb");
+    assert_eq!(cat[0]["export_capability"], "not_approved");
+    assert_eq!(cat[0]["puppetdb_checked"], false);
+    assert_eq!(cat[0]["facts"][0]["name"], "acme_cmdb.owner");
+    assert_eq!(cat[0]["facts"][0]["usable_in_rules"], false);
+    assert_eq!(cat[0]["facts"][0]["exportable"], false);
+
+    let settings = |name: &str| format!("/api/v1/plugins/cmdb/facts/{name}/settings");
+    let r = send(
+        &app,
+        &t,
+        "PUT",
+        &settings("acme_cmdb.tier"),
+        json_body(json!({"usable_in_rules": true})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>()["usable_in_rules"], true);
+    for (name, body, code) in [
+        (
+            "acme_cmdb.owner",
+            json!({"usable_in_rules": true}),
+            "not_offered",
+        ),
+        (
+            "acme_cmdb.owner",
+            json!({"exportable": true, "confirm": "acme_cmdb.owner"}),
+            "export_capability_missing",
+        ),
+    ] {
+        let r = send(&app, &t, "PUT", &settings(name), json_body(body), JSON).await;
+        assert_eq!(r.status.as_u16(), 422);
+        assert_eq!(r.json::<Value>()["code"], code);
+    }
+    send(
+        &app,
+        &t,
+        "PUT",
+        "/api/v1/plugins/cmdb/capabilities",
+        json_body(json!({"capabilities": ["facts:provide", "facts:export:external"]})),
+        JSON,
+    )
+    .await
+    .assert_ok();
+    let r = send(
+        &app,
+        &t,
+        "PUT",
+        &settings("acme_cmdb.owner"),
+        json_body(json!({"exportable": true})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.json::<Value>()["code"], "confirmation_required");
+
+    // The remote runtime cannot run yet: put the provider in play and write
+    // values as its host API would.
+    sqlx::query("UPDATE plugins SET state = 'enabled' WHERE id = 'cmdb'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    app.state.plugin_manager.reload().await.unwrap();
+    let values = json!({"owner": "ops team", "tier": 1});
+    app.state
+        .plugin_manager
+        .put_plugin_facts(
+            "cmdb",
+            "n1.example.com",
+            values.as_object().unwrap(),
+            openvox_webui::models::FactMode::Push,
+        )
+        .await
+        .unwrap();
+
+    // Preview before enabling the export, then enable it with the confirmation.
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/plugins/cmdb/facts/acme_cmdb.owner/preview?limit=10",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let p: Value = r.json();
+    assert_eq!(p["total"], 1);
+    assert_eq!(p["sensitivity"], "pii");
+    assert_eq!(p["rows"][0]["certname"], "n1.example.com");
+    assert_eq!(p["rows"][0]["value"], "ops team");
+    let r = send(
+        &app,
+        &t,
+        "PUT",
+        &settings("acme_cmdb.owner"),
+        json_body(json!({"exportable": true, "confirm": "acme_cmdb.owner"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>()["exportable"], true);
+
+    // Merged catalogs: `requires` hides the tier from the viewer.
+    let names: Value = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/facts/names?source=plugins",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert_eq!(names, json!(["acme_cmdb.owner", "acme_cmdb.tier"]));
+    let names: Value = send(
+        &app,
+        &viewer,
+        "GET",
+        "/api/v1/facts/names?source=plugin:cmdb",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert_eq!(names, json!(["acme_cmdb.owner"]));
+    let paths: Value = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/facts/paths?source=plugins",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert_eq!(paths[0]["path"], json!(["acme_cmdb", "owner"]));
+    assert_eq!(paths[0]["source"], "plugin:cmdb");
+    assert_eq!(paths[1]["type"], "integer");
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/facts?source=plugin:cmdb&certname=n1.example.com",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let f: Value = r.json();
+    assert_eq!(f["total"], 2);
+    assert_eq!(f["facts"][0]["source"], "plugin:cmdb");
+    assert_eq!(f["facts"][0]["stale"], false);
+    assert!(f["facts"][0]["computed_at"].is_string());
+    let r = send(&app, &t, "GET", "/api/v1/facts?source=nope", vec![], &[]).await;
+    assert_eq!(r.status.as_u16(), 400);
+    // Without PuppetDB the default (merged) catalog keeps answering 503.
+    let r = send(&app, &t, "GET", "/api/v1/facts/names", vec![], &[]).await;
+    assert_eq!(r.status.as_u16(), 503);
+
+    // Export to agents: only the enabled fact, single-quoted for the shell.
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/facter/export/n1.example.com?format=json",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let exported: Value = serde_json::from_str(&r.text()).unwrap();
+    assert_eq!(exported, json!({"acme_cmdb.owner": "ops team"}));
+    let shell = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/facter/export/n1.example.com?format=shell",
+        vec![],
+        &[],
+    )
+    .await
+    .text();
+    assert_eq!(shell, "export FACTER_ACME_CMDB_OWNER='ops team'\n");
+
+    let logs = send(&app, &t, "GET", "/api/v1/audit-logs", vec![], &[])
+        .await
+        .text();
+    for action in ["plugin.fact.settings_changed", "plugin.fact.exported"] {
+        assert!(logs.contains(action), "missing audit entry {action}");
+    }
+}
+
+fn reports_package(seed: u8) -> Vec<u8> {
+    let yaml = "api_version: 2\nid: acme\nname: ACME\nversion: 1.0.0\npublisher: ACME\n\
+                runtime: { kind: remote, endpoint: \"https://acme.example.com\" }\n\
+                capabilities:\n  - reports:provide\n  - reports:annotate\n  - reports:export:format\n\
+                contributes:\n  report_types:\n\
+                \x20   - { id: assets, label: Assets, handler: generate_assets,\n\
+                \x20       params_schema: { type: object, properties: { since: { type: string, format: date } }, required: [since] } }\n\
+                \x20   - { id: hidden, label: Hidden, handler: generate_assets,\n\
+                \x20       requires: { resource: plugin.acme.reports, action: read } }\n\
+                \x20 export_formats:\n\
+                \x20   - { id: sarif, label: SARIF, content_type: application/sarif+json, extension: sarif, handler: render_sarif }\n\
+                \x20 report_annotations:\n\
+                \x20   - { key: risk, type: integer, label: Risk, show_in: [list_column, detail_panel], sortable: true }\n\
+                \x20 datasets:\n\
+                \x20   - { id: assets, label: Assets, schema: { columns: [ { name: certname, type: string }, { name: tier, type: integer } ] } }\n";
+    build_signed_package(
+        &[("plugin.yaml", yaml.as_bytes())],
+        "acme",
+        "1.0.0",
+        2,
+        [seed; 32],
+    )
+}
+
+#[tokio::test]
+async fn plugin_report_types_formats_annotations_and_datasets() {
+    let app = TestApp::new().await;
+    app.get("/api/v1/analytics/report-types")
+        .await
+        .assert_unauthorized();
+    let t = admin_token(&app).await;
+    let pre: Value = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/preflight",
+        reports_package(31),
+        &[],
+    )
+    .await
+    .json();
+    let prefix = pre["signature"]["key_id"].as_str().unwrap()[..8].to_string();
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins",
+        reports_package(31),
+        &[
+            ("X-Trust-Key-Confirm", &prefix),
+            ("X-Reauth-Password", PASSWORD),
+        ],
+    )
+    .await
+    .assert_created();
+    send(
+        &app,
+        &t,
+        "PUT",
+        "/api/v1/plugins/acme/capabilities",
+        json_body(json!({"capabilities": ["reports:provide", "reports:annotate", "reports:export:format"]})),
+        JSON,
+    )
+    .await
+    .assert_ok();
+    // The remote runtime cannot run yet: put the plugin in play directly.
+    sqlx::query("UPDATE plugins SET state = 'enabled' WHERE id = 'acme'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    app.state.plugin_manager.reload().await.unwrap();
+
+    // Catalogs: `requires` hides a type from a viewer.
+    let types: Value = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/analytics/report-types",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    let ids: Vec<&str> = types
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"node_health") && ids.contains(&"plugin:acme:assets"));
+    assert!(ids.contains(&"plugin:acme:hidden"));
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    let vt = send(
+        &app,
+        &viewer,
+        "GET",
+        "/api/v1/analytics/report-types",
+        vec![],
+        &[],
+    )
+    .await
+    .text();
+    assert!(vt.contains("plugin:acme:assets") && !vt.contains("plugin:acme:hidden"));
+    let formats: Value = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/analytics/export-formats",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert!(formats
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f["id"] == "plugin:acme:sarif" && f["content_type"] == "application/sarif+json"));
+
+    // Saved plugin reports: parameters are checked against the schema.
+    let saved = |params: Value| {
+        json_body(json!({
+            "name": "assets", "report_type": "plugin:acme:assets",
+            "query_config": {"custom_params": params}, "is_public": false
+        }))
+    };
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/analytics/saved-reports",
+        saved(json!({})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 400, "{}", r.text());
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/analytics/saved-reports",
+        saved(json!({"since": "2026-01-01"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let report: Value = r.json();
+    assert_eq!(report["report_type"], "plugin:acme:assets");
+    let id = report["id"].as_str().unwrap().to_string();
+    // Executions run as a background job; the remote runtime makes it fail.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        &format!("/api/v1/analytics/saved-reports/{id}/execute"),
+        json_body(json!({"output_format": "json"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>()["status"], "running");
+    let mut status = String::new();
+    for _ in 0..100 {
+        let list: Value = send(
+            &app,
+            &t,
+            "GET",
+            &format!("/api/v1/analytics/saved-reports/{id}/executions"),
+            vec![],
+            &[],
+        )
+        .await
+        .json();
+        status = list[0]["status"].as_str().unwrap_or("").to_string();
+        if status == "failed" || status == "completed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(status, "failed");
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/analytics/generate",
+        json_body(json!({"report_type": "plugin:acme:assets", "config": {"custom_params": {"since": "2026-01-01"}}})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 503, "{}", r.text());
+
+    // Annotations on a Puppet run report.
+    let hash = "0123456789abcdef0123456789abcdef01234567";
+    app.state
+        .plugin_manager
+        .annotate_report("acme", hash, "risk", &json!(8), Some("high"))
+        .await
+        .unwrap();
+    let cols: Value = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/reports/annotation-columns",
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert_eq!(cols[0]["key"], "risk");
+    assert_eq!(cols[0]["sortable"], true);
+    let a: Value = send(
+        &app,
+        &t,
+        "GET",
+        &format!("/api/v1/reports/{hash}/annotations"),
+        vec![],
+        &[],
+    )
+    .await
+    .json();
+    assert_eq!(a[0]["value"], 8);
+    assert_eq!(a[0]["severity"], "high");
+    let l: Value = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/reports/annotations/lookup",
+        json_body(json!({"hashes": [hash, "f".repeat(40)]})),
+        JSON,
+    )
+    .await
+    .json();
+    assert_eq!(l[hash][0]["label"], "Risk");
+    assert!(l.get("f".repeat(40)).is_none());
+
+    // Datasets feed the custom report builder.
+    app.state
+        .plugin_manager
+        .put_dataset_rows(
+            "acme",
+            "assets",
+            &[
+                json!({"certname": "a", "tier": 1}),
+                json!({"certname": "b", "tier": 2}),
+            ],
+            true,
+            &[],
+        )
+        .await
+        .unwrap();
+    let ds: Value = send(&app, &t, "GET", "/api/v1/analytics/datasets", vec![], &[])
+        .await
+        .json();
+    assert_eq!(ds[0]["id"], "plugin:acme:assets");
+    assert_eq!(ds[0]["rows"], 2);
+    let q: Value = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/analytics/datasets/query",
+        json_body(json!({"dataset": "plugin:acme:assets", "filter": {"tier": 2}})),
+        JSON,
+    )
+    .await
+    .json();
+    assert_eq!(q["total"], 1);
+    assert_eq!(q["rows"][0]["certname"], "b");
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/analytics/saved-reports",
+        json_body(json!({
+            "name": "custom", "report_type": "custom",
+            "query_config": {"custom_params": {"dataset": "plugin:acme:assets"}}, "is_public": false
+        })),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let cid = r.json::<Value>()["id"].as_str().unwrap().to_string();
+    let exec: Value = send(
+        &app,
+        &t,
+        "POST",
+        &format!("/api/v1/analytics/saved-reports/{cid}/execute"),
+        json_body(json!({"output_format": "csv"})),
+        JSON,
+    )
+    .await
+    .json();
+    assert_eq!(exec["status"], "completed");
+    assert_eq!(exec["output_data"]["report_type"], "custom");
+    assert_eq!(exec["output_data"]["total"], 2);
+    let eid = exec["id"].as_str().unwrap();
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        &format!("/api/v1/analytics/executions/{eid}/export?format=json"),
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    assert!(r.headers["content-disposition"]
+        .to_str()
+        .unwrap()
+        .starts_with("attachment"));
+    // The plugin format reaches the (unavailable) remote runtime.
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        &format!("/api/v1/analytics/executions/{eid}/export?format=plugin:acme:sarif"),
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 503, "{}", r.text());
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        &format!("/api/v1/analytics/executions/{eid}/export?format=plugin:acme:nope"),
+        vec![],
+        &[],
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 404);
+}

@@ -13,6 +13,8 @@ import type {
   GenerateReportRequest,
   ReportType,
   ReportQueryConfig,
+  ReportExecution,
+  DatasetQueryRequest,
 } from '../types';
 
 // Query keys
@@ -20,7 +22,7 @@ export const analyticsKeys = {
   all: ['analytics'] as const,
   savedReports: () => [...analyticsKeys.all, 'saved-reports'] as const,
   savedReport: (id: string) => [...analyticsKeys.savedReports(), id] as const,
-  savedReportsByType: (type: ReportType) =>
+  savedReportsByType: (type: ReportType | string) =>
     [...analyticsKeys.savedReports(), 'type', type] as const,
   templates: () => [...analyticsKeys.all, 'templates'] as const,
   template: (id: string) => [...analyticsKeys.templates(), id] as const,
@@ -31,10 +33,26 @@ export const analyticsKeys = {
   complianceBaseline: (id: string) => [...analyticsKeys.complianceBaselines(), id] as const,
   driftBaselines: () => [...analyticsKeys.all, 'drift-baselines'] as const,
   driftBaseline: (id: string) => [...analyticsKeys.driftBaselines(), id] as const,
+  reportTypes: () => [...analyticsKeys.all, 'report-types'] as const,
+  exportFormats: () => [...analyticsKeys.all, 'export-formats'] as const,
+  datasets: () => [...analyticsKeys.all, 'datasets'] as const,
 };
 
+export const reportKeys = {
+  annotationColumns: ['reports', 'annotation-columns'] as const,
+  annotationLookup: (hashes: string[]) => ['reports', 'annotations', 'lookup', hashes] as const,
+  annotations: (hash: string) => ['reports', 'annotations', hash] as const,
+};
+
+/** Plugin report executions run in the background; poll while any is unfinished. */
+export const EXECUTION_POLL_MS = 2000;
+
+export function hasUnfinishedExecution(executions: ReportExecution[] | undefined): boolean {
+  return (executions ?? []).some((e) => e.status === 'pending' || e.status === 'running');
+}
+
 // Saved Reports
-export function useSavedReports(reportType?: ReportType) {
+export function useSavedReports(reportType?: ReportType | string) {
   return useQuery({
     queryKey: reportType
       ? analyticsKeys.savedReportsByType(reportType)
@@ -103,11 +121,13 @@ export function useReportExecutions(reportId: string, limit?: number) {
     queryKey: analyticsKeys.executions(reportId),
     queryFn: () => api.getReportExecutions(reportId, limit),
     enabled: !!reportId,
+    refetchInterval: (query) =>
+      hasUnfinishedExecution(query.state.data) ? EXECUTION_POLL_MS : false,
   });
 }
 
 // Report Templates
-export function useReportTemplates(reportType?: ReportType) {
+export function useReportTemplates(reportType?: ReportType | string) {
   return useQuery({
     queryKey: analyticsKeys.templates(),
     queryFn: () => api.getReportTemplates(reportType),
@@ -182,8 +202,13 @@ export function useGenerateReport() {
 
 export function useGenerateReportByType() {
   return useMutation({
-    mutationFn: ({ reportType, config }: { reportType: ReportType; config?: ReportQueryConfig }) =>
-      api.generateReportByType(reportType, config),
+    mutationFn: ({
+      reportType,
+      config,
+    }: {
+      reportType: ReportType | string;
+      config?: ReportQueryConfig;
+    }) => api.generateReportByType(reportType, config),
   });
 }
 
@@ -293,5 +318,63 @@ export function useExportExecution() {
   return useMutation({
     mutationFn: ({ id, format }: { id: string; format?: string }) =>
       api.exportExecution(id, format),
+  });
+}
+
+// Plugin report types, export formats and datasets
+export function useReportTypes() {
+  return useQuery({
+    queryKey: analyticsKeys.reportTypes(),
+    queryFn: api.getReportTypes,
+  });
+}
+
+export function useExportFormats() {
+  return useQuery({
+    queryKey: analyticsKeys.exportFormats(),
+    queryFn: api.getExportFormats,
+  });
+}
+
+export function useDatasets() {
+  return useQuery({
+    queryKey: analyticsKeys.datasets(),
+    queryFn: api.getDatasets,
+  });
+}
+
+export function useDatasetQuery() {
+  return useMutation({
+    mutationFn: (request: DatasetQueryRequest) => api.queryDataset(request),
+  });
+}
+
+// Plugin annotations on run reports. Errors are treated as "no annotations" so a
+// failing plugin endpoint never breaks the reports page.
+export function useReportAnnotationColumns() {
+  return useQuery({
+    queryKey: reportKeys.annotationColumns,
+    queryFn: () => api.getReportAnnotationColumns().catch(() => []),
+    staleTime: 60_000,
+  });
+}
+
+/** The server accepts at most this many hashes per lookup. */
+export const ANNOTATION_LOOKUP_MAX = 500;
+
+export function useReportAnnotationLookup(hashes: string[], enabled: boolean) {
+  const limited = hashes.slice(0, ANNOTATION_LOOKUP_MAX);
+  return useQuery({
+    queryKey: reportKeys.annotationLookup(limited),
+    queryFn: () => api.lookupReportAnnotations(limited).catch(() => ({})),
+    enabled: enabled && limited.length > 0,
+  });
+}
+
+export function useReportAnnotations(hash: string, enabled = true) {
+  return useQuery({
+    queryKey: reportKeys.annotations(hash),
+    queryFn: () => api.getReportAnnotations(hash).catch(() => []),
+    enabled: enabled && !!hash,
   });
 }
