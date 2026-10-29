@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-29
+
 ### Added
 - Add plugin UI and SDK (M23): plugin pages and panels declared with `render: iframe` load from the verified package in a sandboxed iframe (`allow-scripts allow-forms`, no same-origin, no cookies or token) from `/api/v1/plugins/ui-assets/<token>/...`, an unguessable expiring path token created by `POST /api/v1/plugins/ui/sessions`; every response carries a CSP with a `sandbox` directive and `connect-src` limited to the approved `http:egress` hosts, only web files of the enabled version are served, and a disabled, upgraded or revoked plugin stops being served at once (T83). The `@openvox/plugin-sdk` TypeScript package (`sdk/typescript`) gives the page `getContext`, `showNotification`, `navigate`, `resize`, `on('theme.changed')` and a read-only `api.fetch` proxy gated by the plugin's approved `nodes:read`, `facts:read`, `reports:read`, `groups:read` and `users:read` capabilities and the user's own RBAC, over a MessageChannel handshake that only accepts the frame's own opaque-origin window (T84). The host exposes `--ov-*` design tokens (colors, fonts, radius, light and dark) as CSS custom properties and posts allowlisted values to frames on load and on every theme change (T85). The slot catalog is versioned and served at `GET /api/v1/plugins/ui/catalog` with each slot's context contract, `max_items` (enforced when serving the registry) and whether the host mounts it; the host now mounts `toolbar.global`, `footer.global`, `dashboard.widgets`, `node.detail.tabs`, `node.detail.actions`, `group.detail.panels`, `report.detail.panels`, `settings.sections` and `page` for declarative and iframe contributions (T85)
 
@@ -538,7 +540,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 - Add initial admin account setup to the Puppet module (T25)
 - Support RHEL 8/9, CentOS 8/9, Rocky 8/9, AlmaLinux 8/9, Fedora 38/39/40, Debian 11/12 and Ubuntu 22.04/24.04 in the Puppet module (T25)
 
-[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/openvoxproject/openvox-webui/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.44.0
 [0.43.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.43.0
 [0.42.0]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.42.0
 [0.41.6]: https://github.com/openvoxproject/openvox-webui/releases/tag/v0.41.6
