@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-10-29
+
+### Changed
+- Version bump to match OpenVox WebUI 0.46.0 (plugin facts, reports, advanced classification and classification extensions for plugins); the module itself is unchanged.
+
 ## [0.45.0] - 2026-10-29
 
 ### Changed
