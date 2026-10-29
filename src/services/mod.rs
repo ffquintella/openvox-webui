@@ -7,6 +7,7 @@ pub mod backup_encryption;
 pub mod backup_scheduler;
 pub mod cache;
 pub mod classification;
+pub mod classification_expr;
 pub mod code_deploy;
 pub mod code_deploy_scheduler;
 pub mod cve_feed;

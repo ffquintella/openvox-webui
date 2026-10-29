@@ -72,6 +72,11 @@ pub struct TestWorld {
     pub notification_channels_configured: bool,
     pub alert_generated: bool,
 
+    /// Advanced classification scenarios run the real engine (M26)
+    pub engine_groups: Vec<openvox_webui::models::NodeGroup>,
+    pub engine_result: Option<openvox_webui::models::ClassificationResult>,
+    pub engine_explain: Option<openvox_webui::models::ClassificationExplain>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,

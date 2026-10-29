@@ -54,6 +54,123 @@ pub struct NodeGroup {
 
     /// Pinned (static) nodes
     pub pinned_nodes: Vec<String>,
+
+    /// Priority among siblings (M26): higher wins on conflicting values,
+    /// ties keep the stored order (name).
+    #[serde(default = "default_group_priority")]
+    pub priority: i32,
+
+    /// Composite expression (M26), canonical JSON. When the group also has
+    /// flat rules, both must match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<serde_json::Value>,
+
+    /// Per-group behavior policies (M26); the default reproduces the
+    /// behavior from before policies existed.
+    #[serde(default)]
+    pub behavior: GroupBehavior,
+}
+
+/// Default group priority.
+pub const DEFAULT_GROUP_PRIORITY: i32 = 100;
+/// Accepted priority range.
+pub const GROUP_PRIORITY_RANGE: std::ops::RangeInclusive<i32> = -10_000..=10_000;
+
+fn default_group_priority() -> i32 {
+    DEFAULT_GROUP_PRIORITY
+}
+
+/// How a group relates to its ancestors (M26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum Inheritance {
+    /// The group is only evaluated when its parent matched and inherits all
+    /// classes and variables from its ancestors.
+    #[default]
+    Inherit,
+    /// The group is evaluated even if its parent did not match; it inherits
+    /// only from the ancestors that did match.
+    Independent,
+    /// Cuts class and variable inheritance from every ancestor.
+    Block,
+    /// Inherits only the listed class names and variable keys.
+    Select { keys: Vec<String> },
+}
+
+/// How a group's rules are combined (M26); overrides `rule_match_type`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum MatchMode {
+    All,
+    Any,
+    /// At least `k` rules must match.
+    NOf {
+        k: usize,
+    },
+}
+
+/// How the group's classes and variables merge into what was inherited (M26).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeStrategy {
+    /// Deep merge of class parameters, the group's value wins (today's behavior).
+    #[default]
+    Deep,
+    /// A class the group declares replaces the inherited entry as a whole.
+    Replace,
+    /// Like `deep`, but arrays are united without duplicates.
+    Union,
+    /// A different value for an existing key is an error; the first value is kept.
+    FailOnConflict,
+}
+
+/// Per-group behavior policies (M26). Every field defaults to the engine's
+/// behavior before policies existed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct GroupBehavior {
+    pub inheritance: Inheritance,
+    /// Mutually exclusive siblings: among matching siblings of the same parent
+    /// and set, only the one with the highest priority stays.
+    pub exclusive_set: Option<String>,
+    pub match_mode: Option<MatchMode>,
+    pub merge: MergeStrategy,
+    /// The group does not match before this instant.
+    pub active_from: Option<chrono::DateTime<chrono::Utc>>,
+    /// The group does not match from this instant on.
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl GroupBehavior {
+    /// True when nothing deviates from the defaults.
+    pub fn is_default(&self) -> bool {
+        *self == GroupBehavior::default()
+    }
+
+    /// Reject values that cannot work.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Inheritance::Select { keys } = &self.inheritance {
+            if keys.is_empty() || keys.iter().any(|k| k.trim().is_empty()) {
+                return Err("inheritance 'select' needs a non-empty list of keys".into());
+            }
+        }
+        if let Some(MatchMode::NOf { k }) = &self.match_mode {
+            if *k == 0 {
+                return Err("match_mode 'n_of' needs k >= 1".into());
+            }
+        }
+        if let Some(set) = &self.exclusive_set {
+            if set.trim().is_empty() || set.len() > 64 {
+                return Err("exclusive_set must be 1 to 64 characters".into());
+            }
+        }
+        if let (Some(from), Some(to)) = (self.active_from, self.expires_at) {
+            if to <= from {
+                return Err("expires_at must be after active_from".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for NodeGroup {
@@ -72,6 +189,9 @@ impl Default for NodeGroup {
             variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
+            priority: DEFAULT_GROUP_PRIORITY,
+            expression: None,
+            behavior: GroupBehavior::default(),
         }
     }
 }
@@ -103,6 +223,12 @@ pub struct CreateGroupRequest {
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,
     pub variables: Option<serde_json::Value>,
+    /// Priority among siblings (M26)
+    pub priority: Option<i32>,
+    /// Composite expression (M26); on update an empty object clears it
+    pub expression: Option<serde_json::Value>,
+    /// Behavior policies (M26)
+    pub behavior: Option<GroupBehavior>,
 }
 
 /// Request to update an existing node group
@@ -121,6 +247,12 @@ pub struct UpdateGroupRequest {
     /// Classes in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
     pub classes: Option<serde_json::Value>,
     pub variables: Option<serde_json::Value>,
+    /// Priority among siblings (M26)
+    pub priority: Option<i32>,
+    /// Composite expression (M26); on update an empty object clears it
+    pub expression: Option<serde_json::Value>,
+    /// Behavior policies (M26)
+    pub behavior: Option<GroupBehavior>,
 }
 
 /// Request to create a classification rule

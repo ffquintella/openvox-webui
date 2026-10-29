@@ -16,7 +16,7 @@ OpenVox WebUI is a web interface for managing and monitoring OpenVox infrastruct
 
 Detailed documentation for implemented features is in [docs/implemented-features/](docs/implemented-features/). Reference material that used to live in this file (key features, roles and permissions, API reference, installation, development guidelines, version history, references) is now in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md). The format of this file and `CHANGELOG.md` is defined by the Project Tracking Format (PTF) v1.
 
-Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks), M22 (telemetry and governance), M23 (plugin UI and SDK), M24 (updates and rollback) and M25 (facts and reports) are done; M26 (advanced classification) is next.
+Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is in progress (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks), M22 (telemetry and governance), M23 (plugin UI and SDK), M24 (updates and rollback) and M25 (facts and reports) and M26 (advanced classification) are done; M27 (classification extensions for plugins) is next.
 
 ## [M1] Foundation
 > outcome: The project builds, runs, has its RBAC foundation in place and is covered by an automated test setup.
@@ -270,9 +270,9 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 > spec: S21, S23
 > note: Independent of the plugin runtime and can start earlier.
 
-- [ ] T91 Add expression engine for classification rules (S21)
-- [ ] T92 Add group behavior policies (S21)
-- [ ] T93 Add explain, provenance and impact preview (S21)
+- [x] T91 Add expression engine for classification rules (S21)
+- [x] T92 Add group behavior policies (S21)
+- [x] T93 Add explain, provenance and impact preview (S21)
 
 ## [M27] Classification Extensions for Plugins
 > outcome: Plugins extend classification with operators, membership providers and generated groups without destabilizing the hot path.

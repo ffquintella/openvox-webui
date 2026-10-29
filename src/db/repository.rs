@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use crate::models::{
     ClassificationRule, CreateGroupRequest, CreateRuleRequest, FactDefinition, FactTemplate,
-    NodeGroup, RuleMatchType, RuleOperator, UpdateGroupRequest,
+    GroupBehavior, NodeGroup, RuleMatchType, RuleOperator, UpdateGroupRequest,
+    DEFAULT_GROUP_PRIORITY,
 };
 
 /// Repository for node group operations
@@ -31,6 +32,9 @@ struct GroupRow {
     #[allow(dead_code)] // Kept for database backward compatibility
     parameters: String,
     variables: String,
+    priority: i32,
+    expression_json: Option<String>,
+    behavior_json: Option<String>,
 }
 
 /// Row returned from classification_rules table (with group_id for batch loading)
@@ -78,7 +82,8 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables,
+                   priority, expression_json, behavior_json
             FROM node_groups
             WHERE organization_id = ?
             ORDER BY name
@@ -119,7 +124,8 @@ impl<'a> GroupRepository<'a> {
         let rows = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables,
+                   priority, expression_json, behavior_json
             FROM node_groups
             ORDER BY organization_id, name
             "#,
@@ -155,7 +161,8 @@ impl<'a> GroupRepository<'a> {
         let row = sqlx::query_as::<_, GroupRow>(
             r#"
             SELECT id, organization_id, name, description, parent_id, environment,
-                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables
+                   is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables,
+                   priority, expression_json, behavior_json
             FROM node_groups
             WHERE organization_id = ? AND id = ?
             "#,
@@ -194,12 +201,24 @@ impl<'a> GroupRepository<'a> {
 
         let is_environment_group = req.is_environment_group.unwrap_or(false);
         let match_all_nodes = req.match_all_nodes.unwrap_or(false);
+        let priority = req.priority.unwrap_or(DEFAULT_GROUP_PRIORITY);
+        let expression_json = req
+            .expression
+            .as_ref()
+            .filter(|e| !is_empty_expression(e))
+            .map(|e| e.to_string());
+        let behavior_json = req
+            .behavior
+            .as_ref()
+            .filter(|b| !b.is_default())
+            .map(|b| serde_json::to_string(b).unwrap_or_default());
 
         sqlx::query(
             r#"
             INSERT INTO node_groups (id, organization_id, name, description, parent_id, environment,
-                                     is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     is_environment_group, match_all_nodes, rule_match_type, classes, parameters, variables,
+                                     priority, expression_json, behavior_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id.to_string())
@@ -214,6 +233,9 @@ impl<'a> GroupRepository<'a> {
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
         .bind(&variables)
+        .bind(priority)
+        .bind(&expression_json)
+        .bind(&behavior_json)
         .execute(self.pool)
         .await
         .context("Failed to create group")?;
@@ -266,11 +288,22 @@ impl<'a> GroupRepository<'a> {
                 serde_json::to_string(&existing.variables).unwrap_or_else(|_| "{}".to_string())
             });
 
+        let priority = req.priority.unwrap_or(existing.priority);
+        let expression_json = match &req.expression {
+            Some(e) if is_empty_expression(e) => None,
+            Some(e) => Some(e.to_string()),
+            None => existing.expression.as_ref().map(|e| e.to_string()),
+        };
+        let behavior = req.behavior.clone().unwrap_or(existing.behavior);
+        let behavior_json =
+            (!behavior.is_default()).then(|| serde_json::to_string(&behavior).unwrap_or_default());
+
         sqlx::query(
             r#"
             UPDATE node_groups
             SET name = ?, description = ?, parent_id = ?, environment = ?,
                 is_environment_group = ?, match_all_nodes = ?, rule_match_type = ?, classes = ?, parameters = ?, variables = ?,
+                priority = ?, expression_json = ?, behavior_json = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE organization_id = ? AND id = ?
             "#,
@@ -285,6 +318,9 @@ impl<'a> GroupRepository<'a> {
         .bind(&classes)
         .bind("{}") // parameters column kept for backward compatibility but now empty
         .bind(&variables)
+        .bind(priority)
+        .bind(&expression_json)
+        .bind(&behavior_json)
         .bind(organization_id.to_string())
         .bind(id.to_string())
         .execute(self.pool)
@@ -494,6 +530,9 @@ impl<'a> GroupRepository<'a> {
             variables,
             rules,
             pinned_nodes,
+            priority: row.priority,
+            expression: parse_expression(row.expression_json.as_deref()),
+            behavior: parse_behavior(row.behavior_json.as_deref()),
         })
     }
 
@@ -547,6 +586,9 @@ impl<'a> GroupRepository<'a> {
             variables,
             rules,
             pinned_nodes,
+            priority: row.priority,
+            expression: parse_expression(row.expression_json.as_deref()),
+            behavior: parse_behavior(row.behavior_json.as_deref()),
         })
     }
 
@@ -691,6 +733,21 @@ fn operator_to_string(op: &RuleOperator) -> String {
 }
 
 /// Parse operator string to RuleOperator
+fn is_empty_expression(e: &serde_json::Value) -> bool {
+    e.is_null() || e.as_object().is_some_and(|o| o.is_empty())
+}
+
+fn parse_expression(raw: Option<&str>) -> Option<serde_json::Value> {
+    serde_json::from_str(raw?)
+        .ok()
+        .filter(|e| !is_empty_expression(e))
+}
+
+fn parse_behavior(raw: Option<&str>) -> GroupBehavior {
+    raw.and_then(|r| serde_json::from_str(r).ok())
+        .unwrap_or_default()
+}
+
 fn parse_operator(s: &str) -> RuleOperator {
     match s {
         "=" => RuleOperator::Equals,

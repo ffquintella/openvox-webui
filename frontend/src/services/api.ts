@@ -25,6 +25,12 @@ import type {
   CreateRuleRequest,
   ClassificationRule,
   ClassificationResult,
+  GroupPreviewRequest,
+  GroupPreviewResult,
+  ClassificationFunctionInfo,
+  ClassificationOperatorInfo,
+  ClassificationMergeStrategyInfo,
+  ClassificationBehaviorInfo,
   Role,
   Permission,
   CreateRoleRequest,
@@ -420,8 +426,13 @@ export const api = {
     return response.data;
   },
 
-  getNodeClassification: async (certname: string): Promise<ClassificationResult> => {
-    const response = await client.get(`/nodes/${certname}/classification`);
+  getNodeClassification: async (
+    certname: string,
+    options?: { explain?: boolean }
+  ): Promise<ClassificationResult> => {
+    const response = await client.get(`/nodes/${certname}/classification`, {
+      params: options?.explain ? { explain: true } : undefined,
+    });
     return response.data;
   },
 
@@ -539,6 +550,35 @@ export const api = {
 
   getGroupNodes: async (id: string): Promise<string[]> => {
     const response = await client.get(`/groups/${id}/nodes`);
+    return response.data;
+  },
+
+  // Advanced classification (M26)
+  previewGroupChange: async (
+    id: string,
+    data: GroupPreviewRequest
+  ): Promise<GroupPreviewResult> => {
+    const response = await client.post(`/groups/${id}/preview`, data);
+    return response.data;
+  },
+
+  getClassificationFunctions: async (): Promise<ClassificationFunctionInfo[]> => {
+    const response = await client.get('/classification/functions');
+    return response.data;
+  },
+
+  getClassificationOperators: async (): Promise<ClassificationOperatorInfo[]> => {
+    const response = await client.get('/classification/operators');
+    return response.data;
+  },
+
+  getClassificationMergeStrategies: async (): Promise<ClassificationMergeStrategyInfo[]> => {
+    const response = await client.get('/classification/merge-strategies');
+    return response.data;
+  },
+
+  getClassificationBehaviors: async (): Promise<ClassificationBehaviorInfo[]> => {
+    const response = await client.get('/classification/behaviors');
     return response.data;
   },
 

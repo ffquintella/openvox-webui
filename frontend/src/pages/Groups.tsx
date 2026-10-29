@@ -29,12 +29,31 @@ import NodeAutocomplete from '../components/NodeAutocomplete';
 import PluginSlot from '../components/plugins/PluginSlot';
 import { usePluginFactSources } from '../hooks/usePlugins';
 import { namespaceSources, ruleDependsOnPlugin } from '../components/plugins/factHelpers';
+import ExpressionSection from '../components/groups/ExpressionSection';
+import BehaviorSection from '../components/groups/BehaviorSection';
+import ImpactPreviewPanel from '../components/groups/ImpactPreviewPanel';
+import { usePreviewGate } from '../components/groups/usePreviewGate';
+import {
+  DEFAULT_PRIORITY,
+  behaviorToForm,
+  defaultBehavior,
+  expressionToText,
+  formToBehavior,
+  parseExpressionText,
+  parsePriority,
+  stableStringify,
+  validateBehaviorForm,
+  type BehaviorFormState,
+} from '../components/groups/expressionHelpers';
+import { draftFromGroup, type GroupGateDraft } from '../components/groups/previewGate';
 import type {
   NodeGroup,
   ClassificationRule,
   RuleOperator,
   RuleMatchType,
   CreateRuleRequest,
+  CreateGroupRequest,
+  UpdateGroupRequest,
   GroupUpdateSchedule,
   CreateGroupUpdateScheduleRequest,
   UpdateOperationType,
@@ -101,6 +120,12 @@ export default function Groups() {
   const [formIsEnvironmentGroup, setFormIsEnvironmentGroup] = useState(false);
   const [formMatchAllNodes, setFormMatchAllNodes] = useState(false);
   const [formMatchType, setFormMatchType] = useState<RuleMatchType>('all');
+  // Advanced classification (M26) form state
+  const [formExpressionText, setFormExpressionText] = useState('');
+  const [formPriority, setFormPriority] = useState(String(DEFAULT_PRIORITY));
+  const [formBehavior, setFormBehavior] = useState<BehaviorFormState>(() =>
+    behaviorToForm(defaultBehavior())
+  );
 
   // Rule form state
   const [isAddRuleOpen, setIsAddRuleOpen] = useState(false);
@@ -207,6 +232,52 @@ export default function Groups() {
   const expandAllGroups = () => {
     setCollapsedGroups(new Set());
   };
+
+  // Advanced classification draft, validation and the mandatory impact-preview gate
+  const parsedExpression = useMemo(
+    () => parseExpressionText(formExpressionText),
+    [formExpressionText]
+  );
+  const behaviorErrors = useMemo(() => validateBehaviorForm(formBehavior), [formBehavior]);
+  const parsedPriority = parsePriority(formPriority);
+  const advancedErrors = useMemo(() => {
+    const errors: string[] = [];
+    if (!parsedExpression.ok) errors.push(parsedExpression.error);
+    if (parsedPriority === null) errors.push('Priority must be a whole number.');
+    errors.push(...behaviorErrors);
+    return errors;
+  }, [parsedExpression, parsedPriority, behaviorErrors]);
+
+  const gateDraft = useMemo<GroupGateDraft>(
+    () => ({
+      expression: parsedExpression.ok ? parsedExpression.expression : null,
+      behavior: formToBehavior(formBehavior),
+      priority: parsedPriority ?? DEFAULT_PRIORITY,
+      ruleMatchType: formMatchType,
+      matchAllNodes: formMatchAllNodes,
+      environment: formEnvironment,
+      parentId: formParentId,
+    }),
+    [
+      parsedExpression,
+      formBehavior,
+      parsedPriority,
+      formMatchType,
+      formMatchAllNodes,
+      formEnvironment,
+      formParentId,
+    ]
+  );
+  const gateOriginal = useMemo<GroupGateDraft | null>(
+    () => (isEditOpen && selectedGroup ? draftFromGroup(selectedGroup) : null),
+    [isEditOpen, selectedGroup]
+  );
+  const previewGate = usePreviewGate({
+    isNew: !gateOriginal,
+    original: gateOriginal,
+    draft: gateDraft,
+    errors: advancedErrors,
+  });
 
   const createMutation = useMutation({
     mutationFn: api.createGroup,
@@ -344,6 +415,10 @@ export default function Groups() {
   });
 
   const resetForm = () => {
+    setFormExpressionText('');
+    setFormPriority(String(DEFAULT_PRIORITY));
+    setFormBehavior(behaviorToForm(defaultBehavior()));
+    previewGate.reset();
     setFormName('');
     setFormDescription('');
     setFormParentId('');
@@ -466,7 +541,15 @@ export default function Groups() {
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!previewGate.canSave) return;
+    const advanced: Pick<CreateGroupRequest, 'priority' | 'expression' | 'behavior'> = {};
+    if (gateDraft.priority !== DEFAULT_PRIORITY) advanced.priority = gateDraft.priority;
+    if (gateDraft.expression) advanced.expression = gateDraft.expression;
+    if (stableStringify(gateDraft.behavior) !== stableStringify(defaultBehavior())) {
+      advanced.behavior = gateDraft.behavior;
+    }
     createMutation.mutate({
+      ...advanced,
       name: formName,
       description: formDescription || undefined,
       parent_id: formParentId || undefined,
@@ -479,10 +562,22 @@ export default function Groups() {
 
   const handleEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedGroup) return;
+    if (!selectedGroup || !previewGate.canSave) return;
+    // Only send the advanced fields that changed, so older servers keep working untouched.
+    const saved = draftFromGroup(selectedGroup);
+    const advanced: Pick<UpdateGroupRequest, 'priority' | 'expression' | 'behavior'> = {};
+    if (gateDraft.priority !== saved.priority) advanced.priority = gateDraft.priority;
+    if (stableStringify(gateDraft.expression) !== stableStringify(saved.expression)) {
+      // An empty object clears the expression.
+      advanced.expression = gateDraft.expression ?? {};
+    }
+    if (stableStringify(gateDraft.behavior) !== stableStringify(saved.behavior)) {
+      advanced.behavior = gateDraft.behavior;
+    }
     updateMutation.mutate({
       id: selectedGroup.id,
       data: {
+        ...advanced,
         name: formName,
         description: formDescription || undefined,
         parent_id: formParentId || null,
@@ -645,6 +740,10 @@ export default function Groups() {
     setFormIsEnvironmentGroup(selectedGroup.is_environment_group || false);
     setFormMatchAllNodes(selectedGroup.match_all_nodes || false);
     setFormMatchType(selectedGroup.rule_match_type);
+    setFormExpressionText(expressionToText(selectedGroup.expression));
+    setFormPriority(String(selectedGroup.priority ?? DEFAULT_PRIORITY));
+    setFormBehavior(behaviorToForm(selectedGroup.behavior));
+    previewGate.reset();
     setIsEditOpen(true);
   };
 
@@ -798,7 +897,7 @@ export default function Groups() {
       {/* Create/Edit Modal */}
       {(isCreateOpen || isEditOpen) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+          <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4">
               {isCreateOpen ? 'Create Node Group' : 'Edit Node Group'}
             </h2>
@@ -923,8 +1022,40 @@ export default function Groups() {
                     </label>
                   </div>
                 </div>
+                <ExpressionSection
+                  text={formExpressionText}
+                  onChange={setFormExpressionText}
+                  error={parsedExpression.ok ? null : parsedExpression.error}
+                  rules={isEditOpen && selectedGroup ? selectedGroup.rules : []}
+                  ruleMatchType={formMatchType}
+                />
+                <BehaviorSection
+                  priority={formPriority}
+                  onPriorityChange={setFormPriority}
+                  behavior={formBehavior}
+                  onBehaviorChange={setFormBehavior}
+                  errors={behaviorErrors}
+                />
+                {isEditOpen && selectedGroup && gateOriginal && (
+                  <ImpactPreviewPanel
+                    groupId={selectedGroup.id}
+                    original={gateOriginal}
+                    draft={gateDraft}
+                    signature={previewGate.signature}
+                    gate={previewGate.state}
+                    changed={previewGate.changed}
+                    errors={advancedErrors}
+                    onPreviewed={previewGate.markPreviewed}
+                    onConfirmChange={previewGate.setConfirmed}
+                  />
+                )}
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex items-center justify-end gap-3 mt-6">
+                {previewGate.blockedReason && (
+                  <p className="text-xs text-gray-500 mr-auto" data-testid="save-blocked-reason">
+                    {previewGate.blockedReason}
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -938,7 +1069,10 @@ export default function Groups() {
                 </button>
                 <button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
+                  disabled={
+                    createMutation.isPending || updateMutation.isPending || !previewGate.canSave
+                  }
+                  title={previewGate.blockedReason ?? undefined}
                   className="btn btn-primary"
                 >
                   {createMutation.isPending || updateMutation.isPending ? (

@@ -464,6 +464,12 @@ export interface NodeGroup {
   variables: Record<string, unknown>;
   rules: ClassificationRule[];
   pinned_nodes: string[];
+  /** Conflict priority (default 100; higher wins). Absent on servers without advanced classification. */
+  priority?: number;
+  /** Composite classification expression (canonical JSON), or null when only flat rules apply */
+  expression?: ClassificationExpression | null;
+  /** Inheritance, exclusivity, match mode, merge strategy and activation window */
+  behavior?: GroupBehavior;
 }
 
 export interface CreateGroupRequest {
@@ -478,6 +484,9 @@ export interface CreateGroupRequest {
   rule_match_type?: RuleMatchType;
   classes?: PuppetClasses;
   variables?: Record<string, unknown>;
+  priority?: number;
+  expression?: ClassificationExpression;
+  behavior?: GroupBehavior;
 }
 
 export interface UpdateGroupRequest {
@@ -492,6 +501,10 @@ export interface UpdateGroupRequest {
   rule_match_type?: RuleMatchType;
   classes?: PuppetClasses;
   variables?: Record<string, unknown>;
+  priority?: number;
+  /** Send an empty object to clear the expression */
+  expression?: ClassificationExpression;
+  behavior?: GroupBehavior;
 }
 
 export interface CreateRuleRequest {
@@ -599,6 +612,160 @@ export interface ClassificationResult {
   /** Combined variables from all matched groups, exported to the node as external facts */
   variables?: Record<string, unknown>;
   environment?: string | null;
+  /** Present only when requested with `explain=true` */
+  explain?: ClassificationExplain;
+}
+
+// Advanced classification (M26)
+
+/** Composite expression in canonical JSON: all/any/not, compare leaves and fn leaves. */
+export type ClassificationExpression = Record<string, unknown>;
+
+export type InheritanceMode = 'inherit' | 'independent' | 'block' | 'select';
+
+export interface GroupInheritance {
+  mode: InheritanceMode;
+  /** Only for the `select` mode */
+  keys?: string[];
+}
+
+export type MatchModeKind = 'all' | 'any' | 'n_of';
+
+export interface GroupMatchMode {
+  mode: MatchModeKind;
+  /** Only for the `n_of` mode */
+  k?: number;
+}
+
+export type MergeStrategyName = 'deep' | 'replace' | 'union' | 'fail_on_conflict';
+
+export interface GroupBehavior {
+  inheritance: GroupInheritance;
+  exclusive_set?: string | null;
+  match_mode?: GroupMatchMode | null;
+  merge: MergeStrategyName;
+  /** RFC3339 */
+  active_from?: string | null;
+  /** RFC3339 */
+  expires_at?: string | null;
+}
+
+export interface ClassificationFunctionInfo {
+  name: string;
+  min_args: number;
+  max_args: number;
+  returns: 'bool' | 'value';
+  description: string;
+  example: string;
+}
+
+export interface ClassificationOperatorInfo {
+  op: string;
+  description: string;
+}
+
+export interface ClassificationMergeStrategyInfo {
+  name: string;
+  description: string;
+}
+
+export interface ClassificationBehaviorInfo {
+  key: string;
+  description: string;
+  values: string[];
+}
+
+export type ExplainOutcome =
+  'matched' | 'not_matched' | 'environment_mismatch' | 'inactive' | 'excluded' | 'not_evaluated';
+
+export interface ExplainRuleEvaluation {
+  rule_id: string;
+  fact_path: string;
+  operator: string;
+  expected: unknown;
+  actual: unknown | null;
+  matched: boolean;
+}
+
+export type ExprTraceKind = 'all' | 'any' | 'not' | 'compare' | 'fn';
+
+export interface ExprTrace {
+  kind: ExprTraceKind;
+  label: string;
+  matched: boolean;
+  left?: unknown;
+  right?: unknown;
+  value?: unknown;
+  error?: string;
+  children: ExprTrace[];
+}
+
+export interface ExplainGroup {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  priority: number;
+  outcome: ExplainOutcome;
+  match_type: MatchType | null;
+  reason: string;
+  rules: ExplainRuleEvaluation[];
+  expression: ExprTrace | null;
+}
+
+export interface ProvenanceSource {
+  group_id: string;
+  group_name: string;
+}
+
+export interface ExplainProvenance {
+  /** Contributing groups per class; the last entry is the winner */
+  classes: Record<string, ProvenanceSource[]>;
+  /** Contributing groups per variable; the last entry is the winner */
+  variables: Record<string, ProvenanceSource[]>;
+  environment: ProvenanceSource | null;
+}
+
+export interface ClassificationExplain {
+  evaluated_at: string;
+  elapsed_us: number;
+  groups: ExplainGroup[];
+  provenance: ExplainProvenance;
+  merge_errors: string[];
+}
+
+export interface GroupPreviewRequest {
+  expression?: ClassificationExpression;
+  rules?: CreateRuleRequest[];
+  rule_match_type?: RuleMatchType;
+  match_all_nodes?: boolean;
+  environment?: string | null;
+  priority?: number;
+  behavior?: GroupBehavior;
+  parent_id?: string | null;
+}
+
+export interface GroupPreviewClassificationChange {
+  certname: string;
+  groups_added: string[];
+  groups_removed: string[];
+  classes_changed: boolean;
+  variables_changed: boolean;
+  environment_changed: boolean;
+}
+
+export interface GroupPreviewResult {
+  group_id: string;
+  nodes_evaluated: number;
+  nodes_skipped: number;
+  members_before: number;
+  members_after: number;
+  entering_count: number;
+  leaving_count: number;
+  entering: string[];
+  leaving: string[];
+  truncated: boolean;
+  classification_changed_count: number;
+  classification_changed: GroupPreviewClassificationChange[];
 }
 
 // Auth types

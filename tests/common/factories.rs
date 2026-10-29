@@ -247,6 +247,9 @@ impl GroupBuilder {
             variables: serde_json::json!({}),
             rules: vec![],
             pinned_nodes: vec![],
+            priority: 100,
+            expression: None,
+            behavior: Default::default(),
         }
     }
 }

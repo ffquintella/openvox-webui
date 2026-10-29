@@ -6,6 +6,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use futures::StreamExt;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -14,10 +15,12 @@ use crate::{
     middleware::AuthUser,
     models::{
         Action, AddPinnedNodeRequest, ClassificationRule, CreateGroupRequest,
-        CreateGroupUpdateScheduleRequest, CreateRuleRequest, GroupUpdateSchedule, NodeGroup,
-        Resource, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest, UpdateJob,
+        CreateGroupUpdateScheduleRequest, CreateRuleRequest, GroupBehavior, GroupUpdateSchedule,
+        NodeGroup, Resource, RuleMatchType, UpdateGroupRequest, UpdateGroupUpdateScheduleRequest,
+        UpdateJob, GROUP_PRIORITY_RANGE,
     },
     services::classification::{build_classification_facts_with_plugins, ClassificationService},
+    services::classification_expr,
     services::plugins::facts::UsableFactsSnapshot,
     services::puppetdb::PuppetDbClient,
     utils::AppError,
@@ -33,6 +36,7 @@ pub fn routes() -> Router<AppState> {
             get(get_group).put(update_group).delete(delete_group),
         )
         .route("/{id}/nodes", get(get_group_nodes))
+        .route("/{id}/preview", post(preview_group_change))
         .route("/{id}/rules", get(get_group_rules).post(add_rule))
         .route("/{id}/rules/{rule_id}", delete(delete_rule))
         .route("/{id}/pinned", post(add_pinned_node))
@@ -98,6 +102,33 @@ async fn check_group_permission(
     }
 }
 
+/// Validate the M26 fields of a create, update or preview request. An empty
+/// expression object means "no expression" and is accepted.
+fn validate_advanced(
+    priority: Option<i32>,
+    expression: Option<&serde_json::Value>,
+    behavior: Option<&GroupBehavior>,
+) -> Result<(), AppError> {
+    if let Some(p) = priority {
+        if !GROUP_PRIORITY_RANGE.contains(&p) {
+            return Err(AppError::bad_request(format!(
+                "priority must be between {} and {}",
+                GROUP_PRIORITY_RANGE.start(),
+                GROUP_PRIORITY_RANGE.end()
+            )));
+        }
+    }
+    if let Some(e) = expression {
+        if !e.is_null() && !e.as_object().is_some_and(|o| o.is_empty()) {
+            classification_expr::validate(e).map_err(AppError::bad_request)?;
+        }
+    }
+    if let Some(b) = behavior {
+        b.validate().map_err(AppError::bad_request)?;
+    }
+    Ok(())
+}
+
 /// List all node groups
 async fn list_groups(
     State(state): State<AppState>,
@@ -124,6 +155,11 @@ async fn create_group(
     // group-scoped permissions; otherwise require a global create permission.
     let permission_scope = payload.parent_id;
     check_group_permission(&state, &auth_user, Action::Create, permission_scope).await?;
+    validate_advanced(
+        payload.priority,
+        payload.expression.as_ref(),
+        payload.behavior.as_ref(),
+    )?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
     let repo = GroupRepository::new(&state.db);
@@ -172,6 +208,11 @@ async fn update_group(
 
     // Check update permission for this specific group
     check_group_permission(&state, &auth_user, Action::Update, Some(uuid)).await?;
+    validate_advanced(
+        payload.priority,
+        payload.expression.as_ref(),
+        payload.behavior.as_ref(),
+    )?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
 
@@ -710,4 +751,251 @@ async fn run_update_schedule(
         .await;
 
     Ok((StatusCode::CREATED, Json(job)))
+}
+
+/// Most nodes a preview evaluates; the rest are reported as skipped.
+const PREVIEW_MAX_NODES: usize = 2000;
+/// Most certnames listed per bucket of a preview.
+const PREVIEW_LIST_LIMIT: usize = 200;
+const PREVIEW_CHANGED_LIMIT: usize = 100;
+const PREVIEW_FACT_CONCURRENCY: usize = 8;
+
+/// Proposed changes to a group; whatever is omitted keeps its current value.
+#[derive(Debug, Deserialize, Default)]
+struct PreviewRequest {
+    expression: Option<serde_json::Value>,
+    rules: Option<Vec<CreateRuleRequest>>,
+    rule_match_type: Option<RuleMatchType>,
+    match_all_nodes: Option<bool>,
+    environment: Option<String>,
+    priority: Option<i32>,
+    behavior: Option<GroupBehavior>,
+    parent_id: Option<Uuid>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ClassificationChange {
+    certname: String,
+    groups_added: Vec<String>,
+    groups_removed: Vec<String>,
+    classes_changed: bool,
+    variables_changed: bool,
+    environment_changed: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct PreviewResult {
+    group_id: Uuid,
+    nodes_evaluated: usize,
+    nodes_skipped: usize,
+    members_before: usize,
+    members_after: usize,
+    entering_count: usize,
+    leaving_count: usize,
+    entering: Vec<String>,
+    leaving: Vec<String>,
+    truncated: bool,
+    classification_changed_count: usize,
+    classification_changed: Vec<ClassificationChange>,
+}
+
+/// Apply a preview request to a copy of the group.
+fn apply_preview(group: &NodeGroup, req: &PreviewRequest) -> NodeGroup {
+    let mut g = group.clone();
+    if let Some(e) = &req.expression {
+        g.expression =
+            (!e.is_null() && !e.as_object().is_some_and(|o| o.is_empty())).then(|| e.clone());
+    }
+    if let Some(rules) = &req.rules {
+        g.rules = rules
+            .iter()
+            .map(|r| ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: r.fact_path.clone(),
+                operator: r.operator,
+                value: r.value.clone(),
+            })
+            .collect();
+    }
+    if let Some(m) = req.rule_match_type {
+        g.rule_match_type = m;
+    }
+    if let Some(m) = req.match_all_nodes {
+        g.match_all_nodes = m;
+    }
+    if let Some(env) = &req.environment {
+        g.environment = (!env.is_empty()).then(|| env.clone());
+    }
+    if let Some(p) = req.priority {
+        g.priority = p;
+    }
+    if let Some(b) = &req.behavior {
+        g.behavior = b.clone();
+    }
+    if let Some(p) = req.parent_id {
+        g.parent_id = Some(p);
+    }
+    g
+}
+
+/// Dry-run a change to a group against every node: which nodes enter and
+/// leave the group and whose classification changes.
+///
+/// POST /api/v1/groups/:id/preview
+async fn preview_group_change(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Query(query): Query<OrgQuery>,
+    Path(id): Path<String>,
+    Json(req): Json<PreviewRequest>,
+) -> Result<Json<PreviewResult>, AppError> {
+    let group_id = Uuid::parse_str(&id).map_err(|_| AppError::bad_request("Invalid group ID"))?;
+    check_group_permission(&state, &auth_user, Action::Update, Some(group_id)).await?;
+    validate_advanced(req.priority, req.expression.as_ref(), req.behavior.as_ref())?;
+    let org_id = resolve_org(&auth_user, query.organization_id)?;
+
+    let puppetdb = state
+        .puppetdb
+        .as_deref()
+        .ok_or_else(|| AppError::service_unavailable("PuppetDB is not configured"))?;
+
+    let repo = GroupRepository::new(&state.db);
+    let before_groups = repo.get_all(org_id).await.map_err(|e| {
+        tracing::error!("Failed to load groups for preview: {}", e);
+        AppError::internal("Failed to load groups")
+    })?;
+    let current = before_groups
+        .iter()
+        .find(|g| g.id == group_id)
+        .ok_or_else(|| AppError::not_found("Group not found"))?;
+    let candidate = apply_preview(current, &req);
+    if candidate.parent_id == Some(group_id) {
+        return Err(AppError::bad_request("A group cannot be its own parent"));
+    }
+    let after_groups: Vec<NodeGroup> = before_groups
+        .iter()
+        .map(|g| {
+            if g.id == group_id {
+                candidate.clone()
+            } else {
+                g.clone()
+            }
+        })
+        .collect();
+
+    let now = chrono::Utc::now();
+    let before = ClassificationService::new(before_groups).with_now(now);
+    let after = ClassificationService::new(after_groups).with_now(now);
+
+    let mut nodes = puppetdb.get_nodes().await.map_err(|e| {
+        tracing::error!("Failed to list nodes for preview: {}", e);
+        AppError::internal("Failed to list nodes")
+    })?;
+    nodes.sort_by(|a, b| a.certname.cmp(&b.certname));
+    let nodes_skipped = nodes.len().saturating_sub(PREVIEW_MAX_NODES);
+    nodes.truncate(PREVIEW_MAX_NODES);
+
+    let plugin_facts = state.plugin_manager.usable_facts_snapshot().await;
+    let fetched: Vec<_> = futures::stream::iter(nodes)
+        .map(|node| async move {
+            let facts = puppetdb.get_node_facts(&node.certname).await;
+            (node, facts)
+        })
+        .buffer_unordered(PREVIEW_FACT_CONCURRENCY)
+        .collect()
+        .await;
+
+    let mut result = PreviewResult {
+        group_id,
+        nodes_evaluated: 0,
+        nodes_skipped,
+        members_before: 0,
+        members_after: 0,
+        entering_count: 0,
+        leaving_count: 0,
+        entering: vec![],
+        leaving: vec![],
+        truncated: nodes_skipped > 0,
+        classification_changed_count: 0,
+        classification_changed: vec![],
+    };
+    let mut fetched = fetched;
+    fetched.sort_by(|a, b| a.0.certname.cmp(&b.0.certname));
+    for (node, facts) in fetched {
+        let Ok(facts) = facts else {
+            result.nodes_skipped += 1;
+            continue;
+        };
+        let facts = build_classification_facts_with_plugins(
+            facts,
+            &node.certname,
+            node.catalog_environment.as_deref(),
+            plugin_facts.for_node(&node.certname),
+            now,
+        );
+        result.nodes_evaluated += 1;
+        let b = before.classify(&node.certname, &facts);
+        let a = after.classify(&node.certname, &facts);
+        let in_b = b.groups.iter().any(|g| g.id == group_id);
+        let in_a = a.groups.iter().any(|g| g.id == group_id);
+        result.members_before += in_b as usize;
+        result.members_after += in_a as usize;
+        if in_a && !in_b {
+            result.entering_count += 1;
+            if result.entering.len() < PREVIEW_LIST_LIMIT {
+                result.entering.push(node.certname.clone());
+            }
+        }
+        if in_b && !in_a {
+            result.leaving_count += 1;
+            if result.leaving.len() < PREVIEW_LIST_LIMIT {
+                result.leaving.push(node.certname.clone());
+            }
+        }
+
+        let ids =
+            |r: &crate::models::ClassificationResult| -> std::collections::BTreeMap<Uuid, String> {
+                r.groups.iter().map(|g| (g.id, g.name.clone())).collect()
+            };
+        let (ib, ia) = (ids(&b), ids(&a));
+        let change = ClassificationChange {
+            certname: node.certname.clone(),
+            groups_added: ia
+                .iter()
+                .filter(|(k, _)| !ib.contains_key(k))
+                .map(|(_, n)| n.clone())
+                .collect(),
+            groups_removed: ib
+                .iter()
+                .filter(|(k, _)| !ia.contains_key(k))
+                .map(|(_, n)| n.clone())
+                .collect(),
+            classes_changed: a.classes != b.classes,
+            variables_changed: a.variables != b.variables,
+            environment_changed: a.environment != b.environment,
+        };
+        if !change.groups_added.is_empty()
+            || !change.groups_removed.is_empty()
+            || change.classes_changed
+            || change.variables_changed
+            || change.environment_changed
+        {
+            result.classification_changed_count += 1;
+            if result.classification_changed.len() < PREVIEW_CHANGED_LIMIT {
+                result.classification_changed.push(change);
+            }
+        }
+    }
+    result.truncated |= result.entering_count > result.entering.len()
+        || result.leaving_count > result.leaving.len()
+        || result.classification_changed_count > result.classification_changed.len();
+
+    tracing::info!(
+        "Group change preview for {}: {} entering, {} leaving, {} classifications changed",
+        group_id,
+        result.entering_count,
+        result.leaving_count,
+        result.classification_changed_count
+    );
+    Ok(Json(result))
 }

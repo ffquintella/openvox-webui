@@ -35,6 +35,7 @@ import { useNodeVulnerabilities } from '../hooks/useCve';
 import { usePluginSlot } from '../hooks/usePlugins';
 import { pluginIdFromSource } from '../components/plugins/factHelpers';
 import PluginSlot, { PluginContributionView } from '../components/plugins/PluginSlot';
+import NodeExplainPanel from '../components/classification/NodeExplainPanel';
 import { getDeleteNodeErrorMessage } from './nodeDetailErrors';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import type {
@@ -935,6 +936,9 @@ function GroupMembership({ certname, groups }: { certname: string; groups: NodeG
           </div>
         )}
       </div>
+
+      {/* Classification explain (M26) */}
+      <NodeExplainPanel certname={certname} />
     </div>
   );
 }

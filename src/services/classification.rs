@@ -1,24 +1,71 @@
 //! Node classification service
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use regex::Regex;
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 
 use crate::models::{
-    ClassificationPluginFact, ClassificationResult, ClassificationRule, Fact, GroupMatch,
-    MatchType, NodeGroup, RuleEvaluation, RuleMatchType, RuleOperator,
+    ClassificationExplain, ClassificationPluginFact, ClassificationResult, ClassificationRule,
+    ExprTrace, Fact, GroupExplanation, GroupMatch, GroupOutcome, Inheritance, MatchMode, MatchType,
+    MergeStrategy, NodeGroup, Origin, Provenance, RuleEvaluation, RuleExplanation, RuleMatchType,
+    RuleOperator,
 };
+use crate::services::classification_expr::{EvalContext, Expr};
 
 /// Classification service for matching nodes to groups
 pub struct ClassificationService {
     groups: Vec<NodeGroup>,
+    /// Parsed expressions; an invalid stored expression never matches.
+    expressions: HashMap<Uuid, Result<Expr, String>>,
+    /// Supplied to expressions and group windows, minute granularity.
+    now: DateTime<Utc>,
+}
+
+/// Result of evaluating one group for one node.
+struct GroupEval {
+    outcome: GroupOutcome,
+    match_type: MatchType,
+    matched_rules: Vec<Uuid>,
+    reason: String,
+    rules: Vec<RuleExplanation>,
+    expression: Option<ExprTrace>,
+}
+
+/// A group's contribution to the merged classes and variables.
+struct Applied<'a> {
+    group: &'a NodeGroup,
+    classes: serde_json::Value,
+    variables: serde_json::Value,
+}
+
+fn truncate_to_minute(t: DateTime<Utc>) -> DateTime<Utc> {
+    t.with_second(0)
+        .and_then(|t| t.with_nanosecond(0))
+        .unwrap_or(t)
 }
 
 impl ClassificationService {
     /// Create a new classification service
     pub fn new(groups: Vec<NodeGroup>) -> Self {
-        Self { groups }
+        let expressions = groups
+            .iter()
+            .filter_map(|g| {
+                let expr = g.expression.as_ref()?;
+                Some((g.id, Expr::parse(expr)))
+            })
+            .collect();
+        Self {
+            groups,
+            expressions,
+            now: truncate_to_minute(Utc::now()),
+        }
+    }
+
+    /// Fix the instant used for expressions and group windows (tests, previews).
+    pub fn with_now(mut self, now: DateTime<Utc>) -> Self {
+        self.now = truncate_to_minute(now);
+        self
     }
 
     /// Classify a node based on its facts (supports hierarchical groups and inheritance)
@@ -26,7 +73,18 @@ impl ClassificationService {
     /// This method classifies against groups from a single organization.
     /// For multi-organization classification with conflict detection, use `classify_across_organizations`.
     pub fn classify(&self, certname: &str, facts: &serde_json::Value) -> ClassificationResult {
-        self.classify_internal(certname, facts, None)
+        self.classify_internal(certname, facts, None, false).0
+    }
+
+    /// Like [`classify`](Self::classify), plus why each group did or did not
+    /// match and where every class, variable and the environment came from.
+    pub fn classify_explained(
+        &self,
+        certname: &str,
+        facts: &serde_json::Value,
+    ) -> (ClassificationResult, ClassificationExplain) {
+        let (result, explain) = self.classify_internal(certname, facts, None, true);
+        (result, explain.expect("explain requested"))
     }
 
     /// Classify a node against groups from all organizations and detect conflicts
@@ -56,10 +114,12 @@ impl ClassificationService {
         let mut org_results: Vec<(Uuid, ClassificationResult)> = Vec::new();
 
         for (org_id, groups) in &org_groups {
-            let org_service = ClassificationService {
-                groups: groups.iter().map(|g| (*g).clone()).collect(),
-            };
-            let result = org_service.classify_internal(certname, facts, Some(*org_id));
+            let org_service =
+                ClassificationService::new(groups.iter().map(|g| (*g).clone()).collect())
+                    .with_now(self.now);
+            let result = org_service
+                .classify_internal(certname, facts, Some(*org_id), false)
+                .0;
 
             // Check if this organization had any non-inherited matches
             // (inherited matches don't count as the node being "in" that org)
@@ -106,40 +166,254 @@ impl ClassificationService {
         }
     }
 
+    /// True unless the group is outside its `active_from` / `expires_at` window.
+    fn is_active(&self, group: &NodeGroup) -> bool {
+        group
+            .behavior
+            .active_from
+            .is_none_or(|from| self.now >= from)
+            && group.behavior.expires_at.is_none_or(|to| self.now < to)
+    }
+
+    /// Evaluate one group for a node, without looking at its exclusivity.
+    fn evaluate_group(
+        &self,
+        group: &NodeGroup,
+        facts: &serde_json::Value,
+        parent_matched: bool,
+        node_environment: Option<&str>,
+        certname: &str,
+        explain: bool,
+    ) -> GroupEval {
+        let eval = |outcome: GroupOutcome, reason: String| GroupEval {
+            outcome,
+            match_type: MatchType::Rules,
+            matched_rules: vec![],
+            reason,
+            rules: vec![],
+            expression: None,
+        };
+
+        if !self.is_active(group) {
+            return eval(
+                GroupOutcome::Inactive,
+                "outside the group's active window".into(),
+            );
+        }
+        if group.pinned_nodes.iter().any(|n| n == certname) {
+            return GroupEval {
+                match_type: MatchType::Pinned,
+                ..eval(
+                    GroupOutcome::Matched,
+                    "the node is pinned to the group".into(),
+                )
+            };
+        }
+
+        // Environment groups ASSIGN environments instead of filtering by them.
+        if !group.is_environment_group {
+            if let Some(env) = &group.environment {
+                let any_env = env == "*"
+                    || env.eq_ignore_ascii_case("all")
+                    || env.eq_ignore_ascii_case("any");
+                if !any_env && node_environment != Some(env.as_str()) {
+                    return eval(
+                        GroupOutcome::EnvironmentMismatch,
+                        format!(
+                            "the group requires environment '{env}', the node has {}",
+                            node_environment.unwrap_or("none")
+                        ),
+                    );
+                }
+            }
+        }
+
+        let expression = self.expressions.get(&group.id);
+        if group.rules.is_empty() && expression.is_none() {
+            // Group has no conditions: match_all_nodes decides (inside the
+            // parent's context when it has a parent, unless independent).
+            let parent_ok =
+                parent_matched || group.behavior.inheritance == Inheritance::Independent;
+            let matched = group.match_all_nodes && (group.parent_id.is_none() || parent_ok);
+            let reason = match (group.match_all_nodes, matched) {
+                (true, true) => "no conditions and match_all_nodes is on".to_string(),
+                (true, false) => "match_all_nodes is on but the parent did not match".to_string(),
+                (false, _) => "no rules or expression and match_all_nodes is off".to_string(),
+            };
+            return eval(
+                if matched {
+                    GroupOutcome::Matched
+                } else {
+                    GroupOutcome::NotMatched
+                },
+                reason,
+            );
+        }
+
+        let mut result = eval(GroupOutcome::NotMatched, String::new());
+        let mut parts: Vec<String> = Vec::new();
+        let mut matched = true;
+
+        if !group.rules.is_empty() {
+            let evaluations = self.evaluate_rules(&group.rules, facts);
+            result.matched_rules = evaluations
+                .iter()
+                .filter(|e| e.matched)
+                .map(|e| e.rule_id)
+                .collect();
+            let count = evaluations.iter().filter(|e| e.matched).count();
+            let mode = group
+                .behavior
+                .match_mode
+                .clone()
+                .unwrap_or(match group.rule_match_type {
+                    RuleMatchType::All => MatchMode::All,
+                    RuleMatchType::Any => MatchMode::Any,
+                });
+            let rules_match = match &mode {
+                MatchMode::All => {
+                    evaluations.iter().all(|e| e.matched || e.error.is_some()) && count > 0
+                }
+                MatchMode::Any => count > 0,
+                MatchMode::NOf { k } => count >= *k,
+            };
+            parts.push(format!(
+                "{count} of {} rules matched (needs {})",
+                group.rules.len(),
+                match &mode {
+                    MatchMode::All => "all".to_string(),
+                    MatchMode::Any => "any".to_string(),
+                    MatchMode::NOf { k } => format!("{k}"),
+                }
+            ));
+            matched &= rules_match;
+            if explain {
+                result.rules = group
+                    .rules
+                    .iter()
+                    .zip(&evaluations)
+                    .map(|(rule, e)| RuleExplanation {
+                        rule_id: rule.id,
+                        fact_path: rule.fact_path.clone(),
+                        operator: rule.operator,
+                        expected: rule.value.clone(),
+                        actual: e.fact_value.clone(),
+                        matched: e.matched,
+                    })
+                    .collect();
+            }
+        }
+
+        match expression {
+            Some(Ok(expr)) => {
+                let ctx = EvalContext {
+                    facts,
+                    now: self.now,
+                };
+                let expr_matched = if explain {
+                    let trace = expr.trace(&ctx);
+                    let m = trace.matched;
+                    result.expression = Some(trace);
+                    m
+                } else {
+                    expr.matches(&ctx)
+                };
+                parts.push(format!(
+                    "expression {}",
+                    if expr_matched {
+                        "matched"
+                    } else {
+                        "did not match"
+                    }
+                ));
+                matched &= expr_matched;
+            }
+            Some(Err(e)) => {
+                parts.push(format!("expression is invalid ({e})"));
+                matched = false;
+            }
+            None => {}
+        }
+
+        result.outcome = if matched {
+            GroupOutcome::Matched
+        } else {
+            GroupOutcome::NotMatched
+        };
+        result.reason = parts.join("; ");
+        result
+    }
+
+    /// For a group in an `exclusive_set`: the sibling of the same set that
+    /// stays (pinned first, then priority, then name). `None` when the group
+    /// is not in a set.
+    fn exclusion_winner(
+        &self,
+        group: &NodeGroup,
+        facts: &serde_json::Value,
+        node_environment: Option<&str>,
+        certname: &str,
+    ) -> Option<(Uuid, String)> {
+        let set = group.behavior.exclusive_set.as_ref()?;
+        self.groups
+            .iter()
+            .filter(|g| {
+                g.parent_id == group.parent_id && g.behavior.exclusive_set.as_ref() == Some(set)
+            })
+            .filter_map(|g| {
+                let e = self.evaluate_group(g, facts, true, node_environment, certname, false);
+                (e.outcome == GroupOutcome::Matched).then_some((
+                    e.match_type == MatchType::Pinned,
+                    g.priority,
+                    g,
+                ))
+            })
+            .max_by(|(ap, apr, a), (bp, bpr, b)| {
+                ap.cmp(bp).then(apr.cmp(bpr)).then(b.name.cmp(&a.name))
+            })
+            .map(|(_, _, g)| (g.id, g.name.clone()))
+    }
+
     /// Internal classification method that handles the actual matching logic
     fn classify_internal(
         &self,
         certname: &str,
         facts: &serde_json::Value,
         organization_id: Option<Uuid>,
-    ) -> ClassificationResult {
+        explain: bool,
+    ) -> (ClassificationResult, Option<ClassificationExplain>) {
+        let started = std::time::Instant::now();
         let mut matched_groups: Vec<GroupMatch> = vec![];
-        // Classes are now in Puppet Enterprise format: {"class_name": {"param": "value"}, ...}
-        let mut all_classes = serde_json::json!({});
-        let mut all_variables = serde_json::json!({});
         let mut environment: Option<String> = None;
-        // Track which groups have already had their configs merged to avoid duplicates
-        let mut merged_group_ids: Vec<Uuid> = vec![];
+        let mut environment_origin: Option<Origin> = None;
+        let mut explanations: Vec<GroupExplanation> = vec![];
 
         // Extract node's environment from facts (catalog_environment)
         let node_environment = get_fact_value(facts, "catalog_environment")
             .and_then(|v| v.as_str().map(|s| s.to_string()));
 
-        // Index groups by id and build parent -> children map
+        // Index groups by id and build parent -> children map; siblings are
+        // ordered by priority (stable, so equal priorities keep their order
+        // and the higher priority merges last and wins)
         let mut children_map: HashMap<Option<Uuid>, Vec<&NodeGroup>> = HashMap::new();
         let mut group_index: HashMap<Uuid, &NodeGroup> = HashMap::new();
         for group in &self.groups {
             children_map.entry(group.parent_id).or_default().push(group);
             group_index.insert(group.id, group);
         }
+        for siblings in children_map.values_mut() {
+            siblings.sort_by_key(|g| g.priority);
+        }
 
-        // Build a helper function to get all ancestors (parent chain) from root to group
+        // Get all ancestors (parent chain) from root to group
         let get_ancestor_chain = |group_id: Uuid| -> Vec<&NodeGroup> {
             let mut chain = vec![];
             let mut current_id = group_id;
-
-            // Walk up the tree from leaf to root
+            let mut seen = HashSet::new();
             while let Some(group) = group_index.get(&current_id) {
+                if !seen.insert(group.id) {
+                    break;
+                }
                 chain.push(*group);
                 if let Some(parent_id) = group.parent_id {
                     current_id = parent_id;
@@ -147,110 +421,119 @@ impl ClassificationService {
                     break;
                 }
             }
-
-            // Reverse to get root -> leaf order
             chain.reverse();
             chain
         };
 
-        // Pre-process: Find all groups where this node is pinned
-        // Pinned groups need special handling because they should match even if their
-        // parent chain doesn't match through normal rule evaluation
-        let pinned_group_ids: Vec<Uuid> = self
-            .groups
-            .iter()
-            .filter(|g| g.pinned_nodes.contains(&certname.to_string()))
-            .map(|g| g.id)
-            .collect();
-
-        // Track groups that have been processed (either through BFS or pinned processing)
-        let mut processed_groups: std::collections::HashSet<Uuid> =
-            std::collections::HashSet::new();
-
-        // Process pinned groups first - they match regardless of parent chain
-        for pinned_id in &pinned_group_ids {
-            if let Some(pinned_group) = group_index.get(pinned_id) {
-                tracing::debug!(
-                    "Processing pinned group '{}' for node '{}'",
-                    pinned_group.name,
-                    certname
-                );
-
-                // Get the full ancestor chain for this pinned group
-                let ancestor_chain = get_ancestor_chain(*pinned_id);
-
-                // Merge classes and variables from all ancestors (root to leaf order)
-                for ancestor in &ancestor_chain {
-                    if !merged_group_ids.contains(&ancestor.id) {
-                        merge_classes(&mut all_classes, &ancestor.classes);
-                        merge_parameters(&mut all_variables, &ancestor.variables);
-                        merged_group_ids.push(ancestor.id);
+        // The environment of a matched group: the closest group of its chain
+        // that was matched and sets one.
+        let environment_of = |group_id: Uuid, matched: &[GroupMatch]| -> Option<(String, Origin)> {
+            get_ancestor_chain(group_id)
+                .into_iter()
+                .rev()
+                .filter(|a| a.id == group_id || matched.iter().any(|m| m.id == a.id))
+                .find_map(|a| match &a.environment {
+                    Some(env)
+                        if env == "*"
+                            || env.to_lowercase() == "all"
+                            || env.to_lowercase() == "any" =>
+                    {
+                        None
                     }
-                }
+                    Some(env) => Some((
+                        env.clone(),
+                        Origin {
+                            group_id: a.id,
+                            group_name: a.name.clone(),
+                        },
+                    )),
+                    None => None,
+                })
+        };
 
-                // Handle environment - leaf (pinned) group takes precedence
-                for ancestor in ancestor_chain.iter().rev() {
-                    let group_env = match &ancestor.environment {
-                        Some(env)
-                            if env == "*"
-                                || env.to_lowercase() == "all"
-                                || env.to_lowercase() == "any" =>
-                        {
-                            None
-                        }
-                        other => other.clone(),
-                    };
-
-                    if group_env.is_some() {
-                        environment = group_env;
-                        break;
-                    }
-                }
-
-                // Add the pinned group to matched groups, plus every ancestor
-                // as `Inherited`. Pinning a node to a leaf group implies it
-                // is logically a member of every group above it in the tree —
-                // otherwise the parent group's `nodes matched` count silently
-                // omits these nodes and ancestor-level rules never see them.
-                // De-dupe against earlier pins-to-siblings that share an
-                // ancestor chain.
-                for ancestor in &ancestor_chain {
-                    if matched_groups.iter().any(|g| g.id == ancestor.id) {
-                        continue;
-                    }
-                    let match_type = if ancestor.id == pinned_group.id {
-                        MatchType::Pinned
-                    } else {
-                        MatchType::Inherited
-                    };
-                    matched_groups.push(GroupMatch {
-                        id: ancestor.id,
-                        name: ancestor.name.clone(),
-                        match_type,
-                        matched_rules: vec![],
-                    });
-                }
-
-                // Mark this group and all its ancestors as processed so the
-                // BFS below doesn't double-count them via rule evaluation.
-                for ancestor in &ancestor_chain {
-                    processed_groups.insert(ancestor.id);
-                }
-
-                // Enqueue children of the pinned group for normal evaluation
-                if let Some(children) = children_map.get(&Some(pinned_group.id)) {
-                    for child in children {
-                        if !processed_groups.contains(&child.id) {
-                            tracing::debug!(
-                                "Enqueueing child group '{}' of pinned group '{}'",
-                                child.name,
-                                pinned_group.name
-                            );
-                        }
-                    }
+        // Groups where this node is pinned match even if their parent chain
+        // does not match through normal rule evaluation
+        let mut pinned_group_ids: Vec<Uuid> = vec![];
+        for g in &self.groups {
+            if !g.pinned_nodes.iter().any(|n| n == certname) || !self.is_active(g) {
+                continue;
+            }
+            if let Some((winner, _)) =
+                self.exclusion_winner(g, facts, node_environment.as_deref(), certname)
+            {
+                if winner != g.id {
+                    continue;
                 }
             }
+            pinned_group_ids.push(g.id);
         }
+
+        // Groups already handled (pinned chains) and groups already visited
+        let mut processed_groups: HashSet<Uuid> = HashSet::new();
+        let mut visited: HashSet<Uuid> = HashSet::new();
+
+        for pinned_id in &pinned_group_ids {
+            let Some(pinned_group) = group_index.get(pinned_id) else {
+                continue;
+            };
+            let ancestor_chain = get_ancestor_chain(*pinned_id);
+
+            // Add the pinned group plus every ancestor as `Inherited`: pinning
+            // to a leaf makes the node a logical member of every group above
+            // it, otherwise ancestor-level counts silently omit these nodes.
+            for ancestor in &ancestor_chain {
+                if matched_groups.iter().any(|g| g.id == ancestor.id) {
+                    continue;
+                }
+                let is_pinned = ancestor.id == pinned_group.id;
+                let match_type = if is_pinned {
+                    MatchType::Pinned
+                } else {
+                    MatchType::Inherited
+                };
+                matched_groups.push(GroupMatch {
+                    id: ancestor.id,
+                    name: ancestor.name.clone(),
+                    match_type,
+                    matched_rules: vec![],
+                });
+                if explain {
+                    explanations.push(GroupExplanation {
+                        id: ancestor.id,
+                        name: ancestor.name.clone(),
+                        parent_id: ancestor.parent_id,
+                        priority: ancestor.priority,
+                        outcome: GroupOutcome::Matched,
+                        match_type: Some(match_type),
+                        reason: if is_pinned {
+                            "the node is pinned to the group".into()
+                        } else {
+                            format!("ancestor of the pinned group '{}'", pinned_group.name)
+                        },
+                        rules: vec![],
+                        expression: None,
+                    });
+                }
+                processed_groups.insert(ancestor.id);
+                visited.insert(ancestor.id);
+            }
+
+            // Leaf (pinned) group's environment takes precedence
+            if let Some((env, origin)) = environment_of(*pinned_id, &matched_groups) {
+                environment = Some(env);
+                environment_origin = Some(origin);
+            }
+        }
+
+        // Independent groups are evaluated after the normal walk, when their
+        // ancestors' outcome is known
+        let mut independents: Vec<&NodeGroup> = self
+            .groups
+            .iter()
+            .filter(|g| g.parent_id.is_some() && g.behavior.inheritance == Inheritance::Independent)
+            .collect();
+        independents.sort_by_key(|g| (get_ancestor_chain(g.id).len(), g.priority));
+        let mut independents = independents.into_iter();
 
         // BFS from root groups; children are only considered if parent matched
         let mut queue: VecDeque<(&NodeGroup, bool)> = VecDeque::new();
@@ -260,209 +543,252 @@ impl ClassificationService {
             }
         }
 
-        while let Some((group, parent_matched)) = queue.pop_front() {
-            // Skip groups already processed via pinning
+        loop {
+            let Some((group, parent_matched)) = queue.pop_front() else {
+                match independents.next() {
+                    Some(g) => {
+                        if !visited.contains(&g.id) {
+                            queue.push_back((g, false));
+                        }
+                        continue;
+                    }
+                    None => break,
+                }
+            };
+
+            // Skip groups already processed via pinning, but still walk on
+            // to their children
             if processed_groups.contains(&group.id) {
-                // But still enqueue children if this group was matched via pinning
                 if let Some(children) = children_map.get(&Some(group.id)) {
                     for child in children {
-                        if !processed_groups.contains(&child.id) {
+                        if !processed_groups.contains(&child.id)
+                            && child.behavior.inheritance != Inheritance::Independent
+                        {
                             queue.push_back((*child, true));
                         }
                     }
                 }
                 continue;
             }
+            if !visited.insert(group.id) {
+                continue;
+            }
 
-            tracing::debug!(
-                "Classifying node '{}' against group '{}' (id={}, parent_matched={})",
+            let mut eval = self.evaluate_group(
+                group,
+                facts,
+                parent_matched,
+                node_environment.as_deref(),
                 certname,
-                group.name,
-                group.id,
-                parent_matched
+                explain,
             );
 
-            let mut matched = false;
-            let mut matched_rules = vec![];
-
-            // Check environment filtering first (applies to all non-pinned matches)
-            // UNLESS this is an "environment group" - which ASSIGNS environments rather than filtering by them
-            let environment_matches = if group.is_environment_group {
-                // Environment groups skip environment filtering - they ASSIGN environments
-                true
-            } else {
-                match &group.environment {
-                    None => true, // No environment restriction
-                    Some(env)
-                        if env == "*"
-                            || env.to_lowercase() == "all"
-                            || env.to_lowercase() == "any" =>
-                    {
-                        true
-                    }
-                    Some(env) => {
-                        // Group has specific environment requirement
-                        match &node_environment {
-                            Some(node_env) => node_env == env,
-                            None => false, // Node has no environment, cannot match specific requirement
-                        }
-                    }
-                }
-            };
-
-            let match_type = if group.pinned_nodes.contains(&certname.to_string()) {
-                // Pinned nodes ALWAYS match, regardless of environment
-                // This allows environment assignment without bootstrap problems
-                matched = true;
-                MatchType::Pinned
-            } else if !environment_matches {
-                // Environment doesn't match - skip this group and its children
-                tracing::debug!(
-                    "Node '{}' environment {:?} does not match group '{}' requirement {:?}, skipping",
-                    certname,
-                    node_environment,
-                    group.name,
-                    group.environment
-                );
-                continue;
-            } else if group.rules.is_empty() {
-                // Group has no rules - behavior depends on match_all_nodes setting
-                tracing::debug!(
-                    "Group '{}' has no rules, match_all_nodes={}, parent_matched={}",
-                    group.name,
-                    group.match_all_nodes,
-                    parent_matched
-                );
-                if group.match_all_nodes {
-                    // match_all_nodes=true: Match all nodes (within parent context if has parent)
-                    // If has parent, only match if parent matched
-                    // If no parent (root group), match all nodes that pass environment filter
-                    if group.parent_id.is_none() || parent_matched {
-                        matched = true;
-                        tracing::debug!("Group '{}' matched (match_all_nodes=true)", group.name);
-                    } else {
-                        tracing::debug!(
-                            "Group '{}' NOT matched (match_all_nodes=true but parent didn't match)",
-                            group.name
+            if eval.outcome == GroupOutcome::Matched && eval.match_type != MatchType::Pinned {
+                if let Some((winner, winner_name)) =
+                    self.exclusion_winner(group, facts, node_environment.as_deref(), certname)
+                {
+                    if winner != group.id {
+                        eval.outcome = GroupOutcome::Excluded;
+                        eval.reason = format!(
+                            "excluded by exclusive_set '{}': '{}' has precedence",
+                            group.behavior.exclusive_set.as_deref().unwrap_or_default(),
+                            winner_name
                         );
                     }
-                    MatchType::Rules // Using Rules type since it's an explicit match configuration
-                } else {
-                    // match_all_nodes=false (default): Groups with no rules match NO nodes
-                    // This is true regardless of whether parent matched or not
-                    tracing::debug!(
-                        "Group '{}' NOT matched (no rules, match_all_nodes=false)",
-                        group.name
-                    );
-                    MatchType::Rules
                 }
-            } else {
-                // Evaluate rules
-                let evaluations = self.evaluate_rules(&group.rules, facts);
-                matched_rules = evaluations
-                    .iter()
-                    .filter(|e| e.matched)
-                    .map(|e| e.rule_id)
-                    .collect();
+            }
 
-                let rules_match = match group.rule_match_type {
-                    RuleMatchType::All => {
-                        !group.rules.is_empty()
-                            && evaluations.iter().all(|e| e.matched || e.error.is_some())
-                            && evaluations.iter().any(|e| e.matched)
-                    }
-                    RuleMatchType::Any => evaluations.iter().any(|e| e.matched),
-                };
-
-                if rules_match {
-                    matched = true;
-                    MatchType::Rules
-                } else {
-                    MatchType::Rules
-                }
-            };
-
-            if matched {
-                // Get the full ancestor chain (root to current group)
-                // This ensures we inherit configurations from ALL parents, not just immediate parent
-                let ancestor_chain = get_ancestor_chain(group.id);
-
-                // Merge classes and variables from all ancestors (root to leaf order)
-                // Only merge groups that haven't been merged yet to avoid duplicates
-                // This ensures parent configs are applied first, then child configs override
-                for ancestor in &ancestor_chain {
-                    if !merged_group_ids.contains(&ancestor.id) {
-                        merge_classes(&mut all_classes, &ancestor.classes);
-                        merge_parameters(&mut all_variables, &ancestor.variables);
-                        merged_group_ids.push(ancestor.id);
-                    }
-                }
-
-                // Handle environment with proper precedence:
-                // Leaf group environment takes precedence over parent environments
-                // We walk the chain from leaf to root, taking the first non-None environment
-                for ancestor in ancestor_chain.iter().rev() {
-                    let group_env = match &ancestor.environment {
-                        Some(env)
-                            if env == "*"
-                                || env.to_lowercase() == "all"
-                                || env.to_lowercase() == "any" =>
-                        {
-                            None
-                        }
-                        other => other.clone(),
-                    };
-
-                    if group_env.is_some() {
-                        environment = group_env;
-                        break; // Take the first (closest to leaf) environment
-                    }
-                }
-
-                matched_groups.push(GroupMatch {
+            if explain {
+                explanations.push(GroupExplanation {
                     id: group.id,
                     name: group.name.clone(),
-                    match_type,
-                    matched_rules,
+                    parent_id: group.parent_id,
+                    priority: group.priority,
+                    outcome: eval.outcome,
+                    match_type: (eval.outcome == GroupOutcome::Matched).then_some(eval.match_type),
+                    reason: eval.reason.clone(),
+                    rules: eval.rules.clone(),
+                    expression: eval.expression.clone(),
                 });
+            }
 
-                // Enqueue children for evaluation - they inherit classes/variables but must match their own rules
-                if let Some(children) = children_map.get(&Some(group.id)) {
-                    for child in children {
-                        // parent_matched=true means this child can inherit classes/variables from ancestors
-                        tracing::debug!(
-                            "Enqueueing child group '{}' (parent '{}' matched)",
-                            child.name,
-                            group.name
-                        );
+            if eval.outcome != GroupOutcome::Matched {
+                // Children of a group that did not match are not evaluated
+                continue;
+            }
+
+            matched_groups.push(GroupMatch {
+                id: group.id,
+                name: group.name.clone(),
+                match_type: eval.match_type,
+                matched_rules: eval.matched_rules,
+            });
+            if let Some((env, origin)) = environment_of(group.id, &matched_groups) {
+                environment = Some(env);
+                environment_origin = Some(origin);
+            }
+
+            if let Some(children) = children_map.get(&Some(group.id)) {
+                for child in children {
+                    if child.behavior.inheritance != Inheritance::Independent {
                         queue.push_back((*child, true));
                     }
                 }
-            } else {
-                // Group didn't match - children will NOT be evaluated
-                if let Some(children) = children_map.get(&Some(group.id)) {
-                    tracing::debug!(
-                        "Group '{}' didn't match, NOT enqueueing {} children: {:?}",
-                        group.name,
-                        children.len(),
-                        children.iter().map(|c| &c.name).collect::<Vec<_>>()
-                    );
-                }
             }
-            // NOTE: If parent matched but this group didn't match, we do NOT enqueue children.
-            // Children can only be considered if their direct parent matched.
-            // This ensures proper hierarchical classification where each level acts as a gate.
         }
 
-        ClassificationResult {
-            certname: certname.to_string(),
-            organization_id,
-            groups: matched_groups,
-            classes: all_classes,
-            variables: all_variables,
-            environment,
-            conflict_error: None,
+        let (classes, variables, mut provenance, merge_errors) =
+            self.merge_matched(&matched_groups, &group_index, explain);
+        provenance.environment = environment_origin;
+
+        let explain = explain.then(|| {
+            let evaluated: HashSet<Uuid> = explanations.iter().map(|e| e.id).collect();
+            for group in &self.groups {
+                if evaluated.contains(&group.id) {
+                    continue;
+                }
+                let parent = group
+                    .parent_id
+                    .and_then(|p| group_index.get(&p))
+                    .map(|p| p.name.as_str());
+                explanations.push(GroupExplanation {
+                    id: group.id,
+                    name: group.name.clone(),
+                    parent_id: group.parent_id,
+                    priority: group.priority,
+                    outcome: GroupOutcome::NotEvaluated,
+                    match_type: None,
+                    reason: match parent {
+                        Some(p) => format!("the parent group '{p}' did not match"),
+                        None => "not reachable".to_string(),
+                    },
+                    rules: vec![],
+                    expression: None,
+                });
+            }
+            ClassificationExplain {
+                evaluated_at: self.now,
+                elapsed_us: started.elapsed().as_micros() as u64,
+                groups: explanations,
+                provenance,
+                merge_errors: merge_errors.clone(),
+            }
+        });
+
+        let conflict_error = (!merge_errors.is_empty())
+            .then(|| format!("Merge conflict: {}", merge_errors.join("; ")));
+
+        (
+            ClassificationResult {
+                certname: certname.to_string(),
+                organization_id,
+                groups: matched_groups,
+                classes,
+                variables,
+                environment,
+                conflict_error,
+            },
+            explain,
+        )
+    }
+
+    /// Merge the classes and variables of the matched groups, in match order
+    /// (ancestors first), applying each group's inheritance and merge policy.
+    fn merge_matched<'a>(
+        &self,
+        matched: &[GroupMatch],
+        group_index: &HashMap<Uuid, &'a NodeGroup>,
+        explain: bool,
+    ) -> (
+        serde_json::Value,
+        serde_json::Value,
+        Provenance,
+        Vec<String>,
+    ) {
+        let mut applied: Vec<Applied<'a>> = Vec::with_capacity(matched.len());
+        for m in matched {
+            let Some(group) = group_index.get(&m.id).copied() else {
+                continue;
+            };
+            if !matches!(
+                group.behavior.inheritance,
+                Inheritance::Inherit | Inheritance::Independent
+            ) {
+                let mut ancestors = HashSet::new();
+                let mut current = group.parent_id;
+                while let Some(id) = current {
+                    if !ancestors.insert(id) {
+                        break;
+                    }
+                    current = group_index.get(&id).and_then(|g| g.parent_id);
+                }
+                match &group.behavior.inheritance {
+                    Inheritance::Block => applied.retain(|a| !ancestors.contains(&a.group.id)),
+                    Inheritance::Select { keys } => {
+                        for a in applied
+                            .iter_mut()
+                            .filter(|a| ancestors.contains(&a.group.id))
+                        {
+                            a.classes = pick_keys(&a.classes, keys);
+                            a.variables = pick_keys(&a.variables, keys);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            applied.push(Applied {
+                group,
+                classes: group.classes.clone(),
+                variables: group.variables.clone(),
+            });
         }
+
+        let mut classes = serde_json::json!({});
+        let mut variables = serde_json::json!({});
+        let mut provenance = Provenance::default();
+        let mut errors: Vec<String> = Vec::new();
+        for a in &applied {
+            let strategy = a.group.behavior.merge;
+            let class_conflicts = merge_classes_with(
+                &mut classes,
+                &a.classes,
+                strategy,
+                &a.group.name,
+                &mut errors,
+            );
+            let var_conflicts = merge_variables_with(
+                &mut variables,
+                &a.variables,
+                strategy,
+                &a.group.name,
+                &mut errors,
+            );
+            if explain {
+                let origin = Origin {
+                    group_id: a.group.id,
+                    group_name: a.group.name.clone(),
+                };
+                if let Some(obj) = a.classes.as_object() {
+                    for name in obj.keys().filter(|k| !class_conflicts.contains(*k)) {
+                        provenance
+                            .classes
+                            .entry(name.clone())
+                            .or_default()
+                            .push(origin.clone());
+                    }
+                }
+                if let Some(obj) = a.variables.as_object() {
+                    for key in obj.keys().filter(|k| !var_conflicts.contains(*k)) {
+                        provenance
+                            .variables
+                            .entry(key.clone())
+                            .or_default()
+                            .push(origin.clone());
+                    }
+                }
+            }
+        }
+        (classes, variables, provenance, errors)
     }
 
     /// Evaluate rules against facts
@@ -484,29 +810,9 @@ impl ClassificationService {
         facts: &serde_json::Value,
     ) -> RuleEvaluation {
         let fact_value = get_fact_value(facts, &rule.fact_path);
-
-        let matched = match &fact_value {
-            Some(value) => {
-                let result = match_value(value, &rule.operator, &rule.value);
-                tracing::debug!(
-                    "Rule evaluation: path='{}' operator='{:?}' rule_value={:?} fact_value={:?} matched={}",
-                    rule.fact_path,
-                    rule.operator,
-                    rule.value,
-                    value,
-                    result
-                );
-                result
-            }
-            None => {
-                tracing::debug!(
-                    "Rule evaluation: path='{}' fact not found, matched=false",
-                    rule.fact_path
-                );
-                false
-            }
-        };
-
+        let matched = fact_value
+            .as_ref()
+            .is_some_and(|value| match_value(value, &rule.operator, &rule.value));
         RuleEvaluation {
             rule_id: rule.id,
             matched,
@@ -514,6 +820,142 @@ impl ClassificationService {
             error: None,
         }
     }
+}
+
+/// Keep only the listed keys of an object.
+fn pick_keys(value: &serde_json::Value, keys: &[String]) -> serde_json::Value {
+    match value.as_object() {
+        Some(obj) => serde_json::Value::Object(
+            obj.iter()
+                .filter(|(k, _)| keys.contains(k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        ),
+        None => serde_json::json!({}),
+    }
+}
+
+/// Union of two arrays without duplicates; objects merge recursively.
+fn union_merge(target: &mut serde_json::Value, source: &serde_json::Value) {
+    match (target, source) {
+        (serde_json::Value::Object(t), serde_json::Value::Object(s)) => {
+            for (k, v) in s {
+                match t.get_mut(k) {
+                    Some(existing) => union_merge(existing, v),
+                    None => {
+                        t.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        (serde_json::Value::Array(t), serde_json::Value::Array(s)) => {
+            for v in s {
+                if !t.contains(v) {
+                    t.push(v.clone());
+                }
+            }
+        }
+        (t, s) => *t = s.clone(),
+    }
+}
+
+/// Merge `source` into `target`, keeping the first value of a key that
+/// differs and reporting it. Returns whether a conflict was found.
+fn merge_checked(
+    path: &str,
+    target: &mut serde_json::Value,
+    source: &serde_json::Value,
+    group: &str,
+    errors: &mut Vec<String>,
+) -> bool {
+    match (&mut *target, source) {
+        (serde_json::Value::Object(t), serde_json::Value::Object(s)) => {
+            let mut conflict = false;
+            for (k, v) in s {
+                let child = format!("{path}.{k}");
+                match t.get_mut(k) {
+                    Some(existing) => conflict |= merge_checked(&child, existing, v, group, errors),
+                    None => {
+                        t.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            conflict
+        }
+        (t, s) if *t == *s => false,
+        _ => {
+            errors.push(format!(
+                "{path} has different values; group '{group}' conflicts"
+            ));
+            true
+        }
+    }
+}
+
+/// Merge a group's classes with its strategy; returns the class names whose
+/// value was rejected by `fail_on_conflict`.
+fn merge_classes_with(
+    target: &mut serde_json::Value,
+    source: &serde_json::Value,
+    strategy: MergeStrategy,
+    group: &str,
+    errors: &mut Vec<String>,
+) -> HashSet<String> {
+    let mut rejected = HashSet::new();
+    match strategy {
+        MergeStrategy::Deep => merge_classes(target, source),
+        MergeStrategy::Replace | MergeStrategy::Union | MergeStrategy::FailOnConflict => {
+            let (Some(t), Some(s)) = (target.as_object_mut(), source.as_object()) else {
+                return rejected;
+            };
+            for (name, params) in s {
+                match (strategy, t.get_mut(name)) {
+                    (_, None) => {
+                        t.insert(name.clone(), params.clone());
+                    }
+                    (MergeStrategy::Replace, Some(existing)) => *existing = params.clone(),
+                    (MergeStrategy::Union, Some(existing)) => union_merge(existing, params),
+                    (_, Some(existing)) => {
+                        if merge_checked(&format!("class {name}"), existing, params, group, errors)
+                        {
+                            rejected.insert(name.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    rejected
+}
+
+/// Merge a group's variables with its strategy; returns the keys whose value
+/// was rejected by `fail_on_conflict`.
+fn merge_variables_with(
+    target: &mut serde_json::Value,
+    source: &serde_json::Value,
+    strategy: MergeStrategy,
+    group: &str,
+    errors: &mut Vec<String>,
+) -> HashSet<String> {
+    let mut rejected = HashSet::new();
+    let (Some(t), Some(s)) = (target.as_object_mut(), source.as_object()) else {
+        return rejected;
+    };
+    for (key, value) in s {
+        match (strategy, t.get_mut(key)) {
+            (_, None) => {
+                t.insert(key.clone(), value.clone());
+            }
+            (MergeStrategy::Union, Some(existing)) => union_merge(existing, value),
+            (MergeStrategy::FailOnConflict, Some(existing)) => {
+                if merge_checked(&format!("variable {key}"), existing, value, group, errors) {
+                    rejected.insert(key.clone());
+                }
+            }
+            (_, Some(existing)) => *existing = value.clone(),
+        }
+    }
+    rejected
 }
 
 /// Build a classification fact payload from PuppetDB facts.
@@ -688,16 +1130,6 @@ fn compare_values(a: &serde_json::Value, b: &serde_json::Value) -> i32 {
         }
         (serde_json::Value::String(as_), serde_json::Value::String(bs)) => as_.cmp(bs) as i32,
         _ => 0,
-    }
-}
-
-/// Merge parameters from a group into the accumulated parameters
-/// Merge parameters (flat object merge, last value wins)
-fn merge_parameters(target: &mut serde_json::Value, source: &serde_json::Value) {
-    if let (Some(target_obj), Some(source_obj)) = (target.as_object_mut(), source.as_object()) {
-        for (key, value) in source_obj {
-            target_obj.insert(key.clone(), value.clone());
-        }
     }
 }
 
@@ -2809,5 +3241,347 @@ mod tests {
         // Node C: not pinned, doesn't match rule
         let result = service.classify("other.example.com", &serde_json::json!({"role": "other"}));
         assert_eq!(result.groups.len(), 0, "Non-matching node should not match");
+    }
+
+    // ---- M26: expressions, behavior policies, explain ----
+
+    mod advanced {
+        use super::*;
+        use crate::models::{GroupBehavior, Inheritance, MatchMode, MergeStrategy};
+        use chrono::TimeZone;
+        use serde_json::json;
+
+        fn now() -> DateTime<Utc> {
+            Utc.with_ymd_and_hms(2026, 10, 28, 3, 15, 42).unwrap()
+        }
+
+        fn svc(groups: Vec<NodeGroup>) -> ClassificationService {
+            ClassificationService::new(groups).with_now(now())
+        }
+
+        fn facts() -> serde_json::Value {
+            json!({"os": {"family": "RedHat"}, "virtual": "kvm", "certname": "n1",
+                   "catalog_environment": "production"})
+        }
+
+        fn rule(path: &str, value: serde_json::Value) -> ClassificationRule {
+            ClassificationRule {
+                id: Uuid::new_v4(),
+                fact_path: path.into(),
+                operator: RuleOperator::Equals,
+                value,
+            }
+        }
+
+        fn expr_group(name: &str, expression: serde_json::Value) -> NodeGroup {
+            NodeGroup {
+                name: name.into(),
+                expression: Some(expression),
+                classes: json!({name: {}}),
+                ..Default::default()
+            }
+        }
+
+        fn names(r: &ClassificationResult) -> Vec<String> {
+            r.groups.iter().map(|g| g.name.clone()).collect()
+        }
+
+        #[test]
+        fn expression_alone_and_together_with_rules() {
+            let e = json!({"any": [{"fact": "os.family", "op": "=", "value": "RedHat"},
+                                   {"fact": "os.family", "op": "=", "value": "Debian"}]});
+            let r = svc(vec![expr_group("e", e.clone())]).classify("n1", &facts());
+            assert_eq!(names(&r), ["e"]);
+
+            let mut both = expr_group("both", e);
+            both.rules = vec![rule("virtual", json!("physical"))];
+            let r = svc(vec![both.clone()]).classify("n1", &facts());
+            assert!(r.groups.is_empty(), "rules and expression apply in AND");
+            both.rules = vec![rule("virtual", json!("kvm"))];
+            assert_eq!(names(&svc(vec![both]).classify("n1", &facts())), ["both"]);
+        }
+
+        #[test]
+        fn invalid_stored_expression_never_matches() {
+            let g = expr_group("bad", json!({"fn": "nope", "args": []}));
+            let (r, ex) = svc(vec![g]).classify_explained("n1", &facts());
+            assert!(r.groups.is_empty());
+            assert!(ex.groups[0].reason.contains("invalid"));
+        }
+
+        #[test]
+        fn higher_priority_sibling_wins_whatever_the_order() {
+            let mk = |name: &str, prio: i32, v: &str| NodeGroup {
+                name: name.into(),
+                priority: prio,
+                match_all_nodes: true,
+                variables: json!({"tier": v}),
+                ..Default::default()
+            };
+            for order in [[0, 1], [1, 0]] {
+                let all = [mk("low", 50, "low"), mk("high", 200, "high")];
+                let groups = order.iter().map(|i| all[*i].clone()).collect();
+                let r = svc(groups).classify("n1", &facts());
+                assert_eq!(r.variables["tier"], "high");
+            }
+        }
+
+        #[test]
+        fn exclusive_set_keeps_only_the_highest_priority_match() {
+            let mk = |name: &str, prio: i32| NodeGroup {
+                name: name.into(),
+                priority: prio,
+                match_all_nodes: true,
+                classes: json!({name: {}}),
+                behavior: GroupBehavior {
+                    exclusive_set: Some("tier".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut other = mk("not_in_set", 1);
+            other.behavior.exclusive_set = None;
+            let (r, ex) = svc(vec![mk("gold", 300), mk("silver", 200), other])
+                .classify_explained("n1", &facts());
+            assert_eq!(
+                names(&r),
+                ["not_in_set", "gold"],
+                "lower priority is walked first"
+            );
+            let silver = ex.groups.iter().find(|g| g.name == "silver").unwrap();
+            assert_eq!(silver.outcome, GroupOutcome::Excluded);
+            assert!(silver.reason.contains("gold"));
+            assert!(r.classes.get("silver").is_none());
+        }
+
+        #[test]
+        fn match_mode_n_of_counts_rules() {
+            let mut g = NodeGroup {
+                name: "g".into(),
+                rules: vec![
+                    rule("os.family", json!("RedHat")),
+                    rule("virtual", json!("physical")),
+                    rule("certname", json!("n1")),
+                ],
+                ..Default::default()
+            };
+            assert!(svc(vec![g.clone()])
+                .classify("n1", &facts())
+                .groups
+                .is_empty());
+            g.behavior.match_mode = Some(MatchMode::NOf { k: 2 });
+            assert_eq!(
+                svc(vec![g.clone()]).classify("n1", &facts()).groups.len(),
+                1
+            );
+            g.behavior.match_mode = Some(MatchMode::NOf { k: 3 });
+            assert!(svc(vec![g]).classify("n1", &facts()).groups.is_empty());
+        }
+
+        fn tree(child_behavior: GroupBehavior, parent_matches: bool) -> Vec<NodeGroup> {
+            let parent = NodeGroup {
+                name: "parent".into(),
+                match_all_nodes: parent_matches,
+                classes: json!({"base": {"a": 1}, "ntp": {}}),
+                variables: json!({"owner": "ops", "site": "x"}),
+                ..Default::default()
+            };
+            let child = NodeGroup {
+                name: "child".into(),
+                parent_id: Some(parent.id),
+                match_all_nodes: true,
+                classes: json!({"web": {}}),
+                variables: json!({"role": "web"}),
+                behavior: child_behavior,
+                ..Default::default()
+            };
+            vec![parent, child]
+        }
+
+        #[test]
+        fn inheritance_block_and_select_cut_ancestor_values() {
+            let r = svc(tree(GroupBehavior::default(), true)).classify("n1", &facts());
+            assert!(r.classes.get("base").is_some() && r.variables.get("owner").is_some());
+
+            let block = GroupBehavior {
+                inheritance: Inheritance::Block,
+                ..Default::default()
+            };
+            let r = svc(tree(block, true)).classify("n1", &facts());
+            assert_eq!(r.classes, json!({"web": {}}));
+            assert_eq!(r.variables, json!({"role": "web"}));
+            assert_eq!(names(&r), ["parent", "child"], "membership is unchanged");
+
+            let select = GroupBehavior {
+                inheritance: Inheritance::Select {
+                    keys: vec!["ntp".into(), "owner".into()],
+                },
+                ..Default::default()
+            };
+            let r = svc(tree(select, true)).classify("n1", &facts());
+            assert_eq!(r.classes, json!({"ntp": {}, "web": {}}));
+            assert_eq!(r.variables, json!({"owner": "ops", "role": "web"}));
+        }
+
+        #[test]
+        fn independent_group_matches_without_its_parent_and_inherits_nothing_unmatched() {
+            let independent = GroupBehavior {
+                inheritance: Inheritance::Independent,
+                ..Default::default()
+            };
+            let r = svc(tree(independent, false)).classify("n1", &facts());
+            assert_eq!(names(&r), ["child"]);
+            assert_eq!(r.classes, json!({"web": {}}));
+
+            let r = svc(tree(GroupBehavior::default(), false)).classify("n1", &facts());
+            assert!(r.groups.is_empty());
+
+            let independent = GroupBehavior {
+                inheritance: Inheritance::Independent,
+                ..Default::default()
+            };
+            let r = svc(tree(independent, true)).classify("n1", &facts());
+            assert_eq!(names(&r), ["parent", "child"]);
+            assert!(
+                r.classes.get("base").is_some(),
+                "a matched parent still contributes"
+            );
+        }
+
+        #[test]
+        fn merge_strategies() {
+            let base = NodeGroup {
+                name: "base".into(),
+                match_all_nodes: true,
+                classes: json!({"ntp": {"servers": ["a"], "port": 1}}),
+                variables: json!({"list": ["a"], "k": 1}),
+                ..Default::default()
+            };
+            let child = |merge| NodeGroup {
+                name: "child".into(),
+                parent_id: Some(base.id),
+                match_all_nodes: true,
+                classes: json!({"ntp": {"servers": ["b"]}}),
+                variables: json!({"list": ["b"], "k": 2}),
+                behavior: GroupBehavior {
+                    merge,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let run = |m| svc(vec![base.clone(), child(m)]).classify("n1", &facts());
+
+            let r = run(MergeStrategy::Deep);
+            assert_eq!(r.classes["ntp"], json!({"servers": ["b"], "port": 1}));
+            assert_eq!(r.variables["list"], json!(["b"]));
+
+            let r = run(MergeStrategy::Replace);
+            assert_eq!(r.classes["ntp"], json!({"servers": ["b"]}));
+
+            let r = run(MergeStrategy::Union);
+            assert_eq!(r.classes["ntp"]["servers"], json!(["a", "b"]));
+            assert_eq!(r.variables["list"], json!(["a", "b"]));
+            assert_eq!(r.variables["k"], 2);
+
+            let r = run(MergeStrategy::FailOnConflict);
+            assert_eq!(r.variables["k"], 1, "the first value is kept");
+            let err = r.conflict_error.expect("conflict reported");
+            assert!(
+                err.contains("variable k") && err.contains("class ntp"),
+                "{err}"
+            );
+        }
+
+        #[test]
+        fn active_window_gates_membership() {
+            let mk = |from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>| NodeGroup {
+                name: "w".into(),
+                match_all_nodes: true,
+                behavior: GroupBehavior {
+                    active_from: from,
+                    expires_at: to,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let hour = |h| Utc.with_ymd_and_hms(2026, 10, 28, h, 0, 0).unwrap();
+            let run = |g: NodeGroup| svc(vec![g]).classify("n1", &facts()).groups.len();
+            assert_eq!(run(mk(Some(hour(3)), Some(hour(4)))), 1);
+            assert_eq!(run(mk(Some(hour(4)), None)), 0, "not active yet");
+            assert_eq!(run(mk(None, Some(hour(3)))), 0, "expired");
+            let mut pinned = mk(None, Some(hour(3)));
+            pinned.pinned_nodes = vec!["n1".into()];
+            assert_eq!(run(pinned), 0, "a window also applies to pinned nodes");
+        }
+
+        #[test]
+        fn explain_reports_reasons_values_and_provenance() {
+            let root = NodeGroup {
+                name: "root".into(),
+                environment: Some("production".into()),
+                is_environment_group: true,
+                rules: vec![rule("os.family", json!("RedHat"))],
+                classes: json!({"base": {}}),
+                variables: json!({"owner": "ops"}),
+                ..Default::default()
+            };
+            let child = NodeGroup {
+                name: "child".into(),
+                parent_id: Some(root.id),
+                expression: Some(json!({"not": {"fact": "virtual", "op": "=", "value": "kvm"}})),
+                classes: json!({"web": {}}),
+                variables: json!({"owner": "web"}),
+                ..Default::default()
+            };
+            let hidden = NodeGroup {
+                name: "hidden".into(),
+                parent_id: Some(child.id),
+                match_all_nodes: true,
+                ..Default::default()
+            };
+            let (r, ex) =
+                svc(vec![root.clone(), child.clone(), hidden]).classify_explained("n1", &facts());
+            assert_eq!(names(&r), ["root"]);
+            let by = |n: &str| ex.groups.iter().find(|g| g.name == n).unwrap();
+            assert_eq!(by("root").outcome, GroupOutcome::Matched);
+            assert_eq!(by("root").rules[0].actual, Some(json!("RedHat")));
+            assert_eq!(by("child").outcome, GroupOutcome::NotMatched);
+            let trace = by("child").expression.as_ref().unwrap();
+            assert_eq!(trace.kind, "not");
+            assert_eq!(trace.children[0].left, Some(json!("kvm")));
+            assert_eq!(by("hidden").outcome, GroupOutcome::NotEvaluated);
+            assert!(by("hidden").reason.contains("child"));
+            assert_eq!(
+                ex.provenance.environment.as_ref().unwrap().group_name,
+                "root"
+            );
+
+            // With the child matching, the last origin is the winner.
+            let mut f = facts();
+            f["virtual"] = json!("physical");
+            let (r, ex) = svc(vec![root, child]).classify_explained("n1", &f);
+            assert_eq!(r.variables["owner"], "web");
+            let owners = &ex.provenance.variables["owner"];
+            assert_eq!(
+                owners
+                    .iter()
+                    .map(|o| o.group_name.as_str())
+                    .collect::<Vec<_>>(),
+                ["root", "child"]
+            );
+            assert_eq!(ex.provenance.classes["web"].len(), 1);
+        }
+
+        #[test]
+        fn explain_does_not_change_the_result() {
+            let groups = tree(GroupBehavior::default(), true);
+            let s = svc(groups);
+            let plain = s.classify("n1", &facts());
+            let (explained, _) = s.classify_explained("n1", &facts());
+            assert_eq!(
+                serde_json::to_value(&plain).unwrap(),
+                serde_json::to_value(&explained).unwrap()
+            );
+        }
     }
 }

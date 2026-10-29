@@ -14,6 +14,7 @@ mod auth;
 mod backup;
 mod bootstrap;
 mod ca;
+mod classification;
 mod code_deploy;
 mod cve;
 mod facter;
@@ -72,6 +73,7 @@ pub fn protected_routes() -> Router<AppState> {
         // Resource endpoints
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())
+        .nest("/classification", classification::routes())
         .nest("/facts", facts::routes())
         .nest("/facter", facter::routes())
         .nest("/reports", reports::routes())

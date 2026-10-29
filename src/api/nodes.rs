@@ -483,6 +483,9 @@ async fn get_node_catalog(
 pub struct ClassificationQuery {
     /// Organization ID (super_admin only)
     pub organization_id: Option<uuid::Uuid>,
+    /// Add why each group did or did not match and where each value came
+    /// from (M26). Not available to agents using a client certificate.
+    pub explain: Option<bool>,
 }
 
 /// Get classification for a specific node
@@ -516,7 +519,13 @@ async fn get_node_classification(
     Query(query): Query<ClassificationQuery>,
     auth_user: AuthUser,
     client_cert: OptionalClientCert,
-) -> AppResult<Json<ClassificationResult>> {
+) -> AppResult<Json<serde_json::Value>> {
+    let explain = query.explain.unwrap_or(false);
+    if explain && client_cert.0.is_some() {
+        return Err(AppError::Forbidden(
+            "Explain is not available with a client certificate".to_string(),
+        ));
+    }
     // If a client certificate is provided, verify it matches the requested certname
     // This prevents nodes from fetching classification data for other nodes
     if let Some(ref cert) = client_cert.0 {
@@ -566,6 +575,7 @@ async fn get_node_classification(
 
     // Classify the node (with the plugin facts enabled for rules, if any)
     let classification_service = ClassificationService::new(all_groups.clone());
+    let explanation = std::sync::Mutex::new(None);
     let classification = state
         .plugin_manager
         .classify_with_plugin_facts(
@@ -575,11 +585,32 @@ async fn get_node_classification(
             catalog_environment.as_deref(),
             &all_groups,
             freeze_on_provider_failure(&state),
-            |facts_json| classification_service.classify(&certname, facts_json),
+            |facts_json| {
+                if explain {
+                    let (result, why) =
+                        classification_service.classify_explained(&certname, facts_json);
+                    *explanation.lock().unwrap_or_else(|e| e.into_inner()) = Some(why);
+                    result
+                } else {
+                    classification_service.classify(&certname, facts_json)
+                }
+            },
         )
         .await;
 
-    Ok(Json(classification))
+    let mut body = serde_json::to_value(&classification)
+        .map_err(|e| AppError::Internal(format!("Failed to serialize classification: {}", e)))?;
+    // A frozen result (provider failure) is served without a fresh explanation
+    let why = explanation.into_inner().unwrap_or_else(|e| e.into_inner());
+    if let (Some(why), Some(obj)) = (why, body.as_object_mut()) {
+        obj.insert(
+            "explain".to_string(),
+            serde_json::to_value(why)
+                .map_err(|e| AppError::Internal(format!("Failed to serialize explain: {}", e)))?,
+        );
+    }
+
+    Ok(Json(body))
 }
 
 /// Cross-organization classification served to agents (`/classify` and
