@@ -18,6 +18,7 @@ mod ca;
 mod classification;
 mod code_deploy;
 mod cve;
+mod directories;
 mod facter;
 mod facts;
 pub(crate) mod groups;
@@ -114,6 +115,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/plugins", plugins::routes())
         // Secret providers (M28)
         .nest("/secret-providers", secret_providers::routes())
+        // LDAP and Active Directory directories (M30)
+        .nest("/directories", directories::routes())
 }
 
 /// Create the full API router (public + protected; useful for tests)

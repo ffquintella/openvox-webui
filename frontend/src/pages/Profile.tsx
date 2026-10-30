@@ -144,8 +144,18 @@ export default function Profile() {
         </div>
       </div>
 
+      {user?.directory_id && (
+        <div className="card">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Password</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Your account and password are managed by the directory{' '}
+            <strong>{user.directory_id}</strong>. Change your password there.
+          </p>
+        </div>
+      )}
+
       {/* Change Password Card - Only show for local and both auth providers */}
-      {user?.auth_provider !== 'saml' && (
+      {user?.auth_provider !== 'saml' && !user?.directory_id && (
         <div className="card">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
             Change Password

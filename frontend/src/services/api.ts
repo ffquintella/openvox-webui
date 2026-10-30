@@ -210,6 +210,11 @@ import type {
   TemplateRun,
   FactPathEntry,
   UiContributionDetail,
+  DirectoryInfo,
+  DirectorySyncRun,
+  DirectoryGroupEntry,
+  DirectoryRoleMapping,
+  DirectoryTestResult,
 } from '../types';
 
 const client = axios.create({
@@ -279,6 +284,12 @@ client.interceptors.response.use(
   async (error) => {
     const status = error.response?.status;
     const originalRequest = (error.config ?? {}) as RetriableRequestConfig;
+
+    // Step-up (M29) is not an expired session: keep the session, let the
+    // caller show the message.
+    if (status === 401 && error.response?.data?.code === 'step_up_required') {
+      return Promise.reject(error);
+    }
 
     if (
       status === 401 &&
@@ -1564,6 +1575,56 @@ export const api = {
 
   removeGroupPermission: async (roleId: string, groupId: string): Promise<void> => {
     await client.delete(`/roles/${roleId}/group-permissions/${groupId}`);
+  },
+
+  // Directories (M30)
+  getDirectories: async (): Promise<DirectoryInfo[]> => {
+    const response = await client.get('/directories');
+    return response.data?.directories ?? [];
+  },
+
+  testDirectory: async (id: string): Promise<DirectoryTestResult> => {
+    const response = await client.post(`/directories/${encodeURIComponent(id)}/test`);
+    return response.data;
+  },
+
+  syncDirectory: async (id: string): Promise<{ status: string }> => {
+    const response = await client.post(`/directories/${encodeURIComponent(id)}/sync`);
+    return response.data;
+  },
+
+  getDirectorySyncRuns: async (id: string): Promise<DirectorySyncRun[]> => {
+    const response = await client.get(`/directories/${encodeURIComponent(id)}/sync-runs`);
+    return response.data?.runs ?? [];
+  },
+
+  searchDirectoryGroups: async (id: string, q: string): Promise<DirectoryGroupEntry[]> => {
+    const response = await client.get(`/directories/${encodeURIComponent(id)}/groups`, {
+      params: { q },
+    });
+    return response.data?.groups ?? [];
+  },
+
+  getDirectoryRoleMappings: async (id: string): Promise<DirectoryRoleMapping[]> => {
+    const response = await client.get(`/directories/${encodeURIComponent(id)}/role-mappings`);
+    return response.data?.mappings ?? [];
+  },
+
+  createDirectoryRoleMapping: async (
+    id: string,
+    data: { group_ref: string; role_id: string; group_label?: string }
+  ): Promise<DirectoryRoleMapping> => {
+    const response = await client.post(
+      `/directories/${encodeURIComponent(id)}/role-mappings`,
+      data
+    );
+    return response.data?.mapping;
+  },
+
+  deleteDirectoryRoleMapping: async (id: string, mappingId: string): Promise<void> => {
+    await client.delete(
+      `/directories/${encodeURIComponent(id)}/role-mappings/${encodeURIComponent(mappingId)}`
+    );
   },
 };
 

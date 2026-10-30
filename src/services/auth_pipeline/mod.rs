@@ -86,7 +86,7 @@ pub struct ChallengeOffer {
 }
 
 pub enum LoginOutcome {
-    Session(AuthResponse),
+    Session(Box<AuthResponse>),
     Challenge(ChallengeOffer),
     Denied { code: &'static str, message: String },
 }
@@ -307,6 +307,20 @@ impl<'a> AuthPipeline<'a> {
         client: &ClientInfo,
     ) -> Result<LoginOutcome, PipelineError> {
         let user = &ident.user;
+        if !self.is_active(user.id).await? {
+            self.audit(
+                user.organization_id,
+                Some(user.id),
+                "auth.login_denied",
+                &user.username,
+                json!({"reason": "account_deactivated", "provider": ident.provider}),
+            )
+            .await;
+            return Ok(LoginOutcome::Denied {
+                code: "account_deactivated",
+                message: "This account is deactivated".into(),
+            });
+        }
         let roles = AuthService::new(self.pool.clone())
             .get_user_roles(&user.id)
             .await
@@ -316,9 +330,9 @@ impl<'a> AuthPipeline<'a> {
         let reached = acr_of(&ident.amr);
 
         if reached >= required {
-            return Ok(LoginOutcome::Session(
+            return Ok(LoginOutcome::Session(Box::new(
                 self.issue_session(user, &ident.amr, reached).await?,
-            ));
+            )));
         }
 
         let kinds = self.store().usable_kinds(user.id).await?;
@@ -340,9 +354,9 @@ impl<'a> AuthPipeline<'a> {
                     "Break-glass login for '{}': policy requires MFA but no factor is enrolled",
                     user.username
                 );
-                return Ok(LoginOutcome::Session(
+                return Ok(LoginOutcome::Session(Box::new(
                     self.issue_session(user, &ident.amr, reached).await?,
-                ));
+                )));
             }
             self.audit(
                 user.organization_id,
@@ -373,6 +387,16 @@ impl<'a> AuthPipeline<'a> {
             )
             .await?;
         Ok(LoginOutcome::Challenge(offer))
+    }
+
+    /// Reads the flag from the database: the `User` in hand may be stale.
+    async fn is_active(&self, user: Uuid) -> Result<bool, PipelineError> {
+        let deactivated: Option<Option<String>> =
+            sqlx::query_scalar("SELECT deactivated_at FROM users WHERE id = ?")
+                .bind(user.to_string())
+                .fetch_optional(self.pool)
+                .await?;
+        Ok(matches!(deactivated, Some(None)))
     }
 
     /// Starts a step-up for an already authenticated session.
@@ -497,6 +521,9 @@ impl<'a> AuthPipeline<'a> {
             .get_user_by_id(&uid)
             .await?
             .ok_or(PipelineError::InvalidChallenge)?;
+        if user.deactivated_at.is_some() {
+            return Err(PipelineError::InvalidChallenge);
+        }
         Ok((row, user))
     }
 

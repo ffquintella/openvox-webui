@@ -68,6 +68,8 @@ pub struct AppState {
     pub plugin_manager: Arc<PluginManager>,
     /// Plugin event bus, jobs and webhooks
     pub plugin_runtime: Arc<services::plugins::PluginRuntime>,
+    /// LDAP and Active Directory directories (M30)
+    pub directories: Arc<services::directory::DirectoryRegistry>,
 }
 
 impl AppState {

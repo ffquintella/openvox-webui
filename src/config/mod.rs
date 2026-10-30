@@ -921,6 +921,9 @@ pub struct AuthConfig {
     /// Authentication pipeline: factors, WebAuthn and OIDC providers (M29)
     #[serde(default)]
     pub mfa: crate::services::auth_pipeline::MfaConfig,
+    /// LDAP and Active Directory directories (M30), tried in this order
+    #[serde(default)]
+    pub directories: Vec<crate::services::directory::DirectoryConfig>,
 }
 
 fn default_token_expiry() -> u64 {
@@ -2117,6 +2120,7 @@ impl Default for AppConfig {
                 bcrypt_cost: default_bcrypt_cost(),
                 password_min_length: default_password_min_length(),
                 mfa: Default::default(),
+                directories: Vec::new(),
             },
             database: DatabaseConfig {
                 url: "sqlite://./data/openvox.db".to_string(),
@@ -2635,6 +2639,10 @@ impl AppConfig {
         if self.database.url.is_empty() {
             anyhow::bail!("Database URL cannot be empty");
         }
+
+        // Directories (M30): TLS rules, required fields and unique ids
+        let oidc_ids: Vec<String> = self.auth.mfa.oidc.iter().map(|p| p.id.clone()).collect();
+        crate::services::directory::config::validate_all(&self.auth.directories, &oidc_ids)?;
 
         // Validate TLS configuration if present
         if let Some(ref tls) = self.server.tls {

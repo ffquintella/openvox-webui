@@ -79,11 +79,27 @@ pub struct User {
     /// Last SAML authentication timestamp
     #[serde(default)]
     pub last_saml_auth_at: Option<DateTime<Utc>>,
+    /// Directory that owns this account's identity (M30); `None` for local
+    /// and SSO accounts.
+    #[serde(default)]
+    pub directory_id: Option<String>,
+    /// When the account was deactivated; such an account cannot sign in.
+    #[serde(default)]
+    pub deactivated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl User {
+    /// The identity fields (username, e-mail, password) belong to a directory.
+    pub fn is_directory_managed(&self) -> bool {
+        self.directory_id.is_some()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.deactivated_at.is_none()
+    }
+
     /// Create a new user
     pub fn new(username: String, email: String, password_hash: String, role: String) -> Self {
         Self::new_with_org(
@@ -115,6 +131,8 @@ impl User {
             external_id: None,
             idp_entity_id: None,
             last_saml_auth_at: None,
+            directory_id: None,
+            deactivated_at: None,
             created_at: now,
             updated_at: now,
         }
@@ -138,8 +156,20 @@ pub struct UserPublic {
     /// RBAC roles assigned to the user (optional for backwards compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<UserRoleInfo>>,
+    /// Directory that owns the identity fields; the UI shows them read-only.
+    #[serde(default)]
+    pub directory_id: Option<String>,
+    /// `false` once the account is deactivated (by a directory sync).
+    #[serde(default = "default_active")]
+    pub active: bool,
+    #[serde(default)]
+    pub deactivated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_active() -> bool {
+    true
 }
 
 /// Simplified role info for user responses
@@ -161,6 +191,9 @@ impl From<User> for UserPublic {
             force_password_change: user.force_password_change,
             auth_provider: user.auth_provider,
             roles: None,
+            active: user.deactivated_at.is_none(),
+            directory_id: user.directory_id,
+            deactivated_at: user.deactivated_at,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }

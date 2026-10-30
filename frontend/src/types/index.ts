@@ -943,6 +943,9 @@ export interface User {
   role: 'admin' | 'user' | 'viewer';
   force_password_change?: boolean;
   auth_provider?: AuthProvider;
+  /** Directory that owns the identity fields (read-only in the UI). */
+  directory_id?: string | null;
+  active?: boolean;
 }
 
 export interface AuthResponse {
@@ -1030,6 +1033,11 @@ export interface UserResponse {
   force_password_change?: boolean;
   auth_provider?: AuthProvider;
   roles?: Array<{ id: string; name: string; display_name: string }>;
+  /** Directory that owns username, e-mail and password (M30). */
+  directory_id?: string | null;
+  /** `false` once a directory sync deactivated the account. */
+  active?: boolean;
+  deactivated_at?: string | null;
   created_at: string;
 }
 
@@ -3157,4 +3165,73 @@ export interface FactPathEntry {
   path: string[];
   type: string;
   source?: string;
+}
+
+// Directories (M30)
+
+export interface DirectorySyncRun {
+  id: string;
+  directory_id: string;
+  trigger_kind: 'schedule' | 'manual';
+  status: 'running' | 'ok' | 'partial' | 'failed';
+  started_at: string;
+  finished_at?: string | null;
+  created: number;
+  updated: number;
+  deactivated: number;
+  reactivated: number;
+  errors: number;
+  error?: string | null;
+  started_by?: string | null;
+}
+
+export interface DirectoryInfo {
+  id: string;
+  label: string;
+  kind: 'ldap' | 'active_directory';
+  enabled: boolean;
+  servers: string[];
+  start_tls: boolean;
+  ca_file?: string | null;
+  bind_dn: string;
+  base_dn: string;
+  user_filter: string;
+  domains: string[];
+  attributes: { username: string; email: string; display_name: string; id: string[] };
+  groups: { base_dn: string; filter: string; nested: boolean };
+  modes: { lookup: boolean; jit: boolean; sync: { enabled: boolean; interval_secs: number } };
+  deny_without_role: boolean;
+  sync_running: boolean;
+  last_sync?: DirectorySyncRun | null;
+  mappings?: number;
+}
+
+export interface DirectoryGroupEntry {
+  dn: string;
+  name: string;
+  guid?: string | null;
+  sid?: string | null;
+}
+
+export interface DirectoryRoleMapping {
+  id: string;
+  directory_id: string;
+  group_ref: string;
+  group_ref_kind: 'dn' | 'sid' | 'guid';
+  group_label?: string | null;
+  role_id: string;
+  role_name: string;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface DirectoryTestResult {
+  ok: boolean;
+  stage?: string;
+  server?: string | null;
+  error?: string;
+  message?: string;
+  users_found?: boolean;
+  groups_found?: boolean;
+  elapsed_ms?: number;
 }

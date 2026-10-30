@@ -113,6 +113,11 @@ sha1 = "0.11"
 data-encoding = "2.11"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 
+# Directory providers (M30): LDAP and Active Directory over LDAPS/StartTLS.
+# rustls with the aws-lc-rs provider already used by the rest of the binary.
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-aws-lc-rs"], optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+
 # Backup encryption and archiving
 chacha20poly1305 = "0.11"
 tar = "0.4"
@@ -136,6 +141,13 @@ flate2 = "1.1"
 # Email sending
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
 quick-xml = { version = "0.42.0", features = ["serialize"] }
+
+[features]
+default = ["ldap"]
+# Built-in LDAP/Active Directory directory provider (M30). Without it the
+# `auth.directories` configuration is accepted but every directory reports
+# itself unavailable.
+ldap = ["dep:ldap3", "dep:rustls-native-certs"]
 
 [patch.crates-io]
 samael = { path = "vendor/samael" }

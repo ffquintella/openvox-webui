@@ -22,6 +22,7 @@ use crate::{
     models::{LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
     services::{
         auth_pipeline::{AuthPipeline, PrimaryIdentity},
+        directory::service::{self as directory_service, DirectoryContext, LoginResult},
         AuthService,
     },
     utils::error::ErrorResponse,
@@ -58,9 +59,9 @@ pub struct RegisterRequest {
 ///
 /// POST /api/v1/auth/login
 ///
-/// Validates the local primary identity, then lets the authentication
-/// pipeline decide: `200` with a session, or `202` with a challenge when an MFA
-/// policy requires a second factor.
+/// Local account first (the local administrator never depends on a
+/// directory), then the directories in order; every failure is the same 401.
+/// The pipeline then answers `200` with a session or `202` with a challenge.
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -70,6 +71,9 @@ async fn login(
     let pipeline = AuthPipeline::new(&state.db, &state.config);
 
     let user = match auth_service.get_user_by_username(&payload.username).await {
+        // A directory account has no local password: only its directory
+        // can authenticate it.
+        Ok(Some(user)) if user.is_directory_managed() => None,
         Ok(Some(user)) => {
             // An account without a local password (SSO only) cannot match.
             match AuthService::verify_password(&payload.password, &user.password_hash) {
@@ -91,23 +95,41 @@ async fn login(
                 .into_response()
         }
     };
-    let Some(user) = user else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "unauthorized".to_string(),
-                message: "Invalid username or password".to_string(),
-                details: None,
-                code: None,
-            }),
-        )
-            .into_response();
-    };
-
-    let ident = PrimaryIdentity {
-        user,
-        provider: "local".to_string(),
-        amr: vec!["pwd".to_string()],
+    let ident = match user {
+        Some(user) => PrimaryIdentity {
+            user,
+            provider: "local".to_string(),
+            amr: vec!["pwd".to_string()],
+        },
+        None => {
+            let ctx = DirectoryContext::new(&state.db, Some(&state.rbac_db));
+            match directory_service::login(
+                ctx,
+                &state.directories,
+                &payload.username,
+                &payload.password,
+            )
+            .await
+            {
+                LoginResult::User { user, directory_id } => PrimaryIdentity {
+                    user: *user,
+                    provider: directory_id,
+                    amr: vec!["pwd".to_string()],
+                },
+                LoginResult::Denied => {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(ErrorResponse {
+                            error: "unauthorized".to_string(),
+                            message: "Invalid username or password".to_string(),
+                            details: None,
+                            code: None,
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        }
     };
     match pipeline.start_login(ident, &client_info(&headers)).await {
         Ok(outcome) => outcome_response(outcome),
@@ -559,6 +581,20 @@ async fn change_password(
     }
 
     let auth_service = AuthService::new(state.db.clone());
+
+    if let Ok(Some(u)) = auth_service.get_user_by_id(&auth_user.id).await {
+        if u.is_directory_managed() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "validation_error".to_string(),
+                    message: "The password of this account is managed by its directory".to_string(),
+                    details: None,
+                    code: Some("directory_managed".to_string()),
+                }),
+            ));
+        }
+    }
 
     let success = auth_service
         .change_password(

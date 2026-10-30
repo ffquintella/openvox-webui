@@ -62,7 +62,7 @@ impl AuthService {
     /// Get a user by username
     pub async fn get_user_by_username(&self, username: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE username = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE username = ?"
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -76,7 +76,7 @@ impl AuthService {
     pub async fn get_user_by_id(&self, id: &Uuid) -> Result<Option<User>> {
         let id_str = id.to_string();
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE id = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE id = ?"
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
@@ -89,7 +89,7 @@ impl AuthService {
     /// Get a user by email
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE email = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE email = ?"
         )
         .bind(email)
         .fetch_optional(&self.pool)
@@ -171,6 +171,8 @@ impl AuthService {
             external_id: external_id.map(|s| s.to_string()),
             idp_entity_id: None,
             last_saml_auth_at: None,
+            directory_id: None,
+            deactivated_at: None,
             created_at: now,
             updated_at: now,
         };
@@ -305,7 +307,7 @@ impl AuthService {
     /// List all users
     pub async fn list_users(&self) -> Result<Vec<UserPublic>> {
         let rows = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users ORDER BY username"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users ORDER BY username"
         )
         .fetch_all(&self.pool)
         .await
@@ -316,7 +318,7 @@ impl AuthService {
 
     pub async fn list_users_in_org(&self, organization_id: Uuid) -> Result<Vec<UserPublic>> {
         let rows = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE organization_id = ? ORDER BY username",
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE organization_id = ? ORDER BY username",
         )
         .bind(organization_id.to_string())
         .fetch_all(&self.pool)
@@ -332,7 +334,7 @@ impl AuthService {
         id: &Uuid,
     ) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE organization_id = ? AND id = ?",
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE organization_id = ? AND id = ?",
         )
         .bind(organization_id.to_string())
         .bind(id.to_string())
@@ -397,6 +399,10 @@ impl AuthService {
         let user = self.get_user_by_email(email).await?;
 
         match user {
+            // A directory owns the password of its users, and a deactivated
+            // account cannot be revived by e-mail: answer as for an unknown
+            // address.
+            Some(user) if user.directory_id.is_some() || user.deactivated_at.is_some() => Ok(None),
             Some(user) => {
                 let token = Uuid::new_v4().to_string();
                 let token_hash = Self::hash_reset_token(&token);
@@ -460,6 +466,17 @@ impl AuthService {
     /// Reset a user's password using a valid reset token
     pub async fn reset_password(&self, token: &str, new_password: &str) -> Result<bool> {
         let user_id = self.validate_reset_token(token).await?;
+
+        let managed = match user_id {
+            Some(id) => self
+                .get_user_by_id(&id)
+                .await?
+                .is_none_or(|u| u.directory_id.is_some() || u.deactivated_at.is_some()),
+            None => false,
+        };
+        if managed {
+            return Ok(false);
+        }
 
         match user_id {
             Some(user_id) => {
@@ -600,7 +617,7 @@ impl AuthService {
     /// Get a user by external ID (SAML NameID)
     pub async fn get_user_by_external_id(&self, external_id: &str) -> Result<Option<User>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at FROM users WHERE external_id = ?"
+            "SELECT id, organization_id, username, email, password_hash, role, force_password_change, auth_provider, external_id, idp_entity_id, last_saml_auth_at, created_at, updated_at, directory_id, deactivated_at FROM users WHERE external_id = ?"
         )
         .bind(external_id)
         .fetch_optional(&self.pool)
@@ -608,6 +625,64 @@ impl AuthService {
         .context("Failed to fetch user by external ID")?;
 
         Ok(row.map(|r| row_to_user(&r)))
+    }
+
+    /// Deactivates an account without deleting it and revokes every way in:
+    /// its sessions and its API keys. Returns `false` when it was already
+    /// deactivated (nothing changes then).
+    pub async fn deactivate_user(&self, id: &Uuid, reason: &str) -> Result<bool> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let uid = id.to_string();
+        let mut tx = self.pool.begin().await?;
+        let changed = sqlx::query(
+            "UPDATE users SET deactivated_at = ?, deactivated_reason = ?, updated_at = ? \
+             WHERE id = ? AND deactivated_at IS NULL",
+        )
+        .bind(&now)
+        .bind(reason)
+        .bind(&now)
+        .bind(&uid)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to deactivate user")?
+        .rows_affected()
+            > 0;
+        // Revoke even when the flag was already set: a session or key created
+        // in between must not survive.
+        sqlx::query(
+            "UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? \
+             WHERE user_id = ? AND revoked_at IS NULL",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(&uid)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to revoke sessions")?;
+        sqlx::query("UPDATE api_keys SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+            .bind(&now)
+            .bind(&uid)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to revoke API keys")?;
+        tx.commit().await?;
+        Ok(changed)
+    }
+
+    /// Lifts a deactivation. Revoked sessions and API keys stay revoked.
+    pub async fn reactivate_user(&self, id: &Uuid) -> Result<bool> {
+        let now = chrono::Utc::now().to_rfc3339();
+        Ok(sqlx::query(
+            "UPDATE users SET deactivated_at = NULL, deactivated_reason = NULL, updated_at = ? \
+             WHERE id = ? AND deactivated_at IS NOT NULL",
+        )
+        .bind(&now)
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await
+        .context("Failed to reactivate user")?
+        .rows_affected()
+            > 0)
     }
 
     /// Hash a reset token using SHA-256 for storage
@@ -666,6 +741,12 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         .try_get::<String, _>("last_saml_auth_at")
         .ok()
         .map(|s| parse_db_timestamp(&s));
+    let directory_id: Option<String> = row.try_get("directory_id").ok().flatten();
+    let deactivated_at = row
+        .try_get::<Option<String>, _>("deactivated_at")
+        .ok()
+        .flatten()
+        .map(|s| parse_db_timestamp(&s));
 
     User {
         id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::nil()),
@@ -680,6 +761,8 @@ fn row_to_user(row: &sqlx::sqlite::SqliteRow) -> User {
         external_id,
         idp_entity_id,
         last_saml_auth_at,
+        directory_id,
+        deactivated_at,
         created_at: parse_db_timestamp(&created_at_str),
         updated_at: parse_db_timestamp(&updated_at_str),
     }

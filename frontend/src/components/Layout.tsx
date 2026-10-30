@@ -13,6 +13,7 @@ import {
   Shield,
   ShieldCheck,
   Users,
+  BookUser,
   Lock,
   User,
   LogOut,
@@ -60,6 +61,7 @@ const adminNavigation: CoreMenuItem[] = [
   { id: 'core:backup', name: 'Backup', href: '/backup', icon: HardDrive },
   { id: 'core:ca', name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
   { id: 'core:users', name: 'Users', href: '/users', icon: Users },
+  { id: 'core:directories', name: 'Directories', href: '/directories', icon: BookUser },
   { id: 'core:roles', name: 'Roles', href: '/roles', icon: Shield },
   { id: 'core:permissions', name: 'Permissions', href: '/permissions', icon: Lock },
   { id: 'core:plugins', name: 'Plugins', href: '/plugins', icon: Puzzle },
@@ -79,6 +81,7 @@ export default function Layout({ children }: LayoutProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const hasPermission = usePermissionsStore((state) => state.hasPermission);
   const canSeePlugins = hasPermission('plugins', 'read');
+  const canSeeDirectories = hasPermission('users', 'admin');
   const { data: pluginSlots } = usePluginSlots();
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -101,11 +104,15 @@ export default function Layout({ children }: LayoutProps) {
   const adminItems = useMemo(
     () =>
       mergeMenu(
-        adminNavigation.filter((item) => item.id !== 'core:plugins' || canSeePlugins),
+        adminNavigation.filter(
+          (item) =>
+            (item.id !== 'core:plugins' || canSeePlugins) &&
+            (item.id !== 'core:directories' || canSeeDirectories)
+        ),
         pluginSlots?.slots['nav.admin'],
         pluginSlots?.menu_ops
       ),
-    [pluginSlots, canSeePlugins]
+    [pluginSlots, canSeePlugins, canSeeDirectories]
   );
   const userMenuItems = useMemo(
     () => mergeMenu(userMenuNavigation, pluginSlots?.slots['nav.user-menu'], pluginSlots?.menu_ops),

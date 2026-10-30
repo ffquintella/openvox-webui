@@ -36,7 +36,7 @@ pub struct ApiErr {
 }
 
 impl ApiErr {
-    fn new(status: StatusCode, error: &'static str, message: impl Into<String>) -> Self {
+    pub(super) fn new(status: StatusCode, error: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
             error,
@@ -46,12 +46,12 @@ impl ApiErr {
         }
     }
 
-    fn code(mut self, code: &'static str) -> Self {
+    pub(super) fn code(mut self, code: &'static str) -> Self {
         self.code = Some(code);
         self
     }
 
-    fn details(mut self, d: Value) -> Self {
+    pub(super) fn details(mut self, d: Value) -> Self {
         self.details = Some(d);
         self
     }
@@ -134,7 +134,7 @@ pub fn client_info(headers: &HeaderMap) -> ClientInfo {
 /// Renders a login outcome: 200 session, 202 challenge, 403 denied.
 pub fn outcome_response(outcome: LoginOutcome) -> Response {
     match outcome {
-        LoginOutcome::Session(s) => Json(s).into_response(),
+        LoginOutcome::Session(s) => Json(*s).into_response(),
         LoginOutcome::Challenge(offer) => (
             StatusCode::ACCEPTED,
             Json(json!({
@@ -242,6 +242,18 @@ async fn list_providers(State(state): State<AppState>) -> Json<Value> {
             "kind": "redirect",
             "label": "Single sign-on (SAML)",
             "begin_url": "/api/v1/auth/saml/login",
+        }));
+    }
+    // Directories authenticate through the same username and password form.
+    for d in state.directories.enabled() {
+        providers.push(json!({
+            "id": d.id(),
+            "kind": "credentials",
+            "label": d.config.label(),
+            "fields": [
+                {"name": "username", "type": "text"},
+                {"name": "password", "type": "password"},
+            ],
         }));
     }
     for p in &state.config.auth.mfa.oidc {

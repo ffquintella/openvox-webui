@@ -73,6 +73,28 @@ Single Sign-On integration with enterprise identity providers.
 - **saml**: SSO authentication only
 - **both**: Can use either method
 
+### LDAP and Active Directory
+
+When an administrator configures a directory (`auth.directories`, see
+[CONFIGURATION.md](CONFIGURATION.md#directories-ldap-and-active-directory)),
+sign in on the normal login page with your directory account: `alice`,
+`alice@example.com` or `EXAMPLE\alice` (the last two when the realm is
+configured). Local accounts, including the local administrator, keep working
+even when the directory is unavailable.
+
+- Your account is created on your first login (or by the scheduled
+  synchronization), and your roles come from the directory groups the
+  administrator mapped to roles. They are updated at every login and
+  synchronization.
+- Your username, e-mail and password are managed by the directory: change your
+  password there. The Profile page does not offer a password change.
+- If your account is disabled or removed in the directory, the next
+  synchronization deactivates it here and ends your sessions and API keys.
+
+**Administrators** use **Directories** (menu, requires `users:admin`) to test
+the connection, search groups, map groups to roles, run a synchronization and
+read its history. The Users page marks directory and deactivated accounts.
+
 ---
 
 ## Dashboard

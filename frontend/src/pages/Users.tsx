@@ -11,6 +11,8 @@ import {
   Loader2,
   Key,
   Globe,
+  BookUser,
+  Lock,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
@@ -23,6 +25,9 @@ interface UserData {
   role: string;
   auth_provider?: AuthProvider;
   roles?: Array<{ id: string; name: string; display_name: string }>;
+  /** Directory that owns username, e-mail and password: shown read-only. */
+  directory_id?: string | null;
+  active?: boolean;
   created_at: string;
 }
 
@@ -370,6 +375,11 @@ export default function Users() {
                       <User className="w-4 h-4 text-primary-600" />
                     </div>
                     <span className="font-medium text-gray-900">{user.username}</span>
+                    {user.active === false && (
+                      <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                        Deactivated
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -379,29 +389,39 @@ export default function Users() {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span
-                    className={clsx(
-                      'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
-                      user.auth_provider === 'local' && 'bg-gray-100 text-gray-700',
-                      user.auth_provider === 'saml' && 'bg-blue-100 text-blue-700',
-                      user.auth_provider === 'both' && 'bg-purple-100 text-purple-700',
-                      !user.auth_provider && 'bg-gray-100 text-gray-700'
-                    )}
-                  >
-                    {user.auth_provider === 'local' && <Key className="w-3 h-3 mr-1" />}
-                    {user.auth_provider === 'saml' && <Globe className="w-3 h-3 mr-1" />}
-                    {user.auth_provider === 'both' && (
-                      <>
-                        <Key className="w-3 h-3" />
-                        <Globe className="w-3 h-3 mr-1" />
-                      </>
-                    )}
-                    {!user.auth_provider && <Key className="w-3 h-3 mr-1" />}
-                    {user.auth_provider === 'local' && 'Local'}
-                    {user.auth_provider === 'saml' && 'SSO'}
-                    {user.auth_provider === 'both' && 'Both'}
-                    {!user.auth_provider && 'Local'}
-                  </span>
+                  {user.directory_id ? (
+                    <span
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-700"
+                      title="Identity managed by a directory"
+                    >
+                      <BookUser className="w-3 h-3 mr-1" />
+                      {user.directory_id}
+                    </span>
+                  ) : (
+                    <span
+                      className={clsx(
+                        'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
+                        user.auth_provider === 'local' && 'bg-gray-100 text-gray-700',
+                        user.auth_provider === 'saml' && 'bg-blue-100 text-blue-700',
+                        user.auth_provider === 'both' && 'bg-purple-100 text-purple-700',
+                        !user.auth_provider && 'bg-gray-100 text-gray-700'
+                      )}
+                    >
+                      {user.auth_provider === 'local' && <Key className="w-3 h-3 mr-1" />}
+                      {user.auth_provider === 'saml' && <Globe className="w-3 h-3 mr-1" />}
+                      {user.auth_provider === 'both' && (
+                        <>
+                          <Key className="w-3 h-3" />
+                          <Globe className="w-3 h-3 mr-1" />
+                        </>
+                      )}
+                      {!user.auth_provider && <Key className="w-3 h-3 mr-1" />}
+                      {user.auth_provider === 'local' && 'Local'}
+                      {user.auth_provider === 'saml' && 'SSO'}
+                      {user.auth_provider === 'both' && 'Both'}
+                      {!user.auth_provider && 'Local'}
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -466,6 +486,20 @@ export default function Users() {
                 <h3 className="font-semibold text-gray-900">{selectedUser.username}</h3>
                 <p className="text-gray-500">{selectedUser.email}</p>
               </div>
+
+              {selectedUser.directory_id && (
+                <div className="mb-6 p-3 rounded-lg bg-teal-50 border border-teal-200 text-sm text-teal-800 flex gap-2">
+                  <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    Username, e-mail and password are managed by the directory{' '}
+                    <strong>{selectedUser.directory_id}</strong> and are read-only here. Roles from
+                    group mappings are re-applied at every login and synchronization; roles assigned
+                    here are kept.
+                    {selectedUser.active === false &&
+                      ' The account is deactivated until the directory enables it again.'}
+                  </span>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">

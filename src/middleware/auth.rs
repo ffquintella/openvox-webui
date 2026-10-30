@@ -410,8 +410,11 @@ pub async fn ensure_auth_session_active(
     session_id: &str,
     touch: bool,
 ) -> Result<(), AuthError> {
+    // The user must still exist and be active: a deactivated account loses
+    // its sessions even if one escaped revocation.
     let row = sqlx::query(
-        "SELECT last_activity_at, expires_at, revoked_at FROM auth_sessions WHERE id = ?1",
+        "SELECT s.last_activity_at, s.expires_at, s.revoked_at, u.id AS uid, u.deactivated_at \
+         FROM auth_sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = ?1",
     )
     .bind(session_id)
     .fetch_optional(pool)
@@ -423,6 +426,12 @@ pub async fn ensure_auth_session_active(
         .try_get("revoked_at")
         .map_err(|_| AuthError::InvalidToken)?;
     if revoked_at.is_some() {
+        return Err(AuthError::SessionExpired);
+    }
+    let uid: Option<String> = row.try_get("uid").unwrap_or(None);
+    let deactivated_at: Option<String> = row.try_get("deactivated_at").unwrap_or(None);
+    if uid.is_none() || deactivated_at.is_some() {
+        let _ = revoke_auth_session(pool, session_id).await;
         return Err(AuthError::SessionExpired);
     }
 
@@ -467,7 +476,7 @@ async fn authenticate_api_key(state: &AppState, token: &str) -> Result<AuthUser,
                u.username, u.email
         FROM api_keys ak
         INNER JOIN users u ON u.id = ak.user_id
-        WHERE ak.id = ?
+        WHERE ak.id = ? AND ak.revoked_at IS NULL AND u.deactivated_at IS NULL
         "#,
     )
     .bind(api_key_id.to_string())

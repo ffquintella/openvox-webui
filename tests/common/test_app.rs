@@ -43,6 +43,19 @@ impl TestApp {
 
     /// Create a new test application with custom configuration
     pub async fn with_config(config: AppConfig) -> Self {
+        let directories = Arc::new(
+            openvox_webui::services::directory::DirectoryRegistry::from_config(
+                &config.auth.directories,
+            ),
+        );
+        Self::with_directories(config, directories).await
+    }
+
+    /// Test application whose directories use the given transports (fakes).
+    pub async fn with_directories(
+        config: AppConfig,
+        directories: Arc<openvox_webui::services::directory::DirectoryRegistry>,
+    ) -> Self {
         // Initialize in-memory database
         let db = db::init_pool(&config.database)
             .await
@@ -126,6 +139,7 @@ impl TestApp {
             notification_service,
             plugin_manager,
             plugin_runtime,
+            directories,
         };
 
         // Build the router
@@ -326,6 +340,7 @@ pub fn test_config() -> AppConfig {
             bcrypt_cost: 4, // Lower cost for faster tests
             password_min_length: 8,
             mfa: Default::default(),
+            directories: Vec::new(),
         },
         puppetdb: None,
         puppet_ca: None,

@@ -192,6 +192,7 @@ pub fn check_permission(
 ///         token_expiry_hours: 24, refresh_token_expiry_days: 7,
 ///         bcrypt_cost: 4, password_min_length: 8,
 ///         mfa: Default::default(),
+///         directories: Vec::new(),
 ///     },
 ///     puppetdb: None,
 ///     puppet_ca: None,
@@ -236,6 +237,7 @@ pub fn check_permission(
 ///     notification_service: Arc::new(NotificationService::new(db.clone())),
 ///     plugin_manager: plugin_manager.clone(),
 ///     plugin_runtime: openvox_webui::services::plugins::PluginRuntime::new(plugin_manager, Default::default()),
+///     directories: Default::default(),
 /// };
 ///
 /// let app = Router::<AppState>::new()

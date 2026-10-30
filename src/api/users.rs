@@ -416,7 +416,7 @@ async fn update_user(
         )
     })?;
 
-    if existing.is_none() {
+    let Some(existing) = existing else {
         return Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -426,17 +426,59 @@ async fn update_user(
                 code: None,
             }),
         ));
+    };
+
+    // The directory owns the identity of its users: only roles change here.
+    if existing.is_directory_managed() {
+        let changes_identity = payload
+            .username
+            .as_deref()
+            .is_some_and(|u| u != existing.username)
+            || payload
+                .email
+                .as_deref()
+                .is_some_and(|e| e != existing.email)
+            || payload.password.as_deref().is_some_and(|p| !p.is_empty())
+            || payload
+                .auth_provider
+                .as_deref()
+                .is_some_and(|a| a != existing.auth_provider.to_string())
+            || payload
+                .external_id
+                .as_deref()
+                .is_some_and(|x| Some(x) != existing.external_id.as_deref());
+        if changes_identity {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "validation_error".to_string(),
+                    message:
+                        "Username, e-mail and password of this user are managed by its directory"
+                            .to_string(),
+                    details: None,
+                    code: Some("directory_managed".to_string()),
+                }),
+            ));
+        }
     }
 
+    let managed = existing.is_directory_managed();
+    fn identity(managed: bool, v: Option<&str>) -> Option<&str> {
+        if managed {
+            None
+        } else {
+            v
+        }
+    }
     let user = auth_service
         .update_user_full(
             &id,
-            payload.username.as_deref(),
-            payload.email.as_deref(),
-            payload.password.as_deref(),
+            identity(managed, payload.username.as_deref()),
+            identity(managed, payload.email.as_deref()),
+            identity(managed, payload.password.as_deref()),
             payload.role.as_deref(),
-            payload.auth_provider.as_deref(),
-            payload.external_id.as_deref(),
+            identity(managed, payload.auth_provider.as_deref()),
+            identity(managed, payload.external_id.as_deref()),
         )
         .await
         .map_err(|e| {

@@ -430,6 +430,24 @@ async fn main() -> Result<()> {
     );
     plugin_runtime.start();
 
+    // LDAP and Active Directory directories (M30)
+    let directories = Arc::new(services::directory::DirectoryRegistry::from_config(
+        &config.auth.directories,
+    ));
+    if !directories.is_empty() {
+        info!(
+            "Directories configured: {}",
+            directories
+                .all()
+                .iter()
+                .map(|d| d.id())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let _directory_sync_scheduler =
+        services::start_directory_sync_scheduler(db.clone(), directories.clone(), rbac_db.clone());
+
     // Create application state
     let state = AppState {
         config: config.clone(),
@@ -446,6 +464,7 @@ async fn main() -> Result<()> {
         notification_service,
         plugin_manager,
         plugin_runtime,
+        directories,
     };
 
     // Build the router

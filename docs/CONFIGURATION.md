@@ -283,6 +283,10 @@ reference to a secret instead of the secret itself:
 ```yaml
 auth:
   jwt_secret: "secret://file//run/secrets/openvox-jwt"
+  directories:
+    - id: corp
+      bind_password: "secret://file//run/secrets/ad-bind-password"
+      # ... see "Directories (LDAP and Active Directory)"
 code_deploy:
   encryption_key: "secret://env/OPENVOX_DEPLOY_KEY"
 
@@ -470,3 +474,89 @@ Without a policy nothing changes. Administrators define MFA policies with
 `PUT /api/v1/auth/policies` (`{"policies": [{"name": "admins", "conditions":
 {"roles": ["admin"], "providers": ["local"]}, "required_acr": 2}]}`). Changing
 `factor_key` makes enrolled factors unreadable, so users must re-enroll.
+
+## Directories (LDAP and Active Directory)
+
+Users can sign in with a directory account and are provisioned from it, with
+roles taken from group-to-role mappings. Directories are tried in the order
+listed, after the local account: the local administrator never depends on a
+directory. The built-in provider is the `ldap` Cargo feature (on by default).
+
+```yaml
+auth:
+  directories:
+    - id: corp                       # provider name in MFA policies and audit
+      label: "Corporate account"
+      kind: active_directory         # or: ldap (OpenLDAP, 389-ds)
+      enabled: true
+      servers:                       # tried in order (failover)
+        - "ldaps://dc1.example.com:636"
+        - "ldaps://dc2.example.com:636"
+      start_tls: false               # true with ldap:// URLs
+      ca_file: /etc/openvox-webui/ad-ca.pem   # default: system trust store
+      bind_dn: "CN=svc-openvox,OU=Service,DC=example,DC=com"
+      bind_password: "secret://file//run/secrets/ad-bind-password"
+      base_dn: "DC=example,DC=com"
+      # {u} is replaced by the escaped login name
+      user_filter: "(&(objectCategory=person)(objectClass=user)(sAMAccountName={u}))"
+      domains: ["EXAMPLE", "example.com"]     # accept EXAMPLE\user and user@example.com
+      attributes:                    # defaults depend on kind
+        username: sAMAccountName     # uid on LDAP
+        email: mail
+        display_name: displayName    # cn on LDAP
+        id: objectGUID               # entryUUID / nsUniqueId on LDAP
+      groups:
+        base_dn: "OU=Groups,DC=example,DC=com"   # default: base_dn
+        filter: "(objectClass=group)"
+        nested: true                 # AD: LDAP_MATCHING_RULE_IN_CHAIN
+      connect_timeout_secs: 5
+      timeout_secs: 10               # per operation
+      page_size: 500                 # RFC 2696 paged results
+      lookup: true                   # search users and groups from the admin page
+      jit: false                     # create the account on the first login
+      deny_without_role: true        # refuse users who end up with no role
+      sync:
+        enabled: false
+        interval_secs: 3600          # minimum 300
+```
+
+Rules enforced at startup (the server refuses to start otherwise):
+
+- `ldaps://` URLs, or `ldap://` with `start_tls: true`. Plain `ldap://` is
+  accepted only for `localhost`, `127.0.0.1` and `::1`. Certificates are always
+  verified; with `ca_file` only that CA is trusted.
+- `bind_dn` and `bind_password` are required (no anonymous search);
+  `bind_password` should be a `secret://` reference. It is never returned by
+  the API nor written to logs.
+- `user_filter` must contain `{u}`; ids must be unique and must not collide
+  with `local`, `saml` or an OIDC provider id.
+
+Behaviour:
+
+- **Login** is search-then-bind with the service account. An empty password is
+  refused before contacting the server, user input is escaped (RFC 4515), an
+  unknown user costs a dummy bind like a wrong password, and both get the same
+  `401`. Active Directory accounts that are disabled, expired or locked are
+  refused. A directory error or timeout is a denial (the next directory is
+  tried). The reason of every denial is audited (`auth.login_denied`), never
+  the password.
+- **Accounts** are linked by the directory's stable identifier (`objectGUID`,
+  `entryUUID`, `nsUniqueId`), never by name or e-mail. An account whose name or
+  e-mail is already used by another local account is not provisioned
+  (`username_conflict`). Username, e-mail and password of a directory account
+  are read-only in the WebUI.
+- **Roles** come from mappings (`/api/v1/directories/{id}/role-mappings`, by
+  group DN, SID or objectGUID), applied at every login and synchronization. A
+  role that is not mapped is never granted, `super_admin` cannot be mapped, and
+  only roles a directory granted are removed; roles assigned by hand stay.
+- **Synchronization** (`sync.enabled`, or *Sync now* on the Directories page)
+  refreshes names, e-mails and roles, creates users who match a mapping, and
+  deactivates (never deletes) accounts that disappeared from the directory or
+  are disabled there, revoking their sessions and API keys. An account that
+  comes back is reactivated (its API keys stay revoked). A run that cannot
+  list the directory, or gets no users at all, changes nothing. Every run is
+  recorded in `directory_sync_runs`, audited and published as
+  `directory.sync.finished`.
+- MFA policies apply to directory logins like to any provider (condition
+  `providers: ["corp"]`); the break-glass path stays reserved to local
+  super administrators.
