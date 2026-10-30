@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-10-30
+
+### Changed
+- Version bump to match OpenVox WebUI 0.47.0 (secret providers and the authentication pipeline); the module itself is unchanged.
+
 ## [0.46.0] - 2026-10-29
 
 ### Changed
