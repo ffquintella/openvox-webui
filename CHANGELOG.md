@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add secret references in configuration (M28): any string in `config.yaml`, or set by an environment override, can be `secret://<provider>/<path>[#<key>]` instead of the credential. The host resolves it once at startup with the built-in `env` (`secret://env/NAME`) and `file` (`secret://file//run/secrets/x`, absolute path, no `..`, at most 64 KB, optional `secrets.file_allowed_dirs`) providers; `#key` picks a field of a JSON value. The resolver fails closed with a typed error (`not_found`, `denied`, `invalid`, `unavailable`, `timeout`) that names the field and the reference and never a value, a resolved `Secret` prints as `[REDACTED]` and is wiped on drop, and every resolution is audited (`secret.resolved`: provider, path, purpose, result). `GET /api/v1/secret-providers` lists the providers and `POST /api/v1/secret-providers/{id}/test` checks that a reference resolves without returning it (both need `plugins:admin`, tests are audited). Plugins cannot resolve secrets yet.
+
 ## [0.46.0] - 2026-10-29
 
 ### Added

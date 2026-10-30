@@ -347,6 +347,7 @@ pub fn test_config() -> AppConfig {
         pagination: Default::default(),
         memory_monitor: Default::default(),
         plugins: Default::default(),
+        secrets: Default::default(),
     }
 }
 

@@ -66,6 +66,9 @@ pub struct AppConfig {
     /// Plugin platform (package storage and install limits)
     #[serde(default)]
     pub plugins: PluginsConfig,
+    /// Secret providers (`secret://` references in this configuration)
+    #[serde(default)]
+    pub secrets: crate::services::secrets::SecretsConfig,
 }
 
 /// Plugin platform configuration
@@ -2130,6 +2133,7 @@ impl Default for AppConfig {
             pagination: PaginationConfig::default(),
             memory_monitor: MemoryMonitorConfig::default(),
             plugins: PluginsConfig::default(),
+            secrets: Default::default(),
         }
     }
 }
@@ -2189,6 +2193,9 @@ impl AppConfig {
         // Apply environment variable overrides
         config.apply_env_overrides();
 
+        // Resolve secret:// references (file and environment values)
+        config = config.resolve_secrets()?;
+
         // Debug: Log final SAML config after env overrides
         if let Some(ref saml) = config.saml {
             eprintln!("[CONFIG] Final SAML config after env overrides:");
@@ -2207,6 +2214,28 @@ impl AppConfig {
         config.validate()?;
 
         Ok(config)
+    }
+
+    /// Replaces every `secret://` string with the secret it names. A
+    /// configuration without references is returned untouched. The
+    /// resolutions are kept for the audit log, written once the database is up.
+    fn resolve_secrets(self) -> Result<Self> {
+        let mut tree = serde_norway::to_value(&self).context("Failed to inspect configuration")?;
+        if !crate::services::secrets::tree_has_reference(&tree) {
+            return Ok(self);
+        }
+        let resolver = crate::services::secrets::SecretResolver::builtin(&self.secrets);
+        let accesses = resolver
+            .resolve_tree(&mut tree)
+            .map_err(|e| anyhow::anyhow!("Failed to resolve secret reference in {e}"))?;
+        for a in &accesses {
+            eprintln!(
+                "[CONFIG] Resolved secret://{}/{} for {}",
+                a.provider, a.path, a.purpose
+            );
+        }
+        crate::services::secrets::record_boot_accesses(accesses);
+        serde_norway::from_value(tree).context("Failed to rebuild configuration after secrets")
     }
 
     /// Find the configuration file in standard locations
@@ -2690,6 +2719,39 @@ logging:
         let mut config = AppConfig::default();
         config.auth.jwt_secret = "short".to_string();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_secret_references_are_resolved() {
+        std::env::set_var(
+            "OVX_CFG_TEST_JWT",
+            "a-jwt-secret-from-the-environment-0123456789",
+        );
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 8080
+auth:
+  jwt_secret: "secret://env/OVX_CFG_TEST_JWT"
+database:
+  url: "sqlite://test.db"
+"#;
+        let config: AppConfig = serde_norway::from_str(yaml).unwrap();
+        let config = config.resolve_secrets().unwrap();
+        assert_eq!(
+            config.auth.jwt_secret,
+            "a-jwt-secret-from-the-environment-0123456789"
+        );
+        assert_eq!(config.database.url, "sqlite://test.db");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_unresolvable_secret_reference_fails_the_load() {
+        let mut config = AppConfig::default();
+        config.auth.jwt_secret = "secret://env/OVX_CFG_TEST_MISSING".to_string();
+        let err = config.resolve_secrets().unwrap_err().to_string();
+        assert!(err.contains("auth.jwt_secret"), "{err}");
     }
 
     #[test]

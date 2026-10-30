@@ -37,6 +37,7 @@ mod query;
 mod reports;
 mod roles;
 mod saml;
+mod secret_providers;
 mod settings;
 mod users;
 
@@ -107,6 +108,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/cve", cve::routes())
         // Plugin platform endpoints
         .nest("/plugins", plugins::routes())
+        // Secret providers (M28)
+        .nest("/secret-providers", secret_providers::routes())
 }
 
 /// Create the full API router (public + protected; useful for tests)

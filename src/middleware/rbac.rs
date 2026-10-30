@@ -210,6 +210,7 @@ pub fn check_permission(
 ///     pagination: PaginationConfig::default(),
 ///     memory_monitor: Default::default(),
 ///     plugins: Default::default(),
+///     secrets: Default::default(),
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();

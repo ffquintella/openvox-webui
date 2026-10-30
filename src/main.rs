@@ -381,6 +381,23 @@ async fn main() -> Result<()> {
     let plugin_manager =
         services::plugins::bootstrap::build_plugin_manager(&config, db.clone(), puppetdb.clone())
             .await;
+    for access in services::secrets::take_boot_accesses() {
+        plugin_manager
+            .audit(
+                openvox_webui::models::default_organization_uuid(),
+                None,
+                services::secrets::AUDIT_SECRETS,
+                "secret.resolved",
+                &format!("{}/{}", access.provider, access.path),
+                serde_json::json!({
+                    "requester": access.requester,
+                    "purpose": access.purpose,
+                    "result": access.result,
+                    "at": access.at,
+                }),
+            )
+            .await;
+    }
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
     services::plugins::governance::start_governance(plugin_manager.clone());
     services::plugins::facts::start_fact_sweeper(plugin_manager.clone());

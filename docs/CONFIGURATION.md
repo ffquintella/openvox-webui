@@ -275,6 +275,44 @@ Configuration can be overridden with environment variables:
 | `OPENVOX_JWT_SECRET` | `auth.jwt_secret` | `my-secret-key` |
 | `PUPPETDB_URL` | `puppetdb.url` | `https://pdb:8081` |
 
+## Secret References
+
+Any string value in `config.yaml` (or set by an environment override) can be a
+reference to a secret instead of the secret itself:
+
+```yaml
+auth:
+  jwt_secret: "secret://file//run/secrets/openvox-jwt"
+code_deploy:
+  encryption_key: "secret://env/OPENVOX_DEPLOY_KEY"
+
+secrets:
+  file_allowed_dirs: ["/run/secrets", "/etc/openvox-webui/secrets"]
+```
+
+Syntax: `secret://<provider>/<path>[#<key>]`. The whole value must be the
+reference; it is not expanded inside a longer string.
+
+| Provider | Reference | Notes |
+|----------|-----------|-------|
+| `env` | `secret://env/NAME` | Value of the environment variable `NAME` |
+| `file` | `secret://file//absolute/path` | File content without one trailing newline; absolute path, no `..`, at most 64 KB, symlinks are resolved before the check |
+
+`#key` selects a field of a JSON object value (`secret://env/DB_CREDS#password`).
+`secrets.file_allowed_dirs` limits where the `file` provider may read; empty
+means any absolute path.
+
+References are resolved once, when the configuration loads, so a changed secret
+needs a restart. A reference that cannot be resolved stops the startup with the
+field name and the reference (never a value). Resolved values are not written
+to logs, the database or API responses; each resolution is recorded in the audit
+log (`secrets` / `secret.resolved`: provider, path, purpose, result).
+
+`GET /api/v1/secret-providers` lists the providers and
+`POST /api/v1/secret-providers/{id}/test` (`{"path": "...", "key": "..."}`)
+checks that a reference resolves, without returning the value. Both need
+`plugins:admin`; every test is audited (`secret.tested`).
+
 ## Configuration Validation
 
 Validate configuration before starting:
