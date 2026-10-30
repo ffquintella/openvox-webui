@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-10-30
+
+### Changed
+- Version bump to match OpenVox WebUI 0.48.0 (LDAP and Active Directory directory providers); the module itself is unchanged.
+
 ## [0.47.0] - 2026-10-30
 
 ### Changed
