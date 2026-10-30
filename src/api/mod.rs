@@ -11,6 +11,7 @@ mod analytics;
 mod api_keys;
 mod audit_logs;
 mod auth;
+mod auth_pipeline;
 mod backup;
 mod bootstrap;
 mod ca;
@@ -53,6 +54,7 @@ pub fn public_routes() -> Router<AppState> {
         .route("/health/ready", get(health::readiness))
         // Authentication endpoints (no auth required)
         .nest("/auth", auth::public_routes())
+        .nest("/auth", auth_pipeline::public_routes())
         // SAML SSO endpoints (no auth required)
         .nest("/auth/saml", saml::public_routes())
         // Node classification endpoint for Puppet agents (uses client cert auth)
@@ -72,6 +74,8 @@ pub fn protected_routes() -> Router<AppState> {
     Router::new()
         // Protected auth endpoints (change-password, me)
         .nest("/auth", auth::protected_routes())
+        .nest("/auth", auth_pipeline::protected_routes())
+        .merge(auth_pipeline::user_routes())
         // Resource endpoints
         .nest("/nodes", nodes::routes())
         .nest("/groups", groups::routes())

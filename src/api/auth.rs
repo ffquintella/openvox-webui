@@ -6,20 +6,24 @@ use axum::{
     extract::State,
     http::HeaderMap,
     http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use chrono::{Duration, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
+    api::auth_pipeline::{client_info, outcome_response, ApiErr},
     middleware::auth::{
-        create_access_token, create_auth_session, create_refresh_token, ensure_auth_session_active,
-        revoke_auth_session, validate_token, AuthError, AuthUser, TokenType,
+        create_access_token_with_levels, ensure_auth_session_active, revoke_auth_session,
+        validate_token, AuthError, AuthUser, TokenType,
     },
-    models::{AuthResponse, LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
-    services::AuthService,
+    models::{LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
+    services::{
+        auth_pipeline::{AuthPipeline, PrimaryIdentity},
+        AuthService,
+    },
     utils::error::ErrorResponse,
     AppState,
 };
@@ -53,18 +57,29 @@ pub struct RegisterRequest {
 /// Login handler
 ///
 /// POST /api/v1/auth/login
+///
+/// Validates the local primary identity, then lets the authentication
+/// pipeline decide: `200` with a session, or `202` with a challenge when an MFA
+/// policy requires a second factor.
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Response {
     let auth_service = AuthService::new(state.db.clone());
+    let pipeline = AuthPipeline::new(&state.db, &state.config);
 
-    // Authenticate user
-    let user = auth_service
-        .authenticate(&payload.username, &payload.password)
-        .await
-        .map_err(|e| {
-            (
+    let user = match auth_service.get_user_by_username(&payload.username).await {
+        Ok(Some(user)) => {
+            // An account without a local password (SSO only) cannot match.
+            match AuthService::verify_password(&payload.password, &user.password_hash) {
+                Ok(true) => Some(user),
+                _ => None,
+            }
+        }
+        Ok(None) => None,
+        Err(e) => {
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: "internal_error".to_string(),
@@ -73,92 +88,31 @@ async fn login(
                     code: None,
                 }),
             )
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    error: "unauthorized".to_string(),
-                    message: "Invalid username or password".to_string(),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?;
-
-    // Get user roles from RBAC
-    let roles = auth_service
-        .get_user_roles(&user.id)
-        .await
-        .unwrap_or_else(|_| vec![user.role.clone()]);
-
-    let session_id = Uuid::new_v4();
-    let session_expires_at =
-        Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days as i64);
-    create_auth_session(&state.db, &session_id, &user.id, session_expires_at)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "internal_error".to_string(),
-                    message: format!("Failed to create session: {}", auth_error_message(&e)),
-                    details: None,
-                    code: None,
-                }),
-            )
-        })?;
-
-    // Create tokens
-    let access_token = create_access_token(
-        &user.id,
-        &user.organization_id,
-        &session_id,
-        &user.username,
-        &user.email,
-        roles,
-        &state.config.auth.jwt_secret,
-        state.config.auth.token_expiry_hours,
-    )
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
+                .into_response()
+        }
+    };
+    let Some(user) = user else {
+        return (
+            StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
-                error: "internal_error".to_string(),
-                message: format!("Failed to create access token: {}", e),
+                error: "unauthorized".to_string(),
+                message: "Invalid username or password".to_string(),
                 details: None,
                 code: None,
             }),
         )
-    })?;
+            .into_response();
+    };
 
-    let refresh_token = create_refresh_token(
-        &user.id,
-        &session_id,
-        &user.username,
-        &user.email,
-        &state.config.auth.jwt_secret,
-        state.config.auth.refresh_token_expiry_days,
-    )
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: "internal_error".to_string(),
-                message: format!("Failed to create refresh token: {}", e),
-                details: None,
-                code: None,
-            }),
-        )
-    })?;
-
-    Ok(Json(AuthResponse {
-        access_token,
-        refresh_token,
-        token_type: "Bearer".to_string(),
-        expires_in: state.config.auth.token_expiry_hours * 3600,
-        user: user.into(),
-    }))
+    let ident = PrimaryIdentity {
+        user,
+        provider: "local".to_string(),
+        amr: vec!["pwd".to_string()],
+    };
+    match pipeline.start_login(ident, &client_info(&headers)).await {
+        Ok(outcome) => outcome_response(outcome),
+        Err(e) => ApiErr::from(e).into_response(),
+    }
 }
 
 /// Refresh token handler
@@ -248,8 +202,14 @@ async fn refresh_token(
     let session_id = Uuid::parse_str(&token_data.claims.jti)
         .map_err(|_| auth_error_response(AuthError::InvalidToken))?;
 
+    // A refreshed token keeps the methods and level the session earned.
+    let (amr, acr) = AuthPipeline::new(&state.db, &state.config)
+        .session_levels(&token_data.claims.jti)
+        .await
+        .unwrap_or((vec!["pwd".to_string()], 1));
+
     // Create new access token
-    let access_token = create_access_token(
+    let access_token = create_access_token_with_levels(
         &user.id,
         &user.organization_id,
         &session_id,
@@ -258,6 +218,8 @@ async fn refresh_token(
         roles,
         &state.config.auth.jwt_secret,
         state.config.auth.token_expiry_hours,
+        amr,
+        acr,
     )
     .map_err(|e| {
         (

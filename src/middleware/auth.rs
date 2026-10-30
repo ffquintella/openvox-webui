@@ -47,6 +47,21 @@ pub struct Claims {
     /// Organization/tenant ID
     #[serde(default)]
     pub organization_id: Option<String>,
+    /// Authentication methods used (`pwd`, `otp`, `hwk`, `fed`, ...). A copy of
+    /// the session's record: the session row is the authority for step-up.
+    #[serde(default = "default_amr")]
+    pub amr: Vec<String>,
+    /// Authentication level: 1 = primary factor, 2 = multi-factor.
+    #[serde(default = "default_acr")]
+    pub acr: u8,
+}
+
+fn default_amr() -> Vec<String> {
+    vec!["pwd".to_string()]
+}
+
+fn default_acr() -> u8 {
+    1
 }
 
 fn default_token_type() -> TokenType {
@@ -151,6 +166,33 @@ pub fn create_access_token(
     secret: &str,
     expiry_hours: u64,
 ) -> Result<String, jsonwebtoken::errors::Error> {
+    create_access_token_with_levels(
+        user_id,
+        organization_id,
+        session_id,
+        username,
+        email,
+        roles,
+        secret,
+        expiry_hours,
+        default_amr(),
+        default_acr(),
+    )
+}
+
+/// Create an access token that records how the session was authenticated.
+pub fn create_access_token_with_levels(
+    user_id: &Uuid,
+    organization_id: &Uuid,
+    session_id: &Uuid,
+    username: &str,
+    email: &str,
+    roles: Vec<String>,
+    secret: &str,
+    expiry_hours: u64,
+    amr: Vec<String>,
+    acr: u8,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let now = Utc::now();
     let exp = now + Duration::hours(expiry_hours as i64);
 
@@ -165,6 +207,8 @@ pub fn create_access_token(
         token_type: TokenType::Access,
         roles,
         organization_id: Some(organization_id.to_string()),
+        amr,
+        acr,
     };
 
     encode(
@@ -197,6 +241,8 @@ pub fn create_refresh_token(
         token_type: TokenType::Refresh,
         roles: vec![],
         organization_id: None,
+        amr: default_amr(),
+        acr: default_acr(),
     };
 
     encode(
@@ -303,18 +349,40 @@ pub async fn create_auth_session(
     user_id: &Uuid,
     expires_at: chrono::DateTime<Utc>,
 ) -> Result<(), AuthError> {
+    create_auth_session_with_levels(
+        pool,
+        session_id,
+        user_id,
+        expires_at,
+        &default_amr(),
+        default_acr(),
+    )
+    .await
+}
+
+/// Create a session that records the methods (`amr`) and level (`acr`) reached.
+pub async fn create_auth_session_with_levels(
+    pool: &SqlitePool,
+    session_id: &Uuid,
+    user_id: &Uuid,
+    expires_at: chrono::DateTime<Utc>,
+    amr: &[String],
+    acr: u8,
+) -> Result<(), AuthError> {
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
         r#"
-        INSERT INTO auth_sessions (id, user_id, last_activity_at, expires_at, revoked_at, created_at, updated_at)
-        VALUES (?1, ?2, ?3, ?4, NULL, ?3, ?3)
+        INSERT INTO auth_sessions (id, user_id, last_activity_at, expires_at, revoked_at, created_at, updated_at, amr, acr)
+        VALUES (?1, ?2, ?3, ?4, NULL, ?3, ?3, ?5, ?6)
         "#,
     )
     .bind(session_id.to_string())
     .bind(user_id.to_string())
     .bind(&now)
     .bind(expires_at.to_rfc3339())
+    .bind(serde_json::to_string(amr).unwrap_or_else(|_| "[\"pwd\"]".to_string()))
+    .bind(acr as i64)
     .execute(pool)
     .await
     .map_err(|_| AuthError::InvalidToken)?;
@@ -726,6 +794,8 @@ mod tests {
             token_type: TokenType::Access,
             roles: vec!["admin".to_string()],
             organization_id: Some(org_id.to_string()),
+            amr: vec!["pwd".to_string()],
+            acr: 1,
         };
 
         let auth_user = AuthUser::try_from(claims).unwrap();

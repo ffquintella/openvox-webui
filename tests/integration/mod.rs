@@ -4,5 +4,6 @@
 //! (in-memory) database and all middleware.
 
 mod alert_conditions_tests;
+mod auth_pipeline_tests;
 mod classification_tests;
 mod plugin_tests;

@@ -439,3 +439,34 @@ cache:
 - [Installation Guide](INSTALLATION.md)
 - [Upgrade Guide](UPGRADE.md)
 - [Backup and Restore](BACKUP.md)
+
+## Authentication Pipeline (MFA and SSO)
+
+```yaml
+auth:
+  mfa:
+    factor_key: "secret://file//run/secrets/openvox-factor-key"  # default: jwt_secret
+    max_attempts: 5            # wrong factor responses per challenge
+    totp_issuer: "OpenVox WebUI"
+    webauthn:                  # omit to disable WebAuthn
+      rp_id: "puppet.example.com"
+      rp_name: "OpenVox WebUI"
+      origin: "https://puppet.example.com"
+    oidc:
+      - id: corp
+        issuer: "https://idp.example.com"
+        client_id: "openvox"
+        client_secret: "secret://env/OIDC_CLIENT_SECRET"
+        redirect_uri: "https://puppet.example.com/api/v1/auth/providers/corp/callback"
+        asserts_mfa: false     # trust the IdP's amr/acr as the second factor
+        jit: false             # create users on first login
+        default_role: viewer   # required with jit; never taken from IdP claims
+        trust_email: false
+saml:
+  asserts_mfa: false
+```
+
+Without a policy nothing changes. Administrators define MFA policies with
+`PUT /api/v1/auth/policies` (`{"policies": [{"name": "admins", "conditions":
+{"roles": ["admin"], "providers": ["local"]}, "required_acr": 2}]}`). Changing
+`factor_key` makes enrolled factors unreadable, so users must re-enroll.

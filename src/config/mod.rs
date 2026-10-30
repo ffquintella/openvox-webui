@@ -918,6 +918,9 @@ pub struct AuthConfig {
     pub bcrypt_cost: u32,
     #[serde(default = "default_password_min_length")]
     pub password_min_length: usize,
+    /// Authentication pipeline: factors, WebAuthn and OIDC providers (M29)
+    #[serde(default)]
+    pub mfa: crate::services::auth_pipeline::MfaConfig,
 }
 
 fn default_token_expiry() -> u64 {
@@ -1427,6 +1430,10 @@ pub struct SamlConfig {
     /// User mapping configuration
     #[serde(default)]
     pub user_mapping: SamlUserMappingConfig,
+    /// The IdP enforces multi-factor authentication, so a policy that asks for
+    /// a second factor is satisfied by a SAML login
+    #[serde(default)]
+    pub asserts_mfa: bool,
     /// Session configuration
     #[serde(default)]
     pub session: SamlSessionConfig,
@@ -2109,6 +2116,7 @@ impl Default for AppConfig {
                 refresh_token_expiry_days: default_refresh_expiry(),
                 bcrypt_cost: default_bcrypt_cost(),
                 password_min_length: default_password_min_length(),
+                mfa: Default::default(),
             },
             database: DatabaseConfig {
                 url: "sqlite://./data/openvox.db".to_string(),
@@ -2484,6 +2492,7 @@ impl AppConfig {
                     },
                     idp: SamlIdpConfig::default(),
                     user_mapping: SamlUserMappingConfig::default(),
+                    asserts_mfa: false,
                     session: SamlSessionConfig::default(),
                 });
                 saml.enabled = true;

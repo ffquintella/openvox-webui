@@ -4,18 +4,19 @@
 
 use axum::{
     extract::{Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Router,
 };
-use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
-    middleware::auth::{create_access_token, create_auth_session, create_refresh_token},
-    services::{AuthService, SamlService},
+    api::auth_pipeline::client_info,
+    services::{
+        auth_pipeline::{AuthPipeline, LoginOutcome, PrimaryIdentity},
+        AuthService, SamlService,
+    },
     utils::error::ErrorResponse,
     AppState,
 };
@@ -267,7 +268,11 @@ async fn saml_login(
 /// POST /api/v1/auth/saml/acs
 ///
 /// Receives the SAML Response from the IdP, validates it, and creates a session.
-async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) -> Response {
+async fn saml_acs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<SamlAcsForm>,
+) -> Response {
     tracing::info!("=== SAML ACS: Received IdP Response ===");
     tracing::debug!(
         "SAML Response length: {} bytes, RelayState: {:?}",
@@ -523,97 +528,6 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
         tracing::debug!("SAML auth info updated successfully");
     }
 
-    // Get user roles
-    tracing::debug!("Fetching roles for user: {}", user.id);
-    let roles = auth_service
-        .get_user_roles(&user.id)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(
-                "Failed to get user roles, falling back to legacy role: {}",
-                e
-            );
-            vec![user.role.clone()]
-        });
-    tracing::debug!("User roles: {:?}", roles);
-
-    let session_id = Uuid::new_v4();
-    let session_expires_at =
-        Utc::now() + Duration::days(state.config.auth.refresh_token_expiry_days as i64);
-    if let Err(e) = create_auth_session(&state.db, &session_id, &user.id, session_expires_at).await
-    {
-        tracing::error!("Failed to create SAML auth session: {:?}", e);
-        let error = SamlErrorPage {
-            error: "Internal Error".to_string(),
-            message: "Failed to create session".to_string(),
-        };
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            [(header::CONTENT_TYPE, "text/html")],
-            error.to_html(),
-        )
-            .into_response();
-    }
-
-    // Create JWT tokens
-    tracing::debug!("Creating JWT access token...");
-    let access_token = match create_access_token(
-        &user.id,
-        &user.organization_id,
-        &session_id,
-        &user.username,
-        &user.email,
-        roles,
-        &state.config.auth.jwt_secret,
-        state.config.auth.token_expiry_hours,
-    ) {
-        Ok(token) => {
-            tracing::debug!("Access token created successfully");
-            token
-        }
-        Err(e) => {
-            tracing::error!("Failed to create access token for SAML user: {}", e);
-            let error = SamlErrorPage {
-                error: "Internal Error".to_string(),
-                message: "Failed to create session".to_string(),
-            };
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                [(header::CONTENT_TYPE, "text/html")],
-                error.to_html(),
-            )
-                .into_response();
-        }
-    };
-
-    tracing::debug!("Creating JWT refresh token...");
-    let refresh_token = match create_refresh_token(
-        &user.id,
-        &session_id,
-        &user.username,
-        &user.email,
-        &state.config.auth.jwt_secret,
-        state.config.auth.refresh_token_expiry_days,
-    ) {
-        Ok(token) => {
-            tracing::debug!("Refresh token created successfully");
-            token
-        }
-        Err(e) => {
-            tracing::error!("Failed to create refresh token for SAML user: {}", e);
-            let error = SamlErrorPage {
-                error: "Internal Error".to_string(),
-                message: "Failed to create session".to_string(),
-            };
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                [(header::CONTENT_TYPE, "text/html")],
-                error.to_html(),
-            )
-                .into_response();
-        }
-    };
-
     // Determine redirect URL from relay_state or form
     let redirect_url = relay_state
         .or(form.relay_state)
@@ -630,20 +544,57 @@ async fn saml_acs(State(state): State<AppState>, Form(form): Form<SamlAcsForm>) 
         "/".to_string()
     };
 
-    // Build callback URL with tokens
-    // The frontend will extract these and store them
-    let callback_url = format!(
-        "/saml-callback?access_token={}&refresh_token={}&redirect={}",
-        urlencoding::encode(&access_token),
-        urlencoding::encode(&refresh_token),
-        urlencoding::encode(&safe_redirect)
-    );
-
-    tracing::info!(
-        "=== SAML Login Successful === user='{}', redirect='{}'",
-        user.username,
-        safe_redirect
-    );
+    // The pipeline decides: a session, or a challenge when a policy requires a
+    // second factor that the IdP did not assert.
+    let mut amr = vec!["fed".to_string()];
+    if saml_config.asserts_mfa {
+        amr.push("mfa".to_string());
+    }
+    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let outcome = pipeline
+        .start_login(
+            PrimaryIdentity {
+                user: user.clone(),
+                provider: "saml".to_string(),
+                amr,
+            },
+            &client_info(&headers),
+        )
+        .await;
+    let callback_url = match outcome {
+        Ok(LoginOutcome::Session(session)) => {
+            tracing::info!(
+                "=== SAML Login Successful === user='{}', redirect='{}'",
+                user.username,
+                safe_redirect
+            );
+            // The frontend will extract these and store them
+            format!(
+                "/saml-callback?access_token={}&refresh_token={}&redirect={}",
+                urlencoding::encode(&session.access_token),
+                urlencoding::encode(&session.refresh_token),
+                urlencoding::encode(&safe_redirect)
+            )
+        }
+        Ok(LoginOutcome::Challenge(offer)) => format!(
+            "/login?challenge_id={}&factors={}&redirect={}",
+            offer.challenge_id,
+            offer
+                .factors
+                .iter()
+                .map(|f| f.id)
+                .collect::<Vec<_>>()
+                .join(","),
+            urlencoding::encode(&safe_redirect)
+        ),
+        Ok(LoginOutcome::Denied { message, .. }) => {
+            format!("/saml-callback?error={}", urlencoding::encode(&message))
+        }
+        Err(e) => {
+            tracing::error!("SAML login could not complete: {}", e);
+            "/saml-callback?error=Failed%20to%20create%20session".to_string()
+        }
+    };
 
     // Use 303 See Other to force the browser to use GET for the redirect
     // (307 Temporary Redirect preserves the POST method, which causes 405 errors)

@@ -398,6 +398,20 @@ async fn main() -> Result<()> {
             )
             .await;
     }
+    // Expired challenges and SSO flow state (M29)
+    {
+        let pool = db.clone();
+        let cfg = config.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+            loop {
+                tick.tick().await;
+                let _ = services::auth_pipeline::AuthPipeline::new(&pool, &cfg)
+                    .cleanup_expired()
+                    .await;
+            }
+        });
+    }
     services::plugins::manager::start_integrity_monitor(plugin_manager.clone());
     services::plugins::governance::start_governance(plugin_manager.clone());
     services::plugins::facts::start_fact_sweeper(plugin_manager.clone());

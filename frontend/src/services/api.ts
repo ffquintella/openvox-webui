@@ -234,7 +234,10 @@ const isAuthEndpoint = (url?: string): boolean => {
   }
 
   return (
-    url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout')
+    url.includes('/auth/login') ||
+    url.includes('/auth/refresh') ||
+    url.includes('/auth/logout') ||
+    url.includes('/auth/challenge')
   );
 };
 
@@ -340,6 +343,20 @@ interface LoginResponse {
   };
 }
 
+// Returned with 202 when an MFA policy requires a second factor
+export interface MfaChallenge {
+  status: 'mfa_required';
+  challenge_id: string;
+  expires_in: number;
+  required_acr: number;
+  factors: { id: string; label: string; fields: string[] }[];
+}
+
+export type LoginResult = LoginResponse | MfaChallenge;
+
+export const isMfaChallenge = (r: LoginResult): r is MfaChallenge =>
+  (r as MfaChallenge).status === 'mfa_required';
+
 interface RefreshResponse {
   access_token: string;
   token_type: string;
@@ -348,8 +365,20 @@ interface RefreshResponse {
 
 export const api = {
   // Auth
-  login: async (username: string, password: string): Promise<LoginResponse> => {
+  login: async (username: string, password: string): Promise<LoginResult> => {
     const response = await client.post('/auth/login', { username, password });
+    return response.data;
+  },
+
+  verifyChallenge: async (
+    challengeId: string,
+    factorId: string,
+    code: string
+  ): Promise<LoginResponse> => {
+    const response = await client.post(`/auth/challenge/${challengeId}/verify`, {
+      factor_id: factorId,
+      response: { code },
+    });
     return response.data;
   },
 

@@ -191,6 +191,7 @@ pub fn check_permission(
 ///         jwt_secret: "test_secret_at_least_32_chars_long".into(),
 ///         token_expiry_hours: 24, refresh_token_expiry_days: 7,
 ///         bcrypt_cost: 4, password_min_length: 8,
+///         mfa: Default::default(),
 ///     },
 ///     puppetdb: None,
 ///     puppet_ca: None,

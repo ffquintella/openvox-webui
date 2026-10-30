@@ -325,6 +325,7 @@ pub fn test_config() -> AppConfig {
             refresh_token_expiry_days: 7,
             bcrypt_cost: 4, // Lower cost for faster tests
             password_min_length: 8,
+            mfa: Default::default(),
         },
         puppetdb: None,
         puppet_ca: None,
@@ -382,6 +383,8 @@ pub fn generate_test_token(
         jti: Uuid::new_v4().to_string(),
         token_type: TokenType::Access,
         organization_id: Some(default_organization_uuid().to_string()),
+        amr: vec!["pwd".to_string()],
+        acr: 1,
     };
 
     encode(
@@ -416,6 +419,8 @@ pub async fn generate_test_token_with_session(
         jti: session_id.to_string(),
         token_type: TokenType::Access,
         organization_id: Some(default_organization_uuid().to_string()),
+        amr: vec!["pwd".to_string()],
+        acr: 1,
     };
 
     openvox_webui::middleware::auth::create_auth_session(

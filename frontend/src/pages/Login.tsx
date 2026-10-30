@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, User, AlertCircle, Shield } from 'lucide-react';
-import { api } from '../services/api';
+import { api, isMfaChallenge, type LoginResult } from '../services/api';
 import { consumeSessionLogoutReason, useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
 
@@ -17,6 +17,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<{
+    id: string;
+    factors: { id: string; label: string }[];
+  } | null>(null);
+  const [factorId, setFactorId] = useState('totp');
+  const [code, setCode] = useState('');
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
@@ -42,6 +48,15 @@ export default function Login() {
   useEffect(() => {
     const accessToken = searchParams.get('access_token');
     const error = searchParams.get('error');
+    const challengeId = searchParams.get('challenge_id');
+
+    if (challengeId) {
+      // SSO login that still needs a second factor
+      const ids = (searchParams.get('factors') || 'totp').split(',').filter(Boolean);
+      setChallenge({ id: challengeId, factors: ids.map((id) => ({ id, label: id })) });
+      setFactorId(ids[0] || 'totp');
+      return;
+    }
 
     if (error) {
       setError(decodeURIComponent(error));
@@ -77,25 +92,43 @@ export default function Login() {
     }
   }, [searchParams, login, fetchPermissions, navigate]);
 
+  const completeLogin = async (data: Extract<LoginResult, { access_token: string }>) => {
+    login(
+      {
+        id: data.user.id,
+        username: data.user.username,
+        email: data.user.email,
+        role: data.user.role as 'admin' | 'user' | 'viewer',
+      },
+      data.access_token,
+      data.refresh_token
+    );
+    // Fetch user permissions after successful login
+    await fetchPermissions(data.user.id);
+    navigate(from, { replace: true });
+  };
+
   const loginMutation = useMutation({
     mutationFn: () => api.login(username, password),
     onSuccess: async (data) => {
-      login(
-        {
-          id: data.user.id,
-          username: data.user.username,
-          email: data.user.email,
-          role: data.user.role as 'admin' | 'user' | 'viewer',
-        },
-        data.access_token,
-        data.refresh_token
-      );
-      // Fetch user permissions after successful login
-      await fetchPermissions(data.user.id);
-      navigate(from, { replace: true });
+      if (isMfaChallenge(data)) {
+        setChallenge({ id: data.challenge_id, factors: data.factors });
+        setFactorId(data.factors[0]?.id || 'totp');
+        setCode('');
+        return;
+      }
+      await completeLogin(data);
     },
     onError: (err: Error) => {
       setError(err.message || 'Invalid username or password');
+    },
+  });
+
+  const challengeMutation = useMutation({
+    mutationFn: () => api.verifyChallenge(challenge!.id, factorId, code),
+    onSuccess: completeLogin,
+    onError: () => {
+      setError('The code was not accepted. Check it and try again.');
     },
   });
 
@@ -145,8 +178,69 @@ export default function Login() {
             </div>
           )}
 
+          {/* Second factor (MFA policy) */}
+          {challenge && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setError(null);
+                challengeMutation.mutate();
+              }}
+              className="space-y-6"
+            >
+              <p className="text-sm text-gray-600">
+                Enter the code from your authenticator app, or one of your recovery codes.
+              </p>
+              {challenge.factors.length > 1 && (
+                <select
+                  value={factorId}
+                  onChange={(e) => setFactorId(e.target.value)}
+                  className="block w-full py-2.5 px-3 border border-gray-300 rounded-lg text-gray-900"
+                >
+                  {challenge.factors
+                    .filter((f) => f.id === 'totp' || f.id === 'recovery')
+                    .map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                </select>
+              )}
+              <input
+                id="mfa-code"
+                name="mfa-code"
+                type="text"
+                inputMode="text"
+                autoComplete="one-time-code"
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900"
+                placeholder={factorId === 'recovery' ? 'XXXXX-XXXXX' : '123456'}
+              />
+              <button
+                type="submit"
+                disabled={challengeMutation.isPending || !code.trim()}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Verify
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setChallenge(null);
+                  setCode('');
+                  setError(null);
+                }}
+                className="w-full text-sm text-gray-500 hover:text-gray-700"
+              >
+                Back to sign in
+              </button>
+            </form>
+          )}
+
           {/* SSO Button (shown when SAML is enabled) */}
-          {samlEnabled && samlLoginUrl && (
+          {!challenge && samlEnabled && samlLoginUrl && (
             <>
               <button
                 type="button"
@@ -170,74 +264,76 @@ export default function Login() {
           )}
 
           {/* Login Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Username Field */}
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                Username
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400" />
+          {!challenge && (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Username Field */}
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                  Username
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900 placeholder-gray-400"
+                    placeholder="Enter your username"
+                  />
                 </div>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900 placeholder-gray-400"
-                  placeholder="Enter your username"
-                />
               </div>
-            </div>
 
-            {/* Password Field */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
+              {/* Password Field */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900 placeholder-gray-400"
+                    placeholder="Enter your password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900 placeholder-gray-400"
-                  placeholder="Enter your password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
               </div>
-            </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loginMutation.isPending}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {loginMutation.isPending ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  <span>Signing in...</span>
-                </div>
-              ) : (
-                'Sign in'
-              )}
-            </button>
-          </form>
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={loginMutation.isPending}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loginMutation.isPending ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <span>Signing in...</span>
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </form>
+          )}
 
           {/* Footer */}
           <div className="mt-6 text-center">

@@ -108,6 +108,11 @@ hmac = "0.13"
 sha2 = "0.11"
 hex = "0.4"
 
+# Authentication pipeline (M29): TOTP (RFC 6238), base32 seeds, WebAuthn/FIDO2
+sha1 = "0.11"
+data-encoding = "2.11"
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+
 # Backup encryption and archiving
 chacha20poly1305 = "0.11"
 tar = "0.4"

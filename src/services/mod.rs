@@ -2,6 +2,7 @@
 
 pub mod alerting;
 pub mod auth;
+pub mod auth_pipeline;
 pub mod backup;
 pub mod backup_encryption;
 pub mod backup_scheduler;
