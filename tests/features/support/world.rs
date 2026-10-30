@@ -77,6 +77,14 @@ pub struct TestWorld {
     pub engine_result: Option<openvox_webui::models::ClassificationResult>,
     pub engine_explain: Option<openvox_webui::models::ClassificationExplain>,
 
+    /// Inbound SCIM scenarios run the real filter, PATCH and mapping (M31)
+    pub scim_resource: Option<Value>,
+    pub scim_user: Option<openvox_webui::services::scim::resources::UserAttrs>,
+    pub scim_matched: Option<bool>,
+    pub scim_error: Option<String>,
+    pub scim_groups: Vec<openvox_webui::services::scim::resources::GroupRef>,
+    pub scim_mappings: Vec<openvox_webui::services::directory::mapping::RoleMapping>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,

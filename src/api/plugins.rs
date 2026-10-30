@@ -41,7 +41,9 @@ async fn emit(state: &AppState, user: &AuthUser, event_type: &str, payload: serd
 }
 
 pub fn public_routes() -> Router<AppState> {
-    super::plugin_events::public_routes().route("/ui-assets/{token}/{*path}", get(ui_asset))
+    super::plugin_events::public_routes()
+        .merge(super::plugin_modules::public_routes())
+        .route("/ui-assets/{token}/{*path}", get(ui_asset))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -57,6 +59,8 @@ pub fn routes() -> Router<AppState> {
         .merge(super::plugin_updates::routes())
         .merge(super::plugin_facts::routes())
         .merge(super::plugin_classification::routes())
+        .merge(super::plugin_interceptors::routes())
+        .merge(super::plugin_modules::routes())
         .route("/ui/slots", get(ui_slots))
         .route("/ui/catalog", get(ui_catalog))
         .route("/ui/sessions", post(ui_session))
@@ -137,7 +141,7 @@ impl IntoResponse for ApiError {
 
 pub(super) type ApiResult<T> = Result<T, ApiError>;
 
-async fn allowed(
+pub(super) async fn allowed(
     state: &AppState,
     user: &AuthUser,
     resource: Resource,
@@ -171,7 +175,11 @@ pub(super) async fn require(
 /// Step-up: the acting user proves they are still present by their password.
 /// Accounts without a usable local password (SSO) cannot change trust until
 /// the authentication pipeline offers another factor.
-async fn reauthenticate(state: &AppState, user: &AuthUser, password: &str) -> Result<(), AppError> {
+pub(super) async fn reauthenticate(
+    state: &AppState,
+    user: &AuthUser,
+    password: &str,
+) -> Result<(), AppError> {
     let hash: Option<String> = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?")
         .bind(user.id.to_string())
         .fetch_optional(&state.db)
@@ -681,7 +689,12 @@ async fn ui_asset(
     Path((token, path)): Path<(String, String)>,
 ) -> Response {
     let not_found = || StatusCode::NOT_FOUND.into_response();
-    let Some(session) = state.plugin_manager.ui_sessions().lookup(&token) else {
+    let Some(session) = state
+        .plugin_manager
+        .ui_sessions()
+        .lookup(&token)
+        .filter(|s| s.kind == ui_assets::UiSessionKind::Frame)
+    else {
         return not_found();
     };
     let Some(path) = ui_assets::clean_path(&path) else {

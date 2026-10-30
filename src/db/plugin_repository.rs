@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 
 use crate::models::{
-    AutoUpdatePolicy, KeyOrigin, PluginGrant, PluginRecord, PluginState, PluginVersionRecord,
-    TrustedKeyRecord,
+    AutoUpdatePolicy, KeyOrigin, ModuleTrustRecord, PluginGrant, PluginRecord, PluginState,
+    PluginVersionRecord, TrustedKeyRecord,
 };
 
 pub struct PluginRepository<'a> {
@@ -78,9 +78,75 @@ fn key_from_row(r: &sqlx::sqlite::SqliteRow) -> TrustedKeyRecord {
     }
 }
 
+fn module_trust_from_row(r: &sqlx::sqlite::SqliteRow) -> ModuleTrustRecord {
+    ModuleTrustRecord {
+        plugin_id: r.get("plugin_id"),
+        version: r.get("version"),
+        package_sha256: r.get("package_sha256"),
+        modules: serde_json::from_str(&r.get::<String, _>("modules_json")).unwrap_or_default(),
+        trusted_by: r.get("trusted_by"),
+        trusted_at: ts(&r.get::<String, _>("trusted_at")),
+    }
+}
+
 impl<'a> PluginRepository<'a> {
     pub fn new(pool: &'a SqlitePool) -> Self {
         Self { pool }
+    }
+
+    // ---- trusted module pages (M31) ---------------------------------------
+
+    pub async fn list_module_trust(&self) -> Result<Vec<ModuleTrustRecord>> {
+        let rows = sqlx::query("SELECT * FROM plugin_module_trust ORDER BY plugin_id")
+            .fetch_all(self.pool)
+            .await
+            .context("list module trust")?;
+        Ok(rows.iter().map(module_trust_from_row).collect())
+    }
+
+    pub async fn get_module_trust(&self, plugin_id: &str) -> Result<Option<ModuleTrustRecord>> {
+        let row = sqlx::query("SELECT * FROM plugin_module_trust WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .fetch_optional(self.pool)
+            .await
+            .context("get module trust")?;
+        Ok(row.as_ref().map(module_trust_from_row))
+    }
+
+    /// Records the approval; it replaces any approval of another version.
+    pub async fn put_module_trust(&self, t: &ModuleTrustRecord) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO plugin_module_trust
+                (plugin_id, version, package_sha256, modules_json, trusted_by, trusted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(plugin_id) DO UPDATE SET
+                version = excluded.version, package_sha256 = excluded.package_sha256,
+                modules_json = excluded.modules_json, trusted_by = excluded.trusted_by,
+                trusted_at = excluded.trusted_at",
+        )
+        .bind(&t.plugin_id)
+        .bind(&t.version)
+        .bind(&t.package_sha256)
+        .bind(serde_json::to_string(&t.modules)?)
+        .bind(&t.trusted_by)
+        .bind(t.trusted_at.to_rfc3339())
+        .execute(self.pool)
+        .await
+        .context("put module trust")?;
+        Ok(())
+    }
+
+    /// Removes the approval of a plugin and returns it, if there was one.
+    pub async fn delete_module_trust(&self, plugin_id: &str) -> Result<Option<ModuleTrustRecord>> {
+        let existing = self.get_module_trust(plugin_id).await?;
+        if existing.is_some() {
+            sqlx::query("DELETE FROM plugin_module_trust WHERE plugin_id = ?")
+                .bind(plugin_id)
+                .execute(self.pool)
+                .await
+                .context("delete module trust")?;
+        }
+        Ok(existing)
     }
 
     // ---- plugins ----------------------------------------------------------

@@ -17,12 +17,21 @@ use rand::Rng;
 pub const SESSION_TTL: Duration = Duration::from_secs(60 * 60);
 const MAX_SESSIONS: usize = 10_000;
 
+/// What a token opens: a sandboxed frame's bundle, or one trusted module
+/// entry (M31). A token of one kind is never accepted by the other route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiSessionKind {
+    Frame,
+    Module,
+}
+
 #[derive(Debug, Clone)]
 pub struct UiSession {
     pub plugin_id: String,
     pub version: String,
     pub contribution_id: String,
     pub username: String,
+    pub kind: UiSessionKind,
     expires: Instant,
 }
 
@@ -32,8 +41,43 @@ pub struct UiSessions {
 }
 
 impl UiSessions {
+    /// A session for a sandboxed iframe contribution.
     pub fn issue(
         &self,
+        plugin_id: &str,
+        version: &str,
+        contribution_id: &str,
+        username: &str,
+    ) -> String {
+        self.issue_kind(
+            UiSessionKind::Frame,
+            plugin_id,
+            version,
+            contribution_id,
+            username,
+        )
+    }
+
+    /// A session for one trusted module entry (M31).
+    pub fn issue_module(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        contribution_id: &str,
+        username: &str,
+    ) -> String {
+        self.issue_kind(
+            UiSessionKind::Module,
+            plugin_id,
+            version,
+            contribution_id,
+            username,
+        )
+    }
+
+    fn issue_kind(
+        &self,
+        kind: UiSessionKind,
         plugin_id: &str,
         version: &str,
         contribution_id: &str,
@@ -60,6 +104,7 @@ impl UiSessions {
                     version: version.to_string(),
                     contribution_id: contribution_id.to_string(),
                     username: username.to_string(),
+                    kind,
                     expires: now + SESSION_TTL,
                 },
             );
@@ -148,6 +193,30 @@ pub fn content_security_policy(egress_hosts: &[String]) -> String {
     )
 }
 
+/// CSP of a trusted module response. It does not govern the module once the
+/// host page imports it; it keeps the file inert when opened directly.
+pub const MODULE_CSP: &str = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
+/// Headers of a trusted module response (M31): same origin only, never
+/// sniffed, never cached, and inert when opened on its own.
+pub fn module_headers(integrity: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("content-type", "text/javascript; charset=utf-8".to_string()),
+        ("content-security-policy", MODULE_CSP.to_string()),
+        ("x-content-type-options", "nosniff".to_string()),
+        ("referrer-policy", "no-referrer".to_string()),
+        ("cache-control", "private, no-store".to_string()),
+        ("cross-origin-resource-policy", "same-origin".to_string()),
+        ("x-openvox-integrity", integrity.to_string()),
+    ]
+}
+
+/// A module is only ever imported by the host page itself: a browser that
+/// says the request comes from another site is refused.
+pub fn same_origin_fetch(sec_fetch_site: Option<&str>) -> bool {
+    sec_fetch_site.is_none_or(|v| v.eq_ignore_ascii_case("same-origin"))
+}
+
 /// Normalizes the request path inside a bundle; `None` for traversal.
 pub fn clean_path(raw: &str) -> Option<String> {
     let p = raw.trim_start_matches('/');
@@ -175,9 +244,29 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(a.len(), 64);
         assert_eq!(s.lookup(&a).unwrap().username, "alice");
+        assert_eq!(s.lookup(&a).unwrap().kind, UiSessionKind::Frame);
         assert!(s.lookup("nope").is_none());
+        let m = s.issue_module("p", "1.0.0", "c", "alice");
+        assert_eq!(s.lookup(&m).unwrap().kind, UiSessionKind::Module);
         s.revoke_plugin("p");
         assert!(s.lookup(&a).is_none());
+        assert!(s.lookup(&m).is_none());
+    }
+
+    #[test]
+    fn module_responses_are_same_origin_and_inert_on_their_own() {
+        let h: HashMap<_, _> = module_headers("sha384-x").into_iter().collect();
+        assert_eq!(h["content-type"], "text/javascript; charset=utf-8");
+        assert_eq!(h["cross-origin-resource-policy"], "same-origin");
+        assert_eq!(h["x-content-type-options"], "nosniff");
+        assert_eq!(h["cache-control"], "private, no-store");
+        assert!(h["content-security-policy"].contains("sandbox"));
+        assert!(!h.contains_key("access-control-allow-origin"));
+        assert!(same_origin_fetch(None));
+        assert!(same_origin_fetch(Some("same-origin")));
+        assert!(!same_origin_fetch(Some("cross-site")));
+        assert!(!same_origin_fetch(Some("same-site")));
+        assert!(!same_origin_fetch(Some("none")));
     }
 
     #[test]

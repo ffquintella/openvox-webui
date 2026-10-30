@@ -32,8 +32,15 @@ pub async fn build_plugin_manager(
         .with_facts(config.plugins.facts.clone())
         .with_reports(config.plugins.reports.clone())
         .with_classification(config.plugins.classification.clone())
-        .with_blocked_hashes(&config.plugins.blocked_hashes),
+        .with_blocked_hashes(&config.plugins.blocked_hashes)
+        .with_trusted_modules(config.plugins.allow_trusted_modules),
     );
+    if config.plugins.allow_trusted_modules {
+        warn!(
+            "plugins.allow_trusted_modules is on: module pages of trusted plugin versions run \
+             in the host page without a sandbox"
+        );
+    }
     // WASM runtime: sandboxed handlers with kv and private-database storage
     let w = &config.plugins.wasm;
     let storage = Arc::new(PluginStorage::new(

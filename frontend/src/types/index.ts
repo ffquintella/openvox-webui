@@ -2794,6 +2794,49 @@ export interface PluginDetail extends PluginSummary {
   manifest: Record<string, unknown> | null;
   capabilities: PluginCapabilityInfo[];
   versions: PluginVersionRecord[];
+  /** Trusted module pages of the active version (M31). */
+  module_trust?: PluginModuleTrustView | null;
+}
+
+// Trusted module pages (M31)
+export interface PluginModuleEntry {
+  id: string;
+  slot: string;
+  src: string;
+  integrity: string;
+}
+
+export interface PluginModuleTrustRecord {
+  plugin_id: string;
+  version: string;
+  package_sha256: string;
+  modules: PluginModuleEntry[];
+  trusted_by: string;
+  trusted_at: string;
+}
+
+export interface PluginModuleTrustView {
+  /** `plugins.allow_trusted_modules` */
+  allowed_by_config: boolean;
+  contributions: PluginModuleEntry[];
+  trusted: PluginModuleTrustRecord | null;
+  /** Why the plugin can never be trusted (authentication plugins). */
+  refusal: string | null;
+  /** Served now: allowed, trusted and enabled. */
+  served: boolean;
+}
+
+export interface TrustPluginModulesRequest {
+  version?: string;
+  password: string;
+}
+
+export interface PluginModuleSession {
+  url: string;
+  integrity: string;
+  expose: string;
+  version: string;
+  expires_in_secs: number;
 }
 
 export type PluginSignatureStatus =
@@ -2895,6 +2938,10 @@ export interface UiContribution {
   label: string | null;
   icon: string | null;
   href: string | null;
+  /** Trusted `module` contributions only: SRI of the module entry (M31). */
+  integrity?: string | null;
+  /** Trusted `module` contributions only: exposed module to render. */
+  expose?: string | null;
 }
 
 export interface UiMenuOp {
@@ -3234,4 +3281,84 @@ export interface DirectoryTestResult {
   users_found?: boolean;
   groups_found?: boolean;
   elapsed_ms?: number;
+}
+
+// SCIM provisioning (M31)
+
+export interface ScimTokenInfo {
+  id: string;
+  name: string;
+  /** Last characters of the secret, to tell tokens apart. */
+  token_hint: string;
+  created_by?: string | null;
+  created_at: string;
+  rotated_at?: string | null;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+  revoked_by?: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+/** A token as returned once, when it is created or rotated. */
+export interface ScimIssuedToken {
+  token: string;
+  info: ScimTokenInfo;
+  notice?: string;
+}
+
+export interface ScimAuditEntry {
+  id: string;
+  action: string;
+  resource_id?: string | null;
+  details?: Record<string, unknown> | null;
+  ip_address?: string | null;
+  created_at: string;
+}
+
+export interface ScimStatus {
+  enabled: boolean;
+  endpoint: string;
+  base_url?: string | null;
+  sso: { provider?: string | null; link_attribute: 'user_name' | 'external_id' };
+  limits: {
+    rate_limit_per_minute: number;
+    max_auth_failures_per_minute: number;
+    max_body_bytes: number;
+    max_page_size: number;
+    max_token_lifetime_days?: number | null;
+  };
+  counts: {
+    users_active: number;
+    users_deactivated: number;
+    users_deleted: number;
+    groups: number;
+  };
+  tokens: { active: number; total: number };
+  last_activity?: string | null;
+  recent: ScimAuditEntry[];
+}
+
+export interface ScimGroupSummary {
+  id: string;
+  display_name: string;
+  external_id?: string | null;
+  members: number;
+  updated_at: string;
+  /** Names of the roles the group maps to. */
+  roles: string[];
+}
+
+export type ScimGroupRefKind = 'display_name' | 'external_id' | 'scim_group';
+
+export interface ScimRoleMapping {
+  id: string;
+  directory_id: string;
+  group_ref: string;
+  group_ref_kind: ScimGroupRefKind;
+  group_label?: string | null;
+  role_id: string;
+  role_name: string;
+  created_by?: string | null;
+  created_at: string;
 }

@@ -1014,7 +1014,9 @@ impl PluginManager {
             .map(|p| (p.id, p.active_version, p.state.as_str().to_string()))
             .collect();
         let stats = PluginEventsRepository::new(self.pool()).stats().await?;
-        Ok(self.governor().render_prometheus(&plugins, &stats))
+        let mut text = self.governor().render_prometheus(&plugins, &stats);
+        text.push_str(&self.interceptor_runtime().render_prometheus());
+        Ok(text)
     }
 }
 

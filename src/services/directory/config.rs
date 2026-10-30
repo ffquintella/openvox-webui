@@ -352,7 +352,7 @@ pub fn validate_all(dirs: &[DirectoryConfig], other_providers: &[String]) -> Res
     let mut seen: HashSet<&str> = HashSet::new();
     for d in dirs {
         d.validate()?;
-        if matches!(d.id.as_str(), "local" | "saml" | "step_up")
+        if matches!(d.id.as_str(), "local" | "saml" | "step_up" | "scim")
             || other_providers.iter().any(|p| p == &d.id)
         {
             bail!(
@@ -432,6 +432,9 @@ base_dn: "DC=example,DC=com"
         let mut local = d.clone();
         local.id = "local".into();
         assert!(validate_all(&[local], &[]).is_err());
+        let mut scim = d.clone();
+        scim.id = "scim".into();
+        assert!(validate_all(&[scim], &[]).is_err());
         assert!(validate_all(&[d], &[]).is_ok());
     }
 

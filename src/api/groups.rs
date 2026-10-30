@@ -22,6 +22,7 @@ use crate::{
     services::classification::{build_classification_facts_with_plugins, ClassificationService},
     services::classification_expr,
     services::plugins::facts::UsableFactsSnapshot,
+    services::plugins::interceptors::{InterceptActor, BEFORE_GROUP_CHANGE},
     services::puppetdb::PuppetDbClient,
     utils::AppError,
     AppState,
@@ -154,6 +155,46 @@ async fn validate_advanced(
     Ok(())
 }
 
+/// Runs the `before.group.change` interceptors (M31) before anything is
+/// stored. The event fails closed: a veto answers 409 and an interceptor that
+/// gives no valid answer in time 503.
+async fn intercept_group_change(
+    state: &AppState,
+    auth_user: &AuthUser,
+    org_id: Uuid,
+    action: &str,
+    group_id: Option<Uuid>,
+    group_name: &str,
+    change: serde_json::Value,
+) -> Result<(), AppError> {
+    let manager = &state.plugin_manager;
+    if !manager.has_interceptors(BEFORE_GROUP_CHANGE) {
+        return Ok(());
+    }
+    let payload = serde_json::json!({
+        "action": action,
+        "organization_id": org_id,
+        "group_id": group_id,
+        "group_name": group_name,
+        "actor": {"kind": "user", "id": auth_user.id},
+        "change": change,
+    });
+    let subject = group_id.map_or_else(|| format!("new:{group_name}"), |id| id.to_string());
+    let actor = InterceptActor {
+        organization_id: org_id,
+        user_id: Some(auth_user.id),
+    };
+    manager
+        .intercept(BEFORE_GROUP_CHANGE, &subject, actor, payload)
+        .await
+        .map(|_| ())
+        .map_err(|refusal| refusal.to_app_error())
+}
+
+fn as_json<T: serde::Serialize>(v: &T) -> serde_json::Value {
+    serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
 /// Generated groups belong to their template instance: read-only here.
 fn ensure_not_generated(group: &NodeGroup) -> Result<(), AppError> {
     if group.behavior.generated.is_some() {
@@ -199,6 +240,16 @@ async fn create_group(
     .await?;
 
     let org_id = resolve_org(&auth_user, query.organization_id)?;
+    intercept_group_change(
+        &state,
+        &auth_user,
+        org_id,
+        "create",
+        None,
+        &payload.name,
+        as_json(&payload),
+    )
+    .await?;
     let repo = GroupRepository::new(&state.db);
     let group = repo.create(org_id, &payload).await.map_err(|e| {
         tracing::error!("Failed to create group: {}", e);
@@ -261,6 +312,16 @@ async fn update_group(
         AppError::internal("Failed to get group")
     })? {
         ensure_not_generated(&existing)?;
+        intercept_group_change(
+            &state,
+            &auth_user,
+            org_id,
+            "update",
+            Some(uuid),
+            &existing.name,
+            as_json(&payload),
+        )
+        .await?;
     }
     let group = repo.update(org_id, uuid, &payload).await.map_err(|e| {
         tracing::error!("Failed to update group: {}", e);
@@ -297,6 +358,16 @@ async fn delete_group(
         AppError::internal("Failed to get group")
     })? {
         ensure_not_generated(&existing)?;
+        intercept_group_change(
+            &state,
+            &auth_user,
+            org_id,
+            "delete",
+            Some(uuid),
+            &existing.name,
+            serde_json::Value::Null,
+        )
+        .await?;
     }
     let deleted = repo.delete(org_id, uuid).await.map_err(|e| {
         tracing::error!("Failed to delete group: {}", e);
@@ -539,9 +610,19 @@ async fn add_rule(
         AppError::internal("Failed to check group")
     })?;
 
-    if group.is_none() {
+    let Some(group) = group else {
         return Err(AppError::not_found("Group not found"));
-    }
+    };
+    intercept_group_change(
+        &state,
+        &auth_user,
+        org_id,
+        "add_rule",
+        Some(uuid),
+        &group.name,
+        as_json(&payload),
+    )
+    .await?;
 
     let rule = repo.add_rule(uuid, &payload).await.map_err(|e| {
         tracing::error!("Failed to add rule: {}", e);
@@ -573,9 +654,19 @@ async fn delete_rule(
         tracing::error!("Failed to check group: {}", e);
         AppError::internal("Failed to check group")
     })?;
-    if group.is_none() {
+    let Some(group) = group else {
         return Err(AppError::not_found("Group not found"));
-    }
+    };
+    intercept_group_change(
+        &state,
+        &auth_user,
+        org_id,
+        "delete_rule",
+        Some(group_uuid),
+        &group.name,
+        serde_json::json!({"rule_id": rule_uuid}),
+    )
+    .await?;
 
     let deleted = repo.delete_rule(group_uuid, rule_uuid).await.map_err(|e| {
         tracing::error!("Failed to delete rule: {}", e);
@@ -612,9 +703,19 @@ async fn add_pinned_node(
         AppError::internal("Failed to check group")
     })?;
 
-    if group.is_none() {
+    let Some(group) = group else {
         return Err(AppError::not_found("Group not found"));
-    }
+    };
+    intercept_group_change(
+        &state,
+        &auth_user,
+        org_id,
+        "pin",
+        Some(uuid),
+        &group.name,
+        as_json(&payload),
+    )
+    .await?;
 
     repo.add_pinned_node(uuid, &payload.certname)
         .await
@@ -645,9 +746,19 @@ async fn remove_pinned_node(
         tracing::error!("Failed to check group: {}", e);
         AppError::internal("Failed to check group")
     })?;
-    if group.is_none() {
+    let Some(group) = group else {
         return Err(AppError::not_found("Group not found"));
-    }
+    };
+    intercept_group_change(
+        &state,
+        &auth_user,
+        org_id,
+        "unpin",
+        Some(uuid),
+        &group.name,
+        serde_json::json!({"certname": certname}),
+    )
+    .await?;
 
     let removed = repo
         .remove_pinned_node(uuid, &certname)

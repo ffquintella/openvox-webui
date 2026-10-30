@@ -113,6 +113,12 @@ pub struct PluginsConfig {
     /// taken out of play at the next load or reload.
     #[serde(default)]
     pub blocked_hashes: Vec<String>,
+    /// Lets an administrator with `plugins:trust` mark a plugin version as
+    /// trusted so that its `module` contributions run in the host page, in
+    /// the same origin and JavaScript context, without a sandbox (M31).
+    /// Off by default: `module` contributions are then never served.
+    #[serde(default)]
+    pub allow_trusted_modules: bool,
 }
 
 /// Plugin reports (M25): limits of report jobs, exports and datasets, the
@@ -578,6 +584,7 @@ impl Default for PluginsConfig {
             reports: PluginReportsConfig::default(),
             classification: PluginClassificationConfig::default(),
             blocked_hashes: Vec::new(),
+            allow_trusted_modules: false,
         }
     }
 }
@@ -924,6 +931,9 @@ pub struct AuthConfig {
     /// LDAP and Active Directory directories (M30), tried in this order
     #[serde(default)]
     pub directories: Vec<crate::services::directory::DirectoryConfig>,
+    /// Inbound SCIM 2.0 provisioning (M31)
+    #[serde(default)]
+    pub scim: crate::services::scim::ScimConfig,
 }
 
 fn default_token_expiry() -> u64 {
@@ -2121,6 +2131,7 @@ impl Default for AppConfig {
                 password_min_length: default_password_min_length(),
                 mfa: Default::default(),
                 directories: Vec::new(),
+                scim: Default::default(),
             },
             database: DatabaseConfig {
                 url: "sqlite://./data/openvox.db".to_string(),
@@ -2643,6 +2654,8 @@ impl AppConfig {
         // Directories (M30): TLS rules, required fields and unique ids
         let oidc_ids: Vec<String> = self.auth.mfa.oidc.iter().map(|p| p.id.clone()).collect();
         crate::services::directory::config::validate_all(&self.auth.directories, &oidc_ids)?;
+        // SCIM (M31): limits, base URL and the SSO provider of SCIM users
+        self.auth.scim.validate(&oidc_ids)?;
 
         // Validate TLS configuration if present
         if let Some(ref tls) = self.server.tls {
@@ -2698,6 +2711,16 @@ mod tests {
         assert_eq!(config.server.port, 5051);
         assert_eq!(config.server.host, "127.0.0.1");
         assert!(config.puppetdb.is_none());
+        // Trusted module pages are off unless an administrator turns them on.
+        assert!(!config.plugins.allow_trusted_modules);
+    }
+
+    #[test]
+    fn test_trusted_modules_flag_parses_and_defaults_off() {
+        let off: PluginsConfig = serde_norway::from_str("max_package_mb: 8\n").unwrap();
+        assert!(!off.allow_trusted_modules);
+        let on: PluginsConfig = serde_norway::from_str("allow_trusted_modules: true\n").unwrap();
+        assert!(on.allow_trusted_modules);
     }
 
     #[test]

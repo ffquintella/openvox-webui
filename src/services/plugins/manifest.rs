@@ -207,10 +207,13 @@ fn validate_contributions(
                     s.id
                 )),
             },
-            RenderKind::Module => p.push(format!(
-                "contribution '{}': trusted modules are not allowed",
+            RenderKind::Module => validate_module(p, m, s, files),
+        }
+        if s.render != RenderKind::Module && (s.integrity.is_some() || s.expose.is_some()) {
+            p.push(format!(
+                "contribution '{}': integrity and expose are only valid for render: module",
                 s.id
-            )),
+            ));
         }
         if s.slot == "page" {
             match &s.path {
@@ -286,6 +289,47 @@ fn validate_contributions(
     }
 }
 
+/// A trusted `module` contribution (M31): one ES module file of the package
+/// with its SRI. Whether it is ever served is decided by the configuration
+/// and an administrator, not by the manifest.
+fn validate_module(
+    p: &mut Vec<String>,
+    m: &PluginManifest,
+    s: &crate::models::SlotContribution,
+    files: &BTreeSet<String>,
+) {
+    use super::modules;
+    match &s.src {
+        Some(f) if safe_package_path(f) && modules::is_module_file(f) && files.contains(f) => {}
+        _ => p.push(format!(
+            "contribution '{}' needs a .js or .mjs module entry (src) inside the package",
+            s.id
+        )),
+    }
+    match s.integrity.as_deref().map(modules::parse_sri) {
+        Some(Ok(_)) => {}
+        Some(Err(e)) => p.push(format!("contribution '{}': {}", s.id, e)),
+        None => p.push(format!(
+            "contribution '{}' needs an integrity (sha384-<base64> or sha512-<base64>)",
+            s.id
+        )),
+    }
+    if let Some(e) = &s.expose {
+        if !modules::valid_expose(e) {
+            p.push(format!(
+                "contribution '{}': expose '{}' must look like ./Name",
+                s.id, e
+            ));
+        }
+    }
+    if modules::is_auth_plugin(m) {
+        p.push(format!(
+            "contribution '{}': authentication and user-provider plugins cannot contribute trusted modules",
+            s.id
+        ));
+    }
+}
+
 /// Converts a five-field cron expression to the seven-field form of the
 /// `cron` crate (seconds fixed at 0, any year).
 pub fn parse_cron(expr: &str) -> Result<cron::Schedule, String> {
@@ -345,6 +389,7 @@ fn validate_hooks(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<Strin
                     ));
                 }
             }
+            validate_interceptors(p, &ev.intercept, caps);
         }
     }
 
@@ -389,6 +434,61 @@ fn validate_hooks(p: &mut Vec<String>, m: &PluginManifest, caps: &BTreeSet<Strin
                 if !valid_local_id(&h.handler) {
                     p.push(format!("webhook handler '{}' is invalid", h.handler));
                 }
+            }
+        }
+    }
+}
+
+/// `events.intercept` (M31): only events of the host's interceptable catalog,
+/// each covered by its own `events:intercept:<event>` capability, at most one
+/// interceptor per event. Fail mode, timeout and what may be changed are the
+/// event's, so the declaration has no field for them.
+fn validate_interceptors(
+    p: &mut Vec<String>,
+    decls: &[crate::models::InterceptDecl],
+    caps: &BTreeSet<String>,
+) {
+    use super::filter::Filter;
+    use super::interceptors::{self, CAPABILITY_PREFIX};
+
+    let mut seen = BTreeSet::new();
+    for d in decls {
+        let Some(event) = interceptors::find(&d.event_type) else {
+            p.push(format!(
+                "'{}' is not an interceptable event (interceptable: {})",
+                d.event_type,
+                interceptors::catalog()
+                    .iter()
+                    .map(|e| e.event_type)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            continue;
+        };
+        if !seen.insert(event.event_type) {
+            p.push(format!(
+                "event '{}' is intercepted more than once",
+                event.event_type
+            ));
+        }
+        let cap = format!("{CAPABILITY_PREFIX}{}", event.event_type);
+        if !caps.contains(&cap) {
+            p.push(format!(
+                "the interceptor of '{}' needs the capability {}",
+                event.event_type, cap
+            ));
+        }
+        if let Some(f) = &d.filter {
+            if let Err(e) = Filter::parse(f) {
+                p.push(format!(
+                    "filter of the interceptor '{}': {}",
+                    d.event_type, e
+                ));
+            }
+        }
+        if let Some(h) = &d.handler {
+            if !valid_local_id(h) {
+                p.push(format!("interceptor handler '{}' is invalid", h));
             }
         }
     }
@@ -1023,7 +1123,12 @@ const EXACT_CAPABILITIES: &[&str] = &[
     "groups:write:own",
 ];
 
-const PREFIX_CAPABILITIES: &[&str] = &["events:publish:", "secrets:resolve:", "ui:slot:"];
+const PREFIX_CAPABILITIES: &[&str] = &[
+    "events:publish:",
+    "events:intercept:",
+    "secrets:resolve:",
+    "ui:slot:",
+];
 
 fn validate_capability(c: &Capability) -> Result<(), String> {
     let known = EXACT_CAPABILITIES.contains(&c.name.as_str())
@@ -1036,6 +1141,14 @@ fn validate_capability(c: &Capability) -> Result<(), String> {
     if let Some(slot) = c.name.strip_prefix("ui:slot:") {
         if !super::slots::is_known(slot) {
             return Err(format!("capability '{}' names an unknown slot", c.name));
+        }
+    }
+    if let Some(event) = c.name.strip_prefix(super::interceptors::CAPABILITY_PREFIX) {
+        if super::interceptors::find(event).is_none() {
+            return Err(format!(
+                "capability '{}' names an event that is not interceptable",
+                c.name
+            ));
         }
     }
     if c.name == "http:egress" {
@@ -1192,6 +1305,29 @@ pub fn describe_capability(c: &Capability) -> CapabilityInfo {
             RiskLevel::Low,
             format!("Publish events named '{}'", &n["events:publish:".len()..]),
         ),
+        n if n.starts_with(super::interceptors::CAPABILITY_PREFIX) => {
+            let event = &n[super::interceptors::CAPABILITY_PREFIX.len()..];
+            (
+                RiskLevel::High,
+                match super::interceptors::find(event) {
+                    Some(e) => format!(
+                        "Runs synchronously before {} and can {} it ({} ms limit; if it fails, the operation {})",
+                        e.description,
+                        if e.alterable.is_empty() {
+                            "veto"
+                        } else {
+                            "veto or change"
+                        },
+                        e.timeout_ms,
+                        match e.fail_mode {
+                            super::interceptors::FailMode::Open => "goes ahead",
+                            super::interceptors::FailMode::Closed => "is refused",
+                        }
+                    ),
+                    None => format!("Intercept '{}'", event),
+                },
+            )
+        }
         n if n.starts_with("secrets:resolve:") => (
             RiskLevel::High,
             format!("Resolve secrets under '{}'", &n["secrets:resolve:".len()..]),
@@ -1582,6 +1718,182 @@ contributes:
                 Ok(_) => Vec::new(),
                 Err(e) => e,
             };
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
+    }
+
+    const INTERCEPT: &str = r#"
+api_version: 2
+id: acme-gate
+name: ACME gate
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-gate }
+capabilities:
+  - events:intercept:before.node.classify
+  - events:intercept:before.group.change
+events:
+  intercept:
+    - { type: before.node.classify, priority: 10, handler: check_node, filter: "facts.role == 'db'" }
+    - { type: before.group.change }
+"#;
+
+    #[test]
+    fn accepts_interceptors_and_describes_their_capability() {
+        let m = parse_and_validate(INTERCEPT.as_bytes(), &files(&[])).unwrap();
+        let ev = m.events_decl().unwrap();
+        assert_eq!(ev.intercept.len(), 2);
+        assert_eq!(ev.intercept[0].priority, 10);
+        assert_eq!(ev.intercept[1].priority, 100);
+        let info: Vec<CapabilityInfo> = capabilities(&m).iter().map(describe_capability).collect();
+        assert!(info.iter().all(|i| i.risk == RiskLevel::High));
+        assert!(info[0].description.contains("veto or change"));
+        assert!(info[0].description.contains("goes ahead"));
+        assert!(info[1].description.contains("can veto it"));
+        assert!(info[1].description.contains("is refused"));
+    }
+
+    #[test]
+    fn interceptors_are_restricted_to_the_catalog_and_their_capability() {
+        let cases = [
+            (
+                INTERCEPT.replace("  - events:intercept:before.group.change\n", ""),
+                "needs the capability events:intercept:before.group.change",
+            ),
+            (
+                INTERCEPT.replace("type: before.group.change", "type: node.classified"),
+                "'node.classified' is not an interceptable event",
+            ),
+            (
+                INTERCEPT.replace("type: before.group.change", "type: \"before.*\""),
+                "is not an interceptable event",
+            ),
+            (
+                INTERCEPT.replace("type: before.group.change", "type: before.node.classify"),
+                "intercepted more than once",
+            ),
+            (
+                INTERCEPT.replace(
+                    "events:intercept:before.group.change",
+                    "events:intercept:before.node.remove",
+                ),
+                "names an event that is not interceptable",
+            ),
+            (
+                INTERCEPT.replace("handler: check_node", "handler: \"a b\""),
+                "interceptor handler",
+            ),
+            (
+                INTERCEPT.replace("facts.role == 'db'", "facts.role =="),
+                "filter of the interceptor",
+            ),
+            // The fail mode and the timeout belong to the event.
+            (
+                INTERCEPT.replace(
+                    "{ type: before.group.change }",
+                    "{ type: before.group.change, fail_mode: open }",
+                ),
+                "unknown field",
+            ),
+            (
+                INTERCEPT.replace(
+                    "{ type: before.group.change }",
+                    "{ type: before.group.change, timeout_ms: 5000 }",
+                ),
+                "unknown field",
+            ),
+        ];
+        for (yaml, needle) in cases {
+            let p = match parse_and_validate(yaml.as_bytes(), &files(&[])) {
+                Ok(_) => Vec::new(),
+                Err(e) => e,
+            };
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
+    }
+
+    const MODULE: &str = r#"
+api_version: 2
+id: acme-mod
+name: ACME Module
+version: 1.0.0
+publisher: ACME
+runtime: { kind: builtin, entry: acme-mod }
+capabilities: [ui:slot:page, ui:slot:dashboard.widgets]
+contributes:
+  slots:
+    - { slot: page, id: console, render: module, src: ui/remoteEntry.js, integrity: "SRI", expose: ./Console, path: /p/acme-mod/console }
+"#;
+
+    fn module_problems(yaml: &str, list: &[&str]) -> Vec<String> {
+        match parse_and_validate(yaml.as_bytes(), &files(list)) {
+            Ok(_) => Vec::new(),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn module_contributions_need_an_entry_and_an_integrity() {
+        use super::super::modules::{sri_of, SriAlgorithm};
+        let sri = sri_of(SriAlgorithm::Sha384, b"x");
+        let ok = MODULE.replace("SRI", &sri);
+        let m = parse_and_validate(ok.as_bytes(), &files(&["ui/remoteEntry.js"])).unwrap();
+        assert_eq!(m.contributes.slots[0].render, RenderKind::Module);
+        assert_eq!(m.contributes.slots[0].expose.as_deref(), Some("./Console"));
+        let cases = [
+            (ok.clone(), vec![], "needs a .js or .mjs module entry"),
+            (
+                ok.replace("ui/remoteEntry.js", "ui/app.html"),
+                vec!["ui/app.html"],
+                "needs a .js or .mjs module entry",
+            ),
+            (
+                MODULE.replace("SRI", "sha256-abc"),
+                vec!["ui/remoteEntry.js"],
+                "only sha384 and sha512",
+            ),
+            (
+                ok.replace(&format!(", integrity: \"{sri}\""), ""),
+                vec!["ui/remoteEntry.js"],
+                "needs an integrity",
+            ),
+            (
+                ok.replace("./Console", "Console"),
+                vec!["ui/remoteEntry.js"],
+                "must look like ./Name",
+            ),
+            (
+                ok.replace(
+                    "capabilities: [ui:slot:page, ui:slot:dashboard.widgets]",
+                    "capabilities: [ui:slot:page, auth:factor]",
+                ),
+                vec!["ui/remoteEntry.js"],
+                "authentication and user-provider plugins cannot contribute trusted modules",
+            ),
+            (
+                ok.replace(
+                    "capabilities: [ui:slot:page, ui:slot:dashboard.widgets]",
+                    "capabilities: [ui:slot:page, users:provider]",
+                ),
+                vec!["ui/remoteEntry.js"],
+                "authentication and user-provider plugins",
+            ),
+            (
+                format!(
+                    "{ok}    - {{ slot: dashboard.widgets, id: w, render: declarative, spec: ui/w.json, integrity: \"{sri}\" }}\n"
+                ),
+                vec!["ui/remoteEntry.js", "ui/w.json"],
+                "only valid for render: module",
+            ),
+        ];
+        for (yaml, list, needle) in cases {
+            let p = module_problems(&yaml, &list);
             assert!(
                 p.iter().any(|m| m.contains(needle)),
                 "expected '{needle}' in {p:?}"

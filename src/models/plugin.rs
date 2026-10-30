@@ -190,9 +190,18 @@ pub struct SlotContribution {
     pub slot: String,
     pub id: String,
     pub render: RenderKind,
-    /// `iframe`: HTML entry inside the package.
+    /// `iframe`: HTML entry inside the package. `module`: the ES module
+    /// entry (the Module Federation `remoteEntry.js`) inside the package.
     #[serde(default)]
     pub src: Option<String>,
+    /// `module` only: Subresource Integrity of `src` (`sha384-<base64>` or
+    /// `sha512-<base64>`), checked by the host against the package (M31).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrity: Option<String>,
+    /// `module` only: the exposed module of a Module Federation container
+    /// (default `./Page`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expose: Option<String>,
     /// `declarative`: JSON page description inside the package.
     #[serde(default)]
     pub spec: Option<String>,
@@ -597,6 +606,59 @@ pub struct PluginDetail {
     /// is one, otherwise of the active version.
     pub approvals: Vec<CapabilityApproval>,
     pub versions: Vec<PluginVersionRecord>,
+    /// Trusted module pages of the active version (M31); null when the
+    /// active version contributes no `module` and nothing is trusted.
+    pub module_trust: Option<ModuleTrustView>,
+}
+
+// ============================================================================
+// Trusted module pages (M31)
+// ============================================================================
+
+/// One `module` contribution with the integrity of its entry file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModuleEntryInfo {
+    pub id: String,
+    pub slot: String,
+    pub src: String,
+    pub integrity: String,
+}
+
+/// An administrator's approval for one plugin version (pinned by its
+/// package hash) to run its `module` contributions in the host page.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleTrustRecord {
+    pub plugin_id: String,
+    pub version: String,
+    pub package_sha256: String,
+    /// The module contributions as they were when approved.
+    pub modules: Vec<ModuleEntryInfo>,
+    pub trusted_by: String,
+    pub trusted_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleTrustView {
+    /// `plugins.allow_trusted_modules`.
+    pub allowed_by_config: bool,
+    /// The `module` contributions of the active version.
+    pub contributions: Vec<ModuleEntryInfo>,
+    /// The approval, while it covers the active version.
+    pub trusted: Option<ModuleTrustRecord>,
+    /// Why this plugin can never be trusted, if so (authentication plugins).
+    pub refusal: Option<String>,
+    /// The contributions are served now: allowed by the configuration,
+    /// trusted and the plugin is enabled.
+    pub served: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrustModuleRequest {
+    /// Version to trust; must be the active one (the default).
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Current password of the acting user (step-up re-authentication).
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -820,6 +882,12 @@ pub struct UiContribution {
     pub label: Option<String>,
     pub icon: Option<String>,
     pub href: Option<String>,
+    /// Trusted `module` contributions only: SRI of the module entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integrity: Option<String>,
+    /// Trusted `module` contributions only: exposed module to render.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expose: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

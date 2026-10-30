@@ -560,3 +560,109 @@ Behaviour:
 - MFA policies apply to directory logins like to any provider (condition
   `providers: ["corp"]`); the break-glass path stays reserved to local
   super administrators.
+
+## SCIM Provisioning (inbound SCIM 2.0)
+
+An identity provider (Entra ID, Okta, OneLogin, Keycloak with a SCIM plugin,
+...) can create, update, deactivate and group users through a SCIM 2.0 service
+(RFC 7643, RFC 7644) at `/api/v1/scim/v2`. It is off by default. Tokens and
+group-to-role mappings are managed on the **SCIM Provisioning** page; the rest
+is configuration.
+
+```yaml
+auth:
+  scim:
+    enabled: false                   # default; while false every SCIM request answers 404
+    rate_limit_per_minute: 600       # per token; the burst is the same number
+    max_auth_failures_per_minute: 10 # per client address, then 429
+    max_body_bytes: 1048576          # 4096 to 16777216
+    max_page_size: 200               # cap of `count` in list responses (1 to 1000)
+    max_token_lifetime_days: 365     # optional: every token must expire within this
+    base_url: "https://webui.example.com"   # optional: absolute meta.location
+    sso_provider: saml               # or the id of an OIDC provider under auth.mfa.oidc
+    sso_link_attribute: user_name    # or external_id
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enabled` | boolean | `false` | Serve the SCIM endpoint |
+| `rate_limit_per_minute` | integer | `600` | Requests per minute and per token (1 to 100000) |
+| `max_auth_failures_per_minute` | integer | `10` | Failed authentications per client address before `429` |
+| `max_body_bytes` | integer | `1048576` | Largest request body; larger bodies get `413` |
+| `max_page_size` | integer | `200` | Largest page of a list response |
+| `max_token_lifetime_days` | integer | none | When set, tokens must have an expiry of at most this many days |
+| `base_url` | string | none | Public URL used in `meta.location`; without it the location is a path |
+| `sso_provider` | string | none | `saml` or an OIDC provider id: how SCIM users sign in |
+| `sso_link_attribute` | string | `user_name` | `user_name` or `external_id`: the SCIM value that identifies the user at the SSO provider |
+
+The values are validated at startup (the server refuses to start otherwise):
+`sso_provider` must be `saml` or a configured OIDC provider id. The directory id
+`scim` is reserved.
+
+Configure the identity provider with the tenant URL
+`https://<host>/api/v1/scim/v2` and a token issued on the SCIM Provisioning page.
+
+- **Authentication**: only `Authorization: Bearer <token>`; no session, cookie,
+  JWT or API key opens SCIM, and a SCIM token opens nothing else. Tokens are
+  shown once, stored as SHA-256 hashes, compared in constant time, can expire,
+  be rotated (the old secret stops working at once) and be revoked. Issuing,
+  rotating and revoking need `users:admin` and step-up; they are audited
+  (`scim.token_created|rotated|revoked`), as are failed authentications
+  (`scim.auth_failed`, reason only). The discovery endpoints
+  (`ServiceProviderConfig`, `ResourceTypes`, `Schemas`) also need a token.
+- **Accounts**: SCIM users have no local password and cannot sign in with one;
+  they sign in through `sso_provider`. With `saml`, the account gets
+  `auth_provider: saml` and its NameID is the linked value; with an OIDC
+  provider the value is linked as the OIDC `sub`. Without `sso_provider` a SCIM
+  user cannot sign in. Username and e-mail are read-only in the WebUI, as for
+  directory accounts.
+- **Isolation**: SCIM only sees accounts it provisioned. Local accounts (the
+  break-glass administrator among them) and directory accounts are invisible
+  to it; a `userName` or e-mail they use, in any letter case, is a `409
+  uniqueness` conflict; they cannot be group members; `super_admin` can never
+  be mapped.
+- **Deactivation**: `active: false` (PATCH or PUT) deactivates the account and
+  revokes its sessions and API keys at once; `active: true` reactivates it
+  (revoked keys stay revoked). `DELETE` also deactivates and keeps the account,
+  removes its SCIM groups, roles and SSO link, and the resource answers 404
+  from then on. A later POST with the same `externalId` (or the same `userName`
+  when neither has an `externalId`) brings the account back.
+- **Roles**: groups pushed by the provider map to roles by display name
+  (without case), external id or SCIM group id. Roles change as soon as a
+  membership or mapping changes; roles assigned by hand are kept.
+- **Events**: `user.created`, `user.updated` and `user.deactivated` are
+  published to plugins.
+
+See [PLUGIN_PLATFORM.md section 17.14](architecture/PLUGIN_PLATFORM.md) for the
+supported SCIM features and their limits.
+
+## Plugins: Trusted Module Pages
+
+Plugin pages normally run in a sandboxed iframe or are rendered by the host
+from JSON. A `module` contribution is different: its JavaScript runs inside the
+WebUI page, in the same origin and with the signed-in user's access, without a
+sandbox. It is therefore off unless you turn it on, and even then only runs for
+a plugin version an administrator explicitly trusted.
+
+```yaml
+plugins:
+  allow_trusted_modules: false   # default; true lets plugins:trust approve module pages
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `allow_trusted_modules` | boolean | `false` | Allow `render: module` contributions of trusted plugin versions to be served |
+
+- The setting is read at startup; a warning is logged when it is on.
+- While it is off, module contributions are never listed or served and trusting
+  a plugin answers `409 trusted_modules_disabled`. Plugins that contain modules
+  still install; their other contributions work.
+- Trusting needs the `plugins:trust` permission and the administrator's password
+  (`POST /api/v1/plugins/{id}/module-trust`); withdrawing needs `plugins:admin`
+  or `plugins:trust` (`DELETE` on the same path). Both are audited.
+- An approval covers one version: updating, rolling back or revoking that
+  version removes it, so new code always needs a new approval.
+- Authentication and user-provider plugins can never run as trusted modules.
+- The browser checks each module against the SRI hash the plugin declares and
+  the host verifies against the signed package. See
+  [PLUGIN_PLATFORM.md section 17.13](architecture/PLUGIN_PLATFORM.md) for details.

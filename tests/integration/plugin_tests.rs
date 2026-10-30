@@ -1466,3 +1466,535 @@ async fn plugin_report_types_formats_annotations_and_datasets() {
     .await;
     assert_eq!(r.status.as_u16(), 404);
 }
+
+// ---- restricted interceptors (M31, T104) -------------------------------------
+
+const GATE_SEED: [u8; 32] = [31; 32];
+
+/// A built-in change gate: vetoes groups named `frozen-*` and answers pins
+/// with a change, which a veto-only event treats as a failure.
+struct GroupGate;
+
+impl openvox_webui::services::plugins::BuiltinPlugin for GroupGate {
+    fn handle(
+        &self,
+        call: &openvox_webui::services::plugins::invoke::HandlerCall,
+    ) -> anyhow::Result<Value> {
+        let p = &call.input["payload"];
+        Ok(
+            if p["group_name"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("frozen-")
+            {
+                json!({"decision": "veto", "reason": "change freeze"})
+            } else if p["action"] == "pin" {
+                json!({"decision": "alter", "changes": {"change": {}}})
+            } else {
+                json!({"decision": "allow"})
+            },
+        )
+    }
+}
+
+#[tokio::test]
+async fn group_changes_go_through_interceptors_and_the_admin_api_lists_them() {
+    use ed25519_dalek::SigningKey;
+    let app = TestApp::with_plugins(|m| {
+        let pk = SigningKey::from_bytes(&GATE_SEED)
+            .verifying_key()
+            .to_bytes();
+        m.with_builtin_keys(vec![("OpenVox".into(), pk)])
+            .with_builtin_runtime("gate", std::sync::Arc::new(GroupGate))
+    })
+    .await;
+    app.get("/api/v1/plugins/interceptors")
+        .await
+        .assert_unauthorized();
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    send(
+        &app,
+        &viewer,
+        "GET",
+        "/api/v1/plugins/interceptors",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_forbidden();
+
+    let t = admin_token(&app).await;
+    let r = send(&app, &t, "GET", "/api/v1/plugins/interceptors", vec![], &[]).await;
+    r.assert_ok();
+    let body = r.json::<Value>();
+    let events = body["events"].as_array().unwrap();
+    assert_eq!(events[0]["type"], "before.node.classify");
+    assert_eq!(events[0]["fail_mode"], "open");
+    assert_eq!(events[0]["timeout_ms"], 50);
+    assert_eq!(events[0]["max_interceptors"], 3);
+    assert_eq!(events[0]["alterable"], json!(["facts"]));
+    assert_eq!(events[1]["type"], "before.group.change");
+    assert_eq!(events[1]["fail_mode"], "closed");
+    assert_eq!(events[1]["interceptors"], json!([]));
+
+    // Install and enable the gate (signed by the project key).
+    let yaml = "api_version: 2\nid: gate\nname: Gate\nversion: 1.0.0\npublisher: ACME\n\
+                runtime: { kind: builtin, entry: gate }\n\
+                capabilities:\n  - events:intercept:before.group.change\n\
+                events:\n  intercept:\n    - { type: before.group.change, priority: 5 }\n";
+    let pkg = build_signed_package(
+        &[("plugin.yaml", yaml.as_bytes())],
+        "gate",
+        "1.0.0",
+        2,
+        GATE_SEED,
+    );
+    let r = send(&app, &t, "POST", "/api/v1/plugins", pkg, &[]).await;
+    assert_eq!(r.status.as_u16(), 201, "{}", r.text());
+    let caps = r.json::<Value>()["capabilities"].clone();
+    assert_eq!(caps[0]["name"], "events:intercept:before.group.change");
+    assert_eq!(caps[0]["risk"], "high");
+    send(&app, &t, "POST", "/api/v1/plugins/gate/enable", vec![], &[])
+        .await
+        .assert_ok();
+
+    let r = send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/plugins/interceptors/before.group.change",
+        vec![],
+        &[],
+    )
+    .await;
+    r.assert_ok();
+    let ev = r.json::<Value>();
+    assert_eq!(ev["capability"], "events:intercept:before.group.change");
+    let gate = &ev["interceptors"][0];
+    assert_eq!(
+        (&gate["plugin_id"], &gate["priority"], &gate["handler"]),
+        (&json!("gate"), &json!(5), &json!("on_intercept"))
+    );
+    assert_eq!(
+        (&gate["active"], &gate["granted"]),
+        (&json!(true), &json!(true))
+    );
+    send(
+        &app,
+        &t,
+        "GET",
+        "/api/v1/plugins/interceptors/node.classified",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_not_found();
+
+    // A veto answers 409 and nothing is stored.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/groups",
+        json_body(json!({"name": "frozen-web"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 409, "{}", r.text());
+    assert!(r.text().contains("change freeze"), "{}", r.text());
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM node_groups WHERE name = 'frozen-web'")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+
+    // Allowed changes go ahead.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/groups",
+        json_body(json!({"name": "web"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 201, "{}", r.text());
+    let id = r.json::<Value>()["id"].as_str().unwrap().to_string();
+
+    // An answer the event does not allow fails closed: 503, without the
+    // plugin's error in the message.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        &format!("/api/v1/groups/{id}/pinned"),
+        json_body(json!({"certname": "n1.example.com"})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 503, "{}", r.text());
+    assert!(!r.text().contains("cannot be changed"), "{}", r.text());
+
+    // Both refusals are audited with the acting user.
+    let actions: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT action, user_id FROM audit_log WHERE action LIKE 'plugin.interceptor.%' ORDER BY action",
+    )
+    .fetch_all(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        actions,
+        vec![
+            (
+                "plugin.interceptor.refused".to_string(),
+                Some(ADMIN_ID.to_string())
+            ),
+            (
+                "plugin.interceptor.vetoed".to_string(),
+                Some(ADMIN_ID.to_string())
+            ),
+        ]
+    );
+
+    // Dedicated telemetry, also in the Prometheus exposition.
+    let r = send(&app, &t, "GET", "/api/v1/plugins/interceptors", vec![], &[]).await;
+    let stats = &r.json::<Value>()["events"][1]["interceptors"][0]["stats"];
+    assert_eq!(
+        (&stats["allowed"], &stats["vetoed"], &stats["failed_closed"]),
+        (&json!(1), &json!(1), &json!(1))
+    );
+    let r = send(&app, &t, "GET", "/api/v1/plugins/metrics", vec![], &[]).await;
+    r.assert_ok();
+    assert!(r.text().contains(
+        "openvox_plugin_interceptor_decisions_total{event=\"before.group.change\",plugin=\"gate\",decision=\"veto\"} 1"
+    ));
+    assert!(r
+        .text()
+        .contains("openvox_plugin_invocations_total{plugin=\"gate\",version=\"1.0.0\",kind=\"interceptor\",outcome=\"ok\"} 3"));
+}
+
+// ---- Trusted module pages (M31, T105) --------------------------------------
+
+const MODULE_SEED: [u8; 32] = [41; 32];
+const MODULE_JS: &[u8] = b"export async function init() {}\nexport async function get() { return () => ({ default: () => null }); }\n";
+
+struct NoHandlers;
+impl openvox_webui::services::plugins::BuiltinPlugin for NoHandlers {}
+
+fn module_package(version: &str) -> Vec<u8> {
+    use openvox_webui::services::plugins::modules::{sri_of, SriAlgorithm};
+    let sri = sri_of(SriAlgorithm::Sha384, MODULE_JS);
+    let yaml = format!(
+        "api_version: 2\nid: console\nname: Console\nversion: {version}\npublisher: ACME\n\
+         runtime: {{ kind: builtin, entry: console }}\ncapabilities: [ui:slot:page]\n\
+         contributes:\n  slots:\n    - {{ slot: page, id: main, render: module, src: ui/remoteEntry.js, \
+         integrity: \"{sri}\", expose: ./Console, path: /p/console/main }}\n"
+    );
+    build_signed_package(
+        &[
+            ("plugin.yaml", yaml.as_bytes()),
+            ("ui/remoteEntry.js", MODULE_JS),
+        ],
+        "console",
+        version,
+        2,
+        MODULE_SEED,
+    )
+}
+
+async fn module_app(allow: bool) -> TestApp {
+    use ed25519_dalek::SigningKey;
+    TestApp::with_plugins(move |m| {
+        let pk = SigningKey::from_bytes(&MODULE_SEED)
+            .verifying_key()
+            .to_bytes();
+        m.with_builtin_keys(vec![("OpenVox".into(), pk)])
+            .with_builtin_runtime("console", std::sync::Arc::new(NoHandlers))
+            .with_trusted_modules(allow)
+    })
+    .await
+}
+
+async fn install_module_plugin(app: &TestApp, t: &str) {
+    let r = send(
+        app,
+        t,
+        "POST",
+        "/api/v1/plugins",
+        module_package("1.0.0"),
+        &[],
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 201, "{}", r.text());
+    send(
+        app,
+        t,
+        "POST",
+        "/api/v1/plugins/console/enable",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_ok();
+}
+
+#[tokio::test]
+async fn trusted_modules_are_refused_while_the_flag_is_off() {
+    let app = module_app(false).await;
+    let t = admin_token(&app).await;
+    install_module_plugin(&app, &t).await;
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/console/module-trust",
+        json_body(json!({"password": PASSWORD})),
+        JSON,
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 409, "{}", r.text());
+    assert_eq!(r.json::<Value>()["code"], "trusted_modules_disabled");
+    // The refusal is audited.
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'plugin.trust.module_trusted' AND details LIKE '%rejected%'",
+    )
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(n, 1);
+    // Nothing is listed or served.
+    let r = send(&app, &t, "GET", "/api/v1/plugins/ui/slots", vec![], &[]).await;
+    assert_eq!(r.json::<Value>()["slots"], json!({}));
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/ui/modules",
+        json_body(json!({"plugin_id": "console", "contribution_id": "main"})),
+        JSON,
+    )
+    .await;
+    r.assert_not_found();
+    let detail = send(&app, &t, "GET", "/api/v1/plugins/console", vec![], &[])
+        .await
+        .json::<Value>();
+    assert_eq!(detail["module_trust"]["allowed_by_config"], false);
+    assert_eq!(detail["module_trust"]["served"], false);
+}
+
+#[tokio::test]
+async fn trusted_module_pages_are_approved_served_with_sri_and_withdrawn() {
+    let app = module_app(true).await;
+    let t = admin_token(&app).await;
+    install_module_plugin(&app, &t).await;
+    let trust = |body: Value| {
+        let app = &app;
+        let t = t.clone();
+        async move {
+            send(
+                app,
+                &t,
+                "POST",
+                "/api/v1/plugins/console/module-trust",
+                json_body(body),
+                JSON,
+            )
+            .await
+        }
+    };
+
+    // Untrusted: not listed.
+    let r = send(&app, &t, "GET", "/api/v1/plugins/ui/slots", vec![], &[]).await;
+    assert_eq!(r.json::<Value>()["slots"], json!({}));
+
+    // A viewer cannot trust; plugins:trust also needs the password.
+    let viewer_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, role) VALUES (?, 'viewer', 'viewer@example.com', 'x', 'viewer')")
+        .bind(viewer_id.to_string())
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let viewer =
+        generate_test_token_with_session(&app, viewer_id, "viewer", vec!["viewer".into()]).await;
+    send(
+        &app,
+        &viewer,
+        "POST",
+        "/api/v1/plugins/console/module-trust",
+        json_body(json!({"password": PASSWORD})),
+        JSON,
+    )
+    .await
+    .assert_forbidden();
+    send(
+        &app,
+        &viewer,
+        "DELETE",
+        "/api/v1/plugins/console/module-trust",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_forbidden();
+    trust(json!({"password": "wrong password"}))
+        .await
+        .assert_forbidden();
+
+    let r = trust(json!({"password": PASSWORD})).await;
+    r.assert_ok();
+    let detail = r.json::<Value>();
+    assert_eq!(detail["module_trust"]["trusted"]["version"], "1.0.0");
+    assert_eq!(detail["module_trust"]["trusted"]["trusted_by"], "admin");
+    assert_eq!(detail["module_trust"]["served"], true);
+
+    // The registry lists the contribution with its SRI.
+    use openvox_webui::services::plugins::modules::{sri_of, SriAlgorithm};
+    let sri = sri_of(SriAlgorithm::Sha384, MODULE_JS);
+    let r = send(&app, &t, "GET", "/api/v1/plugins/ui/slots", vec![], &[]).await;
+    let page = &r.json::<Value>()["slots"]["page"][0];
+    assert_eq!(page["render"], "module");
+    assert_eq!(page["integrity"], sri.as_str());
+    assert_eq!(page["expose"], "./Console");
+
+    // Any signed-in user who can see it gets a session for the module only.
+    let r = send(
+        &app,
+        &viewer,
+        "POST",
+        "/api/v1/plugins/ui/modules",
+        json_body(json!({"plugin_id": "console", "contribution_id": "main"})),
+        JSON,
+    )
+    .await;
+    r.assert_ok();
+    let session = r.json::<Value>();
+    assert_eq!(session["integrity"], sri.as_str());
+    assert_eq!(session["expose"], "./Console");
+    let url = session["url"].as_str().unwrap().to_string();
+    assert!(url.starts_with("/api/v1/plugins/ui-modules/"), "{url}");
+    assert!(url.ends_with("/ui/remoteEntry.js"), "{url}");
+
+    // Served without credentials, same origin only, with strict headers.
+    let r = app.get(&url).await;
+    r.assert_ok();
+    assert_eq!(r.body.as_ref(), MODULE_JS);
+    let h = |k: &str| r.headers.get(k).unwrap().to_str().unwrap().to_string();
+    assert_eq!(h("content-type"), "text/javascript; charset=utf-8");
+    assert_eq!(h("x-content-type-options"), "nosniff");
+    assert_eq!(h("cross-origin-resource-policy"), "same-origin");
+    assert_eq!(h("x-openvox-integrity"), sri);
+    assert!(h("content-security-policy").contains("sandbox"));
+    assert!(r.headers.get("access-control-allow-origin").is_none());
+    let cross = app
+        .request(
+            Request::builder()
+                .uri(&url)
+                .header("Sec-Fetch-Site", "cross-site")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    cross.assert_not_found();
+    // Only the entry file, and a module token never opens the iframe route.
+    app.get(&url.replace("ui/remoteEntry.js", "plugin.yaml"))
+        .await
+        .assert_not_found();
+    app.get(&url.replace("ui-modules", "ui-assets"))
+        .await
+        .assert_not_found();
+
+    // Disabled: neither session nor file.
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/console/disable",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_ok();
+    app.get(&url).await.assert_not_found();
+    send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins/console/enable",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_ok();
+    app.get(&url).await.assert_ok();
+
+    // An update needs a new approval.
+    let r = send(
+        &app,
+        &t,
+        "POST",
+        "/api/v1/plugins",
+        module_package("1.1.0"),
+        &[],
+    )
+    .await;
+    assert_eq!(r.status.as_u16(), 201, "{}", r.text());
+    assert!(r.json::<Value>()["module_trust"]["trusted"].is_null());
+    app.get(&url).await.assert_not_found();
+    let r = send(&app, &t, "GET", "/api/v1/plugins/ui/slots", vec![], &[]).await;
+    assert_eq!(r.json::<Value>()["slots"], json!({}));
+    let r = trust(json!({"password": PASSWORD, "version": "1.0.0"})).await;
+    assert_eq!(r.status.as_u16(), 409, "{}", r.text());
+    assert_eq!(r.json::<Value>()["code"], "version_not_active");
+    trust(json!({"password": PASSWORD})).await.assert_ok();
+
+    // Withdrawn by a plugin administrator, without a password.
+    send(
+        &app,
+        &t,
+        "DELETE",
+        "/api/v1/plugins/console/module-trust",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_ok();
+    send(
+        &app,
+        &t,
+        "DELETE",
+        "/api/v1/plugins/console/module-trust",
+        vec![],
+        &[],
+    )
+    .await
+    .assert_not_found();
+
+    // Every step is audited under plugin_trust.
+    let actions: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT action, user_id FROM audit_log WHERE resource_type = 'plugin_trust' AND action LIKE 'plugin.trust.module_%' ORDER BY rowid",
+    )
+    .fetch_all(&app.state.db)
+    .await
+    .unwrap();
+    let names: Vec<&str> = actions.iter().map(|(a, _)| a.as_str()).collect();
+    assert_eq!(
+        names,
+        vec![
+            "plugin.trust.module_trusted",
+            "plugin.trust.module_untrusted",
+            "plugin.trust.module_trusted",
+            "plugin.trust.module_trusted",
+            "plugin.trust.module_untrusted",
+        ],
+        "{actions:?}"
+    );
+    // The automatic withdrawal on update has no user.
+    assert_eq!(actions[1].1, None);
+}

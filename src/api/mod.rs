@@ -33,12 +33,16 @@ mod plugin_classification;
 mod plugin_events;
 mod plugin_facts;
 mod plugin_governance;
+mod plugin_interceptors;
+mod plugin_modules;
 mod plugin_updates;
 mod plugins;
 mod query;
 mod reports;
 mod roles;
 mod saml;
+mod scim;
+mod scim_admin;
 mod secret_providers;
 mod settings;
 mod users;
@@ -117,6 +121,16 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/secret-providers", secret_providers::routes())
         // LDAP and Active Directory directories (M30)
         .nest("/directories", directories::routes())
+        // SCIM administration: status, tokens, group mappings (M31)
+        .nest("/scim", scim_admin::routes())
+}
+
+/// The SCIM 2.0 service (M31), to mount at `/api/v1/scim/v2`. It has no
+/// session: its own gate authenticates SCIM bearer tokens, limits requests
+/// and caps bodies, so it must not sit behind the auth middleware or the
+/// login rate limit.
+pub fn scim_routes(state: &AppState) -> Router<AppState> {
+    scim::routes(state)
 }
 
 /// Create the full API router (public + protected; useful for tests)

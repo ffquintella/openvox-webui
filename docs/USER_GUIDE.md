@@ -19,6 +19,7 @@ This comprehensive guide covers all features and workflows in OpenVox WebUI.
 - [Roles & Permissions](#roles--permissions)
 - [Settings](#settings)
 - [User Profile](#user-profile)
+- [Plugins: Trusted Module Pages](#plugins-trusted-module-pages)
 
 ---
 
@@ -94,6 +95,39 @@ even when the directory is unavailable.
 **Administrators** use **Directories** (menu, requires `users:admin`) to test
 the connection, search groups, map groups to roles, run a synchronization and
 read its history. The Users page marks directory and deactivated accounts.
+
+### SCIM Provisioning
+
+Your organization's identity provider (Entra ID, Okta and others) can create
+and remove WebUI accounts for you over SCIM 2.0. With a SCIM-provisioned
+account:
+
+- You sign in with single sign-on (SAML or OIDC, as configured); the account
+  has no local password, and username and e-mail are managed by the identity
+  provider.
+- Your roles come from the groups the identity provider pushes, as mapped by an
+  administrator; they change as soon as your group membership changes.
+- When the identity provider deactivates or removes you, your sessions and API
+  keys end at once.
+
+**Administrators** turn SCIM on in `config.yaml` (`auth.scim`, see
+[CONFIGURATION.md](CONFIGURATION.md#scim-provisioning-inbound-scim-20)) and use
+**SCIM Provisioning** (menu, requires `users:admin`):
+
+1. Copy the **Endpoint (tenant URL)** into the identity provider.
+2. **Issue token**: give it a name (for example "Entra ID") and, if you want,
+   an expiry in days. The token is shown once; copy it into the identity
+   provider as the secret token. Issuing, rotating and revoking ask for a
+   second factor when you have one enrolled.
+3. Map the groups the provider pushes to roles (by display name, external id
+   or SCIM group id). `super_admin` is never offered.
+4. Watch the status: user and group counts, last request, recent activity.
+
+To replace a token without interrupting provisioning, issue a new one, update
+the identity provider, then revoke the old one. **Rotate** replaces the secret
+at once, so the provider fails until it gets the new value. The local
+administrator and other local or directory accounts can never be read or
+changed through SCIM.
 
 ---
 
@@ -1124,6 +1158,30 @@ See your effective roles and permissions:
 - Last login timestamp
 - Current session expiry
 - Active API keys (if any)
+
+---
+
+## Plugins: Trusted Module Pages
+
+Most plugin pages run isolated in a sandboxed frame. A plugin may also ship a
+*module page*, which runs directly inside the WebUI with your access and
+without a sandbox. Module pages are off by default; your administrator turns
+them on with `plugins.allow_trusted_modules` (see
+[Configuration](CONFIGURATION.md#plugins-trusted-module-pages)).
+
+To trust a plugin's module pages:
+
+1. Open **Plugins**, then the plugin's details.
+2. Under **Trusted module pages**, review the listed modules and their
+   integrity (SRI) hashes.
+3. Enter your password and select **Trust version X**. This needs the
+   `plugins:trust` permission.
+
+The approval covers only that version: after an update or rollback the module
+pages stop until you trust the new version. **Withdraw trust** (plugin
+administrators) stops them at once. Authentication plugins can never be
+trusted this way. If a module page fails, only that page shows "This content
+could not be loaded"; the rest of the WebUI keeps working.
 
 ---
 

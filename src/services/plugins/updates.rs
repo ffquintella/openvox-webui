@@ -969,6 +969,8 @@ impl PluginManager {
         if rec.pending_version.as_deref() == Some(version) {
             self.repo().set_pending_version(id, None).await?;
         }
+        // A revoked version loses its trusted module approval for good (M31).
+        self.drop_module_trust(id, version, "version_revoked").await;
         let running = rec.active_version.as_deref() == Some(version)
             && matches!(rec.state, PluginState::Enabled | PluginState::Error);
         if running {

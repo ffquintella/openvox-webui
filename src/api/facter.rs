@@ -377,7 +377,8 @@ async fn export_facts(
                     false,
                     |facts_json| classification_service.classify(&certname, facts_json),
                 )
-                .await;
+                .await
+                .map_err(|refusal| refusal.to_app_error())?;
 
             // Generate facts
             let service = FacterService::new(vec![template]);

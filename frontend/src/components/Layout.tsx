@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Users,
   BookUser,
+  UserCog,
   Lock,
   User,
   LogOut,
@@ -62,6 +63,7 @@ const adminNavigation: CoreMenuItem[] = [
   { id: 'core:ca', name: 'Certificate Authority', href: '/ca', icon: ShieldCheck },
   { id: 'core:users', name: 'Users', href: '/users', icon: Users },
   { id: 'core:directories', name: 'Directories', href: '/directories', icon: BookUser },
+  { id: 'core:scim', name: 'SCIM Provisioning', href: '/scim', icon: UserCog },
   { id: 'core:roles', name: 'Roles', href: '/roles', icon: Shield },
   { id: 'core:permissions', name: 'Permissions', href: '/permissions', icon: Lock },
   { id: 'core:plugins', name: 'Plugins', href: '/plugins', icon: Puzzle },
@@ -107,7 +109,7 @@ export default function Layout({ children }: LayoutProps) {
         adminNavigation.filter(
           (item) =>
             (item.id !== 'core:plugins' || canSeePlugins) &&
-            (item.id !== 'core:directories' || canSeeDirectories)
+            ((item.id !== 'core:directories' && item.id !== 'core:scim') || canSeeDirectories)
         ),
         pluginSlots?.slots['nav.admin'],
         pluginSlots?.menu_ops

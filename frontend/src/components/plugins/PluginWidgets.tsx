@@ -1,11 +1,11 @@
 import { usePluginSlots } from '../../hooks/usePlugins';
 import PluginWidget from './PluginWidget';
 
-/** Extra dashboard cards from plugins (declarative or sandboxed iframe). */
+/** Extra dashboard cards from plugins (declarative, sandboxed iframe or trusted module). */
 export default function PluginWidgets() {
   const { data } = usePluginSlots();
   const widgets = (data?.slots['dashboard.widgets'] ?? []).filter(
-    (c) => c.render === 'declarative' || c.render === 'iframe'
+    (c) => c.render === 'declarative' || c.render === 'iframe' || c.render === 'module'
   );
   if (widgets.length === 0) return null;
   return (

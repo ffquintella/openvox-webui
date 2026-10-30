@@ -8,6 +8,7 @@ import type {
   PluginUpdatePolicyRequest,
   PluginFactSettingsRequest,
   CreateTemplateInstanceRequest,
+  TrustPluginModulesRequest,
 } from '../types';
 
 const UI_SLOTS_STALE_MS = 30_000;
@@ -174,6 +175,35 @@ export function usePluginUiSession(pluginId: string, contributionId: string) {
     gcTime: 30 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
+  });
+}
+
+/** Session for a trusted module page (M31); kept for the life of the page. */
+export function usePluginModuleSession(pluginId: string, contributionId: string) {
+  return useQuery({
+    queryKey: ['plugin-ui', 'module', pluginId, contributionId],
+    queryFn: () => pluginsApi.createModuleSession(pluginId, contributionId),
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useTrustPluginModules() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: TrustPluginModulesRequest }) =>
+      pluginsApi.trustModules(id, request),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUntrustPluginModules() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: (id: string) => pluginsApi.untrustModules(id),
+    onSuccess: invalidate,
   });
 }
 

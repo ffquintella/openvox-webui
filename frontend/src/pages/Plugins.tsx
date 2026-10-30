@@ -31,6 +31,7 @@ import UpdatesTab from '../components/plugins/UpdatesTab';
 import FactsTab from '../components/plugins/FactsTab';
 import ClassificationTab from '../components/plugins/ClassificationTab';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
+import ModuleTrustPanel from '../components/plugins/ModuleTrustPanel';
 import { ErrorBox, Modal, RiskBadge, StateBadge } from '../components/plugins/pluginUi';
 import {
   dangerBtn,
@@ -45,10 +46,12 @@ type TabType = 'installed' | 'updates' | 'facts' | 'classification' | 'governanc
 function PluginDetailDialog({
   id,
   canAdmin,
+  canTrust,
   onClose,
 }: {
   id: string;
   canAdmin: boolean;
+  canTrust: boolean;
   onClose: () => void;
 }) {
   const { data, isLoading } = usePlugin(id);
@@ -83,6 +86,7 @@ function PluginDetailDialog({
               </ul>
             )}
           </section>
+          <ModuleTrustPanel plugin={data} canTrust={canTrust} canAdmin={canAdmin} />
           <section>
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Versions</h4>
             <div className="mt-2">
@@ -334,7 +338,12 @@ export default function Plugins() {
         <InstallPluginDialog canTrustKeys={canManageKeys} onClose={() => setShowInstall(false)} />
       )}
       {detailId && (
-        <PluginDetailDialog id={detailId} canAdmin={canAdmin} onClose={() => setDetailId(null)} />
+        <PluginDetailDialog
+          id={detailId}
+          canAdmin={canAdmin}
+          canTrust={canManageKeys}
+          onClose={() => setDetailId(null)}
+        />
       )}
       {confirmUninstall && (
         <Modal title="Uninstall plugin" onClose={() => setConfirmUninstall(null)}>

@@ -17,6 +17,7 @@ use super::classification::ClassificationRuntime;
 use super::facts::FactsRuntime;
 use super::governance::{classify, Governor};
 use super::host::effective_capabilities;
+use super::interceptors::InterceptorRuntime;
 use super::invoke::{HandlerCall, HandlerInvoker, HookIndex, InvokeError, PluginHooks};
 use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
@@ -150,6 +151,10 @@ pub struct PluginManager {
     /// Limits and running jobs of plugin reports (M25).
     reports: Arc<ReportsRuntime>,
     classification: Arc<ClassificationRuntime>,
+    /// Telemetry and audit throttle of the interceptors (M31).
+    interceptors: Arc<InterceptorRuntime>,
+    /// `plugins.allow_trusted_modules` (M31): off by default.
+    allow_trusted_modules: bool,
 }
 
 pub(super) type Failure = (PluginState, &'static str, String);
@@ -199,7 +204,24 @@ impl PluginManager {
             facts: Arc::new(FactsRuntime::new(Default::default())),
             reports: Arc::new(ReportsRuntime::new(Default::default())),
             classification: Arc::new(ClassificationRuntime::new(Default::default())),
+            interceptors: Arc::new(InterceptorRuntime::default()),
+            allow_trusted_modules: false,
         }
+    }
+
+    pub fn interceptor_runtime(&self) -> &Arc<InterceptorRuntime> {
+        &self.interceptors
+    }
+
+    /// `plugins.allow_trusted_modules` (M31): whether an administrator may
+    /// trust a plugin version to run `module` contributions in the host page.
+    pub fn with_trusted_modules(mut self, allow: bool) -> Self {
+        self.allow_trusted_modules = allow;
+        self
+    }
+
+    pub fn allows_trusted_modules(&self) -> bool {
+        self.allow_trusted_modules
     }
 
     /// Hot-path budgets, membership refresh and generated groups (M27).
@@ -370,6 +392,11 @@ impl PluginManager {
         let mut failed = Vec::new();
         let mut registry = Registry::default();
         let mut hooks = HookIndex::default();
+        let module_trust = if self.allow_trusted_modules {
+            self.module_trust_index().await
+        } else {
+            Default::default()
+        };
         for p in self.repo().list_plugins().await? {
             if p.state != PluginState::Enabled {
                 continue;
@@ -379,7 +406,11 @@ impl PluginManager {
             };
             match self.load_verified(&p.id, &version).await {
                 Ok((pkg, _)) => {
-                    registry.add_plugin(&pkg);
+                    // Modules run only for the exact package that was trusted.
+                    let trusted = module_trust.get(&p.id).is_some_and(|t| {
+                        t.version == version && t.package_sha256 == pkg.package_sha256
+                    }) && !super::modules::is_auth_plugin(&pkg.manifest);
+                    registry.add_plugin(&pkg, trusted);
                     hooks.add(PluginHooks::from_package(&pkg));
                 }
                 Err((state, code, msg)) => {
@@ -1060,6 +1091,9 @@ impl PluginManager {
             Ok((pkg, _)) => pkg,
             Err((_, code, msg)) => return Err(unprocessable(code, msg)),
         };
+        if enabled {
+            self.check_interceptor_limit(&pkg.manifest).await?;
+        }
         if enabled && pkg.manifest.runtime.kind == RuntimeKind::Wasm {
             let missing = self.missing_required(&pkg.manifest, id).await;
             if !missing.is_empty() {
@@ -1108,6 +1142,10 @@ impl PluginManager {
                 ));
             }
         }
+        // New code is never trusted to run in the host page without a new
+        // approval (M31); a failed activation keeps the previous approval.
+        self.drop_module_trust_unless(id, version, "version_changed")
+            .await;
         Ok(())
     }
 
@@ -1147,6 +1185,7 @@ impl PluginManager {
                 ));
             }
         }
+        self.check_interceptor_limit(m).await?;
         match m.runtime.kind {
             RuntimeKind::Builtin => {
                 let entry = m.runtime.entry.clone().unwrap_or_default();
@@ -1253,8 +1292,10 @@ impl PluginManager {
         self.repo()
             .replace_config(id, &Default::default(), "uninstall")
             .await?;
+        self.repo().delete_module_trust(id).await?;
         self.repo().delete_plugin(id).await?;
         self.clear_governance(id, true).await;
+        self.interceptors.forget(id);
         self.forget_plugin_facts(id, purge).await;
         self.forget_plugin_reports(id, purge).await;
         self.forget_plugin_classification(id, purge).await;
@@ -1347,12 +1388,14 @@ impl PluginManager {
             .as_ref()
             .map(|m| self.approvals_for(m, &grants))
             .unwrap_or_default();
+        let module_trust = self.module_trust_view(&rec, manifest.as_ref()).await;
         Ok(PluginDetail {
             summary: self.summarize(rec, &keys).await?,
             manifest,
             capabilities,
             approvals,
             versions,
+            module_trust,
         })
     }
 

@@ -598,7 +598,8 @@ async fn get_node_classification(
                 }
             },
         )
-        .await;
+        .await
+        .map_err(|refusal| refusal.to_app_error())?;
 
     let mut body = serde_json::to_value(&classification)
         .map_err(|e| AppError::Internal(format!("Failed to serialize classification: {}", e)))?;
@@ -617,13 +618,14 @@ async fn get_node_classification(
 
 /// Cross-organization classification served to agents (`/classify` and
 /// `/environment`), with the plugin facts enabled for rules (scope `all`).
+/// A `before.node.classify` veto answers 409 (M31).
 async fn classify_for_agent(
     state: &AppState,
     certname: &str,
     facts: Vec<Fact>,
     catalog_environment: Option<&str>,
     all_groups: Vec<crate::models::NodeGroup>,
-) -> ClassificationResult {
+) -> AppResult<ClassificationResult> {
     let classification_service = state
         .plugin_manager
         .classification_service(all_groups.clone())
@@ -646,6 +648,7 @@ async fn classify_for_agent(
             },
         )
         .await
+        .map_err(|refusal| refusal.to_app_error())
 }
 
 /// Public classification endpoint for Puppet agents
@@ -767,7 +770,7 @@ async fn get_node_classification_public(
         catalog_environment.as_deref(),
         all_groups,
     )
-    .await;
+    .await?;
 
     Ok(Json(classification))
 }
@@ -981,7 +984,7 @@ async fn get_node_environment_public(
         catalog_environment.as_deref(),
         all_groups,
     )
-    .await;
+    .await?;
 
     Ok(Json(EnvironmentResponse {
         certname,

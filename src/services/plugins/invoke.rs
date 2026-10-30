@@ -18,6 +18,7 @@ use super::package::PluginPackage;
 use crate::models::{
     AnnotationDecl, ClassificationContribution, DatasetDecl, ExportFormatDecl, FactsContribution,
     JobDecl, ReportTypeDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
+    DEFAULT_INTERCEPT_HANDLER,
 };
 
 pub const DEFAULT_HANDLER_TIMEOUT_MS: u64 = 5_000;
@@ -37,6 +38,8 @@ pub enum HandlerKind {
     /// pure functions, operators and merge strategies on the classification
     /// hot path, and membership provider refreshes (M27)
     Classification,
+    /// synchronous veto/alter hooks on interceptable events (M31)
+    Interceptor,
 }
 
 impl HandlerKind {
@@ -49,6 +52,7 @@ impl HandlerKind {
             HandlerKind::Fact => "fact",
             HandlerKind::Report => "report",
             HandlerKind::Classification => "classification",
+            HandlerKind::Interceptor => "interceptor",
         }
     }
 }
@@ -99,6 +103,17 @@ pub struct Subscription {
     pub handler: String,
 }
 
+/// One interceptor of an enabled plugin (M31).
+#[derive(Debug, Clone)]
+pub struct Interceptor {
+    pub event_type: String,
+    pub priority: i32,
+    pub filter: Option<Filter>,
+    /// The filter as written, for the administrator's listing.
+    pub filter_src: Option<String>,
+    pub handler: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct PluginJob {
     pub decl: JobDecl,
@@ -113,6 +128,8 @@ pub struct PluginHooks {
     pub runtime: RuntimeSpec,
     pub subscriptions: Vec<Subscription>,
     pub publish: Vec<String>,
+    /// Interceptors on interceptable events, at most one per event (M31).
+    pub interceptors: Vec<Interceptor>,
     pub jobs: Vec<PluginJob>,
     pub webhooks: Vec<WebhookDecl>,
     /// Facts the plugin provides (M25).
@@ -146,6 +163,21 @@ impl PluginHooks {
                     .unwrap_or_else(|| DEFAULT_EVENT_HANDLER.to_string()),
             })
             .collect();
+        let interceptors = events
+            .intercept
+            .iter()
+            .filter(|i| super::interceptors::find(&i.event_type).is_some())
+            .map(|i| Interceptor {
+                event_type: i.event_type.clone(),
+                priority: i.priority,
+                filter: i.filter.as_deref().and_then(|f| Filter::parse(f).ok()),
+                filter_src: i.filter.clone(),
+                handler: i
+                    .handler
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_INTERCEPT_HANDLER.to_string()),
+            })
+            .collect();
         let jobs = m
             .job_decls()
             .unwrap_or_default()
@@ -162,6 +194,7 @@ impl PluginHooks {
             runtime: m.runtime.clone(),
             subscriptions,
             publish: events.publish,
+            interceptors,
             jobs,
             webhooks: m.webhook_decls().unwrap_or_default(),
             facts: m.contributes.facts.clone(),
@@ -219,5 +252,22 @@ impl HookIndex {
 
     pub fn plugins(&self) -> impl Iterator<Item = &PluginHooks> {
         self.plugins.values()
+    }
+
+    /// Every interceptor of `event_type` in run order: ascending priority,
+    /// then plugin id. The caller applies the per-event maximum.
+    pub fn interceptors_for(&self, event_type: &str) -> Vec<(&PluginHooks, &Interceptor)> {
+        let mut out: Vec<(&PluginHooks, &Interceptor)> = self
+            .plugins
+            .values()
+            .flat_map(|p| {
+                p.interceptors
+                    .iter()
+                    .filter(|i| i.event_type == event_type)
+                    .map(move |i| (p, i))
+            })
+            .collect();
+        out.sort_by(|a, b| (a.1.priority, &a.0.plugin_id).cmp(&(b.1.priority, &b.0.plugin_id)));
+        out
     }
 }

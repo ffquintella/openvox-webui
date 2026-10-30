@@ -13,6 +13,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 
 use super::events::EventBus;
+use super::interceptors::{
+    apply_fact_changes, InterceptActor, InterceptRefusal, BEFORE_NODE_CLASSIFY,
+};
 use super::invoke::{invoke_with_timeout, HandlerKind, PluginHooks};
 use super::manager::{PluginError, PluginManager, AUDIT_PLUGINS};
 use super::manifest::capabilities;
@@ -766,6 +769,8 @@ impl PluginManager {
     /// provider with `freeze` keeps the last classification computed with
     /// plugin facts. Results are stored per `(certname, scope)` and a change
     /// that plugin facts influenced is audited with the responsible facts.
+    /// The `before.node.classify` interceptors (M31) see the facts first and
+    /// may veto the classification or change top-level facts.
     #[allow(clippy::too_many_arguments)]
     pub async fn classify_with_plugin_facts<F>(
         &self,
@@ -776,29 +781,53 @@ impl PluginManager {
         groups: &[NodeGroup],
         freeze: bool,
         classify: F,
-    ) -> ClassificationResult
+    ) -> Result<ClassificationResult, InterceptRefusal>
     where
         F: Fn(&Value) -> ClassificationResult,
     {
         let now = Utc::now();
         let usable = self.usable_facts_for_node(certname, true).await;
-        let base_json = build_classification_facts_with_plugins(
+        let mut base_json = build_classification_facts_with_plugins(
             facts.clone(),
             certname,
             catalog_environment,
             &[],
             now,
         );
-        if !usable.relevant {
-            return classify(&base_json);
+        let mut merged_json = usable.relevant.then(|| {
+            build_classification_facts_with_plugins(
+                facts,
+                certname,
+                catalog_environment,
+                &usable.facts,
+                now,
+            )
+        });
+        if self.has_interceptors(BEFORE_NODE_CLASSIFY) {
+            let payload = json!({
+                "certname": certname,
+                "scope": scope,
+                "environment": catalog_environment,
+                "facts": merged_json.as_ref().unwrap_or(&base_json),
+            });
+            let outcome = self
+                .intercept(
+                    BEFORE_NODE_CLASSIFY,
+                    certname,
+                    InterceptActor::system(),
+                    payload,
+                )
+                .await?;
+            if let Some(Value::Object(changed)) = outcome.changes.get("facts") {
+                apply_fact_changes(&mut base_json, changed);
+                if let Some(m) = merged_json.as_mut() {
+                    apply_fact_changes(m, changed);
+                }
+            }
         }
-        let merged_json = build_classification_facts_with_plugins(
-            facts,
-            certname,
-            catalog_environment,
-            &usable.facts,
-            now,
-        );
+        let Some(merged_json) = merged_json else {
+            return Ok(classify(&base_json));
+        };
         let base = classify(&base_json);
         let merged = classify(&merged_json);
         let repo = self.facts_repo();
@@ -816,18 +845,18 @@ impl PluginManager {
                         usable.unavailable,
                         certname
                     );
-                    return frozen;
+                    return Ok(frozen);
                 }
             }
             // A degraded result is served but not stored, so a later freeze
             // keeps the last classification computed with complete data.
-            return merged;
+            return Ok(merged);
         }
 
         let sig = classification_signature(&merged);
         let influenced = sig != classification_signature(&base);
         if stored.as_ref().is_some_and(|s| s.signature == sig) {
-            return merged;
+            return Ok(merged);
         }
         let previous: Option<ClassificationResult> = stored
             .as_ref()
@@ -865,7 +894,7 @@ impl PluginManager {
                 tracing::warn!("could not store the classification of {}: {}", certname, e);
             }
         }
-        merged
+        Ok(merged)
     }
 
     // ---- export to agents -------------------------------------------------
@@ -1547,6 +1576,7 @@ mod tests {
             svc.classify("n1", f)
         })
         .await
+        .unwrap()
     }
 
     #[test]

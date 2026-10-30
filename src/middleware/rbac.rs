@@ -193,6 +193,7 @@ pub fn check_permission(
 ///         bcrypt_cost: 4, password_min_length: 8,
 ///         mfa: Default::default(),
 ///         directories: Vec::new(),
+///         scim: Default::default(),
 ///     },
 ///     puppetdb: None,
 ///     puppet_ca: None,

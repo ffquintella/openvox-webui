@@ -7,6 +7,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::manifest::safe_package_path;
+use super::modules::{is_module_file, sri_matches, DEFAULT_EXPOSE};
 use super::package::PluginPackage;
 use super::slots as catalog;
 use super::ui_assets::is_bundle_file;
@@ -43,11 +44,25 @@ pub struct IframeTarget {
     pub src: String,
 }
 
+/// The entry file of a trusted `module` contribution (M31).
+#[derive(Debug, Clone)]
+pub struct ModuleAsset {
+    pub plugin_id: String,
+    pub version: String,
+    pub contribution_id: String,
+    pub path: String,
+    pub integrity: String,
+    pub expose: String,
+    pub bytes: Arc<Vec<u8>>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Registry {
     entries: Vec<RegistryEntry>,
     menu_ops: Vec<UiMenuOp>,
     bundles: BTreeMap<String, UiBundle>,
+    /// Trusted module entries by (plugin id, contribution id).
+    modules: BTreeMap<(String, String), ModuleAsset>,
 }
 
 impl Registry {
@@ -55,14 +70,20 @@ impl Registry {
         self.entries.is_empty() && self.menu_ops.is_empty()
     }
 
-    /// Adds the contributions of one verified, enabled plugin. Trusted
-    /// modules (never allowed at install) and contributions whose spec or
-    /// entry file is unusable are skipped, never served half-working.
-    pub fn add_plugin(&mut self, pkg: &PluginPackage) {
+    /// Adds the contributions of one verified, enabled plugin. `module`
+    /// contributions are added only when `trusted_modules` (the
+    /// configuration allows them and an administrator trusted this exact
+    /// package); contributions whose spec or entry file is unusable are
+    /// skipped, never served half-working.
+    pub fn add_plugin(&mut self, pkg: &PluginPackage, trusted_modules: bool) {
         let m = &pkg.manifest;
         for s in &m.contributes.slots {
             if s.render == RenderKind::Module {
-                tracing::debug!("plugin {}: module contribution '{}' skipped", m.id, s.id);
+                if trusted_modules {
+                    self.add_module(pkg, s);
+                } else {
+                    tracing::debug!("plugin {}: untrusted module '{}' skipped", m.id, s.id);
+                }
                 continue;
             }
             if s.render == RenderKind::Iframe {
@@ -90,6 +111,8 @@ impl Registry {
                         label: None,
                         icon: None,
                         href: None,
+                        integrity: None,
+                        expose: None,
                     },
                     requires: s.requires.clone(),
                     spec: None,
@@ -114,6 +137,8 @@ impl Registry {
                     label: None,
                     icon: None,
                     href: None,
+                    integrity: None,
+                    expose: None,
                 },
                 requires: s.requires.clone(),
                 spec: Some(spec),
@@ -135,6 +160,8 @@ impl Registry {
                         label: Some(i.label.clone()),
                         icon: i.icon.clone(),
                         href: Some(i.href.clone()),
+                        integrity: None,
+                        expose: None,
                     },
                     requires: i.requires.clone(),
                     spec: None,
@@ -148,6 +175,108 @@ impl Registry {
                 }),
             }
         }
+    }
+
+    /// Adds one trusted module whose entry file is in the package, within
+    /// the size limit and matching its SRI (checked again here).
+    fn add_module(&mut self, pkg: &PluginPackage, s: &crate::models::SlotContribution) {
+        let m = &pkg.manifest;
+        let found = s
+            .src
+            .as_ref()
+            .zip(s.integrity.as_ref())
+            .and_then(|(src, sri)| {
+                let bytes = pkg.files.get(src)?;
+                (is_module_file(src)
+                    && bytes.len() <= MAX_BUNDLE_FILE_BYTES
+                    && sri_matches(sri, bytes))
+                .then(|| (src.clone(), sri.clone(), bytes))
+            });
+        let Some((src, integrity, bytes)) = found else {
+            tracing::warn!(
+                "plugin {}: module entry of '{}' is unusable, skipped",
+                m.id,
+                s.id
+            );
+            return;
+        };
+        let expose = s
+            .expose
+            .clone()
+            .unwrap_or_else(|| DEFAULT_EXPOSE.to_string());
+        self.modules.insert(
+            (m.id.clone(), s.id.clone()),
+            ModuleAsset {
+                plugin_id: m.id.clone(),
+                version: m.version.clone(),
+                contribution_id: s.id.clone(),
+                path: src.clone(),
+                integrity: integrity.clone(),
+                expose: expose.clone(),
+                bytes: Arc::new(bytes.clone()),
+            },
+        );
+        self.entries.push(RegistryEntry {
+            contribution: UiContribution {
+                plugin_id: m.id.clone(),
+                plugin_name: m.name.clone(),
+                slot: s.slot.clone(),
+                id: s.id.clone(),
+                render: RenderKind::Module,
+                title: s.title.clone(),
+                path: s.path.clone(),
+                order: s.order.unwrap_or(DEFAULT_PLUGIN_ORDER),
+                label: None,
+                icon: None,
+                href: None,
+                integrity: Some(integrity),
+                expose: Some(expose),
+            },
+            requires: s.requires.clone(),
+            spec: None,
+            src: Some(src),
+        });
+    }
+
+    /// True when the plugin has trusted modules in play.
+    pub fn has_modules(&self, plugin_id: &str) -> bool {
+        self.modules.keys().any(|(p, _)| p == plugin_id)
+    }
+
+    /// The trusted module of a contribution the caller may see.
+    pub fn find_module(
+        &self,
+        plugin_id: &str,
+        contribution_id: &str,
+        allow: &dyn Fn(&Option<Requires>) -> bool,
+    ) -> Option<ModuleAsset> {
+        let visible = self.entries.iter().any(|e| {
+            e.contribution.plugin_id == plugin_id
+                && e.contribution.id == contribution_id
+                && e.contribution.render == RenderKind::Module
+                && allow(&e.requires)
+        });
+        visible
+            .then(|| {
+                self.modules
+                    .get(&(plugin_id.to_string(), contribution_id.to_string()))
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    /// The module entry of a contribution, only while that exact version is
+    /// the enabled and trusted one.
+    pub fn module_asset(
+        &self,
+        plugin_id: &str,
+        version: &str,
+        contribution_id: &str,
+    ) -> Option<ModuleAsset> {
+        self.modules
+            .get(&(plugin_id.to_string(), contribution_id.to_string()))
+            .filter(|a| a.version == version)
+            .cloned()
     }
 
     fn add_bundle(&mut self, pkg: &PluginPackage) {

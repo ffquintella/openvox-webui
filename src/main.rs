@@ -830,6 +830,11 @@ fn create_router(state: AppState, config: &AppConfig) -> Router {
                     middleware::rate_limit_middleware,
                 )),
         )
+        // SCIM 2.0 (M31): bearer tokens, its own rate limits and body limit
+        .nest(
+            openvox_webui::services::scim::ENDPOINT_PATH,
+            api::scim_routes(&state),
+        )
         .layer(axum::middleware::from_fn(
             middleware::api_cache_control_middleware,
         ))

@@ -30,6 +30,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Roles = lazy(() => import('./pages/Roles'));
 const Users = lazy(() => import('./pages/Users'));
 const Directories = lazy(() => import('./pages/Directories'));
+const Scim = lazy(() => import('./pages/Scim'));
 const Permissions = lazy(() => import('./pages/Permissions'));
 const Profile = lazy(() => import('./pages/Profile'));
 const CA = lazy(() => import('./pages/CA'));
@@ -187,6 +188,16 @@ function App() {
                             requiredPermission={{ resource: 'users', action: 'admin' }}
                           >
                             <Directories />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/scim"
+                        element={
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'users', action: 'admin' }}
+                          >
+                            <Scim />
                           </ProtectedRoute>
                         }
                       />

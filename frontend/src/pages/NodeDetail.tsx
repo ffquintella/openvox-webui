@@ -2034,7 +2034,7 @@ export default function NodeDetail() {
   const canDeleteNode = usePermissionsStore((state) => state.hasPermission('nodes', 'delete'));
   const [activeTab, setActiveTab] = useState<TabId | `plugin:${string}`>('overview');
   const pluginTabs = usePluginSlot('node.detail.tabs').filter(
-    (c) => c.render === 'declarative' || c.render === 'iframe'
+    (c) => c.render === 'declarative' || c.render === 'iframe' || c.render === 'module'
   );
   const activePluginTab = pluginTabs.find((c) => `plugin:${c.plugin_id}:${c.id}` === activeTab);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

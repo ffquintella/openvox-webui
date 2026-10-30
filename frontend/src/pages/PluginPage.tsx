@@ -3,6 +3,7 @@ import { Info, Loader2 } from 'lucide-react';
 import { usePluginSlots, usePluginContribution } from '../hooks/usePlugins';
 import DeclarativeRenderer from '../components/plugins/DeclarativeRenderer';
 import PluginFrame from '../components/plugins/PluginFrame';
+import TrustedModule from '../components/plugins/TrustedModule';
 
 function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -58,7 +59,11 @@ export default function PluginPage() {
     );
   }
 
-  if (contribution.render !== 'declarative' && contribution.render !== 'iframe') {
+  if (
+    contribution.render !== 'declarative' &&
+    contribution.render !== 'iframe' &&
+    contribution.render !== 'module'
+  ) {
     return (
       <Notice title={contribution.title ?? contribution.plugin_name}>
         The {contribution.render} render type is not supported.
@@ -79,6 +84,8 @@ export default function PluginPage() {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         {contribution.render === 'iframe' ? (
           <PluginFrame contribution={contribution} slot="page" fill />
+        ) : contribution.render === 'module' ? (
+          <TrustedModule contribution={contribution} slot="page" />
         ) : isError || !detail ? (
           <p className="text-sm text-gray-500">This page could not be loaded.</p>
         ) : (

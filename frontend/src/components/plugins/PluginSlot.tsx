@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { usePluginContribution, usePluginSlot } from '../../hooks/usePlugins';
 import DeclarativeRenderer from './DeclarativeRenderer';
 import PluginFrame from './PluginFrame';
+import TrustedModule from './TrustedModule';
 import type { UiContribution } from '../../types';
 
 export type SlotVariant = 'card' | 'bare';
@@ -35,6 +36,8 @@ export function PluginContributionView({
       <PluginFrame contribution={contribution} slot={slot} params={params} />
     ) : contribution.render === 'declarative' ? (
       <DeclarativeBody contribution={contribution} />
+    ) : contribution.render === 'module' ? (
+      <TrustedModule contribution={contribution} slot={slot} params={params} />
     ) : null;
   if (!body) return null;
   if (variant === 'bare') return body;
@@ -70,8 +73,9 @@ export default function PluginSlot({
   /** Shown above the contributions, only when there are any. */
   heading?: string;
 }) {
+  // The server lists `module` contributions only when they are trusted (M31).
   const items = usePluginSlot(slot).filter(
-    (c) => c.render === 'declarative' || c.render === 'iframe'
+    (c) => c.render === 'declarative' || c.render === 'iframe' || c.render === 'module'
   );
   if (items.length === 0) return null;
   return (

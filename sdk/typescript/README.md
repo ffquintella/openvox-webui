@@ -27,3 +27,25 @@ CSS such as `color: var(--ov-color-text)` follows the host theme.
 - `app.navigate(path)` moves the host to one of its own routes.
 
 Build with `npm install && npm run build`.
+
+## Trusted module pages
+
+A contribution with `render: module` does not use this SDK: it runs in the host
+page without a sandbox, so it is served only when `plugins.allow_trusted_modules`
+is on and an administrator trusted the exact plugin version. Declare the entry
+file and its Subresource Integrity:
+
+```yaml
+contributes:
+  slots:
+    - { slot: page, id: console, render: module, src: ui/remoteEntry.js,
+        integrity: "sha384-...", expose: ./Page, path: /p/acme/console }
+```
+
+The entry is a Module Federation container (an ES module exporting `init` and
+`get`) or a plain ES module with a default export. The host shares its own
+`react`, `react-dom`, `react-dom/client` and `react/jsx-runtime` as singletons
+and renders the exposed module's default export with `{context, host}`
+(`host.navigate(path)`, `host.notify(level, text)`). Build the entry as one
+self-contained file: only it is covered by the SRI and served.
+Compute the value with `openssl dgst -sha384 -binary remoteEntry.js | openssl base64 -A`.

@@ -51,10 +51,36 @@ impl TestApp {
         Self::with_directories(config, directories).await
     }
 
+    /// Test application whose plugin manager is adjusted before use (for
+    /// example to register built-in plugin runtimes and project keys).
+    pub async fn with_plugins(
+        customize: impl FnOnce(
+            openvox_webui::services::plugins::PluginManager,
+        ) -> openvox_webui::services::plugins::PluginManager,
+    ) -> Self {
+        let config = test_config();
+        let directories = Arc::new(
+            openvox_webui::services::directory::DirectoryRegistry::from_config(
+                &config.auth.directories,
+            ),
+        );
+        Self::build(config, directories, customize).await
+    }
+
     /// Test application whose directories use the given transports (fakes).
     pub async fn with_directories(
         config: AppConfig,
         directories: Arc<openvox_webui::services::directory::DirectoryRegistry>,
+    ) -> Self {
+        Self::build(config, directories, |m| m).await
+    }
+
+    async fn build(
+        config: AppConfig,
+        directories: Arc<openvox_webui::services::directory::DirectoryRegistry>,
+        customize: impl FnOnce(
+            openvox_webui::services::plugins::PluginManager,
+        ) -> openvox_webui::services::plugins::PluginManager,
     ) -> Self {
         // Initialize in-memory database
         let db = db::init_pool(&config.database)
@@ -109,14 +135,20 @@ impl TestApp {
         // Initialize notification service
         let notification_service = Arc::new(NotificationService::new(db.clone()));
 
-        let plugin_manager = Arc::new(openvox_webui::services::plugins::PluginManager::new(
-            db.clone(),
-            std::path::PathBuf::from(format!(
-                "/tmp/openvox_test_plugins_{}",
-                Uuid::new_v4().simple()
-            )),
-            8,
+        let plugin_manager = Arc::new(customize(
+            openvox_webui::services::plugins::PluginManager::new(
+                db.clone(),
+                std::path::PathBuf::from(format!(
+                    "/tmp/openvox_test_plugins_{}",
+                    Uuid::new_v4().simple()
+                )),
+                8,
+            ),
         ));
+        plugin_manager
+            .reload()
+            .await
+            .expect("Failed to load the test plugins");
 
         let plugin_runtime = openvox_webui::services::plugins::PluginRuntime::new(
             plugin_manager.clone(),
@@ -151,6 +183,10 @@ impl TestApp {
                     state.clone(),
                     openvox_webui::middleware::auth::auth_middleware,
                 )),
+            )
+            .nest(
+                openvox_webui::services::scim::ENDPOINT_PATH,
+                api::scim_routes(&state),
             )
             .with_state(state.clone());
 
@@ -341,6 +377,7 @@ pub fn test_config() -> AppConfig {
             password_min_length: 8,
             mfa: Default::default(),
             directories: Vec::new(),
+            scim: Default::default(),
         },
         puppetdb: None,
         puppet_ca: None,

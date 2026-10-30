@@ -189,6 +189,8 @@ import type {
   PluginGovernanceOverview,
   PluginSlotCatalog,
   PluginUiSession,
+  PluginModuleSession,
+  TrustPluginModulesRequest,
   PluginMetrics,
   PluginCircuitView,
   PluginVersionView,
@@ -215,6 +217,12 @@ import type {
   DirectoryGroupEntry,
   DirectoryRoleMapping,
   DirectoryTestResult,
+  ScimStatus,
+  ScimTokenInfo,
+  ScimIssuedToken,
+  ScimGroupSummary,
+  ScimRoleMapping,
+  ScimGroupRefKind,
 } from '../types';
 
 const client = axios.create({
@@ -1626,6 +1634,61 @@ export const api = {
       `/directories/${encodeURIComponent(id)}/role-mappings/${encodeURIComponent(mappingId)}`
     );
   },
+
+  // SCIM provisioning (M31)
+  getScimStatus: async (): Promise<ScimStatus> => {
+    const response = await client.get('/scim');
+    return response.data;
+  },
+
+  getScimTokens: async (): Promise<ScimTokenInfo[]> => {
+    const response = await client.get('/scim/tokens');
+    return response.data?.tokens ?? [];
+  },
+
+  createScimToken: async (data: {
+    name: string;
+    expires_in_days?: number;
+  }): Promise<ScimIssuedToken> => {
+    const response = await client.post('/scim/tokens', data);
+    return response.data;
+  },
+
+  rotateScimToken: async (
+    id: string,
+    data: { expires_in_days?: number } = {}
+  ): Promise<ScimIssuedToken> => {
+    const response = await client.post(`/scim/tokens/${encodeURIComponent(id)}/rotate`, data);
+    return response.data;
+  },
+
+  revokeScimToken: async (id: string): Promise<void> => {
+    await client.delete(`/scim/tokens/${encodeURIComponent(id)}`);
+  },
+
+  getScimGroups: async (): Promise<ScimGroupSummary[]> => {
+    const response = await client.get('/scim/groups');
+    return response.data?.groups ?? [];
+  },
+
+  getScimRoleMappings: async (): Promise<ScimRoleMapping[]> => {
+    const response = await client.get('/scim/role-mappings');
+    return response.data?.mappings ?? [];
+  },
+
+  createScimRoleMapping: async (data: {
+    group_ref: string;
+    group_ref_kind: ScimGroupRefKind;
+    role_id: string;
+    group_label?: string;
+  }): Promise<ScimRoleMapping> => {
+    const response = await client.post('/scim/role-mappings', data);
+    return response.data?.mapping;
+  },
+
+  deleteScimRoleMapping: async (id: string): Promise<void> => {
+    await client.delete(`/scim/role-mappings/${encodeURIComponent(id)}`);
+  },
 };
 
 // ============================================================================
@@ -2005,6 +2068,28 @@ export const pluginsApi = {
       plugin_id: pluginId,
       contribution_id: contributionId,
     });
+    return response.data;
+  },
+
+  /** Token, URL and SRI of a trusted module page (M31). */
+  createModuleSession: async (
+    pluginId: string,
+    contributionId: string
+  ): Promise<PluginModuleSession> => {
+    const response = await client.post('/plugins/ui/modules', {
+      plugin_id: pluginId,
+      contribution_id: contributionId,
+    });
+    return response.data;
+  },
+
+  trustModules: async (id: string, request: TrustPluginModulesRequest): Promise<PluginDetail> => {
+    const response = await client.post(`/plugins/${encodeURIComponent(id)}/module-trust`, request);
+    return response.data;
+  },
+
+  untrustModules: async (id: string): Promise<PluginDetail> => {
+    const response = await client.delete(`/plugins/${encodeURIComponent(id)}/module-trust`);
     return response.data;
   },
 

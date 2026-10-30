@@ -8,6 +8,8 @@ use super::PluginManifest;
 
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_EVENT_HANDLER: &str = "on_event";
+/// Handler of an interceptor that names none (M31).
+pub const DEFAULT_INTERCEPT_HANDLER: &str = "on_intercept";
 
 // ---- manifest declarations ---------------------------------------------------
 
@@ -18,6 +20,27 @@ pub struct EventsDecl {
     pub subscribe: Vec<SubscriptionDecl>,
     #[serde(default)]
     pub publish: Vec<String>,
+    /// Synchronous interceptors on events the host marks interceptable (M31).
+    #[serde(default)]
+    pub intercept: Vec<InterceptDecl>,
+}
+
+/// One interceptor. The fail mode, timeout and what may be changed belong to
+/// the event (host catalog), so the plugin cannot declare them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InterceptDecl {
+    /// Exact interceptable event type (no patterns).
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// Lower runs first; ties are broken by plugin id.
+    #[serde(default = "default_priority")]
+    pub priority: i32,
+    /// Expression over the payload, evaluated by the host before the plugin runs.
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub handler: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

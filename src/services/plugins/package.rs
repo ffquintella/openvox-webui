@@ -116,6 +116,11 @@ pub fn read_package(bytes: &[u8], max_bytes: u64) -> Result<PluginPackage, Packa
         .ok_or_else(|| PackageError::Malformed("plugin.yaml is missing".into()))?;
     let names: BTreeSet<String> = files.keys().cloned().collect();
     let manifest = manifest::parse_and_validate(yaml, &names).map_err(PackageError::Manifest)?;
+    // The SRI a `module` contribution declares must match its entry file.
+    let problems = super::modules::check_integrity(&manifest, &files);
+    if !problems.is_empty() {
+        return Err(PackageError::Manifest(problems));
+    }
 
     Ok(PluginPackage {
         files,
