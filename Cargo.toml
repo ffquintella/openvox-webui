@@ -128,7 +128,7 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 semver = "1"
 # Plugin runtime (M20): sandboxed WASM handlers and per-plugin SQLite limits
 wasmtime = { version = "50", default-features = false, features = ["runtime", "cranelift", "std"] }
-libsqlite3-sys = { version = "0.30", default-features = false }
+libsqlite3-sys = { version = "0.37", default-features = false }
 
 # SAML 2.0 authentication
 # Without xmlsec feature, no signature verification (development mode)
