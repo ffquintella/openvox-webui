@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-03
+
 ### Fixed
 - Make the Plugins page reachable from the web UI: the Plugins menu entry and `/plugins` route were hidden for the super admin because no role was granted `plugins`/`plugin_trust` and the UI, unlike the API, did not treat the super admin role as holding every permission. The UI now grants the super admin role every permission and a migration stores `plugins:admin` and `plugin_trust:admin` for it, so installing and updating plugins from the GUI works again
 
