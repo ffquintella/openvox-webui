@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Provide rollback guidance for update jobs: `GET /api/v1/inventory/updates/{job_id}/rollback-guidance` and a panel in the expanded job list of the Updates tab show, for each node the job changed, the commands for its package manager (dnf/yum, zypper, apt, Homebrew, Chocolatey, winget) to undo or downgrade the update, undo an install or reinstall a removal, with warnings for partial failures, security patches and system patches. Nothing is executed, previous versions are not recorded so version-pinned commands use a `<previous-version>` placeholder, and unsafe package names are left out of the commands (T64)
+
 ## [0.50.0] - 2026-11-03
 
 ### Added

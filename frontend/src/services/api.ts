@@ -155,6 +155,7 @@ import type {
   InventoryDashboardReport,
   RepositoryVersionCatalogEntry,
   UpdateJob,
+  RollbackGuidance,
   CreateUpdateJobRequest,
   ApproveUpdateJobRequest,
   GroupUpdateSchedule,
@@ -549,6 +550,11 @@ export const api = {
 
   getUpdateJob: async (jobId: string): Promise<UpdateJob> => {
     const response = await client.get(`/inventory/updates/${jobId}`);
+    return response.data;
+  },
+
+  getUpdateJobRollbackGuidance: async (jobId: string): Promise<RollbackGuidance> => {
+    const response = await client.get(`/inventory/updates/${jobId}/rollback-guidance`);
     return response.data;
   },
 

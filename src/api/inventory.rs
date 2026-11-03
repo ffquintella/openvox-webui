@@ -19,7 +19,10 @@ use crate::{
         UpdateOperationType, UpdatePreviewPackage, UpdatePreviewRequest, UpdatePreviewResponse,
         UpdatePreviewTarget,
     },
-    services::update_audit,
+    services::{
+        update_audit,
+        update_rollback::{self, RollbackGuidance},
+    },
     utils::error::{AppError, AppResult},
     AppState,
 };
@@ -31,6 +34,10 @@ pub fn routes() -> Router<AppState> {
         .route("/updates/{job_id}", get(get_update_job))
         .route("/updates/{job_id}/approve", post(approve_update_job))
         .route("/updates/{job_id}/cancel", post(cancel_update_job))
+        .route(
+            "/updates/{job_id}/rollback-guidance",
+            get(get_update_job_rollback_guidance),
+        )
         .route("/dashboard", get(get_inventory_dashboard))
         .route(
             "/dashboard/outdated-software/{name}",
@@ -224,6 +231,30 @@ async fn get_update_job(
         .ok_or_else(|| AppError::NotFound(format!("Update job '{}' not found", job_id)))?;
 
     Ok(Json(job))
+}
+
+/// GET /api/v1/inventory/updates/:job_id/rollback-guidance
+async fn get_update_job_rollback_guidance(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+    Path(job_id): Path<String>,
+) -> AppResult<Json<RollbackGuidance>> {
+    require_inventory_update_read(&auth_user)?;
+
+    let repo = state.inventory_repository();
+    let job = repo
+        .get_update_job(&job_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch update job: {}", e)))?
+        .ok_or_else(|| AppError::NotFound(format!("Update job '{}' not found", job_id)))?;
+
+    let certnames: Vec<String> = job.targets.iter().map(|t| t.certname.clone()).collect();
+    let managers = repo
+        .get_package_managers(&certnames)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch package managers: {}", e)))?;
+
+    Ok(Json(update_rollback::build_guidance(&job, &managers)))
 }
 
 async fn create_update_job(

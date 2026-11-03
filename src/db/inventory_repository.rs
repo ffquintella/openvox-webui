@@ -1035,6 +1035,28 @@ impl InventoryRepository {
         }
     }
 
+    /// Package manager reported by the latest inventory of each node, for the
+    /// certnames that have one.
+    pub async fn get_package_managers(
+        &self,
+        certnames: &[String],
+    ) -> Result<std::collections::HashMap<String, String>> {
+        let mut managers = std::collections::HashMap::new();
+        for certname in certnames {
+            let manager: Option<Option<String>> = sqlx::query_scalar(
+                "SELECT package_manager FROM host_os_inventory WHERE certname = ?1",
+            )
+            .bind(certname)
+            .fetch_optional(&self.pool)
+            .await
+            .context("Failed to fetch package manager")?;
+            if let Some(Some(manager)) = manager {
+                managers.insert(certname.clone(), manager);
+            }
+        }
+        Ok(managers)
+    }
+
     pub async fn cancel_update_job(
         &self,
         job_id: &str,

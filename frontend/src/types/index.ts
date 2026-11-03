@@ -403,6 +403,28 @@ export interface UpdateJob {
   results: UpdateJobResult[];
 }
 
+export interface RollbackStep {
+  description: string;
+  command?: string | null;
+}
+
+export interface TargetRollbackGuidance {
+  certname: string;
+  target_status: UpdateTargetStatus;
+  package_manager?: string | null;
+  rollback_needed: boolean;
+  steps: RollbackStep[];
+  warnings: string[];
+}
+
+export interface RollbackGuidance {
+  job_id: string;
+  applicable: boolean;
+  summary: string;
+  general_notes: string[];
+  targets: TargetRollbackGuidance[];
+}
+
 export interface CreateUpdateJobRequest {
   operation_type: UpdateOperationType;
   package_names?: string[];

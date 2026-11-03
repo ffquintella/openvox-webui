@@ -37,6 +37,7 @@ pub mod scheduler;
 pub mod scim;
 pub mod secrets;
 pub mod update_audit;
+pub mod update_rollback;
 pub mod update_schedule_scheduler;
 
 pub use alerting::AlertingService;

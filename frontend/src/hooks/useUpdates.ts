@@ -6,6 +6,7 @@ import type {
   UpdatePreviewResponse,
   ApproveUpdateJobRequest,
   UpdateJob,
+  RollbackGuidance,
   InventoryDashboardReport,
   InventoryFleetStatusSummary,
   RepositoryVersionCatalogEntry,
@@ -25,6 +26,14 @@ export function useUpdateJob(jobId: string | undefined) {
   return useQuery<UpdateJob>({
     queryKey: ['update-job', jobId],
     queryFn: () => api.getUpdateJob(jobId!),
+    enabled: !!jobId,
+  });
+}
+
+export function useUpdateJobRollbackGuidance(jobId: string | undefined) {
+  return useQuery<RollbackGuidance>({
+    queryKey: ['update-job-rollback-guidance', jobId],
+    queryFn: () => api.getUpdateJobRollbackGuidance(jobId!),
     enabled: !!jobId,
   });
 }

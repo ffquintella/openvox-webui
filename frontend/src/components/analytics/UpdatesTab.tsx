@@ -26,6 +26,7 @@ import {
 import {
   useInventoryDashboard,
   useUpdateJobs,
+  useUpdateJobRollbackGuidance,
   useOutdatedSoftwareNodes,
   useComplianceCategoryNodes,
 } from '../../hooks/useUpdates';
@@ -75,6 +76,56 @@ function formatOperationType(op: string): string {
 function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleString();
+}
+
+function RollbackGuidancePanel({ jobId }: { jobId: string }) {
+  const { data, isLoading, isError } = useUpdateJobRollbackGuidance(jobId);
+
+  if (isLoading) return <p className="text-xs text-gray-500 mt-3">Loading rollback guidance...</p>;
+  if (isError || !data) {
+    return <p className="text-xs text-red-600 mt-3">Could not load rollback guidance.</p>;
+  }
+
+  return (
+    <div className="mt-3 border rounded bg-white p-3" data-testid="rollback-guidance">
+      <h4 className="text-sm font-semibold text-gray-900">Rollback guidance</h4>
+      <p className="text-xs text-gray-600 mt-1">{data.summary}</p>
+      {data.general_notes.length > 0 && (
+        <ul className="list-disc ml-5 mt-2 text-xs text-gray-600 space-y-1">
+          {data.general_notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
+      {data.targets
+        .filter((target) => target.rollback_needed)
+        .map((target) => (
+          <div key={target.certname} className="mt-3">
+            <p className="text-xs font-mono text-gray-900">
+              {target.certname}
+              {target.package_manager ? ` (${target.package_manager})` : ''}
+            </p>
+            {target.warnings.map((warning) => (
+              <p key={warning} className="text-xs text-orange-600">
+                {warning}
+              </p>
+            ))}
+            <ol className="list-decimal ml-5 mt-1 text-xs text-gray-600 space-y-1">
+              {target.steps.map((step, index) => (
+                <li key={index}>
+                  {step.description}
+                  {step.command && (
+                    <code className="block mt-0.5 px-2 py-1 bg-gray-100 rounded font-mono text-gray-800 select-all">
+                      {step.command}
+                    </code>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+    </div>
+  );
 }
 
 export default function UpdatesTab() {
@@ -424,6 +475,7 @@ export default function UpdatesTab() {
                         ))}
                       </tbody>
                     </table>
+                    <RollbackGuidancePanel jobId={job.id} />
                   </div>
                 )}
               </div>
