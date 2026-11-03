@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-11-03
+
+### Changed
+- Version bump to match OpenVox WebUI 0.49.1 (RPM packages are now built on Rocky Linux 10); the module itself is unchanged.
+
 ## [0.49.0] - 2026-10-30
 
 ### Changed

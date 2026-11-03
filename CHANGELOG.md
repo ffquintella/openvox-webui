@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-11-03
+
+### Changed
+- Build RPM packages in the latest Rocky Linux release (`rockylinux/rockylinux:10`, currently 10.2) instead of Rocky Linux 9, so package file names now carry the `.el10` dist tag and the release notes install example points to it (T24)
+
 ## [0.49.0] - 2026-10-30
 
 ### Added

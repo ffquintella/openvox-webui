@@ -465,7 +465,7 @@ build_rpm_docker() {
     cat > "$dockerfile" << 'DOCKERFILE_EOF'
 # Use the maintained rockylinux/rockylinux image; the old docker-library
 # "rockylinux" image is deprecated and frozen.
-FROM rockylinux/rockylinux:9
+FROM rockylinux/rockylinux:10
 
 # Pin BaseOS/AppStream/Extras to the canonical dl.rockylinux.org instead of the
 # mirrorlist. Mirrors sync independently, so a build can land on an AppStream

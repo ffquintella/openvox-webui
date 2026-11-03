@@ -204,10 +204,10 @@ jobs:
 
           ### Installation
 
-          #### RPM (RHEL/Rocky/AlmaLinux 9)
+          #### RPM (RHEL/Rocky/AlmaLinux 10)
           ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/openvox-webui-${VERSION}-1.el9.x86_64.rpm
-          sudo dnf install ./openvox-webui-${VERSION}-1.el9.x86_64.rpm
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/openvox-webui-${VERSION}-1.el10.x86_64.rpm
+          sudo dnf install ./openvox-webui-${VERSION}-1.el10.x86_64.rpm
           ```
 
           #### DEB (Debian 12/Ubuntu 24.04)
