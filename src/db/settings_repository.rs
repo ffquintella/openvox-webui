@@ -140,8 +140,26 @@ impl SettingsRepository {
         )
         .await?;
 
+        let max_concurrent_targets = req.max_concurrent_targets.max(0);
+        let max_concurrent_targets_per_job = req.max_concurrent_targets_per_job.max(0);
+
+        self.set_setting(
+            UpdateJobSettings::MAX_CONCURRENT_KEY,
+            &max_concurrent_targets.to_string(),
+            Some("Maximum number of update targets dispatched at once across all jobs (0 = unlimited)"),
+        )
+        .await?;
+        self.set_setting(
+            UpdateJobSettings::MAX_CONCURRENT_PER_JOB_KEY,
+            &max_concurrent_targets_per_job.to_string(),
+            Some("Maximum number of targets of one update job dispatched at once (0 = unlimited)"),
+        )
+        .await?;
+
         Ok(UpdateJobSettings {
             max_runtime_minutes,
+            max_concurrent_targets,
+            max_concurrent_targets_per_job,
         })
     }
 }

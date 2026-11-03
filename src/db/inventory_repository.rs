@@ -1322,6 +1322,23 @@ impl InventoryRepository {
         &self,
         certname: &str,
     ) -> Result<Vec<NodePendingUpdateJob>> {
+        self.claim_pending_updates_for_node_with_limits(certname, 0, 0)
+            .await
+    }
+
+    /// Claim the queued targets of `certname` that may run now.
+    ///
+    /// A target stays queued (and is offered again on the next poll) while its
+    /// job's maintenance window is closed (not yet open or already over) or
+    /// while a concurrency limit is reached. `max_concurrent_targets` caps the
+    /// dispatched targets across all jobs and `max_concurrent_targets_per_job`
+    /// those of a single job; 0 means unlimited.
+    pub async fn claim_pending_updates_for_node_with_limits(
+        &self,
+        certname: &str,
+        max_concurrent_targets: i64,
+        max_concurrent_targets_per_job: i64,
+    ) -> Result<Vec<NodePendingUpdateJob>> {
         let now = Utc::now();
         let mut tx = self
             .pool
@@ -1353,6 +1370,51 @@ impl InventoryRepository {
         .fetch_all(&mut *tx)
         .await
         .context("Failed to fetch pending node updates")?;
+
+        let mut in_flight_total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM update_job_targets WHERE status = 'dispatched'",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .context("Failed to count dispatched update targets")?;
+        let mut in_flight_per_job: std::collections::HashMap<String, i64> =
+            std::collections::HashMap::new();
+        if max_concurrent_targets_per_job > 0 {
+            let counts: Vec<(String, i64)> = sqlx::query_as(
+                "SELECT job_id, COUNT(*) FROM update_job_targets WHERE status = 'dispatched' GROUP BY job_id",
+            )
+            .fetch_all(&mut *tx)
+            .await
+            .context("Failed to count dispatched update targets per job")?;
+            in_flight_per_job.extend(counts);
+        }
+
+        let mut rows = rows;
+        rows.retain(|row| {
+            let opens = row
+                .maintenance_window_start
+                .as_deref()
+                .and_then(parse_timestamp);
+            let closes = row
+                .maintenance_window_end
+                .as_deref()
+                .and_then(parse_timestamp);
+            if opens.is_some_and(|start| now < start) || closes.is_some_and(|end| now > end) {
+                return false;
+            }
+            if max_concurrent_targets > 0 && in_flight_total >= max_concurrent_targets {
+                return false;
+            }
+            let job_in_flight = in_flight_per_job.entry(row.job_id.clone()).or_insert(0);
+            if max_concurrent_targets_per_job > 0
+                && *job_in_flight >= max_concurrent_targets_per_job
+            {
+                return false;
+            }
+            in_flight_total += 1;
+            *job_in_flight += 1;
+            true
+        });
 
         for row in &rows {
             sqlx::query(
@@ -4084,5 +4146,156 @@ mod tests {
             node2_claims[0].operation_type,
             UpdateOperationType::SystemPatch
         );
+    }
+
+    async fn approved_job(
+        repo: &InventoryRepository,
+        certnames: &[&str],
+        window: (Option<DateTime<Utc>>, Option<DateTime<Utc>>),
+    ) -> UpdateJob {
+        let certnames: Vec<String> = certnames.iter().map(|c| c.to_string()).collect();
+        let job = repo
+            .create_update_job(
+                UpdateOperationType::PackageUpdate,
+                &["httpd".to_string()],
+                None,
+                &certnames,
+                true,
+                None,
+                window.0,
+                window.1,
+                "admin",
+                None,
+            )
+            .await
+            .expect("create update job");
+        repo.approve_update_job(&job.id, true, "operator", None)
+            .await
+            .expect("approve update job")
+            .expect("job exists")
+    }
+
+    async fn inventory_repo() -> InventoryRepository {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::migrate!("./migrations/inventory")
+            .run(&pool)
+            .await
+            .expect("inventory migrations");
+        InventoryRepository::new(pool)
+    }
+
+    #[tokio::test]
+    async fn update_jobs_wait_for_the_maintenance_window() {
+        let repo = inventory_repo().await;
+        let now = Utc::now();
+        let hour = chrono::Duration::hours(1);
+        approved_job(
+            &repo,
+            &["early.example.com"],
+            (Some(now + hour), Some(now + hour * 2)),
+        )
+        .await;
+        approved_job(
+            &repo,
+            &["late.example.com"],
+            (Some(now - hour * 2), Some(now - hour)),
+        )
+        .await;
+        approved_job(
+            &repo,
+            &["open.example.com"],
+            (Some(now - hour), Some(now + hour)),
+        )
+        .await;
+
+        for closed in ["early.example.com", "late.example.com"] {
+            let claims = repo
+                .claim_pending_updates_for_node(closed)
+                .await
+                .expect("claim");
+            assert!(claims.is_empty(), "{closed} must wait for its window");
+        }
+        let claims = repo
+            .claim_pending_updates_for_node("open.example.com")
+            .await
+            .expect("claim");
+        assert_eq!(claims.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_jobs_respect_concurrency_limits() {
+        let repo = inventory_repo().await;
+        let job = approved_job(
+            &repo,
+            &["a.example.com", "b.example.com", "c.example.com"],
+            (None, None),
+        )
+        .await;
+
+        // Per-job limit of 2: the third node has to wait.
+        for certname in ["a.example.com", "b.example.com"] {
+            let claims = repo
+                .claim_pending_updates_for_node_with_limits(certname, 0, 2)
+                .await
+                .expect("claim");
+            assert_eq!(claims.len(), 1);
+        }
+        let blocked = repo
+            .claim_pending_updates_for_node_with_limits("c.example.com", 0, 2)
+            .await
+            .expect("claim");
+        assert!(blocked.is_empty());
+
+        // Finishing one target frees a slot.
+        let first = repo
+            .get_update_job(&job.id)
+            .await
+            .expect("job")
+            .expect("exists")
+            .targets
+            .into_iter()
+            .find(|t| t.certname == "a.example.com")
+            .expect("target a");
+        repo.submit_update_job_result(
+            &job.id,
+            &first.id,
+            "a.example.com",
+            &SubmitUpdateJobResultRequest {
+                status: UpdateTargetStatus::Succeeded,
+                summary: None,
+                output: None,
+                started_at: None,
+                finished_at: None,
+            },
+        )
+        .await
+        .expect("submit result");
+        let freed = repo
+            .claim_pending_updates_for_node_with_limits("c.example.com", 0, 2)
+            .await
+            .expect("claim");
+        assert_eq!(freed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_jobs_respect_the_global_concurrency_limit() {
+        let repo = inventory_repo().await;
+        approved_job(&repo, &["a.example.com"], (None, None)).await;
+        approved_job(&repo, &["b.example.com"], (None, None)).await;
+
+        let first = repo
+            .claim_pending_updates_for_node_with_limits("a.example.com", 1, 0)
+            .await
+            .expect("claim");
+        assert_eq!(first.len(), 1);
+        let second = repo
+            .claim_pending_updates_for_node_with_limits("b.example.com", 1, 0)
+            .await
+            .expect("claim");
+        assert!(second.is_empty());
     }
 }

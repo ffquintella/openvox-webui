@@ -842,9 +842,18 @@ async fn get_pending_node_update_jobs(
 ) -> AppResult<Json<Vec<NodePendingUpdateJob>>> {
     authenticate_node_request(&state, &certname, &headers, &client_cert)?;
 
+    let limits = crate::db::SettingsRepository::new(state.db.clone())
+        .get_update_job_settings()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load update job settings: {}", e)))?;
+
     let inventory_repo = state.inventory_repository();
     let jobs = inventory_repo
-        .claim_pending_updates_for_node(&certname)
+        .claim_pending_updates_for_node_with_limits(
+            &certname,
+            limits.max_concurrent_targets,
+            limits.max_concurrent_targets_per_job,
+        )
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch pending update jobs: {}", e)))?;
 

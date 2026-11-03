@@ -97,11 +97,33 @@ pub const UPDATE_JOB_MAX_RUNTIME_PLACEHOLDER: &str = "{max_runtime_minutes}";
 pub struct UpdateJobSettings {
     /// Maximum time (in minutes) an update job may run before it is failed.
     pub max_runtime_minutes: i64,
+    /// Maximum number of targets dispatched at the same time across all jobs
+    /// (0 = unlimited).
+    #[serde(default)]
+    pub max_concurrent_targets: i64,
+    /// Maximum number of targets of one job dispatched at the same time
+    /// (0 = unlimited).
+    #[serde(default)]
+    pub max_concurrent_targets_per_job: i64,
 }
 
 impl UpdateJobSettings {
     /// Storage key for the maximum runtime setting.
     pub const MAX_RUNTIME_KEY: &'static str = "update_jobs.max_runtime_minutes";
+    /// Storage key for the global concurrency limit.
+    pub const MAX_CONCURRENT_KEY: &'static str = "update_jobs.max_concurrent_targets";
+    /// Storage key for the per-job concurrency limit.
+    pub const MAX_CONCURRENT_PER_JOB_KEY: &'static str =
+        "update_jobs.max_concurrent_targets_per_job";
+
+    fn non_negative(settings: &[(String, String)], key: &str) -> i64 {
+        settings
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.trim().parse::<i64>().ok())
+            .filter(|m| *m > 0)
+            .unwrap_or(0)
+    }
 
     /// Build from settings key-value pairs, falling back to defaults.
     pub fn from_settings(settings: &[(String, String)]) -> Self {
@@ -114,6 +136,11 @@ impl UpdateJobSettings {
 
         Self {
             max_runtime_minutes,
+            max_concurrent_targets: Self::non_negative(settings, Self::MAX_CONCURRENT_KEY),
+            max_concurrent_targets_per_job: Self::non_negative(
+                settings,
+                Self::MAX_CONCURRENT_PER_JOB_KEY,
+            ),
         }
     }
 }
@@ -122,4 +149,8 @@ impl UpdateJobSettings {
 #[derive(Debug, Deserialize)]
 pub struct UpdateUpdateJobSettingsRequest {
     pub max_runtime_minutes: i64,
+    #[serde(default)]
+    pub max_concurrent_targets: i64,
+    #[serde(default)]
+    pub max_concurrent_targets_per_job: i64,
 }

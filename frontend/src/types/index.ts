@@ -1286,10 +1286,14 @@ export interface UpdateSmtpSettingsRequest {
 
 export interface UpdateJobSettings {
   max_runtime_minutes: number;
+  max_concurrent_targets: number;
+  max_concurrent_targets_per_job: number;
 }
 
 export interface UpdateUpdateJobSettingsRequest {
   max_runtime_minutes: number;
+  max_concurrent_targets: number;
+  max_concurrent_targets_per_job: number;
 }
 
 export interface SettingsResponse {

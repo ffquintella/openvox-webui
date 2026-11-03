@@ -187,7 +187,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T60 Schedule updates with approval workflow (S20)
 - [x] T61 Track update execution and results (S20)
 - [x] T62 Audit update requests, approvals and outcomes (S20)
-- [ ] T63 Enforce maintenance windows and concurrency limits (S20)
+- [x] T63 Enforce maintenance windows and concurrency limits (S20)
 - [ ] T64 Provide rollback guidance for update jobs (S20)
 
 ## [M18] Plugin PoCs

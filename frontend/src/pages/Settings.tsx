@@ -1111,16 +1111,24 @@ function UpdateJobSettingsTab() {
   const updateMutation = useUpdateUpdateJobSettings();
 
   const [maxRuntimeMinutes, setMaxRuntimeMinutes] = useState(240);
+  const [maxConcurrent, setMaxConcurrent] = useState(0);
+  const [maxConcurrentPerJob, setMaxConcurrentPerJob] = useState(0);
 
   useEffect(() => {
     if (settings) {
       setMaxRuntimeMinutes(settings.max_runtime_minutes);
+      setMaxConcurrent(settings.max_concurrent_targets ?? 0);
+      setMaxConcurrentPerJob(settings.max_concurrent_targets_per_job ?? 0);
     }
   }, [settings]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate({ max_runtime_minutes: maxRuntimeMinutes });
+    updateMutation.mutate({
+      max_runtime_minutes: maxRuntimeMinutes,
+      max_concurrent_targets: maxConcurrent,
+      max_concurrent_targets_per_job: maxConcurrentPerJob,
+    });
   };
 
   if (isLoading) {
@@ -1161,6 +1169,41 @@ function UpdateJobSettingsTab() {
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Jobs still running after this many minutes are failed. Default: 240 (4 hours).
+            </p>
+          </div>
+
+          <div className="max-w-xs">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum concurrent targets
+            </label>
+            <input
+              type="number"
+              value={maxConcurrent}
+              onChange={(e) => setMaxConcurrent(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+              min="0"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Targets running at the same time across all jobs. Other targets wait in the queue.
+              0 means unlimited.
+            </p>
+          </div>
+
+          <div className="max-w-xs">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum concurrent targets per job
+            </label>
+            <input
+              type="number"
+              value={maxConcurrentPerJob}
+              onChange={(e) => setMaxConcurrentPerJob(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md dark:border-gray-600 dark:bg-gray-700"
+              min="0"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Targets of a single job running at the same time. 0 means unlimited. A job&rsquo;s
+              maintenance window is always enforced: its targets are held until the window opens
+              and are not started after it closes.
             </p>
           </div>
 
