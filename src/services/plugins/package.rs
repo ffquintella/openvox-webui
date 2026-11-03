@@ -77,7 +77,10 @@ pub fn read_package(bytes: &[u8], max_bytes: u64) -> Result<PluginPackage, Packa
                 "symbolic links are not allowed".into(),
             ));
         }
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|_| PackageError::Malformed("invalid entry name".into()))?
+            .to_string();
         if !safe_package_path(&name) {
             return Err(PackageError::Malformed(format!("unsafe path '{}'", name)));
         }
@@ -356,10 +359,11 @@ mod tests {
                 let mut e = z.by_index(i).unwrap();
                 let mut b = Vec::new();
                 e.read_to_end(&mut b).unwrap();
-                if e.name() == "README.md" {
+                let name = e.name().unwrap().to_string();
+                if name == "README.md" {
                     b = b"evil".to_vec();
                 }
-                zw.start_file(e.name(), o).unwrap();
+                zw.start_file(name, o).unwrap();
                 zw.write_all(&b).unwrap();
             }
             zw.finish().unwrap();
