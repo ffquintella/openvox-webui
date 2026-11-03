@@ -158,7 +158,7 @@ cucumber = "0.23"
 tokio-test = "0.4"
 wiremock = "0.6"
 fake = { version = "5.1", features = ["derive"] }
-rstest = "0.27"
+rstest = "0.28"
 bytes = "1.11"
 wat = "1"
 tempfile = "3"
