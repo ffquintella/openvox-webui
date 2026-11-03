@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Fixed
+- Make the Plugins page reachable from the web UI: the Plugins menu entry and `/plugins` route were hidden for the super admin because no role was granted `plugins`/`plugin_trust` and the UI, unlike the API, did not treat the super admin role as holding every permission. The UI now grants the super admin role every permission and a migration stores `plugins:admin` and `plugin_trust:admin` for it, so installing and updating plugins from the GUI works again
+
 ### Added
 - Provide rollback guidance for update jobs: `GET /api/v1/inventory/updates/{job_id}/rollback-guidance` and a panel in the expanded job list of the Updates tab show, for each node the job changed, the commands for its package manager (dnf/yum, zypper, apt, Homebrew, Chocolatey, winget) to undo or downgrade the update, undo an install or reinstall a removal, with warnings for partial failures, security patches and system patches. Nothing is executed, previous versions are not recorded so version-pinned commands use a `<previous-version>` placeholder, and unsafe package names are left out of the commands (T64)
 

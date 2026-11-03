@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { EffectivePermissions, Resource, Action, Permission } from '../types';
 import { api } from '../services/api';
 
+export const SUPER_ADMIN_ROLE_NAME = 'super_admin';
+
 interface PermissionsState {
   permissions: EffectivePermissions | null;
   isLoading: boolean;
@@ -33,6 +35,11 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
   hasPermission: (resource: Resource, action: Action): boolean => {
     const { permissions } = get();
     if (!permissions) return false;
+
+    // The backend lets the super admin role bypass every permission check
+    // without storing a permission row per resource (e.g. plugins), so the
+    // client has to do the same or the pages for those resources stay hidden.
+    if (permissions.roles?.includes(SUPER_ADMIN_ROLE_NAME)) return true;
 
     return permissions.permissions.some((perm: Permission) => {
       // Check for exact match
