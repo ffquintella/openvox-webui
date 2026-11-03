@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-11-03
+
 ### Added
 - Enforce maintenance windows and concurrency limits for update jobs: a target is handed to its node only while the job's maintenance window is open (queued targets wait for the window to open and are not started after it closes), and the new `update_jobs.max_concurrent_targets` (all jobs) and `update_jobs.max_concurrent_targets_per_job` settings, editable under Settings > Update Jobs and `PUT /api/v1/settings/update-jobs`, cap how many targets run at once (0 = unlimited); targets over the limit stay queued and are offered again on the node's next poll (T63)
 
