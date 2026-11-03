@@ -124,7 +124,7 @@ tar = "0.4"
 
 # Plugin packages (.ovxp): zip container, ed25519 signatures, manifest versions
 ed25519-dalek = "3.0"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 semver = "1"
 # Plugin runtime (M20): sandboxed WASM handlers and per-plugin SQLite limits
 wasmtime = { version = "50", default-features = false, features = ["runtime", "cranelift", "std"] }
