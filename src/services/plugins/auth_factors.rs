@@ -63,7 +63,7 @@ impl PluginFactorEntry {
             id: self.qualified_id(),
             kind: self.decl.kind.clone(),
             label: self.decl.label.clone(),
-            amr: self.decl.amr.clone(),
+            amr: self.decl.amr.values(),
             enrollment: self.decl.enrollment.clone(),
             fields: self.decl.fields.clone(),
         }
@@ -300,7 +300,8 @@ impl AuthFactor for PluginFactor {
         let out = self
             .call(VERIFY, self.challenge_input(ctx, Some(resp)))
             .await?;
-        parse_outcome(out, &self.entry.decl.amr, &ctx.records).map_err(|r| self.reject(VERIFY, r))
+        parse_outcome(out, &self.entry.decl.amr.values(), &ctx.records)
+            .map_err(|r| self.reject(VERIFY, r))
     }
 }
 
@@ -447,13 +448,48 @@ pub fn parse_challenge_start(v: Value) -> Result<ChallengeStart, Reject> {
     })
 }
 
+/// `amr` of a `verified` answer (OQ-5): a string or a list of distinct
+/// strings, all declared by the factor, at least one a multi-factor method.
+fn parse_amr(v: Option<&Value>, declared: &[String]) -> Result<Vec<String>, Reject> {
+    let values: Vec<String> = match v {
+        Some(Value::String(s)) => vec![s.clone()],
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|x| x.as_str().map(str::to_string))
+            .collect::<Option<_>>()
+            .ok_or(Reject::Malformed(
+                "amr must be a string or a list of strings",
+            ))?,
+        _ => {
+            return Err(Reject::Malformed(
+                "amr must be a string or a list of strings",
+            ))
+        }
+    };
+    let distinct: HashSet<&str> = values.iter().map(String::as_str).collect();
+    if distinct.len() != values.len() {
+        return Err(Reject::Malformed("amr lists a value twice"));
+    }
+    if values.iter().any(|v| !declared.contains(v)) {
+        return Err(Reject::Malformed("amr is not the factor's declared amr"));
+    }
+    if !values
+        .iter()
+        .any(|v| super::manifest::FACTOR_AMR.contains(&v.as_str()))
+    {
+        return Err(Reject::Malformed("amr has no multi-factor method"));
+    }
+    Ok(values)
+}
+
 /// `verify`: `{outcome: "verified", amr, updates?: [[id, data]]}`,
 /// `{outcome: "failed", retryable}` or `{outcome: "pending"}`. `Verified`
-/// needs the declared `amr` and updates only of records the plugin was
-/// given, each at most once: anything else is malformed, never a pass.
+/// needs declared `amr` values (a string or a list, OQ-5) with a
+/// multi-factor method and updates only of records the plugin was given,
+/// each at most once: anything else is malformed, never a pass.
 pub fn parse_outcome(
     v: Value,
-    amr: &str,
+    declared: &[String],
     records: &[FactorRecord],
 ) -> Result<FactorOutcome, Reject> {
     let outcome = match &v {
@@ -463,14 +499,9 @@ pub fn parse_outcome(
     match outcome.as_deref() {
         Some("verified") => {
             let mut m = object(v, &["outcome", "amr"], &["updates"])?;
-            if m.get("amr").and_then(Value::as_str) != Some(amr) {
-                return Err(Reject::Malformed("amr is not the factor's declared amr"));
-            }
+            let amr = parse_amr(m.get("amr"), declared)?;
             let updates = parse_updates(m.remove("updates"), records)?;
-            Ok(FactorOutcome::Verified {
-                amr: amr.to_string(),
-                updates,
-            })
+            Ok(FactorOutcome::Verified { amr, updates })
         }
         Some("failed") => {
             let m = object(v, &["outcome", "retryable"], &[])?;
@@ -886,8 +917,8 @@ mod tests {
         let d = e.pipeline().descriptors();
         let f = d.iter().find(|d| d.id == "fa:key").expect("offered");
         assert_eq!(
-            (f.kind.as_str(), f.amr.as_str(), f.label.as_str()),
-            ("webauthn", "hwk", "Security key")
+            (f.kind.as_str(), f.amr.clone(), f.label.as_str()),
+            ("webauthn", vec!["hwk".to_string()], "Security key")
         );
         assert_eq!(f.fields, vec!["credential".to_string()]);
         assert!(d.iter().any(|d| d.id == "totp"), "built-ins stay");
@@ -918,7 +949,7 @@ mod tests {
                 id: self.0.into(),
                 kind: "otp".into(),
                 label: "Stub".into(),
-                amr: "otp".into(),
+                amr: vec!["otp".into()],
                 enrollment: "host-managed".into(),
                 fields: vec![],
             }
@@ -945,7 +976,7 @@ mod tests {
             _: Value,
         ) -> Result<FactorOutcome, FactorError> {
             Ok(FactorOutcome::Verified {
-                amr: "otp".into(),
+                amr: vec!["otp".into()],
                 updates: vec![],
             })
         }
@@ -1536,27 +1567,73 @@ mod tests {
         assert!(malformed(parse_challenge_start(json!([1]))));
     }
 
+    fn hwk() -> Vec<String> {
+        vec!["hwk".to_string()]
+    }
+
+    /// OQ-5: `amr` may be a string or a list of declared values with at
+    /// least one multi-factor method.
+    #[test]
+    fn verify_answers_may_carry_several_declared_methods() {
+        let records = [rec("r1")];
+        let declared: Vec<String> = vec!["hwk".into(), "swk".into(), "pin".into()];
+        let amr_of = |v: Value| match parse_outcome(
+            json!({"outcome": "verified", "amr": v}),
+            &declared,
+            &records,
+        ) {
+            Ok(FactorOutcome::Verified { amr, .. }) => Some(amr),
+            _ => None,
+        };
+        assert_eq!(amr_of(json!("hwk")), Some(vec!["hwk".to_string()]));
+        assert_eq!(amr_of(json!(["swk"])), Some(vec!["swk".to_string()]));
+        assert_eq!(
+            amr_of(json!(["hwk", "pin"])),
+            Some(vec!["hwk".to_string(), "pin".to_string()])
+        );
+        for bad in [
+            json!("pin"),
+            json!(["pin"]),
+            json!([]),
+            json!(["hwk", "hwk"]),
+            json!(["hwk", "otp"]),
+            json!(["hwk", "rcv"]),
+            json!(["hwk", 1]),
+            json!({"hwk": true}),
+            json!(null),
+        ] {
+            assert!(
+                malformed(parse_outcome(
+                    json!({"outcome": "verified", "amr": bad.clone()}),
+                    &declared,
+                    &records
+                )),
+                "{bad}"
+            );
+        }
+    }
+
     #[test]
     fn verify_answers_never_turn_an_error_into_a_pass() {
         let records = [rec("r1"), rec("r2")];
         let ok = parse_outcome(
             json!({"outcome": "verified", "amr": "hwk", "updates": [["r2", {"n": 1}]]}),
-            "hwk",
+            &hwk(),
             &records,
         )
         .unwrap();
         assert!(matches!(ok, FactorOutcome::Verified { amr, updates }
-            if amr == "hwk" && updates == vec![("r2".to_string(), json!({"n": 1}))]));
+            if amr == ["hwk"] && updates == vec![("r2".to_string(), json!({"n": 1}))]));
         assert!(matches!(
             parse_outcome(
                 json!({"outcome": "failed", "retryable": true}),
-                "hwk",
+                &hwk(),
                 &records
             ),
             Ok(FactorOutcome::Failed { retryable: true })
         ));
         assert!(matches!(
-            parse_outcome(json!({"outcome": "pending"}), "hwk", &records),
+            parse_outcome(json!({"outcome": "pending"}), &hwk(), &records),
             Ok(FactorOutcome::Pending)
         ));
         for bad in [
@@ -1578,7 +1655,7 @@ mod tests {
             json!(null),
         ] {
             assert!(
-                malformed(parse_outcome(bad.clone(), "hwk", &records)),
+                malformed(parse_outcome(bad.clone(), &hwk(), &records)),
                 "{bad}"
             );
         }

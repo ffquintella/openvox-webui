@@ -348,10 +348,16 @@ fn validate_module(
 
 /// Factor kinds the host client knows how to run (`recovery` is the host's).
 pub const FACTOR_KINDS: &[&str] = &["otp", "webauthn", "push"];
-/// Methods a plugin factor may add to a session. Both reach level 2; `rcv`
-/// (recovery codes) and `mfa` (asserted by an identity provider) are the
-/// host's, and primary methods (`pwd`, `fed`) never come from a factor.
-pub const FACTOR_AMR: &[&str] = &["otp", "hwk"];
+/// Multi-factor methods a plugin factor may add to a session; each reaches
+/// level 2 (OQ-5 adds `swk`, a software-secured key such as a synced
+/// passkey). `rcv` (recovery codes) and `mfa` (asserted by an identity
+/// provider) are the host's, and primary methods (`pwd`, `fed`) never come
+/// from a factor.
+pub const FACTOR_AMR: &[&str] = &["otp", "hwk", "swk"];
+/// RFC 8176 values a factor may report next to a method (how the user was
+/// verified). They never raise the level on their own.
+pub const FACTOR_AMR_QUALIFIERS: &[&str] = &["pin", "user", "fpt", "face", "iris", "retina", "vbm"];
+pub const MAX_FACTOR_AMR: usize = 4;
 pub const MAX_AUTH_FACTORS: usize = 4;
 
 /// Local id of a plugin factor: `[a-z][a-z0-9-]`, at most 32 characters,
@@ -371,6 +377,34 @@ fn valid_factor_field(f: &str) -> bool {
         && b[0].is_ascii_lowercase()
         && b.iter()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_')
+}
+
+/// `amr` (OQ-5): at most `MAX_FACTOR_AMR` distinct allowed values, at least
+/// one of them a multi-factor method.
+fn validate_factor_amr(p: &mut Vec<String>, id: &str, values: &[String]) {
+    if values.len() > MAX_FACTOR_AMR {
+        p.push(format!(
+            "factor '{id}': at most {MAX_FACTOR_AMR} amr values are allowed"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for v in values {
+        if !FACTOR_AMR.contains(&v.as_str()) && !FACTOR_AMR_QUALIFIERS.contains(&v.as_str()) {
+            p.push(format!(
+                "factor '{id}': amr '{v}' is not allowed (use {} or the qualifiers {})",
+                FACTOR_AMR.join(", "),
+                FACTOR_AMR_QUALIFIERS.join(", ")
+            ));
+        } else if !seen.insert(v.as_str()) {
+            p.push(format!("factor '{id}': amr '{v}' is listed twice"));
+        }
+    }
+    if !values.iter().any(|v| FACTOR_AMR.contains(&v.as_str())) {
+        p.push(format!(
+            "factor '{id}': amr needs one of {}",
+            FACTOR_AMR.join(", ")
+        ));
+    }
 }
 
 /// `contributes.auth_factors` (H-1): the critical `auth:factor` capability,
@@ -415,14 +449,7 @@ fn validate_auth_factors(p: &mut Vec<String>, m: &PluginManifest) {
                 FACTOR_KINDS.join(", ")
             ));
         }
-        if !FACTOR_AMR.contains(&f.amr.as_str()) {
-            p.push(format!(
-                "factor '{}': amr '{}' is not allowed (use {})",
-                f.id,
-                f.amr,
-                FACTOR_AMR.join(", ")
-            ));
-        }
+        validate_factor_amr(p, &f.id, &f.amr.values());
         if !matches!(f.enrollment.as_str(), "host-managed" | "external") {
             p.push(format!(
                 "factor '{}': enrollment must be host-managed or external",
@@ -2147,13 +2174,48 @@ contributes:
         assert_eq!(m.api_version, 2);
         let f = &m.contributes.auth_factors[0];
         assert_eq!(
-            (f.id.as_str(), f.kind.as_str(), f.amr.as_str()),
-            ("security-key", "webauthn", "hwk")
+            (f.id.as_str(), f.kind.as_str(), f.amr.values()),
+            ("security-key", "webauthn", vec!["hwk".to_string()])
         );
         assert_eq!(f.fields, vec!["credential".to_string()]);
         // Manifests without the key keep working (backward compatible).
         let m = parse_and_validate(OK.as_bytes(), &files(&["ui/home.json"])).unwrap();
         assert!(m.contributes.auth_factors.is_empty());
+    }
+
+    /// OQ-5: `amr` is one value or a list (backward compatible), with at
+    /// least one multi-factor method and qualifiers such as `pin`.
+    #[test]
+    fn auth_factor_amr_may_be_a_list() {
+        let line = "amr: hwk,";
+        for (amr, want) in [
+            ("swk", vec!["swk"]),
+            ("[hwk, pin]", vec!["hwk", "pin"]),
+            ("[hwk, swk, pin]", vec!["hwk", "swk", "pin"]),
+            ("[otp]", vec!["otp"]),
+        ] {
+            let yaml = FACTOR.replace(line, &format!("amr: {amr},"));
+            let m = parse_and_validate(yaml.as_bytes(), &files(&["backend/plugin.wasm"]))
+                .unwrap_or_else(|p| panic!("{amr}: {p:?}"));
+            assert_eq!(m.contributes.auth_factors[0].amr.values(), want, "{amr}");
+        }
+        // A single value round-trips as a string.
+        let m = parse_and_validate(FACTOR.as_bytes(), &files(&["backend/plugin.wasm"])).unwrap();
+        assert_eq!(
+            serde_json::to_value(&m.contributes.auth_factors[0]).unwrap()["amr"],
+            "hwk"
+        );
+        for (amr, needle) in [
+            ("[pin]", "needs one of otp, hwk, swk"),
+            ("[]", "needs one of otp, hwk, swk"),
+            ("[hwk, rcv]", "amr 'rcv' is not allowed"),
+            ("[hwk, mfa]", "amr 'mfa' is not allowed"),
+            ("[hwk, hwk]", "amr 'hwk' is listed twice"),
+            ("[hwk, pin, swk, otp, user]", "at most 4 amr values"),
+        ] {
+            let p = factor_problems(&FACTOR.replace(line, &format!("amr: {amr},")));
+            assert!(p.iter().any(|m| m.contains(needle)), "{amr}: {p:?}");
+        }
     }
 
     #[test]

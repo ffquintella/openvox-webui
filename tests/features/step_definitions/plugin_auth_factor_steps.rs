@@ -359,6 +359,8 @@ async fn when_validate(world: &mut TestWorld, change: String) {
             MANIFEST.replace(caps, "capabilities: [\"auth:factor\": { optional: true }]")
         }
         "the amr \"rcv\"" => MANIFEST.replace("amr: hwk", "amr: rcv"),
+        "the amr list [pin]" => MANIFEST.replace("amr: hwk", "amr: [pin]"),
+        "the amr list [hwk, hwk]" => MANIFEST.replace("amr: hwk", "amr: [hwk, hwk]"),
         "the factor id \"pa:key\"" => MANIFEST.replace("id: security-key", "id: \"pa:key\""),
         "the remote runtime" => MANIFEST.replace(
             "{ kind: wasm, entry: plugin.wasm }",
@@ -459,6 +461,31 @@ async fn given_echo_plugin(world: &mut TestWorld, id: String) {
         &id,
         &factor_yaml(&id, "timeout_ms: 5000"),
         &factor_guest(Out::Echo, Out::Json(VERIFIED)),
+        &["auth:factor"],
+    )
+    .await;
+}
+
+#[given(
+    regex = r#"^an enabled WASM factor plugin "([a-z0-9-]+)" with the amr (.+) that verifies with the amr (.+)$"#
+)]
+async fn given_amr_plugin(world: &mut TestWorld, id: String, declared: String, answered: String) {
+    let yaml = factor_yaml(&id, "timeout_ms: 5000")
+        .replace("amr: hwk,", &format!("amr: {},", declared.trim()));
+    let verify: &'static str = Box::leak(
+        format!(
+            r#"{{"ok":{{"outcome":"verified","amr":{}}}}}"#,
+            answered.trim()
+        )
+        .into_boxed_str(),
+    );
+    let challenge = Out::Json(r#"{"ok":{"client":{"publicKey":{}},"flow_state":"fs"}}"#);
+    let s = scenario(world);
+    install(
+        s,
+        &id,
+        &yaml,
+        &factor_guest(challenge, Out::Json(verify)),
         &["auth:factor"],
     )
     .await;

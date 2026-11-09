@@ -18,6 +18,8 @@ Feature: Plugin second factors
       | no auth:factor capability        | auth_factors need the capability auth:factor                  |
       | an optional auth:factor          | auth:factor cannot be optional                                |
       | the amr "rcv"                    | amr 'rcv' is not allowed                                      |
+      | the amr list [pin]               | amr needs one of otp, hwk, swk                                |
+      | the amr list [hwk, hwk]          | amr 'hwk' is listed twice                                     |
       | the factor id "pa:key"           | factor id 'pa:key' is invalid                                 |
       | the remote runtime               | auth_factors need the wasm or builtin runtime                 |
       | a trusted module page            | cannot contribute trusted modules                             |
@@ -89,6 +91,34 @@ Feature: Plugin second factors
     When alice signs in with her password
     And alice begins the challenge with the factor "pb:key"
     Then the plugin should have received exactly alice's "pb:key" records
+
+  Scenario Outline: A plugin factor may report several methods or a synced key (OQ-5)
+    Given an enabled WASM factor plugin "fm" with the amr <declared> that verifies with the amr <answered>
+    And alice has enrolled the factor "fm:key"
+    When alice signs in with her password
+    And alice answers the challenge with the factor "fm:key"
+    Then alice should hold a session with the methods "<methods>" at level 2
+
+    Examples:
+      | declared        | answered      | methods     |
+      | swk             | "swk"         | pwd,swk     |
+      | [hwk, pin]      | ["hwk","pin"] | pwd,hwk,pin |
+      | [hwk, pin]      | "hwk"         | pwd,hwk     |
+      | [hwk, swk, pin] | ["swk"]       | pwd,swk     |
+
+  Scenario Outline: A plugin factor never reaches level 2 with qualifiers alone (OQ-5)
+    Given an enabled WASM factor plugin "fq" with the amr [hwk, pin] that verifies with the amr <answered>
+    And alice has enrolled the factor "fq:key"
+    When alice signs in with her password
+    And alice answers the challenge with the factor "fq:key"
+    Then the answer should be refused with "factor_unavailable"
+    And alice should hold no session
+
+    Examples:
+      | answered      |
+      | ["pin"]       |
+      | ["hwk","otp"] |
+      | []            |
 
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input

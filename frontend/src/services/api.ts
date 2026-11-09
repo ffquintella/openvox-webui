@@ -407,7 +407,8 @@ export interface AuthFactorDescriptor {
   id: string;
   kind: string;
   label: string;
-  amr?: string;
+  /** One method, or a method with qualifiers such as `["hwk", "pin"]` (OQ-5). */
+  amr?: string | string[];
   enrollment?: string;
   fields: string[];
 }

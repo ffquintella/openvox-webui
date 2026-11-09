@@ -23,12 +23,22 @@ pub struct FactorDescriptor {
     pub id: String,
     pub kind: String,
     pub label: String,
-    /// Value added to the session's `amr` once the factor verifies.
-    pub amr: String,
+    /// Values added to the session's `amr` once the factor verifies (OQ-5:
+    /// a method and optional qualifiers). One value is serialized as a
+    /// string, as before.
+    #[serde(serialize_with = "one_or_many")]
+    pub amr: Vec<String>,
     /// `host-managed` (the host stores the data) or `external`.
     pub enrollment: String,
     /// What the client must supply for a challenge, so the host can render it.
     pub fields: Vec<String>,
+}
+
+fn one_or_many<S: serde::Serializer>(v: &[String], s: S) -> Result<S::Ok, S::Error> {
+    match v {
+        [one] => s.serialize_str(one),
+        many => many.serialize(s),
+    }
 }
 
 impl FactorDescriptor {
@@ -37,7 +47,7 @@ impl FactorDescriptor {
             id: id.into(),
             kind: kind.into(),
             label: label.into(),
-            amr: amr.into(),
+            amr: vec![amr.into()],
             enrollment: "host-managed".into(),
             fields: fields.iter().map(|f| f.to_string()).collect(),
         }
@@ -137,7 +147,9 @@ pub struct ChallengeStart {
 
 pub enum FactorOutcome {
     Verified {
-        amr: String,
+        /// Methods proved, with optional qualifiers (OQ-5), e.g.
+        /// `["hwk", "pin"]`.
+        amr: Vec<String>,
         /// `(record id, new data)` written atomically by the host.
         updates: Vec<(String, Value)>,
     },
@@ -262,7 +274,7 @@ impl AuthFactor for TotpFactor {
             };
             if let Some(step) = totp::verify(&secret, code, ctx.now_unix, data.last_step) {
                 return Ok(FactorOutcome::Verified {
-                    amr: "otp".into(),
+                    amr: vec!["otp".into()],
                     updates: vec![(
                         rec.id.clone(),
                         json!({ "secret": data.secret, "last_step": step }),
@@ -365,7 +377,7 @@ impl AuthFactor for RecoveryFactor {
                     if AuthService::verify_password(&code, hash).unwrap_or(false) {
                         entry["used"] = Value::Bool(true);
                         return FactorOutcome::Verified {
-                            amr: "rcv".into(),
+                            amr: vec!["rcv".into()],
                             updates: vec![(rec.id.clone(), json!({ "codes": codes }))],
                         };
                     }
@@ -533,7 +545,7 @@ impl AuthFactor for WebAuthnFactor {
             }
         }
         Ok(FactorOutcome::Verified {
-            amr: "hwk".into(),
+            amr: vec!["hwk".into()],
             updates,
         })
     }

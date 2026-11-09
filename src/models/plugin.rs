@@ -175,13 +175,40 @@ pub struct AuthFactorDecl {
     /// How the host client runs the challenge: `otp`, `webauthn` or `push`.
     pub kind: String,
     pub label: String,
-    /// Method added to the session once the factor verifies: `otp` or `hwk`.
-    pub amr: String,
+    /// Methods added to the session once the factor verifies: one value
+    /// (`otp`, `hwk`, `swk`) or a list that may add qualifiers such as
+    /// `[hwk, pin]` (OQ-5).
+    pub amr: FactorAmr,
     /// `host-managed` (the host stores the record) or `external`.
     pub enrollment: String,
     /// Fields the client must supply for a challenge.
     #[serde(default)]
     pub fields: Vec<String>,
+}
+
+/// The `amr` of a plugin factor: one value or a list (OQ-5). Untagged, so a
+/// manifest keeps its shape when it is written back.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FactorAmr {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl FactorAmr {
+    /// The declared values in order.
+    pub fn values(&self) -> Vec<String> {
+        match self {
+            FactorAmr::One(v) => vec![v.clone()],
+            FactorAmr::Many(v) => v.clone(),
+        }
+    }
+}
+
+impl From<&str> for FactorAmr {
+    fn from(v: &str) -> Self {
+        FactorAmr::One(v.to_string())
+    }
 }
 
 /// One API route of a plugin (H-7). The host serves it at

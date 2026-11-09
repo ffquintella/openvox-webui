@@ -167,11 +167,15 @@ fn ts(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
+/// Methods that reach level 2 (OQ-5 adds `swk`). Qualifiers such as `pin`
+/// never do on their own.
+pub const MULTI_FACTOR_METHODS: &[&str] = &["otp", "hwk", "swk", "rcv", "mfa"];
+
 /// Level reached by a set of methods.
 pub fn acr_of(amr: &[String]) -> u8 {
     if amr
         .iter()
-        .any(|m| matches!(m.as_str(), "otp" | "hwk" | "rcv" | "mfa"))
+        .any(|m| MULTI_FACTOR_METHODS.contains(&m.as_str()))
     {
         ACR_MFA
     } else {
@@ -1107,8 +1111,10 @@ impl<'a> AuthPipeline<'a> {
                 }
 
                 let mut methods: Vec<String> = serde_json::from_str(&row.amr).unwrap_or_default();
-                if !methods.contains(&amr) {
-                    methods.push(amr.clone());
+                for m in &amr {
+                    if !methods.contains(m) {
+                        methods.push(m.clone());
+                    }
                 }
                 let acr = acr_of(&methods).max(ACR_PRIMARY);
                 if (acr as i64) < row.required_acr {
@@ -1130,7 +1136,7 @@ impl<'a> AuthPipeline<'a> {
                     json!({"factor": active, "purpose": row.purpose, "provider": row.provider, "amr": methods, "acr": acr}),
                 )
                 .await;
-                if amr == "rcv" {
+                if amr.iter().any(|m| m == "rcv") {
                     self.audit(
                         user.organization_id,
                         Some(user.id),
@@ -1275,5 +1281,32 @@ impl<'a> AuthPipeline<'a> {
         )
         .await;
         self.after_enrolled(user, kind).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn amr(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// OQ-5: level 2 only when a recognised multi-factor method is present.
+    #[test]
+    fn acr_counts_only_recognised_multi_factor_methods() {
+        for m in ["otp", "hwk", "swk", "rcv", "mfa"] {
+            assert_eq!(acr_of(&amr(&["pwd", m])), ACR_MFA, "{m}");
+        }
+        assert_eq!(acr_of(&amr(&["pwd", "hwk", "pin"])), ACR_MFA);
+        for weak in [
+            &["pwd"][..],
+            &["fed"],
+            &["pwd", "pin"],
+            &["pwd", "user"],
+            &[],
+        ] {
+            assert_eq!(acr_of(&amr(weak)), ACR_PRIMARY, "{weak:?}");
+        }
     }
 }
