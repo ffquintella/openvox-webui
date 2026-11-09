@@ -825,6 +825,68 @@ async fn the_host_runs_the_mfa_fido2_plugin_end_to_end() {
     );
     let alice = token_of(&r);
 
+    e.section("7b. Suspended keys: the plugin's own error code reaches the API (H-8)");
+    let r = e
+        .call(
+            Some(&admin),
+            "GET",
+            "/api/v1/plugins/mfa-fido2/admin/credentials",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let refs: Vec<String> = r.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["credential_ref"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(refs.len(), 2);
+    for cref in &refs {
+        let r = e
+            .call(
+                Some(&admin),
+                "POST",
+                &format!("/api/v1/plugins/mfa-fido2/admin/credentials/{cref}/suspend"),
+                json!({"reason": "Reported lost"}),
+            )
+            .await;
+        assert_eq!(r.status, 200, "{}", r.body);
+    }
+    let r = e
+        .call(None, "POST", "/api/v1/auth/login", login.clone())
+        .await;
+    assert_eq!(r.status, 202, "{}", r.body);
+    let id = r.body["challenge_id"].as_str().unwrap().to_string();
+    let r = e
+        .call(
+            None,
+            "POST",
+            &format!("/api/v1/auth/challenge/{id}/begin"),
+            json!({"factor_id": FACTOR}),
+        )
+        .await;
+    assert_eq!(r.status, 503, "{}", r.body);
+    assert_eq!(
+        r.body["details"]["factor_error"],
+        json!({"kind": "unavailable", "code": "no_usable_credential"})
+    );
+    e.note(
+        "`unsuspend` is declared with `step_up: true`; the administrator has no second \
+         factor, so step-up does not apply to them (a user without a usable factor passes).",
+    );
+    for cref in &refs {
+        let r = e
+            .call(
+                Some(&admin),
+                "POST",
+                &format!("/api/v1/plugins/mfa-fido2/admin/credentials/{cref}/unsuspend"),
+                json!({}),
+            )
+            .await;
+        assert_eq!(r.status, 200, "{}", r.body);
+    }
+
     // 8. Fail closed when the plugin cannot run or is disabled.
     e.section("8. Fail closed: alice keeps only her security keys (removes her recovery codes)");
     let r = e
@@ -983,6 +1045,64 @@ async fn the_host_runs_the_mfa_fido2_plugin_end_to_end() {
     let id = r.body["challenge_id"].as_str().unwrap().to_string();
     let r = challenge(&mut e, &id, &mut key1, false).await;
     assert_eq!(r.status, 200, "{}", r.body);
+    let alice = token_of(&r);
+
+    e.section("9. Removing a key reaches the plugin as auth.factor.removed (H-10)");
+    let r = e
+        .call(Some(&alice), "GET", "/api/v1/users/me/factors", Value::Null)
+        .await;
+    let backup = r.body["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["label"] == "Backup key")
+        .and_then(|f| f["id"].as_str())
+        .unwrap()
+        .to_string();
+    let r = e
+        .call(
+            Some(&alice),
+            "DELETE",
+            &format!("/api/v1/users/me/factors/{backup}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let started = std::time::Instant::now();
+    let mut listed = 2;
+    while started.elapsed() < std::time::Duration::from_secs(15) {
+        let r = e
+            .app
+            .request(
+                Request::builder()
+                    .uri("/api/v1/plugins/mfa-fido2/me/credentials")
+                    .header("Authorization", format!("Bearer {alice}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+        let body: Value = r.json();
+        listed = body["credentials"].as_array().map_or(0, Vec::len);
+        if listed == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert_eq!(listed, 1, "the plugin index still lists the removed key");
+    e.note(&format!(
+        "The plugin's `on_factor_removed` handler marked the key removed {} ms after the \
+         DELETE (event bus dispatch, default tick 1 s).",
+        started.elapsed().as_millis()
+    ));
+    let r = e
+        .call(
+            Some(&alice),
+            "GET",
+            "/api/v1/plugins/mfa-fido2/me/credentials",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.body["credentials"][0]["nickname"], "Desk key (USB-C)");
     e.finish();
 }
 
