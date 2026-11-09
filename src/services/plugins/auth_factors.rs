@@ -19,9 +19,9 @@ use super::invoke::{
 use super::manager::PluginManager;
 use crate::models::{AuthFactorDecl, PluginState, RuntimeKind, RuntimeSpec};
 use crate::services::auth_pipeline::factors::{
-    is_phishing_resistant, now_unix, AuthFactor, ChallengeContext, ChallengeStart, EnrollContext,
-    EnrollMode, EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorErrorKind,
-    FactorOutcome, FactorRecord,
+    is_phishing_resistant, AuthFactor, ChallengeContext, ChallengeStart, EnrollContext, EnrollMode,
+    EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorErrorKind, FactorOutcome,
+    FactorRecord,
 };
 
 pub const FACTOR_CAPABILITY: &str = "auth:factor";
@@ -559,7 +559,7 @@ mod tests {
     use super::*;
     use crate::config::AppConfig;
     use crate::models::{ApproveCapabilitiesRequest, User};
-    use crate::services::auth_pipeline::factors::generate_recovery_codes;
+    use crate::services::auth_pipeline::factors::{generate_recovery_codes, now_unix};
     use crate::services::auth_pipeline::policy::{self, PolicyInput};
     use crate::services::auth_pipeline::{
         AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, StepUpCheck,
