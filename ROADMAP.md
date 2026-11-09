@@ -304,7 +304,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T102 Add MFA policies (S22)
 - [x] T116 Add plugin second factors on the WASM runtime and the crypto.random host operation (S21)
 - [x] T118 Add time-boxed enrollment-only sessions after a factor reset (S22)
-- [ ] T120 Complete the second-factor host contracts of the mfa-fido2 module (Phase C: OQ-3 to OQ-23) (S21)
+- [x] T120 Complete the second-factor host contracts of the mfa-fido2 module (Phase C: OQ-3 to OQ-23) (S21)
 
 ## [M30] Directory Providers
 > outcome: Users authenticate and are provisioned from LDAP or Active Directory with group-to-role mapping.
