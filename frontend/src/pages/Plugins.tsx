@@ -32,14 +32,8 @@ import FactsTab from '../components/plugins/FactsTab';
 import ClassificationTab from '../components/plugins/ClassificationTab';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import ModuleTrustPanel from '../components/plugins/ModuleTrustPanel';
-import {
-  ErrorBox,
-  Modal,
-  RiskBadge,
-  StateBadge,
-  WarningBox,
-  lifecycleWarnings,
-} from '../components/plugins/pluginUi';
+import { ErrorBox, Modal, RiskBadge, StateBadge, WarningBox } from '../components/plugins/pluginUi';
+import { lifecycleWarnings } from '../components/plugins/lifecycleWarnings';
 import {
   dangerBtn,
   getApiErrorMessage,

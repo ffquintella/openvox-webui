@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { WarningBox, lifecycleWarnings } from '../components/plugins/pluginUi';
+import { WarningBox } from '../components/plugins/pluginUi';
+import { lifecycleWarnings } from '../components/plugins/lifecycleWarnings';
 
 afterEach(cleanup);
 
