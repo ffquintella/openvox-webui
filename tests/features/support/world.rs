@@ -94,6 +94,11 @@ pub struct TestWorld {
     /// and the WASM runtime (H-7)
     pub plugin_routes: Option<crate::features::step_definitions::plugin_route_steps::RouteScenario>,
 
+    /// Enrollment grace scenarios run the real router, authentication
+    /// middleware and pipeline (OQ-12)
+    pub enrollment_grace:
+        Option<crate::features::step_definitions::enrollment_grace_steps::GraceScenario>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,
