@@ -174,12 +174,37 @@ pub struct AuthPipeline<'a> {
 }
 
 impl<'a> AuthPipeline<'a> {
+    /// A pipeline with the built-in factors only.
     pub fn new(pool: &'a SqlitePool, config: &'a AppConfig) -> Self {
         Self {
             pool,
             config,
             factors: builtin_factors(&config.auth.mfa),
         }
+    }
+
+    /// The pipeline of a request: built-in factors plus the factors of the
+    /// enabled plugins (H-1).
+    pub fn for_state(state: &'a crate::AppState) -> Self {
+        Self::new(&state.db, &state.config).with_plugin_factors(state.plugin_manager.auth_factors())
+    }
+
+    /// Adds plugin factors. Only qualified ids (`<plugin-id>:<factor-id>`)
+    /// that are not taken yet are kept, so a plugin factor can never stand
+    /// in for a built-in factor or for another plugin's factor.
+    pub fn with_plugin_factors(mut self, extra: Vec<Box<dyn AuthFactor>>) -> Self {
+        for f in extra {
+            let id = f.descriptor().id;
+            let qualified = id
+                .split_once(':')
+                .is_some_and(|(p, f)| !p.is_empty() && !f.is_empty() && !f.contains(':'));
+            if !qualified || self.factor(&id).is_some() {
+                tracing::warn!("ignoring plugin factor '{}': id not qualified or taken", id);
+                continue;
+            }
+            self.factors.push(f);
+        }
+        self
     }
 
     fn key(&self) -> &str {
@@ -209,6 +234,17 @@ impl<'a> AuthPipeline<'a> {
 
     pub fn descriptors(&self) -> Vec<FactorDescriptor> {
         self.factors.iter().map(|f| f.descriptor()).collect()
+    }
+
+    /// The enrolled kinds whose factor can run now. Records of a factor that
+    /// is not registered (a disabled plugin, an unconfigured built-in) are
+    /// kept but neither offered nor counted as usable.
+    pub fn available(&self, enrolled: &[String]) -> Vec<String> {
+        enrolled
+            .iter()
+            .filter(|k| self.factor(k).is_some())
+            .cloned()
+            .collect()
     }
 
     pub async fn audit(
@@ -335,8 +371,8 @@ impl<'a> AuthPipeline<'a> {
             )));
         }
 
-        let kinds = self.store().usable_kinds(user.id).await?;
-        if kinds.is_empty() {
+        let enrolled = self.store().usable_kinds(user.id).await?;
+        if enrolled.is_empty() {
             let break_glass = ident.provider == "local"
                 && roles
                     .iter()
@@ -373,6 +409,26 @@ impl<'a> AuthPipeline<'a> {
                         .into(),
             });
         }
+        // Enrolled but none of the factors can run (a disabled or failed
+        // plugin): a denial, never the break-glass path, which is only for
+        // accounts with nothing enrolled.
+        let kinds = self.available(&enrolled);
+        if kinds.is_empty() {
+            self.audit(
+                user.organization_id,
+                Some(user.id),
+                "auth.login_denied",
+                &user.username,
+                json!({"reason": "factor_unavailable", "provider": ident.provider, "enrolled": enrolled}),
+            )
+            .await;
+            return Ok(LoginOutcome::Denied {
+                code: "factor_unavailable",
+                message: "None of the second factors enrolled for this account is available; \
+                          use a recovery code or ask an administrator"
+                    .into(),
+            });
+        }
 
         let offer = self
             .create_challenge(
@@ -406,10 +462,16 @@ impl<'a> AuthPipeline<'a> {
         session_id: &str,
         client: &ClientInfo,
     ) -> Result<ChallengeOffer, PipelineError> {
-        let kinds = self.store().usable_kinds(user.id).await?;
-        if kinds.is_empty() {
+        let enrolled = self.store().usable_kinds(user.id).await?;
+        if enrolled.is_empty() {
             return Err(PipelineError::Unavailable(
                 "No second factor is enrolled for this account".into(),
+            ));
+        }
+        let kinds = self.available(&enrolled);
+        if kinds.is_empty() {
+            return Err(PipelineError::Unavailable(
+                "None of the second factors enrolled for this account is available".into(),
             ));
         }
         let (amr, _) = self

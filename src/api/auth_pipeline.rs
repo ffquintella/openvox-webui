@@ -156,7 +156,9 @@ pub fn outcome_response(outcome: LoginOutcome) -> Response {
 
 /// Step-up: sensitive operations call this. A user with no usable second
 /// factor cannot step up and is let through, so MFA never locks out an account
-/// that has not enrolled; a user who can step up must hold level 2.
+/// that has not enrolled; a user who can step up must hold level 2. Enrolled
+/// factors count even while unavailable (a disabled plugin): an outage never
+/// waives step-up.
 pub async fn require_step_up(state: &AppState, user: &AuthUser) -> ApiResult<()> {
     let pipeline = AuthPipeline::new(&state.db, &state.config);
     if pipeline.store().usable_kinds(user.id).await?.is_empty() {
@@ -265,7 +267,7 @@ async fn list_providers(State(state): State<AppState>) -> Json<Value> {
             "asserts_mfa": p.asserts_mfa,
         }));
     }
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     Json(json!({ "providers": providers, "factors": pipeline.descriptors() }))
 }
 
@@ -306,7 +308,7 @@ async fn sso_begin(
     let Some(cfg) = state.config.auth.mfa.oidc.iter().find(|p| p.id == id) else {
         return AppError::not_found("Unknown provider").into_response();
     };
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let flow = match OidcClient::new(cfg)
         .begin(&state.db, pipeline.key_for_flows(), q.return_to.as_deref())
         .await
@@ -347,7 +349,7 @@ async fn sso_callback(
     let Some(cfg) = state.config.auth.mfa.oidc.iter().find(|p| p.id == id) else {
         return sso_failure("Unknown provider");
     };
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let org = default_organization_uuid();
     let fail = |reason: &str, detail: String| {
         let mut r = sso_failure("Sign-in failed");
@@ -462,7 +464,7 @@ async fn challenge_begin(
     headers: HeaderMap,
     Json(body): Json<BeginChallengeBody>,
 ) -> ApiResult<Json<Value>> {
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let client = pipeline
         .begin_challenge(&id, &body.factor_id, &client_info(&headers))
         .await?;
@@ -484,7 +486,7 @@ async fn challenge_verify(
     headers: HeaderMap,
     Json(body): Json<VerifyBody>,
 ) -> ApiResult<Response> {
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     match pipeline
         .verify_challenge(
             &id,
@@ -521,7 +523,7 @@ async fn step_up(
     headers: HeaderMap,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let u = current_user(&state, &user).await?;
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let offer = pipeline
         .start_step_up(&u, &user.session_id, &client_info(&headers))
         .await?;
@@ -540,7 +542,7 @@ async fn step_up(
 // ---------------------------------------------------------------- factors
 
 async fn my_factors(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let enrolled = pipeline.store().list(user.id).await?;
     let (amr, acr) = pipeline
         .session_levels(&user.session_id)
@@ -558,7 +560,7 @@ async fn enroll_begin(
     user: AuthUser,
     Path(factor_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     // Replacing recovery codes invalidates the old ones: that needs step-up.
     if factor_id == "recovery"
         && pipeline
@@ -583,7 +585,7 @@ async fn enroll_complete(
     Path(factor_id): Path<String>,
     Json(body): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let u = current_user(&state, &user).await?;
     // The first factor also gets recovery codes, shown once.
     let had_any = !pipeline.store().usable_kinds(u.id).await?.is_empty();
@@ -602,7 +604,7 @@ async fn remove_factor(
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     require_step_up(&state, &user).await?;
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     if !pipeline.store().delete(user.id, &id).await? {
         return Err(AppError::not_found("Factor not found").into());
     }
@@ -629,7 +631,7 @@ async fn reset_factors(
         .get_user_by_id_in_org(user.organization_id, &id)
         .await?
         .ok_or_else(|| AppError::not_found("User not found"))?;
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let removed = pipeline.store().delete_all(target.id).await?;
     pipeline
         .audit(
@@ -665,7 +667,7 @@ async fn put_policies(
     require_step_up(&state, &user).await?;
     policy::validate(&body.policies).map_err(|e| AppError::bad_request(e.to_string()))?;
     let saved = policy::replace(&state.db, user.organization_id, &body.policies).await?;
-    AuthPipeline::new(&state.db, &state.config)
+    AuthPipeline::for_state(&state)
         .audit(
             user.organization_id,
             Some(user.id),

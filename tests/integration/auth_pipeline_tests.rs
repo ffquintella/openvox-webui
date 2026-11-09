@@ -370,6 +370,223 @@ async fn without_a_usable_factor_policy_denies_users_but_not_break_glass() {
     assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
 }
 
+/// A record of a plugin factor whose plugin is not running (disabled, never
+/// installed here): login is refused and step-up stays required, so an
+/// outage can neither let a user in nor waive step-up.
+#[tokio::test]
+async fn an_unavailable_plugin_factor_denies_login_and_keeps_step_up() {
+    let app = TestApp::new().await;
+    let admin = prepare_admin(&app).await;
+    require_mfa_for_everyone(&app, &admin).await;
+    let (viewer, viewer_token) = add_viewer(&app).await;
+    let record =
+        openvox_webui::services::auth_pipeline::AuthPipeline::new(&app.state.db, &app.state.config)
+            .store()
+            .insert(viewer, "mfa-fido2:security-key", "Key", &json!({}), true)
+            .await
+            .unwrap()
+            .id;
+
+    let r = call(
+        &app,
+        None,
+        "ua",
+        "POST",
+        "/api/v1/auth/login",
+        json!({"username": "viewer", "password": PASSWORD}),
+    )
+    .await;
+    r.assert_forbidden();
+    assert_eq!(r.json::<Value>()["code"], "factor_unavailable");
+    let providers: Value = app.get("/api/v1/auth/providers").await.json();
+    assert!(!providers.to_string().contains("mfa-fido2"));
+
+    let r = call(
+        &app,
+        Some(&viewer_token),
+        "t",
+        "DELETE",
+        &format!("/api/v1/users/me/factors/{record}"),
+        json!({}),
+    )
+    .await;
+    r.assert_unauthorized();
+    assert_eq!(r.json::<Value>()["code"], "step_up_required");
+    let r = call(
+        &app,
+        Some(&viewer_token),
+        "t",
+        "POST",
+        "/api/v1/auth/step-up",
+        json!({}),
+    )
+    .await;
+    r.assert_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(r.json::<Value>()["code"], "factor_unavailable");
+}
+
+/// A first-party factor plugin for the HTTP tests: accepts the credential
+/// `"good"` and nothing else.
+struct GoodKey;
+
+impl openvox_webui::services::plugins::BuiltinPlugin for GoodKey {
+    fn handle(
+        &self,
+        call: &openvox_webui::services::plugins::invoke::HandlerCall,
+    ) -> anyhow::Result<Value> {
+        let good = call.input["response"]["credential"] == "good";
+        Ok(match call.handler.as_str() {
+            "begin_enroll" => {
+                json!({"client": {"publicKey": {"challenge": "c"}}, "mode": {"pending": {"s": 1}}})
+            }
+            "complete_enroll" if good => json!({"data": {"cred": "k1"}, "label": "Key"}),
+            "begin_challenge" => json!({"client": {"publicKey": {}}, "flow_state": "f"}),
+            "verify" if good && call.input["flow_state"] == "f" => {
+                json!({"outcome": "verified", "amr": "hwk"})
+            }
+            "verify" => json!({"outcome": "failed", "retryable": true}),
+            _ => json!({"error": {"kind": "invalid", "code": "bad_credential"}}),
+        })
+    }
+}
+
+const KEY_SEED: [u8; 32] = [51; 32];
+
+#[tokio::test]
+async fn a_plugin_factor_is_served_over_http_while_its_plugin_is_enabled() {
+    use ed25519_dalek::SigningKey;
+    use openvox_webui::services::plugins::package::build_signed_package;
+    let app = TestApp::with_plugins(|m| {
+        let pk = SigningKey::from_bytes(&KEY_SEED).verifying_key().to_bytes();
+        m.with_builtin_keys(vec![("OpenVox".into(), pk)])
+            .with_builtin_runtime("goodkey", std::sync::Arc::new(GoodKey))
+    })
+    .await;
+    let yaml = "api_version: 2\nid: goodkey\nname: Good key\nversion: 1.0.0\npublisher: ACME\n\
+                runtime: { kind: builtin, entry: goodkey }\ncapabilities:\n  - auth:factor\n\
+                contributes:\n  auth_factors:\n    - { id: key, kind: webauthn, label: Good key, amr: hwk, enrollment: host-managed, fields: [credential] }\n";
+    let pkg = build_signed_package(
+        &[("plugin.yaml", yaml.as_bytes())],
+        "goodkey",
+        "1.0.0",
+        2,
+        KEY_SEED,
+    );
+    let pm = &app.state.plugin_manager;
+    pm.install(&pkg, "admin", None).await.unwrap();
+    pm.enable("goodkey").await.unwrap();
+
+    let providers: Value = app.get("/api/v1/auth/providers").await.json();
+    let factor = providers["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "goodkey:key")
+        .expect("the plugin factor is listed")
+        .clone();
+    assert_eq!(factor["kind"], "webauthn");
+    assert_eq!(factor["amr"], "hwk");
+
+    let admin = prepare_admin(&app).await;
+    require_mfa_for_everyone(&app, &admin).await;
+    let begin = call(
+        &app,
+        Some(&admin),
+        "t",
+        "POST",
+        "/api/v1/users/me/factors/goodkey:key/enroll/begin",
+        json!({}),
+    )
+    .await;
+    begin.assert_ok();
+    assert_eq!(
+        begin.json::<Value>()["enrollment"]["publicKey"]["challenge"],
+        "c"
+    );
+    let bad = call(
+        &app,
+        Some(&admin),
+        "t",
+        "POST",
+        "/api/v1/users/me/factors/goodkey:key/enroll/complete",
+        json!({"credential": "bad"}),
+    )
+    .await;
+    bad.assert_status(axum::http::StatusCode::BAD_REQUEST);
+    assert_eq!(bad.json::<Value>()["message"], "bad_credential");
+    let done = call(
+        &app,
+        Some(&admin),
+        "t",
+        "POST",
+        "/api/v1/users/me/factors/goodkey:key/enroll/complete",
+        json!({"credential": "good"}),
+    )
+    .await;
+    done.assert_ok();
+    assert!(done.json::<Value>()["recovery"]["codes"].is_array());
+
+    let r = login(&app, "ua").await;
+    r.assert_status(axum::http::StatusCode::ACCEPTED);
+    let body: Value = r.json();
+    let ids: Vec<&str> = body["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["recovery", "goodkey:key"]);
+    let id = body["challenge_id"].as_str().unwrap().to_string();
+    call(
+        &app,
+        None,
+        "ua",
+        "POST",
+        &format!("/api/v1/auth/challenge/{id}/begin"),
+        json!({"factor_id": "goodkey:key"}),
+    )
+    .await
+    .assert_ok();
+    let wrong = call(
+        &app,
+        None,
+        "ua",
+        "POST",
+        &format!("/api/v1/auth/challenge/{id}/verify"),
+        json!({"response": {"credential": "bad"}}),
+    )
+    .await;
+    wrong.assert_unauthorized();
+    assert_eq!(wrong.json::<Value>()["code"], "factor_failed");
+    let ok = call(
+        &app,
+        None,
+        "ua",
+        "POST",
+        &format!("/api/v1/auth/challenge/{id}/verify"),
+        json!({"response": {"credential": "good"}}),
+    )
+    .await;
+    ok.assert_ok();
+    let claims = claims_of(ok.json::<Value>()["access_token"].as_str().unwrap());
+    assert_eq!(claims["acr"], 2);
+    assert_eq!(claims["amr"], json!(["pwd", "hwk"]));
+
+    // Disabled: no longer listed or offered; recovery codes remain.
+    pm.disable("goodkey").await.unwrap();
+    let providers: Value = app.get("/api/v1/auth/providers").await.json();
+    assert!(!providers.to_string().contains("goodkey"));
+    let r = login(&app, "ua").await;
+    r.assert_status(axum::http::StatusCode::ACCEPTED);
+    assert_eq!(
+        r.json::<Value>()["factors"],
+        json!([
+            {"id": "recovery", "kind": "recovery", "label": "Recovery code", "amr": "rcv",
+             "enrollment": "host-managed", "fields": ["code"]}
+        ])
+    );
+}
+
 #[tokio::test]
 async fn sensitive_changes_need_step_up_once_a_factor_exists() {
     let app = TestApp::new().await;

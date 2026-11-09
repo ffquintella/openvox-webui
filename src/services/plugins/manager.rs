@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::auth_factors::PluginFactorRegistry;
 use super::classification::ClassificationRuntime;
 use super::facts::FactsRuntime;
 use super::governance::{classify, Governor};
@@ -155,6 +156,8 @@ pub struct PluginManager {
     interceptors: Arc<InterceptorRuntime>,
     /// `plugins.allow_trusted_modules` (M31): off by default.
     allow_trusted_modules: bool,
+    /// Second factors of the enabled plugins (H-1), swapped on every reload.
+    auth_factors: Arc<PluginFactorRegistry>,
 }
 
 pub(super) type Failure = (PluginState, &'static str, String);
@@ -206,6 +209,7 @@ impl PluginManager {
             classification: Arc::new(ClassificationRuntime::new(Default::default())),
             interceptors: Arc::new(InterceptorRuntime::default()),
             allow_trusted_modules: false,
+            auth_factors: Arc::new(PluginFactorRegistry::default()),
         }
     }
 
@@ -338,6 +342,11 @@ impl PluginManager {
         self.registry.read().map(|r| r.clone()).unwrap_or_default()
     }
 
+    /// Second factors of the enabled plugins (H-1).
+    pub fn auth_factor_registry(&self) -> &Arc<PluginFactorRegistry> {
+        &self.auth_factors
+    }
+
     /// Short-lived tokens that let a sandboxed plugin page load its assets.
     pub fn ui_sessions(&self) -> &UiSessions {
         &self.ui_sessions
@@ -432,6 +441,9 @@ impl PluginManager {
         if let Ok(mut r) = self.registry.write() {
             *r = Arc::new(registry);
         }
+        // Factors follow the enabled set: registered on enable, gone after a
+        // disable, uninstall, circuit trip or failed verification.
+        self.auth_factors.rebuild(&hooks);
         if let Ok(mut h) = self.hooks.write() {
             *h = Arc::new(hooks);
         }

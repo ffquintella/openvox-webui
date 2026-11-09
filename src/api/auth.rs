@@ -68,7 +68,7 @@ async fn login(
     Json(payload): Json<LoginRequest>,
 ) -> Response {
     let auth_service = AuthService::new(state.db.clone());
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
 
     let user = match auth_service.get_user_by_username(&payload.username).await {
         // A directory account has no local password: only its directory
@@ -225,7 +225,7 @@ async fn refresh_token(
         .map_err(|_| auth_error_response(AuthError::InvalidToken))?;
 
     // A refreshed token keeps the methods and level the session earned.
-    let (amr, acr) = AuthPipeline::new(&state.db, &state.config)
+    let (amr, acr) = AuthPipeline::for_state(&state)
         .session_levels(&token_data.claims.jti)
         .await
         .unwrap_or((vec!["pwd".to_string()], 1));

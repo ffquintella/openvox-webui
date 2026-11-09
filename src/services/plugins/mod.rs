@@ -1,6 +1,7 @@
 //! Plugin platform services (M19): manifest, packages, signatures, manager
 //! and the slot registry.
 
+pub mod auth_factors;
 pub mod bootstrap;
 pub mod classification;
 pub mod events;

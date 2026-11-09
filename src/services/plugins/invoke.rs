@@ -16,8 +16,8 @@ use super::filter::{pattern_matches, Filter};
 use super::manifest::parse_cron;
 use super::package::PluginPackage;
 use crate::models::{
-    AnnotationDecl, ClassificationContribution, DatasetDecl, ExportFormatDecl, FactsContribution,
-    JobDecl, ReportTypeDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
+    AnnotationDecl, AuthFactorDecl, ClassificationContribution, DatasetDecl, ExportFormatDecl,
+    FactsContribution, JobDecl, ReportTypeDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
     DEFAULT_INTERCEPT_HANDLER,
 };
 
@@ -40,6 +40,9 @@ pub enum HandlerKind {
     Classification,
     /// synchronous veto/alter hooks on interceptable events (M31)
     Interceptor,
+    /// second factors: `begin_enroll`, `complete_enroll`, `begin_challenge`
+    /// and `verify` (H-1)
+    Factor,
 }
 
 impl HandlerKind {
@@ -53,6 +56,7 @@ impl HandlerKind {
             HandlerKind::Report => "report",
             HandlerKind::Classification => "classification",
             HandlerKind::Interceptor => "interceptor",
+            HandlerKind::Factor => "factor",
         }
     }
 }
@@ -142,6 +146,8 @@ pub struct PluginHooks {
     /// Classification functions, operators, providers, templates and merge
     /// strategies (M27).
     pub classification: Option<ClassificationContribution>,
+    /// Second factors (H-1); served under `<plugin-id>:<factor-id>`.
+    pub auth_factors: Vec<AuthFactorDecl>,
 }
 
 impl PluginHooks {
@@ -203,6 +209,7 @@ impl PluginHooks {
             report_annotations: m.contributes.report_annotations.clone(),
             datasets: m.contributes.datasets.clone(),
             classification: m.contributes.classification.clone(),
+            auth_factors: m.contributes.auth_factors.clone(),
         }
     }
 

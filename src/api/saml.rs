@@ -550,7 +550,7 @@ async fn saml_acs(
     if saml_config.asserts_mfa {
         amr.push("mfa".to_string());
     }
-    let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let pipeline = AuthPipeline::for_state(&state);
     let outcome = pipeline
         .start_login(
             PrimaryIdentity {
