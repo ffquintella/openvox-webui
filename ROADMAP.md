@@ -219,6 +219,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T74 Add capability gate and approval flow (S21)
 - [x] T75 Provide kv and db:own storage with migrations (S21)
 - [x] T76 Add lifecycle hooks and resource limits (S21)
+- [x] T117 Add plugin API routes with the caller's delegated identity (S21)
 
 ## [M21] Events, Jobs and Webhooks
 > outcome: Plugins react to events, run scheduled jobs and exchange signed webhooks.

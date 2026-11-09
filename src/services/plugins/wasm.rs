@@ -19,8 +19,8 @@ use wasmtime::{
 };
 
 use super::invoke::{
-    HandlerCall, HandlerInvoker, HandlerKind, InvokeError, DEFAULT_HANDLER_TIMEOUT_MS,
-    MAX_HANDLER_TIMEOUT_MS,
+    DelegatedActor, HandlerCall, HandlerInvoker, HandlerKind, InvokeError,
+    DEFAULT_HANDLER_TIMEOUT_MS, MAX_HANDLER_TIMEOUT_MS,
 };
 
 /// Name of the only module the guest may import from.
@@ -45,6 +45,9 @@ pub struct HostContext {
     pub version: String,
     pub kind: HandlerKind,
     pub handler: String,
+    /// The user a route call runs for (H-7, OQ-21); `None` for every other
+    /// kind. Copied from the host's `HandlerCall`, never from the guest.
+    pub actor: Option<DelegatedActor>,
 }
 
 /// A failed host call, returned to the guest as an error envelope.
@@ -674,6 +677,9 @@ impl HandlerInvoker for WasmInvoker {
         let params = RunParams {
             request,
             ctx: HostContext {
+                // Only route calls act for a user; any other kind runs as
+                // the plugin itself, whatever the call carries.
+                actor: call.actor.filter(|_| call.kind == HandlerKind::Route),
                 plugin_id: call.plugin_id,
                 version: call.version,
                 kind: call.kind,
@@ -892,6 +898,7 @@ mod tests {
             handler: handler.into(),
             kind,
             input,
+            actor: None,
         }
     }
 

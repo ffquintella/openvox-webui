@@ -18,6 +18,7 @@ pub mod modules;
 pub mod package;
 pub mod registry;
 pub mod reports;
+pub mod routes;
 pub mod runtime;
 pub mod slots;
 pub mod storage;

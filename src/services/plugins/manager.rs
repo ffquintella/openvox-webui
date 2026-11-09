@@ -24,6 +24,7 @@ use super::manifest::{capabilities, describe_capability};
 use super::package::{self, PackageError, PluginPackage};
 use super::registry::Registry;
 use super::reports::ReportsRuntime;
+use super::routes::RouteRuntime;
 use super::storage::{collect_migrations, PluginStorage};
 use super::ui_assets::UiSessions;
 use super::wasm::WasmInvoker;
@@ -158,6 +159,8 @@ pub struct PluginManager {
     allow_trusted_modules: bool,
     /// Second factors of the enabled plugins (H-1), swapped on every reload.
     auth_factors: Arc<PluginFactorRegistry>,
+    /// Per-user rate limits of plugin API routes (H-7).
+    routes: Arc<RouteRuntime>,
 }
 
 pub(super) type Failure = (PluginState, &'static str, String);
@@ -210,6 +213,7 @@ impl PluginManager {
             interceptors: Arc::new(InterceptorRuntime::default()),
             allow_trusted_modules: false,
             auth_factors: Arc::new(PluginFactorRegistry::default()),
+            routes: Arc::new(RouteRuntime::default()),
         }
     }
 
@@ -334,6 +338,11 @@ impl PluginManager {
         &self.pool
     }
 
+    /// Directory of the stored packages and plugin data.
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
     pub fn hooks(&self) -> Arc<HookIndex> {
         self.hooks.read().map(|r| r.clone()).unwrap_or_default()
     }
@@ -345,6 +354,11 @@ impl PluginManager {
     /// Second factors of the enabled plugins (H-1).
     pub fn auth_factor_registry(&self) -> &Arc<PluginFactorRegistry> {
         &self.auth_factors
+    }
+
+    /// Rate limits of the plugin API routes (H-7).
+    pub fn route_runtime(&self) -> &Arc<RouteRuntime> {
+        &self.routes
     }
 
     /// Short-lived tokens that let a sandboxed plugin page load its assets.
@@ -444,6 +458,8 @@ impl PluginManager {
         // Factors follow the enabled set: registered on enable, gone after a
         // disable, uninstall, circuit trip or failed verification.
         self.auth_factors.rebuild(&hooks);
+        // Rate limit state of routes that are gone is dropped.
+        self.routes.prune(&hooks);
         if let Ok(mut h) = self.hooks.write() {
             *h = Arc::new(hooks);
         }
@@ -1066,6 +1082,7 @@ impl PluginManager {
             handler,
             kind: super::invoke::HandlerKind::Lifecycle,
             input,
+            actor: None,
         };
         let timeout = m
             .runtime

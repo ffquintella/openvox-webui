@@ -128,9 +128,10 @@ pub struct Contributes {
     pub slots: Vec<SlotContribution>,
     #[serde(default)]
     pub menus: Vec<MenuEntry>,
-    /// Plugin API routes (acted on from M20).
-    #[serde(default)]
-    pub api_routes: Vec<Value>,
+    /// Plugin API routes (H-7), served under `/api/v1/plugins/<id>/<path>`
+    /// with the caller's delegated identity. Needs `api:routes`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_routes: Vec<ApiRouteDecl>,
     /// Scheduled jobs (acted on from M21).
     #[serde(default)]
     pub jobs: Vec<Value>,
@@ -181,6 +182,31 @@ pub struct AuthFactorDecl {
     /// Fields the client must supply for a challenge.
     #[serde(default)]
     pub fields: Vec<String>,
+}
+
+/// One API route of a plugin (H-7). The host serves it at
+/// `/api/v1/plugins/<plugin-id><path>` to signed-in users only and runs the
+/// handler of kind `route` with the caller's delegated identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApiRouteDecl {
+    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+    pub method: String,
+    /// Relative path such as `/me/credentials/{credential_ref}`.
+    pub path: String,
+    /// Handler of kind `route` (default `on_request`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handler: Option<String>,
+    /// Permission the caller needs; without it any signed-in user may call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Requires>,
+    /// Calls per user, `<n>/s`, `<n>/min` or `<n>/h` (default `60/min`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<String>,
+    /// The caller must hold an MFA-level session, as for the host's
+    /// sensitive operations (`require_step_up`).
+    #[serde(default)]
+    pub step_up: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

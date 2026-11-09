@@ -459,10 +459,18 @@ impl HostApiImpl {
                 if action.is_empty() || action.len() > 64 {
                     return Err(invalid("'action' must be 1 to 64 characters"));
                 }
+                // OQ-21: during a route call the entry carries the signed-in
+                // user the call runs for. The actor comes from the host
+                // context only; any user named in the request is ignored, so
+                // a plugin cannot attribute an entry to someone else.
+                let (org, user) = match &ctx.actor {
+                    Some(a) => (a.organization_id, Some(a.user_id)),
+                    None => (crate::models::default_organization_uuid(), None),
+                };
                 AuditRepository::new(&self.pool)
                     .insert(
-                        crate::models::default_organization_uuid(),
-                        None,
+                        org,
+                        user,
                         &format!("plugin.{}.{}", plugin, action),
                         "plugin_runtime",
                         Some(plugin),

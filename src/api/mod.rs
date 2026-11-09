@@ -35,6 +35,7 @@ mod plugin_facts;
 mod plugin_governance;
 mod plugin_interceptors;
 mod plugin_modules;
+mod plugin_routes;
 mod plugin_updates;
 mod plugins;
 mod query;

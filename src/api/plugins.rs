@@ -84,6 +84,9 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/{id}/config", get(get_config).put(put_config))
         .route("/{id}/storage", get(get_storage))
+        // Plugin API routes (H-7): any other path under /{id}/; the static
+        // core routes above always take precedence.
+        .merge(super::plugin_routes::routes())
 }
 
 /// Error type of this module: service errors keep their machine-readable code.

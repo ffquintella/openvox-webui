@@ -11,10 +11,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use cron::Schedule;
 use serde_json::Value;
+use uuid::Uuid;
 
 use super::filter::{pattern_matches, Filter};
 use super::manifest::parse_cron;
 use super::package::PluginPackage;
+use super::routes::PluginRoute;
 use crate::models::{
     AnnotationDecl, AuthFactorDecl, ClassificationContribution, DatasetDecl, ExportFormatDecl,
     FactsContribution, JobDecl, ReportTypeDecl, RuntimeSpec, WebhookDecl, DEFAULT_EVENT_HANDLER,
@@ -43,6 +45,9 @@ pub enum HandlerKind {
     /// second factors: `begin_enroll`, `complete_enroll`, `begin_challenge`
     /// and `verify` (H-1)
     Factor,
+    /// API routes called by a signed-in user, run with that user's
+    /// delegated identity (H-7)
+    Route,
 }
 
 impl HandlerKind {
@@ -57,8 +62,20 @@ impl HandlerKind {
             HandlerKind::Classification => "classification",
             HandlerKind::Interceptor => "interceptor",
             HandlerKind::Factor => "factor",
+            HandlerKind::Route => "route",
         }
     }
+}
+
+/// The signed-in user on whose behalf a plugin route runs (H-7, OQ-21).
+/// Only the host sets it, from the authenticated request; nothing a guest
+/// sends can change it. Host operations such as `audit.write` record it as
+/// the acting user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegatedActor {
+    pub user_id: Uuid,
+    pub organization_id: Uuid,
+    pub username: String,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +86,8 @@ pub struct HandlerCall {
     pub handler: String,
     pub kind: HandlerKind,
     pub input: Value,
+    /// Set for `HandlerKind::Route` calls only; `None` everywhere else.
+    pub actor: Option<DelegatedActor>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -148,6 +167,8 @@ pub struct PluginHooks {
     pub classification: Option<ClassificationContribution>,
     /// Second factors (H-1); served under `<plugin-id>:<factor-id>`.
     pub auth_factors: Vec<AuthFactorDecl>,
+    /// API routes (H-7), parsed; served under `/api/v1/plugins/<plugin-id>`.
+    pub routes: Vec<PluginRoute>,
 }
 
 impl PluginHooks {
@@ -210,6 +231,12 @@ impl PluginHooks {
             datasets: m.contributes.datasets.clone(),
             classification: m.contributes.classification.clone(),
             auth_factors: m.contributes.auth_factors.clone(),
+            routes: m
+                .contributes
+                .api_routes
+                .iter()
+                .filter_map(|d| PluginRoute::from_decl(d).ok())
+                .collect(),
         }
     }
 
@@ -229,6 +256,7 @@ impl PluginHooks {
             handler: handler.to_string(),
             kind,
             input,
+            actor: None,
         }
     }
 

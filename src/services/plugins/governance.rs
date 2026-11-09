@@ -1378,6 +1378,7 @@ mod tests {
             handler: "on_event".into(),
             kind: HandlerKind::Event,
             input: json!({}),
+            actor: None,
         };
         let r = e.manager.invoke(c).await;
         assert!(

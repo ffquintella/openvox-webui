@@ -113,6 +113,7 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
     validate_reports(&mut p, m, &names);
     validate_classification(&mut p, m, &names);
     validate_auth_factors(&mut p, m);
+    validate_api_routes(&mut p, m);
 
     if let Some(mig) = &m.migrations {
         if !safe_package_path(&mig.dir) {
@@ -424,6 +425,63 @@ fn validate_auth_factors(p: &mut Vec<String>, m: &PluginManifest) {
                 p.push(format!(
                     "factor '{}': field '{}' is invalid or repeated",
                     f.id, field
+                ));
+            }
+        }
+    }
+}
+
+/// `contributes.api_routes` (H-7): `api:routes` declared and not optional, a
+/// runtime the host invokes, a plugin id beside no core route, and routes
+/// that parse, are unique per method and shape and name a permission that
+/// exists (deny by default).
+fn validate_api_routes(p: &mut Vec<String>, m: &PluginManifest) {
+    use super::routes::{PluginRoute, MAX_API_ROUTES, RESERVED_PLUGIN_IDS, ROUTES_CAPABILITY};
+    let routes = &m.contributes.api_routes;
+    if routes.is_empty() {
+        return;
+    }
+    match capabilities(m).iter().find(|c| c.name == ROUTES_CAPABILITY) {
+        None => p.push("api_routes need the capability api:routes".to_string()),
+        Some(c) if c.optional => p.push(
+            "api:routes cannot be optional for a plugin that contributes api_routes".to_string(),
+        ),
+        Some(_) => {}
+    }
+    if !matches!(m.runtime.kind, RuntimeKind::Wasm | RuntimeKind::Builtin) {
+        p.push("api_routes need the wasm or builtin runtime".to_string());
+    }
+    if RESERVED_PLUGIN_IDS.contains(&m.id.as_str()) {
+        p.push(format!(
+            "plugin id '{}' cannot serve api_routes: /api/v1/plugins/{}/ is a core route",
+            m.id, m.id
+        ));
+    }
+    if routes.len() > MAX_API_ROUTES {
+        p.push(format!("more than {} api_routes declared", MAX_API_ROUTES));
+    }
+    let mut shapes = BTreeSet::new();
+    for d in routes {
+        match PluginRoute::from_decl(d) {
+            Ok(r) => {
+                if !shapes.insert((r.method.clone(), r.shape())) {
+                    p.push(format!(
+                        "route {} {} is declared twice (parameter names aside)",
+                        r.method, r.path
+                    ));
+                }
+            }
+            Err(e) => p.push(e),
+        }
+        check_requires(p, &m.id, d.requires.as_ref());
+        if let Some(r) = &d.requires {
+            let own = r.resource.starts_with(&format!("plugin.{}.", m.id));
+            let core = crate::models::Resource::from_name(&r.resource).is_some()
+                && crate::models::Action::from_name(&r.action).is_some();
+            if !own && !core && !r.resource.starts_with("plugin") {
+                p.push(format!(
+                    "route {} {}: requires '{}:{}' is not a core permission",
+                    d.method, d.path, r.resource, r.action
                 ));
             }
         }
@@ -1222,6 +1280,7 @@ const EXACT_CAPABILITIES: &[&str] = &[
     "groups:read",
     "groups:write:own",
     "crypto:random",
+    "api:routes",
 ];
 
 const PREFIX_CAPABILITIES: &[&str] = &[
@@ -1347,6 +1406,10 @@ pub fn describe_capability(c: &Capability) -> CapabilityInfo {
         "email:send" => (RiskLevel::High, "Send email from this server".to_string()),
         "events:subscribe" => (RiskLevel::Medium, "Receive platform events".to_string()),
         "audit:write" => (RiskLevel::Low, "Write entries to the audit log".to_string()),
+        "api:routes" => (
+            RiskLevel::Medium,
+            "Serve API endpoints under /api/v1/plugins/<id>/ and receive the identity (id, username, roles) of the signed-in users who call them".to_string(),
+        ),
         "crypto:random" => (
             RiskLevel::Low,
             "Read secure random bytes from the host (for challenges and keys)".to_string(),

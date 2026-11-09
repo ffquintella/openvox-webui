@@ -211,6 +211,7 @@ impl PluginFactor {
             handler: handler.to_string(),
             kind: HandlerKind::Factor,
             input,
+            actor: None,
         };
         let timeout = e.timeout_ms();
         let started = Instant::now();
