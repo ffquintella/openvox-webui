@@ -51,6 +51,8 @@ auth:
   #   max_attempts: 5
   #   enrollment_grace_secs: 0           # after a factor reset: 0 (off) or 60..604800
   #   enrollment_grace_on_policy: false  # one window at the first policy denial
+  # step_up:
+  #   max_age_secs: 0                    # step-up freshness: 0 (off) or 60..2592000
 
 # Database settings (SQLite for local storage)
 database:

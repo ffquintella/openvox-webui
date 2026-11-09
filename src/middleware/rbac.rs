@@ -192,6 +192,7 @@ pub fn check_permission(
 ///         token_expiry_hours: 24, refresh_token_expiry_days: 7,
 ///         bcrypt_cost: 4, password_min_length: 8,
 ///         mfa: Default::default(),
+///         step_up: Default::default(),
 ///         directories: Vec::new(),
 ///         scim: Default::default(),
 ///     },

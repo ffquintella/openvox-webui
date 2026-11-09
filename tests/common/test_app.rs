@@ -376,6 +376,7 @@ pub fn test_config() -> AppConfig {
             bcrypt_cost: 4, // Lower cost for faster tests
             password_min_length: 8,
             mfa: Default::default(),
+            step_up: Default::default(),
             directories: Vec::new(),
             scim: Default::default(),
         },

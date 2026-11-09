@@ -109,6 +109,10 @@ pub struct SessionInfo {
     pub amr: Vec<String>,
     pub acr: u8,
     pub scope: SessionScope,
+    /// When the session was issued. Every verification issues a new session
+    /// and a refresh keeps the row, so this is the time of the last
+    /// verification (OQ-13); `None` when unreadable.
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 /// Result of looking for an enrollment grace window at login.
@@ -129,9 +133,12 @@ pub enum StepUpCheck {
     Passed,
     /// An enrollment-only session never confirms anything (OQ-12).
     EnrollmentOnly,
-    /// The session must be raised to `required_acr` first.
+    /// The session must be raised to `required_acr` first; `stale` when it
+    /// holds the level but its verification is older than
+    /// `auth.step_up.max_age_secs` (OQ-13).
     Required {
         required_acr: u8,
+        stale: bool,
     },
 }
 
@@ -389,9 +396,26 @@ impl<'a> AuthPipeline<'a> {
         }
         let required = self.step_up_level(user, org).await?;
         Ok(match session {
-            Some(s) if s.acr >= required => StepUpCheck::Passed,
+            Some(s) if s.acr >= required => {
+                // OQ-13: an unreadable time counts as stale (fail closed).
+                let stale = self
+                    .config
+                    .auth
+                    .step_up
+                    .max_age()
+                    .is_some_and(|max| s.created_at.is_none_or(|t| Utc::now() - t > max));
+                if stale {
+                    StepUpCheck::Required {
+                        required_acr: required,
+                        stale: true,
+                    }
+                } else {
+                    StepUpCheck::Passed
+                }
+            }
             _ => StepUpCheck::Required {
                 required_acr: required,
+                stale: false,
             },
         })
     }
@@ -537,14 +561,14 @@ impl<'a> AuthPipeline<'a> {
     /// Methods, level and scope recorded on a live session, `None` when it
     /// has no row (API keys). Any scope but none reads as enrollment-only.
     pub async fn session_info(&self, session_id: &str) -> Option<SessionInfo> {
-        let row: Option<(String, i64, Option<String>)> = sqlx::query_as(
-            "SELECT amr, acr, scope FROM auth_sessions WHERE id = ? AND revoked_at IS NULL",
+        let row: Option<(String, i64, Option<String>, String)> = sqlx::query_as(
+            "SELECT amr, acr, scope, created_at FROM auth_sessions WHERE id = ? AND revoked_at IS NULL",
         )
         .bind(session_id)
         .fetch_optional(self.pool)
         .await
         .ok()?;
-        row.map(|(amr, acr, scope)| SessionInfo {
+        row.map(|(amr, acr, scope, created_at)| SessionInfo {
             amr: serde_json::from_str(&amr).unwrap_or_default(),
             acr: acr as u8,
             scope: if scope.is_none() {
@@ -552,6 +576,9 @@ impl<'a> AuthPipeline<'a> {
             } else {
                 SessionScope::Enrollment
             },
+            created_at: DateTime::parse_from_rfc3339(&created_at)
+                .ok()
+                .map(|t| t.with_timezone(&Utc)),
         })
     }
 
@@ -1501,9 +1528,107 @@ impl<'a> AuthPipeline<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     fn amr(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// An in-memory database with the user `alice`.
+    async fn db_user() -> (SqlitePool, User) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash, role) \
+             VALUES (?, 'alice', 'alice@example.com', 'x', 'viewer')",
+        )
+        .bind(id.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let user = AuthService::new(pool.clone())
+            .get_user_by_id(&id)
+            .await
+            .unwrap()
+            .unwrap();
+        (pool, user)
+    }
+
+    async fn latest_session(pool: &SqlitePool, user: &User) -> String {
+        sqlx::query_scalar(
+            "SELECT id FROM auth_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(user.id.to_string())
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// OQ-13: with `auth.step_up.max_age_secs`, a level 2 session older
+    /// than that since its last verification must step up again.
+    #[tokio::test]
+    async fn step_up_freshness_expires_old_verifications() {
+        let (pool, user) = db_user().await;
+        let base = AppConfig::default();
+        let mut cfg = base.clone();
+        let p = AuthPipeline::new(&pool, &base);
+        p.store()
+            .insert(user.id, "totp", "", &json!({"secret": "x"}), true)
+            .await
+            .unwrap();
+        p.issue_session(&user, &amr(&["pwd", "otp"]), ACR_MFA)
+            .await
+            .unwrap();
+        let sid = latest_session(&pool, &user).await;
+        let check = |cfg: &AppConfig| {
+            let pool = &pool;
+            let sid = sid.clone();
+            let (uid, org) = (user.id, user.organization_id);
+            let cfg = cfg.clone();
+            async move {
+                AuthPipeline::new(pool, &cfg)
+                    .step_up_check(uid, org, &sid)
+                    .await
+                    .unwrap()
+            }
+        };
+        let old = (Utc::now() - Duration::seconds(120)).to_rfc3339();
+        sqlx::query("UPDATE auth_sessions SET created_at = ? WHERE id = ?")
+            .bind(&old)
+            .bind(&sid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Disabled (default): the level is enough, as before.
+        assert_eq!(check(&cfg).await, StepUpCheck::Passed);
+        cfg.auth.step_up.max_age_secs = 600;
+        assert_eq!(check(&cfg).await, StepUpCheck::Passed, "still fresh");
+        cfg.auth.step_up.max_age_secs = 60;
+        assert_eq!(
+            check(&cfg).await,
+            StepUpCheck::Required {
+                required_acr: ACR_MFA,
+                stale: true
+            }
+        );
+        // A refresh keeps the session row and its verification time; only
+        // a new verification (a new session) is fresh again.
+        p.issue_session(&user, &amr(&["pwd", "otp", "hwk"]), ACR_MFA)
+            .await
+            .unwrap();
+        let fresh = latest_session(&pool, &user).await;
+        assert_eq!(
+            AuthPipeline::new(&pool, &cfg)
+                .step_up_check(user.id, user.organization_id, &fresh)
+                .await
+                .unwrap(),
+            StepUpCheck::Passed
+        );
     }
 
     /// OQ-5: level 2 only when a recognised multi-factor method is present.

@@ -468,6 +468,8 @@ auth:
         jit: false             # create users on first login
         default_role: viewer   # required with jit; never taken from IdP claims
         trust_email: false
+  step_up:
+    max_age_secs: 0            # step-up freshness: 0 (off) or 60..2592000
 saml:
   asserts_mfa: false
 ```
@@ -476,6 +478,14 @@ Without a policy nothing changes. Administrators define MFA policies with
 `PUT /api/v1/auth/policies` (`{"policies": [{"name": "admins", "conditions":
 {"roles": ["admin"], "providers": ["local"]}, "required_acr": 2}]}`). Changing
 `factor_key` makes enrolled factors unreadable, so users must re-enroll.
+A policy with `"require_phishing_resistant": true` accepts only security keys
+and passkeys (WebAuthn factors): TOTP and recovery codes are neither offered
+nor accepted for the users it matches, at sign-in and at step-up.
+
+With `step_up.max_age_secs` set, a session that reached the step-up level
+longer ago than that (its last second-factor verification) must step up
+again before a sensitive action (`401 step_up_required` with `reason:
+max_age`). `0` keeps the previous behaviour: the level alone is enough.
 
 With `enrollment_grace_secs` set, resetting a user's factors (`POST
 /api/v1/users/{id}/factors/reset`) opens an enrollment grace window: until it

@@ -928,6 +928,9 @@ pub struct AuthConfig {
     /// Authentication pipeline: factors, WebAuthn and OIDC providers (M29)
     #[serde(default)]
     pub mfa: crate::services::auth_pipeline::MfaConfig,
+    /// Step-up freshness (OQ-13): `step_up.max_age_secs`, 0 = off
+    #[serde(default)]
+    pub step_up: crate::services::auth_pipeline::config::StepUpConfig,
     /// LDAP and Active Directory directories (M30), tried in this order
     #[serde(default)]
     pub directories: Vec<crate::services::directory::DirectoryConfig>,
@@ -2130,6 +2133,7 @@ impl Default for AppConfig {
                 bcrypt_cost: default_bcrypt_cost(),
                 password_min_length: default_password_min_length(),
                 mfa: Default::default(),
+                step_up: Default::default(),
                 directories: Vec::new(),
                 scim: Default::default(),
             },

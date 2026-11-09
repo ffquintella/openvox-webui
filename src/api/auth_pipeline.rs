@@ -229,14 +229,27 @@ pub async fn require_step_up(state: &AppState, user: &AuthUser) -> ApiResult<()>
             "An enrollment-only session cannot confirm sensitive actions",
         )),
         // `required_acr` is 3 when a policy requires a phishing-resistant
-        // factor (OQ-6).
-        StepUpCheck::Required { required_acr } => Err(ApiErr::new(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "This action needs a stronger authentication level",
-        )
-        .code("step_up_required")
-        .details(json!({"required_acr": required_acr, "step_up": "/api/v1/auth/step-up"}))),
+        // factor (OQ-6); `reason: max_age` when the level is held but its
+        // verification is too old (OQ-13).
+        StepUpCheck::Required {
+            required_acr,
+            stale,
+        } => {
+            let mut details =
+                json!({"required_acr": required_acr, "step_up": "/api/v1/auth/step-up"});
+            let message = if stale {
+                details["reason"] = json!("max_age");
+                details["max_age_secs"] = json!(state.config.auth.step_up.max_age_secs);
+                "This action needs a recent verification of your second factor"
+            } else {
+                "This action needs a stronger authentication level"
+            };
+            Err(
+                ApiErr::new(StatusCode::UNAUTHORIZED, "unauthorized", message)
+                    .code("step_up_required")
+                    .details(details),
+            )
+        }
     }
 }
 

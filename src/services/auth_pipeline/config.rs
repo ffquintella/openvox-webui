@@ -24,6 +24,40 @@ fn grace_secs<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
     Ok(secs)
 }
 
+/// Shortest step-up freshness that is not "disabled" (one minute).
+pub const MIN_STEP_UP_MAX_AGE_SECS: u64 = 60;
+/// Longest step-up freshness (30 days).
+pub const MAX_STEP_UP_MAX_AGE_SECS: u64 = 30 * 24 * 3600;
+
+fn step_up_max_age<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    let secs = u64::deserialize(d)?;
+    if secs != 0 && !(MIN_STEP_UP_MAX_AGE_SECS..=MAX_STEP_UP_MAX_AGE_SECS).contains(&secs) {
+        return Err(serde::de::Error::custom(format!(
+            "auth.step_up.max_age_secs must be 0 (disabled) or between \
+             {MIN_STEP_UP_MAX_AGE_SECS} and {MAX_STEP_UP_MAX_AGE_SECS}, got {secs}"
+        )));
+    }
+    Ok(secs)
+}
+
+/// `auth.step_up` (OQ-13).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct StepUpConfig {
+    /// A session at the step-up level whose last second-factor
+    /// verification is older than this must step up again before a
+    /// sensitive action. `0` (default) disables the check: the level alone
+    /// is enough, as before.
+    #[serde(default, deserialize_with = "step_up_max_age")]
+    pub max_age_secs: u64,
+}
+
+impl StepUpConfig {
+    /// The freshness window, `None` when disabled.
+    pub fn max_age(&self) -> Option<chrono::Duration> {
+        (self.max_age_secs > 0).then(|| chrono::Duration::seconds(self.max_age_secs as i64))
+    }
+}
+
 fn default_totp_issuer() -> String {
     "OpenVox WebUI".to_string()
 }
@@ -138,6 +172,24 @@ mod tests {
 
     fn parse(yaml: &str) -> Result<MfaConfig, serde_norway::Error> {
         serde_norway::from_str(yaml)
+    }
+
+    /// OQ-13: step-up freshness is off by default and bounded when set.
+    #[test]
+    fn step_up_max_age_is_off_by_default_and_bounded() {
+        let parse = |y: &str| serde_norway::from_str::<StepUpConfig>(y);
+        assert_eq!(StepUpConfig::default().max_age(), None);
+        assert_eq!(parse("{}").unwrap().max_age(), None);
+        assert_eq!(parse("max_age_secs: 0").unwrap().max_age(), None);
+        assert_eq!(
+            parse("max_age_secs: 900").unwrap().max_age(),
+            Some(chrono::Duration::seconds(900))
+        );
+        assert!(parse("max_age_secs: 60").is_ok());
+        assert!(parse("max_age_secs: 2592000").is_ok());
+        for bad in ["1", "59", "2592001", "-1"] {
+            assert!(parse(&format!("max_age_secs: {bad}")).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -164,6 +164,18 @@ Feature: Plugin second factors
       | invalid     | ceremony_expired     | ceremony_expired     |
       | invalid     | Not A Code           | plugin_error         |
 
+  Scenario Outline: Step-up freshness makes old verifications step up again (OQ-13)
+    Given alice has enrolled the factor "totp"
+    And step-up freshness is <max_age> seconds
+    And alice holds a level 2 session verified <age> seconds ago
+    Then a sensitive action should <outcome>
+
+    Examples:
+      | max_age | age  | outcome                                             |
+      | 0       | 7200 | pass without step-up                                |
+      | 900     | 60   | pass without step-up                                |
+      | 900     | 1200 | need step-up because the verification is too old    |
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"

@@ -13,7 +13,8 @@ use openvox_webui::models::{ApproveCapabilitiesRequest, PluginState, User};
 use openvox_webui::services::auth_pipeline::policy::{self, PolicyInput};
 use openvox_webui::services::auth_pipeline::{
     factors::{now_unix, ChallengeContext, ChallengePurpose, FactorRecord},
-    AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, VerifyOutcome,
+    AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, StepUpCheck,
+    VerifyOutcome,
 };
 use openvox_webui::services::plugins::host::{HostApiImpl, PackageModuleSource};
 use openvox_webui::services::plugins::invoke::{HandlerInvoker, HandlerKind};
@@ -47,6 +48,7 @@ pub struct FactorScenario {
     records: HashMap<String, Vec<String>>,
     outputs: Vec<Value>,
     manifest: Option<Result<Vec<String>, Vec<String>>>,
+    session: Option<String>,
 }
 
 impl std::fmt::Debug for FactorScenario {
@@ -343,6 +345,7 @@ async fn given_host(world: &mut TestWorld, username: String) {
         records: HashMap::new(),
         outputs: Vec::new(),
         manifest: None,
+        session: None,
     });
 }
 
@@ -651,6 +654,57 @@ async fn when_step_up(world: &mut TestWorld) {
         }
         Err(e) => s.denied = Some(code_of(&e)),
     }
+}
+
+#[given(expr = "step-up freshness is {int} seconds")]
+async fn given_freshness(world: &mut TestWorld, secs: u64) {
+    scenario(world).config.auth.step_up.max_age_secs = secs;
+}
+
+#[given(expr = "alice holds a level 2 session verified {int} seconds ago")]
+async fn given_old_session(world: &mut TestWorld, age: i64) {
+    let s = scenario(world);
+    s.pipeline()
+        .issue_session(&s.user, &["pwd".into(), "hwk".into()], 2)
+        .await
+        .unwrap();
+    let id: String = sqlx::query_scalar(
+        "SELECT id FROM auth_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(s.user.id.to_string())
+    .fetch_one(&s.pool)
+    .await
+    .unwrap();
+    let at = (chrono::Utc::now() - chrono::Duration::seconds(age)).to_rfc3339();
+    sqlx::query("UPDATE auth_sessions SET created_at = ? WHERE id = ?")
+        .bind(at)
+        .bind(&id)
+        .execute(&s.pool)
+        .await
+        .unwrap();
+    s.session = Some(id);
+}
+
+#[then(
+    regex = r"^a sensitive action should (pass without step-up|need step-up because the verification is too old)$"
+)]
+async fn then_sensitive_action(world: &mut TestWorld, outcome: String) {
+    let s = scenario(world);
+    let id = s.session.clone().expect("a session");
+    let got = s
+        .pipeline()
+        .step_up_check(s.user.id, s.user.organization_id, &id)
+        .await
+        .unwrap();
+    let want = if outcome.starts_with("pass") {
+        StepUpCheck::Passed
+    } else {
+        StepUpCheck::Required {
+            required_acr: 2,
+            stale: true,
+        }
+    };
+    assert_eq!(got, want);
 }
 
 #[given("the policy requires a phishing-resistant factor")]
