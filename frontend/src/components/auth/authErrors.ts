@@ -7,6 +7,7 @@ interface ApiErrorShape {
     status?: number;
     data?: {
       code?: string;
+      message?: unknown;
       details?: { attempts_left?: unknown; factor_error?: { kind?: unknown; code?: unknown } };
     };
   };
@@ -64,6 +65,35 @@ export function authErrorMessage(err: unknown, rejectedKey: MessageKey): string 
     return t(rejectedKey);
   }
   return t('auth.error.generic');
+}
+
+/**
+ * Message for a refused password sign-in: host text for the policy and
+ * availability refusals (fail closed), else the server's own message, and
+ * never the transport error ("Request failed with status code 403").
+ */
+export function loginErrorMessage(err: unknown): string {
+  const response = (err as ApiErrorShape)?.response;
+  switch (response?.data?.code) {
+    case 'mfa_enrollment_required':
+      return t('auth.error.mfa_enrollment_required');
+    case 'factor_unavailable':
+      return t('auth.error.no_factor_available');
+    case 'phishing_resistant_factor_required':
+      return t('auth.error.phishing_resistant_required');
+    case 'locked':
+      return t('auth.error.locked');
+    default:
+      break;
+  }
+  const message = response?.data?.message;
+  if (typeof message === 'string' && message.trim()) {
+    return message;
+  }
+  if (response) {
+    return t('auth.error.generic');
+  }
+  return (err as Error)?.message || t('auth.error.generic');
 }
 
 export function isWebAuthnFactor(factor: Pick<AuthFactorDescriptor, 'kind'>): boolean {

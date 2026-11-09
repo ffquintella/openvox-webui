@@ -37,6 +37,8 @@
   "auth.factor_error.credential_not_verified": "The security key could not be verified. Try again or use another key.",
   "auth.factor_error.no_usable_credential": "No security key registered to this account can be used right now. Use another method or ask your administrator.",
   "auth.factor_error.invalid_label": "The name is not valid. Use 1 to 64 characters without control characters.",
+  "auth.error.mfa_enrollment_required": "Your organization requires a second factor and this account has none. Ask an administrator to set one up for you.",
+  "auth.error.no_factor_available": "None of your verification methods can be used right now. Use a recovery code if you have one, or ask an administrator.",
   "auth.error.phishing_resistant_required": "Your organization requires a security key or passkey for this account. Add one, or ask your administrator.",
   "enrollment.title": "Add a verification method",
   "enrollment.description": "Signed in as {username}. Your organization requires a second factor and your account has none. This sign-in can only add one and ends in {minutes} minutes.",

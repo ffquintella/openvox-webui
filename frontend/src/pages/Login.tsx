@@ -14,7 +14,7 @@ import { consumeSessionLogoutReason, useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import FactorChallenge from '../components/auth/FactorChallenge';
 import EnrollmentSession, { type EnrollmentEnd } from '../components/auth/EnrollmentSession';
-import { descriptorFromId } from '../components/auth/authErrors';
+import { descriptorFromId, loginErrorMessage } from '../components/auth/authErrors';
 import { t } from '../i18n';
 
 export default function Login() {
@@ -166,7 +166,7 @@ export default function Login() {
       await completeLogin(data);
     },
     onError: (err: Error) => {
-      setError(err.message || 'Invalid username or password');
+      setError(loginErrorMessage(err));
     },
   });
 
@@ -211,7 +211,10 @@ export default function Login() {
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3">
+            <div
+              role="alert"
+              className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3"
+            >
               <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-danger-700">{error}</p>
             </div>
