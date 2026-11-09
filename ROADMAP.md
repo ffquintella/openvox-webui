@@ -247,6 +247,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T83 Add sandboxed iframe pages (S21)
 - [x] T84 Add TypeScript plugin SDK (S21)
 - [x] T85 Add theme tokens and complete slot catalog (S21)
+- [x] T119 Add declarative panels bound to plugin routes and mount the authentication slots (S21)
 
 ## [M24] Updates and Rollback
 > outcome: Plugins can be upgraded in batch or on schedule, rolled back and locally revoked.

@@ -607,10 +607,17 @@ async fn ui_contribution(
     let registry = state.plugin_manager.registry();
     let vis = visibility(&state, &user, registry.required_permissions()).await?;
     let allow = check(&vis);
-    let found = registry.find(&plugin_id, &contribution_id, &allow);
-    found
-        .map(Json)
-        .ok_or_else(|| AppError::not_found("Contribution not found").into())
+    let mut found = registry
+        .find(&plugin_id, &contribution_id, &allow)
+        .ok_or_else(|| AppError::not_found("Contribution not found"))?;
+    // The same check the route itself applies, so the UI offers only what
+    // the caller may do (H-6).
+    for r in &mut found.routes {
+        r.allowed =
+            super::plugin_routes::route_permitted(&state, &user, &plugin_id, r.requires.as_ref())
+                .await;
+    }
+    Ok(Json(found))
 }
 
 async fn ui_catalog() -> Json<slots::SlotCatalog> {

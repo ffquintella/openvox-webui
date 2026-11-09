@@ -172,8 +172,22 @@ fn validate_contributions(
     let mut ids = BTreeSet::new();
 
     for s in &m.contributes.slots {
-        if !super::slots::is_known(&s.slot) {
-            p.push(format!("unknown slot '{}'", s.slot));
+        match super::slots::find(&s.slot) {
+            None => p.push(format!("unknown slot '{}'", s.slot)),
+            Some(spec) => {
+                if spec.declarative_only && s.render != RenderKind::Declarative {
+                    p.push(format!(
+                        "contribution '{}': the slot {} only accepts render: declarative",
+                        s.id, s.slot
+                    ));
+                }
+                if spec.requires_permission && s.requires.is_none() {
+                    p.push(format!(
+                        "contribution '{}': the slot {} needs a requires permission",
+                        s.id, s.slot
+                    ));
+                }
+            }
         }
         if !valid_local_id(&s.id) {
             p.push(format!("slot contribution id '{}' is invalid", s.id));
@@ -1597,6 +1611,44 @@ contributes:
         ] {
             assert!(validate_egress_host(bad).is_err(), "{}", bad);
         }
+    }
+
+    /// H-6: the authentication slots render host components only, and an
+    /// admin.auth contribution always names the permission it needs.
+    #[test]
+    fn authentication_slots_are_declarative_and_admin_auth_is_gated() {
+        let base = OK
+            .replace("  - ui:slot:page\n", "  - ui:slot:page\n  - ui:slot:profile.security\n  - ui:slot:admin.auth\n")
+            .replace(
+                "  menus:\n",
+                "    - { slot: profile.security, id: keys, render: declarative, spec: ui/home.json }\n    \
+                 - { slot: admin.auth, id: admin, render: declarative, spec: ui/home.json, requires: { resource: plugin.acme-demo.admin, action: read } }\n  menus:\n",
+            );
+        let f = files(&["ui/home.json", "ui/k.html"]);
+        assert!(parse_and_validate(base.as_bytes(), &f).is_ok());
+
+        let iframe = base.replace(
+            "{ slot: profile.security, id: keys, render: declarative, spec: ui/home.json }",
+            "{ slot: profile.security, id: keys, render: iframe, src: ui/k.html }",
+        );
+        let e = parse_and_validate(iframe.as_bytes(), &f).unwrap_err();
+        assert!(
+            e.iter().any(|m| m.contains(
+                "contribution 'keys': the slot profile.security only accepts render: declarative"
+            )),
+            "{e:?}"
+        );
+
+        let open = base.replace(
+            ", requires: { resource: plugin.acme-demo.admin, action: read } }",
+            " }",
+        );
+        let e = parse_and_validate(open.as_bytes(), &f).unwrap_err();
+        assert!(
+            e.iter().any(|m| m
+                .contains("contribution 'admin': the slot admin.auth needs a requires permission")),
+            "{e:?}"
+        );
     }
 
     #[test]

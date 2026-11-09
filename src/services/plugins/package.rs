@@ -120,7 +120,10 @@ pub fn read_package(bytes: &[u8], max_bytes: u64) -> Result<PluginPackage, Packa
     let names: BTreeSet<String> = files.keys().cloned().collect();
     let manifest = manifest::parse_and_validate(yaml, &names).map_err(PackageError::Manifest)?;
     // The SRI a `module` contribution declares must match its entry file.
-    let problems = super::modules::check_integrity(&manifest, &files);
+    let mut problems = super::modules::check_integrity(&manifest, &files);
+    // Declarative specs must be safe to render and bound to the plugin's
+    // own routes (H-6).
+    problems.extend(super::ui_spec::check_specs(&manifest, &files));
     if !problems.is_empty() {
         return Err(PackageError::Manifest(problems));
     }
@@ -327,6 +330,35 @@ mod tests {
         let p = read_package(&pkg(&[("README.md", b"hi")]), 1 << 20).unwrap();
         let pk = verify_signature(&p).unwrap();
         assert_eq!(key_id_of(&pk), p.envelope.header.key_id);
+    }
+
+    /// H-6: a declarative spec is validated whenever a package is read, so
+    /// preflight and install refuse it with the problem and its location.
+    #[test]
+    fn declarative_specs_are_validated_when_the_package_is_read() {
+        let yaml = "api_version: 2\nid: demo\nname: Demo\nversion: 1.0.0\npublisher: P\n\
+                    runtime: { kind: builtin, entry: demo }\ncapabilities: [ui:slot:dashboard.widgets]\n\
+                    contributes:\n  slots:\n    - { slot: dashboard.widgets, id: w, render: declarative, spec: ui/w.json }\n";
+        let build = |spec: &[u8]| {
+            build_signed_package(
+                &[(MANIFEST_FILE, yaml.as_bytes()), ("ui/w.json", spec)],
+                "demo",
+                "1.0.0",
+                2,
+                SEED,
+            )
+        };
+        assert!(read_package(&build(br#"{"layout":"markdown","content":"hi"}"#), 1 << 20).is_ok());
+        let bad = build(br#"{"layout":"table","source":{"route":"/admin/x"},"columns":[{"key":"a","label":"A"}]}"#);
+        match read_package(&bad, 1 << 20) {
+            Err(PackageError::Manifest(list)) => assert!(
+                list.iter()
+                    .any(|p| p.starts_with("spec 'ui/w.json' of contribution 'w': ")
+                        && p.contains("GET /admin/x is not one of the plugin's api_routes")),
+                "{list:?}"
+            ),
+            other => panic!("expected a manifest error, got {:?}", other.map(|_| ())),
+        }
     }
 
     #[test]

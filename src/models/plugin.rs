@@ -962,4 +962,21 @@ pub struct UiContributionDetail {
     pub contribution: UiContribution,
     /// Declarative page description, passed through as JSON.
     pub spec: Option<Value>,
+    /// The plugin routes the spec refers to and whether the caller may use
+    /// them (H-6); the UI hides what is not allowed, the route still checks.
+    pub routes: Vec<UiRouteAccess>,
+}
+
+/// One plugin route a declarative spec refers to, for the current caller.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UiRouteAccess {
+    pub method: String,
+    /// As declared, e.g. `/me/credentials/{credential_ref}`.
+    pub path: String,
+    /// The caller holds the route's `requires` (filled in per request).
+    pub allowed: bool,
+    /// The route asks for an MFA-level session.
+    pub step_up: bool,
+    #[serde(skip)]
+    pub requires: Option<Requires>,
 }

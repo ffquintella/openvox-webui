@@ -99,10 +99,21 @@ fn rate_limited(wait: Duration) -> Response {
 /// be assigned to roles (as for slots); a core permission goes to RBAC; any
 /// other name, or a failing check, is a denial.
 async fn permitted(state: &AppState, user: &AuthUser, r: &ResolvedRoute) -> bool {
-    let Some(Requires { resource, action }) = &r.route.requires else {
+    route_permitted(state, user, &r.plugin_id, r.route.requires.as_ref()).await
+}
+
+/// Whether `user` holds a route's `requires`; also tells declarative UIs
+/// which of a plugin's routes the caller may use (H-6).
+pub(super) async fn route_permitted(
+    state: &AppState,
+    user: &AuthUser,
+    plugin_id: &str,
+    requires: Option<&Requires>,
+) -> bool {
+    let Some(Requires { resource, action }) = requires else {
         return true;
     };
-    let needed = if resource.starts_with(&format!("plugin.{}.", r.plugin_id)) {
+    let needed = if resource.starts_with(&format!("plugin.{}.", plugin_id)) {
         Some((Resource::Plugins, Action::Admin))
     } else {
         Resource::from_name(resource).zip(Action::from_name(action))

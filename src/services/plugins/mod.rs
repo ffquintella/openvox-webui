@@ -23,6 +23,7 @@ pub mod runtime;
 pub mod slots;
 pub mod storage;
 pub mod ui_assets;
+pub mod ui_spec;
 pub mod updates;
 pub mod wasm;
 pub mod webhooks;

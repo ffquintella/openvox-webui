@@ -1,0 +1,177 @@
+{
+  "layout": "stack",
+  "blocks": [
+    {
+      "layout": "notice",
+      "tone": "danger",
+      "title": "Configuration errors",
+      "text": "The security key configuration is invalid, so security keys cannot be used. Fix it in the plugin settings.",
+      "source": { "route": "/admin/summary" },
+      "when": { "key": "config.valid", "equals": false }
+    },
+    {
+      "layout": "stats",
+      "title": "Summary",
+      "source": { "route": "/admin/summary" },
+      "items": [
+        { "label": "Credentials", "key": "totals.credentials", "format": "number" },
+        { "label": "Users", "key": "totals.users", "format": "number" },
+        { "label": "Blocked by policy", "key": "blocked_by_policy.count", "format": "number" },
+        {
+          "label": "Users below the recommended minimum",
+          "key": "users_below_recommended_minimum",
+          "format": "number"
+        },
+        { "label": "RP ID mismatch", "key": "rp_id_mismatch", "format": "number" },
+        { "label": "Configuration valid", "key": "config.valid", "format": "boolean" }
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "Keys by model",
+      "source": { "route": "/admin/summary", "path": "by_model" },
+      "columns": [
+        { "key": "vendor", "label": "Vendor", "empty": "Unknown" },
+        { "key": "model", "label": "Model", "empty": "Unknown" },
+        { "key": "aaguid", "label": "AAGUID" },
+        { "key": "count", "label": "Keys", "format": "number" }
+      ],
+      "empty": "No keys are registered."
+    },
+    {
+      "layout": "table",
+      "title": "Inventory",
+      "source": {
+        "route": "/admin/credentials",
+        "path": "items",
+        "query": { "limit": "50" }
+      },
+      "filters": [
+        { "name": "username", "label": "User", "type": "text", "max_length": 128 },
+        {
+          "name": "status",
+          "label": "Status",
+          "type": "select",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "suspended", "label": "Suspended" },
+            { "value": "clone_suspected", "label": "Possible clone" }
+          ]
+        },
+        {
+          "name": "usable",
+          "label": "Usable",
+          "type": "select",
+          "options": [
+            { "value": "true", "label": "Usable" },
+            { "value": "false", "label": "Not usable" }
+          ]
+        }
+      ],
+      "paging": { "cursor_param": "cursor", "next_key": "next_cursor" },
+      "columns": [
+        { "key": "username", "label": "User" },
+        { "key": "nickname", "label": "Nickname", "empty": "Unnamed key" },
+        { "key": "authenticator.model", "label": "Model", "empty": "Unknown model" },
+        { "key": "attestation_trust", "label": "Trust" },
+        {
+          "key": "status",
+          "label": "Status",
+          "format": "status",
+          "labels": {
+            "active": "Active",
+            "suspended": "Suspended",
+            "clone_suspected": "Possible clone"
+          },
+          "tones": { "active": "success", "suspended": "warning", "clone_suspected": "danger" }
+        },
+        { "key": "last_used_at", "label": "Last used", "format": "datetime", "empty": "Never" }
+      ],
+      "row_actions": [
+        {
+          "id": "suspend",
+          "label": "Suspend",
+          "method": "POST",
+          "route": "/admin/credentials/{credential_ref}/suspend",
+          "danger": true,
+          "when": { "key": "status", "not_equals": "suspended" },
+          "fields": [
+            {
+              "name": "reason",
+              "label": "Reason",
+              "type": "textarea",
+              "required": true,
+              "min_length": 1,
+              "max_length": 500
+            }
+          ],
+          "confirm": {
+            "title": "Suspend this security key?",
+            "message": "The key stops working for sign-in and step-up at once. The user keeps their other factors.",
+            "confirm_label": "Suspend key"
+          },
+          "success": "The key was suspended."
+        },
+        {
+          "id": "unsuspend",
+          "label": "Unsuspend",
+          "method": "POST",
+          "route": "/admin/credentials/{credential_ref}/unsuspend",
+          "when": { "key": "status", "equals": "suspended" },
+          "confirm": {
+            "message": "The key works again for sign-in and step-up. You may be asked to verify your identity first.",
+            "confirm_label": "Unsuspend key"
+          },
+          "success": "The key was unsuspended."
+        }
+      ],
+      "empty": "No security keys match these filters."
+    },
+    {
+      "layout": "table",
+      "title": "Authenticator catalog",
+      "source": { "route": "/admin/authenticators", "path": "items" },
+      "columns": [
+        { "key": "vendor", "label": "Vendor" },
+        { "key": "model", "label": "Model" },
+        { "key": "aaguid", "label": "AAGUID" },
+        { "key": "fips", "label": "FIPS", "format": "boolean" },
+        {
+          "key": "decision",
+          "label": "Decision",
+          "format": "status",
+          "labels": { "allowed": "Allowed", "denied": "Denied", "not_listed": "Not listed" },
+          "tones": { "allowed": "success", "denied": "danger", "not_listed": "neutral" }
+        }
+      ]
+    },
+    {
+      "layout": "form",
+      "title": "Policy preview",
+      "description": "Paste a complete proposed configuration to check it and see its impact before saving it in the plugin settings.",
+      "fields": [
+        {
+          "name": "config",
+          "label": "Proposed configuration (JSON)",
+          "type": "json",
+          "required": true,
+          "max_length": 65536
+        }
+      ],
+      "submit": { "method": "POST", "route": "/admin/policy/preview", "label": "Preview" },
+      "result": {
+        "fields": [
+          { "label": "Valid", "key": "valid", "format": "boolean" },
+          { "label": "Errors", "key": "errors", "format": "list", "empty": "None" },
+          { "label": "Warnings", "key": "warnings", "format": "list", "empty": "None" },
+          { "label": "Credentials blocked", "key": "impact.credentials_blocked", "format": "number" },
+          {
+            "label": "Users without a usable key",
+            "key": "impact.users_without_usable_credential",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

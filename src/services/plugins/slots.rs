@@ -38,6 +38,11 @@ pub struct SlotSpec {
     pub mounted: bool,
     /// Pixel height an iframe contribution starts with (pages fill the view).
     pub default_height: u32,
+    /// Security surfaces accept `render: declarative` only (H-6), so no
+    /// plugin markup or script can imitate a host security prompt there.
+    pub declarative_only: bool,
+    /// Contributions must declare `requires` (administration surfaces).
+    pub requires_permission: bool,
 }
 
 const fn slot(
@@ -55,6 +60,27 @@ const fn slot(
         max_items,
         mounted,
         default_height,
+        declarative_only: false,
+        requires_permission: false,
+    }
+}
+
+/// A mounted security slot: declarative only, optionally gated.
+const fn security_slot(
+    name: &'static str,
+    context: &'static [&'static str],
+    requires_permission: bool,
+    default_height: u32,
+) -> SlotSpec {
+    SlotSpec {
+        name,
+        kind: SlotKind::Panel,
+        context,
+        max_items: 4,
+        mounted: true,
+        default_height,
+        declarative_only: true,
+        requires_permission,
     }
 }
 
@@ -93,8 +119,8 @@ pub const SLOT_CATALOG: &[SlotSpec] = &[
     ),
     slot("footer.global", Panel, &[], 1, true, 32),
     slot("settings.sections", Panel, &[], 8, true, 320),
-    slot("profile.security", Panel, &["user"], 4, false, 240),
-    slot("admin.auth", Panel, &[], 4, false, 320),
+    security_slot("profile.security", &["user"], false, 240),
+    security_slot("admin.auth", &[], true, 320),
     slot("node.detail.facts", Panel, &["certname"], 4, false, 240),
     slot("report.list.columns", Column, &["filters"], 6, false, 0),
     slot("report.export.actions", Action, &["filters"], 4, false, 40),
@@ -173,5 +199,21 @@ mod tests {
             assert!(is_known(name), "{name}");
         }
         assert!(!is_known("login.form"));
+    }
+
+    /// H-6: the two authentication slots are mounted, render host
+    /// components only, and admin.auth always names a permission.
+    #[test]
+    fn authentication_slots_are_mounted_and_declarative_only() {
+        for name in ["profile.security", "admin.auth"] {
+            let s = find(name).unwrap();
+            assert!(s.mounted && s.declarative_only, "{name}");
+        }
+        assert!(find("admin.auth").unwrap().requires_permission);
+        assert!(!find("profile.security").unwrap().requires_permission);
+        assert!(SLOT_CATALOG
+            .iter()
+            .filter(|s| !matches!(s.name, "profile.security" | "admin.auth"))
+            .all(|s| !s.declarative_only && !s.requires_permission));
     }
 }

@@ -11,11 +11,12 @@ use super::modules::{is_module_file, sri_matches, DEFAULT_EXPOSE};
 use super::package::PluginPackage;
 use super::slots as catalog;
 use super::ui_assets::is_bundle_file;
+use super::ui_spec::{validate_spec, SpecContext};
 use crate::models::{
-    MenuEntry, RenderKind, Requires, UiContribution, UiContributionDetail, UiMenuOp, UiSlots,
+    MenuEntry, RenderKind, Requires, SlotContribution, UiContribution, UiContributionDetail,
+    UiMenuOp, UiRouteAccess, UiSlots,
 };
 
-const MAX_SPEC_BYTES: usize = 256 * 1024;
 const MAX_BUNDLE_FILE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_PLUGIN_ORDER: i32 = 1000;
@@ -25,6 +26,8 @@ pub struct RegistryEntry {
     pub contribution: UiContribution,
     pub requires: Option<Requires>,
     pub spec: Option<Value>,
+    /// Declarative contributions: the plugin routes the spec refers to.
+    pub routes: Vec<UiRouteAccess>,
     /// Iframe contributions: the HTML entry inside the plugin's web bundle.
     pub src: Option<String>,
 }
@@ -116,11 +119,12 @@ impl Registry {
                     },
                     requires: s.requires.clone(),
                     spec: None,
+                    routes: Vec::new(),
                     src: Some(src),
                 });
                 continue;
             }
-            let Some(spec) = s.spec.as_deref().and_then(|f| load_spec(pkg, f)) else {
+            let Some((spec, routes)) = load_spec(pkg, s) else {
                 tracing::warn!("plugin {}: spec of '{}' is unusable, skipped", m.id, s.id);
                 continue;
             };
@@ -142,6 +146,7 @@ impl Registry {
                 },
                 requires: s.requires.clone(),
                 spec: Some(spec),
+                routes,
                 src: None,
             });
         }
@@ -165,6 +170,7 @@ impl Registry {
                     },
                     requires: i.requires.clone(),
                     spec: None,
+                    routes: Vec::new(),
                     src: None,
                 }),
                 MenuEntry::Op(o) => self.menu_ops.push(UiMenuOp {
@@ -234,6 +240,7 @@ impl Registry {
             },
             requires: s.requires.clone(),
             spec: None,
+            routes: Vec::new(),
             src: Some(src),
         });
     }
@@ -386,17 +393,42 @@ impl Registry {
             .map(|e| UiContributionDetail {
                 contribution: e.contribution.clone(),
                 spec: e.spec.clone(),
+                routes: e.routes.clone(),
             })
     }
 }
 
-fn load_spec(pkg: &PluginPackage, file: &str) -> Option<Value> {
+/// The validated spec of a declarative contribution and the routes it
+/// refers to (with their `requires` and `step_up` from the manifest). The
+/// package was validated when it was read, so a failure here means the
+/// contribution is skipped, never served half-checked.
+fn load_spec(pkg: &PluginPackage, s: &SlotContribution) -> Option<(Value, Vec<UiRouteAccess>)> {
+    let file = s.spec.as_deref()?;
     if !safe_package_path(file) {
         return None;
     }
     let bytes = pkg.files.get(file)?;
-    if bytes.len() > MAX_SPEC_BYTES {
-        return None;
-    }
-    serde_json::from_slice(bytes).ok()
+    let decls = &pkg.manifest.contributes.api_routes;
+    let ctx = SpecContext {
+        routes: decls,
+        slot_context: catalog::find(&s.slot).map(|x| x.context).unwrap_or(&[]),
+    };
+    let valid = validate_spec(bytes, &ctx).ok()?;
+    let routes = valid
+        .routes
+        .iter()
+        .filter_map(|(method, path)| {
+            let d = decls
+                .iter()
+                .find(|d| &d.method == method && &d.path == path)?;
+            Some(UiRouteAccess {
+                method: method.clone(),
+                path: path.clone(),
+                allowed: false,
+                step_up: d.step_up,
+                requires: d.requires.clone(),
+            })
+        })
+        .collect();
+    Some((valid.value, routes))
 }

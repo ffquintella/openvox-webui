@@ -1,0 +1,62 @@
+{
+  "layout": "stack",
+  "blocks": [
+    {
+      "layout": "notice",
+      "tone": "warning",
+      "text": "You have fewer security keys than your organization recommends. Add a backup key or keep your recovery codes in a safe place.",
+      "source": { "route": "/me/credentials" },
+      "when": { "key": "below_recommended_minimum", "equals": true }
+    },
+    {
+      "layout": "table",
+      "title": "Registered security keys",
+      "description": "Add or remove keys in the section above. Renaming a key does not change how it signs in.",
+      "source": { "route": "/me/credentials", "path": "credentials" },
+      "columns": [
+        { "key": "nickname", "label": "Nickname", "empty": "Unnamed key" },
+        { "key": "authenticator.model", "label": "Model", "empty": "Unknown model" },
+        { "key": "created_at", "label": "Added", "format": "date" },
+        { "key": "last_used_at", "label": "Last used", "format": "datetime", "empty": "Never" },
+        {
+          "key": "status",
+          "label": "Status",
+          "format": "status",
+          "labels": {
+            "active": "Active",
+            "suspended": "Suspended",
+            "clone_suspected": "Possible clone",
+            "blocked": "Blocked by policy"
+          },
+          "tones": {
+            "active": "success",
+            "suspended": "warning",
+            "clone_suspected": "danger",
+            "blocked": "danger"
+          }
+        },
+        { "key": "blocked_reason", "label": "Reason", "empty": "-" }
+      ],
+      "row_actions": [
+        {
+          "id": "rename",
+          "label": "Rename",
+          "method": "PATCH",
+          "route": "/me/credentials/{credential_ref}",
+          "fields": [
+            {
+              "name": "nickname",
+              "label": "Nickname",
+              "type": "text",
+              "required": true,
+              "max_length": 64,
+              "initial": "nickname"
+            }
+          ],
+          "success": "The key was renamed."
+        }
+      ],
+      "empty": "You have no security keys yet."
+    }
+  ]
+}

@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openvox-webui/schemas/plugin-declarative-spec-v1.json",
+  "title": "OpenVox WebUI declarative plugin spec (H-6, PLUGIN_PLATFORM.md section 17.18)",
+  "description": "Structure of the JSON file a render: declarative contribution points to. The host validator (src/services/plugins/ui_spec.rs) is normative and also checks what JSON Schema cannot express: route references must be (method, path) pairs of the plugin's own api_routes (sources are GET, actions and submissions POST/PUT/PATCH/DELETE), every {param} of a route needs row.<path> (row actions and bound detail actions; the default there) or context.<key> of the slot (the default elsewhere), a danger or DELETE action needs confirm, markdown links point only to host routes, stack nesting is at most 4 levels, at most 32 blocks, the file is at most 64 KiB, rows and source exclude each other, filters/paging/row_actions/stats keys/detail keys/when need a source, tones need format status, field names and action ids are unique, and limits on lengths and counts.",
+  "$ref": "#/$defs/block",
+  "$defs": {
+    "text40": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "text80": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "text120": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "text200": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "text500": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "scalar": { "type": ["string", "number", "boolean"] },
+    "dataPath": {
+      "description": "Dotted path into the route data, 1 to 8 segments of [A-Za-z0-9_-]; __proto__, prototype and constructor are refused.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}(\\.[A-Za-z0-9_-]{1,64}){0,7}$"
+    },
+    "routePath": {
+      "description": "A path exactly as declared in contributes.api_routes, e.g. /me/credentials/{credential_ref}.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "params": {
+      "description": "Value of each {param} of the route.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^(row\\.|context\\.).+$" }
+    },
+    "tone": { "enum": ["neutral", "info", "success", "warning", "danger"] },
+    "display": {
+      "description": "Formatting shared by columns, stats items and detail fields.",
+      "type": "object",
+      "properties": {
+        "format": { "enum": ["text", "number", "boolean", "date", "datetime", "list", "status"] },
+        "labels": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "$ref": "#/$defs/text80" }
+        },
+        "tones": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "$ref": "#/$defs/tone" }
+        },
+        "empty": { "$ref": "#/$defs/text40" }
+      }
+    },
+    "source": {
+      "description": "GET data from one of the plugin's routes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route"],
+      "properties": {
+        "route": { "$ref": "#/$defs/routePath" },
+        "path": { "$ref": "#/$defs/dataPath" },
+        "params": { "$ref": "#/$defs/params" },
+        "query": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$", "not": { "enum": ["token", "access_token", "api_key", "apikey"] } },
+          "additionalProperties": {
+            "oneOf": [{ "type": "string", "maxLength": 256 }, { "type": ["number", "boolean"] }]
+          }
+        }
+      }
+    },
+    "when": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/$defs/dataPath" },
+        "equals": { "type": ["string", "number", "boolean", "null"] },
+        "not_equals": { "type": ["string", "number", "boolean", "null"] },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "type": ["string", "number", "boolean", "null"] }
+        }
+      },
+      "oneOf": [{ "required": ["equals"] }, { "required": ["not_equals"] }, { "required": ["in"] }]
+    },
+    "confirm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text80" },
+        "message": { "$ref": "#/$defs/text500" },
+        "confirm_label": { "$ref": "#/$defs/text40" }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "label": { "$ref": "#/$defs/text80" },
+        "type": { "enum": ["text", "textarea", "number", "checkbox", "select", "json"], "default": "text" },
+        "required": { "type": "boolean" },
+        "placeholder": { "$ref": "#/$defs/text120" },
+        "help": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "default": { "$ref": "#/$defs/scalar" },
+        "min_length": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "max_length": { "type": "integer", "minimum": 0, "maximum": 65536 },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "label"],
+            "properties": { "value": { "$ref": "#/$defs/scalar" }, "label": { "$ref": "#/$defs/text80" } }
+          }
+        },
+        "initial": { "$ref": "#/$defs/dataPath", "description": "Row actions and bound detail actions only: prefill from the record." }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "method", "route"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+        "label": { "$ref": "#/$defs/text40" },
+        "method": { "enum": ["POST", "PUT", "PATCH", "DELETE"] },
+        "route": { "$ref": "#/$defs/routePath" },
+        "params": { "$ref": "#/$defs/params" },
+        "fields": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/field" } },
+        "confirm": { "$ref": "#/$defs/confirm" },
+        "danger": { "type": "boolean" },
+        "success": { "$ref": "#/$defs/text200" },
+        "when": { "$ref": "#/$defs/when", "description": "Row actions only." }
+      }
+    },
+    "valueItem": {
+      "allOf": [{ "$ref": "#/$defs/display" }],
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "$ref": "#/$defs/text80" },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "key": { "$ref": "#/$defs/dataPath" },
+        "format": true,
+        "labels": true,
+        "tones": true,
+        "empty": true
+      },
+      "oneOf": [{ "required": ["value"] }, { "required": ["key"] }]
+    },
+    "common": {
+      "type": "object",
+      "properties": {
+        "title": { "$ref": "#/$defs/text120" },
+        "description": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["layout"],
+      "oneOf": [
+        { "$ref": "#/$defs/markdown" },
+        { "$ref": "#/$defs/notice" },
+        { "$ref": "#/$defs/stats" },
+        { "$ref": "#/$defs/table" },
+        { "$ref": "#/$defs/detail" },
+        { "$ref": "#/$defs/form" },
+        { "$ref": "#/$defs/stack" }
+      ]
+    },
+    "markdown": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "content"],
+      "properties": {
+        "layout": { "const": "markdown" },
+        "title": true,
+        "description": true,
+        "content": {
+          "description": "Headings, bullet lists, paragraphs, **bold**, `code` and [text](/host/route) links only.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        }
+      }
+    },
+    "notice": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "text"],
+      "properties": {
+        "layout": { "const": "notice" },
+        "title": true,
+        "description": true,
+        "text": { "$ref": "#/$defs/text500" },
+        "tone": { "$ref": "#/$defs/tone" },
+        "source": { "$ref": "#/$defs/source" },
+        "when": { "$ref": "#/$defs/when" }
+      }
+    },
+    "stats": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "items"],
+      "properties": {
+        "layout": { "const": "stats" },
+        "title": true,
+        "description": true,
+        "source": { "$ref": "#/$defs/source" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "items": {
+            "allOf": [{ "$ref": "#/$defs/valueItem" }],
+            "properties": { "hint": { "type": "string", "minLength": 1, "maxLength": 160 } },
+            "unevaluatedProperties": false
+          }
+        }
+      }
+    },
+    "table": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "columns"],
+      "properties": {
+        "layout": { "const": "table" },
+        "title": true,
+        "description": true,
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "allOf": [{ "$ref": "#/$defs/display" }],
+            "type": "object",
+            "required": ["key", "label"],
+            "properties": {
+              "key": { "$ref": "#/$defs/dataPath" },
+              "label": { "$ref": "#/$defs/text80" }
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "rows": { "type": "array", "maxItems": 200, "items": { "type": "object" } },
+        "source": { "$ref": "#/$defs/source" },
+        "filters": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "allOf": [{ "$ref": "#/$defs/field" }],
+            "properties": { "type": { "enum": ["text", "number", "checkbox", "select"] } }
+          }
+        },
+        "paging": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cursor_param", "next_key"],
+          "properties": {
+            "cursor_param": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+            "next_key": { "$ref": "#/$defs/dataPath" }
+          }
+        },
+        "row_actions": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/action" } },
+        "actions": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/action" } },
+        "empty": { "$ref": "#/$defs/text200" }
+      }
+    },
+    "detail": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "fields"],
+      "properties": {
+        "layout": { "const": "detail" },
+        "title": true,
+        "description": true,
+        "source": { "$ref": "#/$defs/source" },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "allOf": [{ "$ref": "#/$defs/valueItem" }], "unevaluatedProperties": false }
+        },
+        "actions": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/action" } }
+      }
+    },
+    "form": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "fields", "submit"],
+      "properties": {
+        "layout": { "const": "form" },
+        "title": true,
+        "description": true,
+        "fields": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/field" } },
+        "submit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "route", "label"],
+          "properties": {
+            "method": { "enum": ["POST", "PUT", "PATCH", "DELETE"] },
+            "route": { "$ref": "#/$defs/routePath" },
+            "params": { "$ref": "#/$defs/params" },
+            "label": { "$ref": "#/$defs/text40" },
+            "confirm": { "$ref": "#/$defs/confirm" },
+            "danger": { "type": "boolean" },
+            "success": { "$ref": "#/$defs/text200" }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fields"],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 40,
+              "items": { "allOf": [{ "$ref": "#/$defs/valueItem" }], "unevaluatedProperties": false }
+            }
+          }
+        }
+      }
+    },
+    "stack": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout", "blocks"],
+      "properties": {
+        "layout": { "const": "stack" },
+        "title": true,
+        "description": true,
+        "blocks": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/block" } }
+      }
+    }
+  }
+}
