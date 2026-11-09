@@ -12,7 +12,7 @@ use openvox_webui::config::AppConfig;
 use openvox_webui::models::{ApproveCapabilitiesRequest, PluginState, User};
 use openvox_webui::services::auth_pipeline::policy::{self, PolicyInput};
 use openvox_webui::services::auth_pipeline::{
-    factors::{now_unix, ChallengeContext, FactorRecord},
+    factors::{now_unix, ChallengeContext, ChallengePurpose, FactorRecord},
     AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, VerifyOutcome,
 };
 use openvox_webui::services::plugins::host::{HostApiImpl, PackageModuleSource};
@@ -540,6 +540,7 @@ async fn when_verified_n(world: &mut TestWorld, factor: String, n: usize) {
             .collect(),
         flow_state: None,
         now_unix: now_unix(),
+        purpose: ChallengePurpose::Login,
     };
     for _ in 0..n {
         assert!(f.verify(&ctx, json!({})).await.is_err(), "a failure");
@@ -574,6 +575,33 @@ async fn when_sign_in(world: &mut TestWorld) {
         LoginOutcome::Denied { code, .. } => s.denied = Some(code.to_string()),
         LoginOutcome::Session(_) => panic!("a session without a second factor"),
     }
+}
+
+#[when("alice steps up a password session")]
+async fn when_step_up(world: &mut TestWorld) {
+    let s = scenario(world);
+    let p = s.pipeline();
+    p.issue_session(&s.user, &["pwd".into()], 1).await.unwrap();
+    let session: String = sqlx::query_scalar(
+        "SELECT id FROM auth_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(s.user.id.to_string())
+    .fetch_one(&s.pool)
+    .await
+    .unwrap();
+    let offer = p
+        .start_step_up(&s.user, &session, &ClientInfo::default())
+        .await
+        .unwrap();
+    s.challenge = Some(offer.challenge_id);
+    s.offered = offer.factors.into_iter().map(|f| f.id).collect();
+}
+
+#[then(expr = "the plugin should have received the purpose {string}")]
+async fn then_purpose(world: &mut TestWorld, purpose: String) {
+    let echoed = scenario(world).echoed.clone().expect("an echoed request");
+    assert_eq!(echoed["handler"], "begin_challenge");
+    assert_eq!(echoed["input"]["purpose"], purpose.as_str());
 }
 
 #[when(expr = "alice begins the challenge with the factor {string}")]

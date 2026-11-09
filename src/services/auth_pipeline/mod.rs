@@ -39,8 +39,8 @@ pub use config::{MfaConfig, OidcProviderConfig, WebAuthnConfig};
 pub use factors::{AuthFactor, FactorDescriptor};
 
 use self::factors::{
-    builtin_factors, now_unix, ChallengeContext, EnrollContext, EnrollMode, FactorError,
-    FactorOutcome, FactorRecord,
+    builtin_factors, now_unix, ChallengeContext, ChallengePurpose, EnrollContext, EnrollMode,
+    FactorError, FactorOutcome, FactorRecord,
 };
 use self::grace::{GraceStore, GraceWindow, LoginSpend};
 use self::policy::{ACR_MFA, ACR_PRIMARY};
@@ -585,7 +585,7 @@ impl<'a> AuthPipeline<'a> {
         let offer = self
             .create_challenge(
                 user,
-                "login",
+                ChallengePurpose::Login.as_str(),
                 &ident.provider,
                 &ident.amr,
                 required,
@@ -800,7 +800,7 @@ impl<'a> AuthPipeline<'a> {
         }
         self.create_challenge(
             user,
-            "step_up",
+            ChallengePurpose::StepUp.as_str(),
             "step_up",
             &info.amr,
             ACR_MFA,
@@ -909,11 +909,18 @@ impl<'a> AuthPipeline<'a> {
         Ok((row, user))
     }
 
+    /// The purpose stored on a challenge row. The host writes only the two
+    /// known names, so anything else is refused (fail closed).
+    fn purpose_of(row: &ChallengeRow) -> Result<ChallengePurpose, PipelineError> {
+        ChallengePurpose::parse(&row.purpose).ok_or(PipelineError::InvalidChallenge)
+    }
+
     fn challenge_ctx(
         &self,
         user: &User,
         records: &[StoredRecord],
         flow_state: Option<String>,
+        purpose: ChallengePurpose,
     ) -> ChallengeContext {
         ChallengeContext {
             user_id: user.id,
@@ -927,6 +934,7 @@ impl<'a> AuthPipeline<'a> {
                 .collect(),
             flow_state,
             now_unix: now_unix(),
+            purpose,
         }
     }
 
@@ -945,6 +953,7 @@ impl<'a> AuthPipeline<'a> {
             .factor(factor_id)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{factor_id}'")))?;
         let kind = factor.descriptor().id;
+        let purpose = Self::purpose_of(&row)?;
         let records = self.store().records(user.id, &kind, true).await?;
         if records.is_empty() {
             return Err(PipelineError::Invalid(
@@ -952,7 +961,7 @@ impl<'a> AuthPipeline<'a> {
             ));
         }
         let start = factor
-            .begin_challenge(&self.challenge_ctx(&user, &records, None))
+            .begin_challenge(&self.challenge_ctx(&user, &records, None, purpose))
             .await?;
         let sealed = match &start.flow_state {
             Some(s) => Some(crypto::seal(self.key(), s.as_bytes())?),
@@ -997,6 +1006,7 @@ impl<'a> AuthPipeline<'a> {
         let factor = self
             .factor(&active)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{active}'")))?;
+        let purpose = Self::purpose_of(&row)?;
         let max = self.config.auth.mfa.max_attempts as i64;
 
         // Count the attempt before verifying so concurrent guesses cannot
@@ -1030,7 +1040,10 @@ impl<'a> AuthPipeline<'a> {
             None => None,
         };
         let outcome = factor
-            .verify(&self.challenge_ctx(&user, &records, flow_state), response)
+            .verify(
+                &self.challenge_ctx(&user, &records, flow_state, purpose),
+                response,
+            )
             .await;
 
         let outcome = match outcome {
@@ -1103,7 +1116,7 @@ impl<'a> AuthPipeline<'a> {
                         "Factor did not reach the required level".into(),
                     ));
                 }
-                if row.purpose == "step_up" {
+                if purpose == ChallengePurpose::StepUp {
                     if let Some(old) = &row.session_id {
                         let _ = revoke_auth_session(self.pool, old).await;
                     }

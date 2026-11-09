@@ -243,7 +243,7 @@ impl PluginFactor {
         v
     }
 
-    /// `{factor, user_id, username, records: [{id, data}], flow_state, now_unix, response?}`
+    /// `{factor, user_id, username, records: [{id, data}], flow_state, now_unix, purpose, response?}`
     fn challenge_input(&self, ctx: &ChallengeContext, response: Option<Value>) -> Value {
         let mut v = json!({
             "factor": self.entry.decl.id,
@@ -252,6 +252,7 @@ impl PluginFactor {
             "records": records_json(&ctx.records),
             "flow_state": ctx.flow_state,
             "now_unix": ctx.now_unix,
+            "purpose": ctx.purpose.as_str(),
         });
         if let Some(r) = response {
             v["response"] = r;
@@ -855,6 +856,7 @@ mod tests {
                 records,
                 flow_state: None,
                 now_unix: now_unix(),
+                purpose: crate::services::auth_pipeline::factors::ChallengePurpose::Login,
             }
         }
     }
@@ -1355,11 +1357,14 @@ mod tests {
                 "factor",
                 "flow_state",
                 "now_unix",
+                "purpose",
                 "records",
                 "user_id",
                 "username"
             ]
         );
+        assert_eq!(bc["purpose"], "login");
+        assert_eq!(ve["purpose"], "login");
         assert_eq!(
             bc["records"],
             json!([{"id": rec[0].id, "data": {"credential": "c1", "n": 0}}])
@@ -1400,6 +1405,37 @@ mod tests {
         let calls = cap.calls.lock().unwrap().clone();
         assert_eq!(calls.len(), 2);
         assert!(calls.iter().all(|c| c.2["now_unix"] == 1_794_220_800u64));
+    }
+
+    /// H-4/OQ-4: a challenge tells the plugin whether it signs in or steps up.
+    #[tokio::test]
+    async fn challenge_inputs_carry_the_purpose() {
+        let cap = Arc::new(Capture::default());
+        let e = env(vec![("cap", cap.clone() as Arc<dyn BuiltinPlugin>)]).await;
+        let y = factor_yaml("cap", "{ kind: builtin, entry: cap }");
+        let pkg = build_signed_package(&[("plugin.yaml", y.as_bytes())], "cap", "1.0.0", 2, SEED);
+        e.manager.install(&pkg, "admin", None).await.unwrap();
+        e.manager.enable("cap").await.unwrap();
+        e.enroll("cap:key", json!({"credential": "c1", "n": 0}))
+            .await;
+        let p = e.pipeline();
+        let c = ClientInfo::default();
+        p.issue_session(&e.user, &["pwd".into()], 1).await.unwrap();
+        let session: String = sqlx::query_scalar("SELECT id FROM auth_sessions WHERE user_id = ?")
+            .bind(e.user.id.to_string())
+            .fetch_one(&e.pool)
+            .await
+            .unwrap();
+        let offer = p.start_step_up(&e.user, &session, &c).await.unwrap();
+        p.begin_challenge(&offer.challenge_id, "cap:key", &c)
+            .await
+            .unwrap();
+        p.verify_challenge(&offer.challenge_id, Some("cap:key"), json!({}), &c)
+            .await
+            .unwrap();
+        let calls = cap.calls.lock().unwrap().clone();
+        let purposes: Vec<&Value> = calls.iter().map(|c| &c.2["purpose"]).collect();
+        assert_eq!(purposes, [&json!("step_up"), &json!("step_up")]);
     }
 
     // ---- wire format ---------------------------------------------------------

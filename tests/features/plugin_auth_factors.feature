@@ -95,6 +95,16 @@ Feature: Plugin second factors
     When alice begins enrolling the factor "pe:key"
     Then the plugin should have received the host time in its enrolment input
 
+  Scenario: A plugin factor learns whether a challenge signs in or steps up (H-4)
+    Given an enabled WASM factor plugin "pp" that echoes its challenge input
+    And alice has enrolled the factor "pp:key"
+    When alice signs in with her password
+    And alice begins the challenge with the factor "pp:key"
+    Then the plugin should have received the purpose "login"
+    When alice steps up a password session
+    And alice begins the challenge with the factor "pp:key"
+    Then the plugin should have received the purpose "step_up"
+
   Scenario: crypto.random returns fresh secure random bytes
     Given an enabled WASM plugin "rnd" with crypto:random that asks for 32 random bytes
     When the plugin runs 2 times

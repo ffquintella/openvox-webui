@@ -90,6 +90,35 @@ pub struct EnrollRecord {
     pub label: Option<String>,
 }
 
+/// Why a challenge runs (H-4/OQ-4): a factor may, for example, demand user
+/// verification for step-up only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChallengePurpose {
+    /// Second factor of a sign-in.
+    Login,
+    /// Raising an existing session before a sensitive action.
+    StepUp,
+}
+
+impl ChallengePurpose {
+    /// The name stored on the challenge and sent to plugin factors.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChallengePurpose::Login => "login",
+            ChallengePurpose::StepUp => "step_up",
+        }
+    }
+
+    /// Strict: any other value is not a purpose.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "login" => Some(ChallengePurpose::Login),
+            "step_up" => Some(ChallengePurpose::StepUp),
+            _ => None,
+        }
+    }
+}
+
 pub struct ChallengeContext {
     pub user_id: Uuid,
     pub username: String,
@@ -97,6 +126,8 @@ pub struct ChallengeContext {
     /// State the factor returned from `begin_challenge`, sealed by the host.
     pub flow_state: Option<String>,
     pub now_unix: u64,
+    /// Sign-in or step-up (H-4/OQ-4).
+    pub purpose: ChallengePurpose,
 }
 
 pub struct ChallengeStart {
@@ -602,8 +633,25 @@ mod tests {
             records: vec![],
             flow_state: None,
             now_unix: 0,
+            purpose: ChallengePurpose::Login,
         };
         assert!(f.begin_challenge(&c).await.is_err());
+    }
+
+    #[test]
+    fn challenge_purposes_have_stable_names() {
+        assert_eq!(ChallengePurpose::Login.as_str(), "login");
+        assert_eq!(ChallengePurpose::StepUp.as_str(), "step_up");
+        assert_eq!(
+            ChallengePurpose::parse("step_up"),
+            Some(ChallengePurpose::StepUp)
+        );
+        assert_eq!(
+            ChallengePurpose::parse("login"),
+            Some(ChallengePurpose::Login)
+        );
+        assert_eq!(ChallengePurpose::parse("Login"), None);
+        assert_eq!(ChallengePurpose::parse(""), None);
     }
 
     #[test]
