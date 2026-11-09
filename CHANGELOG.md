@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.51.1] - 2026-11-09
+
+### Changed
+- Update dependencies: the Rust minor group (2 crates), the frontend npm minor group (9 packages) and jsdom 31.0.0
+
 ## [0.51.0] - 2026-11-03
 
 ### Fixed
