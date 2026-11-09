@@ -499,6 +499,20 @@ user with nothing enrolled. Single sign-on logins keep the denial. Keep the
 window short: while it is open the password alone can enroll the account's
 factor.
 
+Second factors can also come from plugins, such as the mfa-fido2 security-key
+module (factor id `mfa-fido2:security-key`). Disabling or uninstalling such a
+plugin takes its factors out of play but keeps the records for a re-enable:
+users who have nothing else are then refused at sign-in with
+`mfa_enrollment_required` (or offered a grace window, or break-glass for the
+local super administrator), and the disable or uninstall answer lists them in
+`warnings` (`users_without_usable_factor`). While the plugin is installed but
+cannot run (circuit breaker, failed integrity check, withdrawn `auth:factor`
+approval), its factors still count: sign-in is refused with
+`factor_unavailable`, or the factor is offered and its challenge answers
+`503`, so an outage never lets anyone in without a second factor. The
+authentication rate limit (1 request per second, burst 5, per client address)
+also covers the challenge requests: one security-key sign-in uses three.
+
 ## Directories (LDAP and Active Directory)
 
 Users can sign in with a directory account and are provisioned from it, with

@@ -54,6 +54,26 @@ Standard username/password authentication.
 - Force password change on first login
 - Session timeout management
 
+### Security keys and second factors
+
+When your organization requires a second factor, sign in with your password
+and then confirm with one of your methods: a security key or passkey, an
+authenticator app or a recovery code.
+
+- **Add a security key**: Profile -> **Security keys and passkeys**, type an
+  optional nickname and select **Add security key**, then touch the key. The
+  first factor you add also gives you recovery codes, shown once: store them
+  safely. Adding a second key asks you to confirm with your first one.
+- **Sign in**: after the password, choose **Security key** and select **Use
+  security key**. If the key is refused, the page says so and how many
+  attempts are left; select **Try again**.
+- **Sensitive actions** may open a "Confirm it's you" dialog: verify with one
+  of your methods and the action continues.
+- If sign-in says that none of your verification methods can be used right
+  now, or that your account has no second factor, your keys may come from a
+  plugin that is unavailable or switched off: use a recovery code if you have
+  one, or ask an administrator.
+
 ### SAML 2.0 SSO
 
 Single Sign-On integration with enterprise identity providers.
