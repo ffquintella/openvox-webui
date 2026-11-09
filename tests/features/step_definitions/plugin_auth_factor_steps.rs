@@ -569,6 +569,30 @@ async fn when_disabled(world: &mut TestWorld, id: String) {
     scenario(world).manager.disable(&id).await.unwrap();
 }
 
+#[when(expr = "the plugin {string} is uninstalled")]
+async fn when_uninstalled(world: &mut TestWorld, id: String) {
+    scenario(world).manager.uninstall(&id, false).await.unwrap();
+}
+
+#[then(expr = "the users left without a usable factor by {string} should be {string}")]
+async fn then_stranded(world: &mut TestWorld, plugin: String, users: String) {
+    let s = scenario(world);
+    let got: Vec<String> = s
+        .pipeline()
+        .users_without_usable_factor(&plugin)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|u| u.username)
+        .collect();
+    let want: Vec<String> = users
+        .split(',')
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
+        .collect();
+    assert_eq!(got, want);
+}
+
 #[when(expr = "the factor {string} is verified {int} times")]
 async fn when_verified_n(world: &mut TestWorld, factor: String, n: usize) {
     let s = scenario(world);

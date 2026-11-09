@@ -1241,10 +1241,23 @@ mod tests {
         assert!(held[0].begin_challenge(&ctx).await.is_ok());
 
         // Disabled: not offered, not usable, and a factor held across the
-        // disable is refused.
+        // disable is refused. OQ-23: an administrator's disable also takes
+        // the factor out of the usable ones, so the user is in the
+        // enrollment path rather than `factor_unavailable`.
         e.manager.disable("fa").await.unwrap();
         assert!(is_unavailable(&held[0].begin_challenge(&ctx).await));
-        assert_eq!(denied_code(e.login().await), "factor_unavailable");
+        assert_eq!(denied_code(e.login().await), "mfa_enrollment_required");
+        assert!(e
+            .pipeline()
+            .usable_kinds(e.user.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            e.pipeline().store().usable_kinds(e.user.id).await.unwrap(),
+            ["fa:key"],
+            "the record is kept"
+        );
         let u = e.user.clone();
         assert!(matches!(
             e.pipeline()
@@ -1267,6 +1280,86 @@ mod tests {
         let (_, factors) = e.challenge().await;
         assert_eq!(factors, vec!["recovery".to_string()]);
         assert_eq!(e.sessions().await, 0);
+    }
+
+    /// OQ-23: factors of disabled or uninstalled plugins do not count as
+    /// usable; the host lists the users an action leaves without one. A
+    /// plugin that failed (circuit breaker) still counts: fail closed.
+    #[tokio::test]
+    async fn disabled_or_uninstalled_plugin_factors_are_not_usable() {
+        let e = env(vec![]).await;
+        e.install_wasm("fa", "timeout_ms: 5000", &Guest::default())
+            .await;
+        e.enroll("fa:key", json!({})).await;
+        let bob = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash, role) \
+             VALUES (?, 'bob', 'bob@example.com', 'x', 'viewer')",
+        )
+        .bind(bob.to_string())
+        .execute(&e.pool)
+        .await
+        .unwrap();
+        let store = e.pipeline();
+        store
+            .store()
+            .insert(bob, "fa:key", "k", &json!({}), true)
+            .await
+            .unwrap();
+        store
+            .store()
+            .insert(bob, "totp", "t", &json!({}), true)
+            .await
+            .unwrap();
+        async fn stranded(e: &Env) -> Vec<String> {
+            e.pipeline()
+                .users_without_usable_factor("fa")
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|u| u.username)
+                .collect()
+        }
+        assert!(stranded(&e).await.is_empty(), "enabled");
+        assert_eq!(
+            e.pipeline().usable_kinds(e.user.id).await.unwrap(),
+            ["fa:key"]
+        );
+
+        e.manager.disable("fa").await.unwrap();
+        assert_eq!(stranded(&e).await, ["alice"], "bob still has TOTP");
+        assert!(e
+            .pipeline()
+            .usable_kinds(e.user.id)
+            .await
+            .unwrap()
+            .is_empty());
+
+        e.manager.enable("fa").await.unwrap();
+        assert_eq!(
+            e.pipeline().usable_kinds(e.user.id).await.unwrap(),
+            ["fa:key"]
+        );
+        // A plugin in the error state (isolated by the circuit breaker) keeps
+        // its factors counted, so sign-in fails closed.
+        sqlx::query("UPDATE plugins SET state = 'error' WHERE id = 'fa'")
+            .execute(&e.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            e.pipeline().usable_kinds(e.user.id).await.unwrap(),
+            ["fa:key"]
+        );
+
+        e.manager.uninstall("fa", false).await.unwrap();
+        assert!(e
+            .pipeline()
+            .usable_kinds(e.user.id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(stranded(&e).await, ["alice"]);
+        assert_eq!(e.pipeline().usable_kinds(bob).await.unwrap(), ["totp"]);
     }
 
     // ---- isolation -----------------------------------------------------------

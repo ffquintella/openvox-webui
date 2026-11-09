@@ -20,6 +20,7 @@ use crate::{
     middleware::AuthUser,
     models::*,
     services::{
+        auth_pipeline::AuthPipeline,
         plugins::{
             slots, ui_assets, InstallOptions, PluginError, TrustRequest, AUDIT_PLUGINS, AUDIT_TRUST,
         },
@@ -381,14 +382,86 @@ async fn enable(
     lifecycle(&state, &user, &id, "plugin.enabled", r).await
 }
 
+/// OQ-23: after a plugin is disabled or uninstalled, its factors no longer
+/// count. The users it left without a usable second factor are audited and
+/// returned as a warning; the action is never blocked.
+async fn factor_warnings(state: &AppState, user: &AuthUser, id: &str) -> Vec<serde_json::Value> {
+    const NAMES: usize = 20;
+    const AUDITED_IDS: usize = 100;
+    let stranded = match AuthPipeline::new(&state.db, &state.config)
+        .users_without_usable_factor(id)
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                "could not check the users of plugin '{}' factors: {}",
+                id,
+                e
+            );
+            return Vec::new();
+        }
+    };
+    if stranded.is_empty() {
+        return Vec::new();
+    }
+    let n = stranded.len();
+    let names: Vec<&str> = stranded
+        .iter()
+        .take(NAMES)
+        .map(|u| u.username.as_str())
+        .collect();
+    state
+        .plugin_manager
+        .audit(
+            user.organization_id,
+            Some(user.id),
+            AUDIT_PLUGINS,
+            "plugin.users_without_usable_factor",
+            id,
+            json!({
+                "actor": user.username,
+                "count": n,
+                "user_ids": stranded.iter().take(AUDITED_IDS).map(|u| u.id).collect::<Vec<_>>(),
+                "alert": true,
+            }),
+        )
+        .await;
+    let more = if n > NAMES { ", ..." } else { "" };
+    let message = if n == 1 {
+        format!(
+            "1 user has no usable second factor left: {}",
+            names.join(", ")
+        )
+    } else {
+        format!(
+            "{n} users have no usable second factor left: {}{more}",
+            names.join(", ")
+        )
+    };
+    vec![json!({
+        "code": "users_without_usable_factor",
+        "message": message,
+        "count": n,
+        "users": names,
+    })]
+}
+
 async fn disable(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
-) -> ApiResult<Json<PluginDetail>> {
+) -> ApiResult<Json<serde_json::Value>> {
     require(&state, &user, Resource::Plugins, Action::Admin).await?;
     let r = state.plugin_manager.disable(&id).await;
-    lifecycle(&state, &user, &id, "plugin.disabled", r).await
+    let Json(detail) = lifecycle(&state, &user, &id, "plugin.disabled", r).await?;
+    let warnings = factor_warnings(&state, &user, &id).await;
+    let mut body = serde_json::to_value(detail)
+        .map_err(|e| AppError::internal(format!("Failed to encode the plugin: {e}")))?;
+    if !warnings.is_empty() {
+        body["warnings"] = json!(warnings);
+    }
+    Ok(Json(body))
 }
 
 async fn verify(
@@ -406,7 +479,7 @@ async fn uninstall(
     user: AuthUser,
     Path(id): Path<String>,
     Query(q): Query<UninstallQuery>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<Response> {
     require(&state, &user, Resource::Plugins, Action::Admin).await?;
     state.plugin_manager.uninstall(&id, q.purge).await?;
     state
@@ -420,7 +493,13 @@ async fn uninstall(
             json!({"actor": user.username, "purge": q.purge}),
         )
         .await;
-    Ok(StatusCode::NO_CONTENT)
+    // OQ-23: 204 as before, or 200 with the warning when users were left
+    // without a usable second factor.
+    let warnings = factor_warnings(&state, &user, &id).await;
+    if warnings.is_empty() {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
+    Ok(Json(json!({"uninstalled": id, "warnings": warnings})).into_response())
 }
 
 // ============================================================================

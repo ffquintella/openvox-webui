@@ -379,6 +379,18 @@ async fn an_unavailable_plugin_factor_denies_login_and_keeps_step_up() {
     let admin = prepare_admin(&app).await;
     require_mfa_for_everyone(&app, &admin).await;
     let (viewer, viewer_token) = add_viewer(&app).await;
+    // The plugin is installed but failed (the circuit breaker isolated it):
+    // its factors stay counted, so everything fails closed. OQ-23 only
+    // drops the factors of disabled and uninstalled plugins.
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT INTO plugins (id, state, installed_at, updated_at) VALUES ('mfa-fido2', 'error', ?, ?)",
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(&app.state.db)
+    .await
+    .unwrap();
     let record =
         openvox_webui::services::auth_pipeline::AuthPipeline::new(&app.state.db, &app.state.config)
             .store()
@@ -423,6 +435,24 @@ async fn an_unavailable_plugin_factor_denies_login_and_keeps_step_up() {
     .await;
     r.assert_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(r.json::<Value>()["code"], "factor_unavailable");
+
+    // OQ-23: once the plugin is uninstalled its factor no longer counts:
+    // the user is in the enrollment path and step-up no longer waits for it.
+    sqlx::query("DELETE FROM plugins WHERE id = 'mfa-fido2'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let r = call(
+        &app,
+        None,
+        "ua",
+        "POST",
+        "/api/v1/auth/login",
+        json!({"username": "viewer", "password": PASSWORD}),
+    )
+    .await;
+    r.assert_forbidden();
+    assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
 }
 
 /// A first-party factor plugin for the HTTP tests: accepts the credential
@@ -606,8 +636,42 @@ async fn a_plugin_factor_is_served_over_http_while_its_plugin_is_enabled() {
             .unwrap();
     assert_eq!(enrolled, 2, "the key and the recovery codes");
 
+    // OQ-23: disabling over HTTP names the users it leaves without a
+    // usable factor (the viewer has only this key; the admin keeps the
+    // recovery codes) and audits them, without blocking.
+    let (viewer, _) = add_viewer(&app).await;
+    openvox_webui::services::auth_pipeline::AuthPipeline::new(&app.state.db, &app.state.config)
+        .store()
+        .insert(viewer, "goodkey:key", "Key", &json!({}), true)
+        .await
+        .unwrap();
+    let r = call(
+        &app,
+        Some(&raised),
+        "ua",
+        "POST",
+        "/api/v1/plugins/goodkey/disable",
+        json!({}),
+    )
+    .await;
+    r.assert_ok();
+    let body: Value = r.json();
+    assert_eq!(body["state"], "disabled");
+    assert_eq!(
+        body["warnings"],
+        json!([{
+            "code": "users_without_usable_factor",
+            "message": "1 user has no usable second factor left: viewer",
+            "count": 1,
+            "users": ["viewer"],
+        }])
+    );
+    assert_eq!(
+        audit_count(&app, "plugin.users_without_usable_factor").await,
+        1
+    );
+
     // Disabled: no longer listed or offered; recovery codes remain.
-    pm.disable("goodkey").await.unwrap();
     let providers: Value = app.get("/api/v1/auth/providers").await.json();
     assert!(!providers.to_string().contains("goodkey"));
     let r = login(&app, "ua").await;

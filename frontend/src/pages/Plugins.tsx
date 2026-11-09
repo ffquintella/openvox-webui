@@ -32,7 +32,14 @@ import FactsTab from '../components/plugins/FactsTab';
 import ClassificationTab from '../components/plugins/ClassificationTab';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import ModuleTrustPanel from '../components/plugins/ModuleTrustPanel';
-import { ErrorBox, Modal, RiskBadge, StateBadge } from '../components/plugins/pluginUi';
+import {
+  ErrorBox,
+  Modal,
+  RiskBadge,
+  StateBadge,
+  WarningBox,
+  lifecycleWarnings,
+} from '../components/plugins/pluginUi';
 import {
   dangerBtn,
   getApiErrorMessage,
@@ -109,6 +116,7 @@ export default function Plugins() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState<PluginSummary | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionWarnings, setActionWarnings] = useState<string[]>([]);
 
   const { data: plugins = [], isLoading, error } = usePlugins();
   const enable = useEnablePlugin();
@@ -118,8 +126,9 @@ export default function Plugins() {
 
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setActionError(null);
+    setActionWarnings([]);
     try {
-      await fn();
+      setActionWarnings(lifecycleWarnings(await fn()));
     } catch (e) {
       setActionError(getApiErrorMessage(e, fallback));
     }
@@ -189,6 +198,7 @@ export default function Plugins() {
       {activeTab === 'installed' && (
         <div className="space-y-4">
           {actionError && <ErrorBox message={actionError} />}
+          {actionWarnings.length > 0 && <WarningBox messages={actionWarnings} />}
           {error ? (
             <ErrorBox message={getApiErrorMessage(error, 'Could not load plugins')} />
           ) : null}

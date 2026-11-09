@@ -36,14 +36,27 @@ Feature: Plugin second factors
     When alice answers the challenge with the factor "fa:key"
     Then alice should hold a session with the methods "pwd,hwk" at level 2
 
-  Scenario: A disabled plugin factor is neither offered nor usable
+  Scenario: A disabled plugin factor is neither offered nor usable (OQ-23)
     Given an enabled WASM factor plugin "fa" whose verify succeeds
     And alice has enrolled the factor "fa:key"
     When the plugin "fa" is disabled
     And alice signs in with her password
-    Then the sign-in should be refused with "factor_unavailable"
+    Then the sign-in should be refused with "mfa_enrollment_required"
     And the factor "fa:key" should not be registered
     And alice should hold no session
+
+  Scenario Outline: Disabling or uninstalling a factor plugin names the users it leaves without a factor (OQ-23)
+    Given an enabled WASM factor plugin "fa" whose verify succeeds
+    And alice has enrolled the factor "fa:key"
+    And alice has enrolled the factor "<other>"
+    When the plugin "fa" is <action>
+    Then the users left without a usable factor by "fa" should be "<stranded>"
+
+    Examples:
+      | other                     | action      | stranded |
+      | fa:key                    | disabled    | alice    |
+      | fa:key                    | uninstalled | alice    |
+      | totp                      | disabled    |          |
 
   Scenario Outline: A failing plugin factor never passes a challenge
     Given an enabled WASM factor plugin "fx" whose verify <behaviour>

@@ -692,7 +692,7 @@ async fn enroll_complete(
         require_step_up(&state, &user).await?;
     }
     // The first factor also gets recovery codes, shown once.
-    let had_any = !pipeline.store().usable_kinds(u.id).await?.is_empty();
+    let had_any = !pipeline.usable_kinds(u.id).await?.is_empty();
     // On success the pipeline closes the grace window and revokes this
     // session if it was enrollment-only (OQ-12).
     pipeline.complete_enroll(&u, &factor_id, body).await?;

@@ -2173,8 +2173,10 @@ export const pluginsApi = {
     return response.data;
   },
 
-  uninstall: async (id: string): Promise<void> => {
-    await client.delete(`/plugins/${encodeURIComponent(id)}`);
+  /** `204`, or `200 {uninstalled, warnings}` when users lose their last usable factor (OQ-23). */
+  uninstall: async (id: string): Promise<unknown> => {
+    const response = await client.delete(`/plugins/${encodeURIComponent(id)}`);
+    return response.data;
   },
 
   // Trusted keys

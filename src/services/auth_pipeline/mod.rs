@@ -106,6 +106,14 @@ pub enum LoginOutcome {
     Denied { code: &'static str, message: String },
 }
 
+/// A user whom disabling or uninstalling a plugin left without a usable
+/// second factor (OQ-23).
+#[derive(Debug, Clone, Serialize)]
+pub struct StrandedUser {
+    pub id: Uuid,
+    pub username: String,
+}
+
 /// What a session row records.
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
@@ -324,6 +332,59 @@ impl<'a> AuthPipeline<'a> {
             .collect()
     }
 
+    /// The enrolled kinds that count (OQ-23): `FactorStore::usable_kinds`
+    /// without the factors of plugins an administrator disabled or
+    /// uninstalled. Their records are kept for a re-enable. A plugin in any
+    /// other state (enabled, failed and isolated by the circuit breaker,
+    /// waiting for an update) keeps its factors counted, so an outage never
+    /// waives a second factor.
+    pub async fn usable_kinds(&self, user: Uuid) -> Result<Vec<String>, PipelineError> {
+        let mut kinds = Vec::new();
+        for kind in self.store().usable_kinds(user).await? {
+            if let Some((plugin, _)) = kind.split_once(':') {
+                let state: Option<String> =
+                    sqlx::query_scalar("SELECT state FROM plugins WHERE id = ?")
+                        .bind(plugin)
+                        .fetch_optional(self.pool)
+                        .await?;
+                if matches!(state.as_deref(), None | Some("disabled")) {
+                    continue;
+                }
+            }
+            kinds.push(kind);
+        }
+        Ok(kinds)
+    }
+
+    /// Active users with a verified record of one of `plugin_id`'s factors
+    /// and no usable factor (OQ-23). Called after a disable or uninstall to
+    /// warn the administrator; never used to block.
+    pub async fn users_without_usable_factor(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Vec<StrandedUser>, PipelineError> {
+        let prefix = format!("{plugin_id}:");
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT DISTINCT u.id, u.username FROM user_factors f JOIN users u ON u.id = f.user_id \
+             WHERE f.verified = 1 AND substr(f.kind, 1, ?) = ? AND u.deactivated_at IS NULL \
+             ORDER BY u.username",
+        )
+        .bind(prefix.len() as i64)
+        .bind(&prefix)
+        .fetch_all(self.pool)
+        .await?;
+        let mut out = Vec::new();
+        for (id, username) in rows {
+            let Ok(id) = Uuid::parse_str(&id) else {
+                continue;
+            };
+            if self.usable_kinds(id).await?.is_empty() {
+                out.push(StrandedUser { id, username });
+            }
+        }
+        Ok(out)
+    }
+
     /// The kinds that can satisfy `required`: all of them, or only the
     /// phishing-resistant ones at level 3 (OQ-6).
     fn qualifying(&self, kinds: &[String], required: u8) -> Vec<String> {
@@ -394,7 +455,7 @@ impl<'a> AuthPipeline<'a> {
         {
             return Ok(StepUpCheck::EnrollmentOnly);
         }
-        if self.store().usable_kinds(user).await?.is_empty() {
+        if self.usable_kinds(user).await?.is_empty() {
             return Ok(StepUpCheck::Passed);
         }
         let required = self.step_up_level(user, org).await?;
@@ -651,7 +712,7 @@ impl<'a> AuthPipeline<'a> {
             )));
         }
 
-        let enrolled = self.store().usable_kinds(user.id).await?;
+        let enrolled = self.usable_kinds(user.id).await?;
         if enrolled.is_empty() {
             let break_glass = ident.provider == "local"
                 && roles
@@ -979,7 +1040,7 @@ impl<'a> AuthPipeline<'a> {
         session_id: &str,
         client: &ClientInfo,
     ) -> Result<ChallengeOffer, PipelineError> {
-        let enrolled = self.store().usable_kinds(user.id).await?;
+        let enrolled = self.usable_kinds(user.id).await?;
         if enrolled.is_empty() {
             return Err(PipelineError::Unavailable(
                 "No second factor is enrolled for this account".into(),
