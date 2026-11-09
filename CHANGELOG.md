@@ -37,6 +37,7 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ### Fixed
 - Plugin handlers are no longer charged for loading and compiling their WASM module: the first call of a plugin version (after enabling, upgrading or restarting) used to include that one-off work in the handler timeout, so a module that takes long to compile (about 2 s for the 220 KB mfa-fido2 stand-in in a debug build, against the 2000 ms `timeout_ms` of its manifest) made enabling fail with `lifecycle_failed` (install hook timed out) or failed the first second-factor, API route or interceptor call closed. The module is now loaded and compiled before the timeout starts, once per plugin version (`HandlerInvoker::prepare`); a module that cannot be loaded or compiled still fails the call and counts for the circuit breaker (T121)
+- `db.query` of the plugin private database (`db:own`) now answers `null` for NULL values: SQLite reports a NULL with the column's declared type, so a NULL in an `INTEGER`, `REAL`, `TEXT` or `BLOB` column came back as `0`, `0.0` or `""` and a plugin could not tell a missing value (such as a credential that was never used) from a real one (T121)
 
 ## [0.51.1] - 2026-11-09
 

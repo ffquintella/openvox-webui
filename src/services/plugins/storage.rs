@@ -611,9 +611,16 @@ fn bind_json<'q>(
 fn row_to_json(row: &SqliteRow) -> Map<String, Value> {
     let mut out = Map::new();
     for (i, col) in row.columns().iter().enumerate() {
+        // A NULL value reports the column's declared type, so test it first.
         let ty = row
             .try_get_raw(i)
-            .map(|r| r.type_info().name().to_string())
+            .map(|r| {
+                if r.is_null() {
+                    "NULL".to_string()
+                } else {
+                    r.type_info().name().to_string()
+                }
+            })
             .unwrap_or_else(|_| "NULL".into());
         let v = match ty.as_str() {
             "NULL" => Value::Null,
@@ -826,6 +833,35 @@ mod tests {
         assert_eq!(rows[0]["score"], 1.5);
         assert_eq!(rows[0]["id"], 1);
         assert!(s.db_query("b", "SELECT * FROM t", &[]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn null_values_of_typed_columns_are_null() {
+        // SQLite reports a NULL value with the column's declared type; it
+        // must not come back as 0, 0.0, "" or an empty blob.
+        let (s, _d) = store(Default::default()).await;
+        s.db_exec(
+            "a",
+            "CREATE TABLE t(id INTEGER PRIMARY KEY, n INTEGER, r REAL, s TEXT, b BLOB)",
+            &[],
+        )
+        .await
+        .unwrap();
+        s.db_exec(
+            "a",
+            "INSERT INTO t(n, s) VALUES (?, ?)",
+            &[json!(null), json!(null)],
+        )
+        .await
+        .unwrap();
+        let rows = s
+            .db_query("a", "SELECT n, r, s, b FROM t", &[])
+            .await
+            .unwrap();
+        assert_eq!(
+            Value::Object(rows[0].clone()),
+            json!({"n": null, "r": null, "s": null, "b": null})
+        );
     }
 
     #[tokio::test]
