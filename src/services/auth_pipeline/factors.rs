@@ -70,6 +70,33 @@ impl FactorDescriptor {
     }
 }
 
+/// What kind of failure a factor error is; it decides the HTTP status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactorErrorKind {
+    Unavailable,
+    Invalid,
+    Internal,
+}
+
+/// Default codes of the uncoded variants (H-8/OQ-10).
+pub const CODE_UNAVAILABLE: &str = "factor_unavailable";
+pub const CODE_INVALID: &str = "factor_invalid";
+pub const CODE_INTERNAL: &str = "factor_internal";
+/// Replaces a code that is not a safe identifier.
+pub const CODE_FALLBACK: &str = "plugin_error";
+const MAX_CODE_LEN: usize = 64;
+
+/// A stable code is `[a-z0-9_.-]{1,64}`: safe to log, return and use as a
+/// message key.
+pub fn is_safe_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= MAX_CODE_LEN
+        && code.bytes().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'.' | b'-')
+        })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FactorError {
     #[error("factor unavailable: {0}")]
@@ -78,6 +105,52 @@ pub enum FactorError {
     Invalid(String),
     #[error("{0}")]
     Internal(String),
+    /// An error with a stable code (H-8/OQ-10) that clients may translate;
+    /// `message` is plain text for people and logs. Plugin errors are coded.
+    #[error("{message}")]
+    Coded {
+        kind: FactorErrorKind,
+        code: String,
+        message: String,
+    },
+}
+
+impl FactorError {
+    /// A coded error; an unsafe code becomes `plugin_error`.
+    pub fn coded(kind: FactorErrorKind, code: &str, message: impl Into<String>) -> Self {
+        FactorError::Coded {
+            kind,
+            code: if is_safe_code(code) {
+                code.to_string()
+            } else {
+                CODE_FALLBACK.to_string()
+            },
+            message: message.into(),
+        }
+    }
+
+    pub fn kind(&self) -> FactorErrorKind {
+        match self {
+            FactorError::Unavailable(_) => FactorErrorKind::Unavailable,
+            FactorError::Invalid(_) => FactorErrorKind::Invalid,
+            FactorError::Internal(_) => FactorErrorKind::Internal,
+            FactorError::Coded { kind, .. } => *kind,
+        }
+    }
+
+    /// The stable code: the coded one, or the default of the variant.
+    pub fn code(&self) -> &str {
+        match self {
+            FactorError::Unavailable(_) => CODE_UNAVAILABLE,
+            FactorError::Invalid(_) => CODE_INVALID,
+            FactorError::Internal(_) => CODE_INTERNAL,
+            FactorError::Coded { code, .. } => code,
+        }
+    }
+}
+
+fn invalid(code: &str, message: &str) -> FactorError {
+    FactorError::coded(FactorErrorKind::Invalid, code, message)
 }
 
 /// One stored enrollment record, already opened by the host.
@@ -228,8 +301,9 @@ impl AuthFactor for TotpFactor {
 
     async fn begin_enroll(&self, ctx: &EnrollContext) -> Result<EnrollStart, FactorError> {
         if !ctx.existing.is_empty() {
-            return Err(FactorError::Invalid(
-                "An authenticator app is already enrolled; remove it first".into(),
+            return Err(invalid(
+                "totp_already_enrolled",
+                "An authenticator app is already enrolled; remove it first",
             ));
         }
         let secret = totp::generate_secret();
@@ -251,14 +325,14 @@ impl AuthFactor for TotpFactor {
         let pending = ctx
             .pending
             .as_ref()
-            .ok_or_else(|| FactorError::Invalid("No enrollment in progress".into()))?;
+            .ok_or_else(|| invalid("no_enrollment_in_progress", "No enrollment in progress"))?;
         let data: TotpData = serde_json::from_value(pending.data.clone())
             .map_err(|e| FactorError::Internal(e.to_string()))?;
         let secret = totp::secret_from_base32(&data.secret)
             .ok_or_else(|| FactorError::Internal("corrupt seed".into()))?;
         let code = resp.get("code").and_then(Value::as_str).unwrap_or("");
         let step = totp::verify(&secret, code, ctx.now_unix, None)
-            .ok_or_else(|| FactorError::Invalid("The code is not valid".into()))?;
+            .ok_or_else(|| invalid("invalid_code", "The code is not valid"))?;
         Ok(EnrollRecord {
             data: json!({ "secret": data.secret, "last_step": step }),
             label: Some("Authenticator app".into()),
@@ -354,8 +428,9 @@ impl AuthFactor for RecoveryFactor {
         _ctx: &EnrollContext,
         _resp: Value,
     ) -> Result<EnrollRecord, FactorError> {
-        Err(FactorError::Invalid(
-            "Recovery codes need no confirmation".into(),
+        Err(invalid(
+            "recovery_needs_no_confirmation",
+            "Recovery codes need no confirmation",
         ))
     }
 
@@ -483,7 +558,7 @@ impl AuthFactor for WebAuthnFactor {
         let pending = ctx
             .pending
             .as_ref()
-            .ok_or_else(|| FactorError::Invalid("No enrollment in progress".into()))?;
+            .ok_or_else(|| invalid("no_enrollment_in_progress", "No enrollment in progress"))?;
         let state: PasskeyRegistration = serde_json::from_value(
             pending
                 .data
@@ -494,10 +569,18 @@ impl AuthFactor for WebAuthnFactor {
         .map_err(|e| FactorError::Internal(e.to_string()))?;
         let cred: RegisterPublicKeyCredential =
             serde_json::from_value(resp.get("credential").cloned().unwrap_or(resp.clone()))
-                .map_err(|e| FactorError::Invalid(format!("malformed credential: {e}")))?;
-        let passkey = w
-            .finish_passkey_registration(&cred, &state)
-            .map_err(|_| FactorError::Invalid("The credential could not be verified".into()))?;
+                .map_err(|e| {
+                    invalid(
+                        "malformed_credential",
+                        &format!("malformed credential: {e}"),
+                    )
+                })?;
+        let passkey = w.finish_passkey_registration(&cred, &state).map_err(|_| {
+            invalid(
+                "credential_not_verified",
+                "The credential could not be verified",
+            )
+        })?;
         let label = resp
             .get("label")
             .and_then(Value::as_str)
@@ -515,7 +598,11 @@ impl AuthFactor for WebAuthnFactor {
         let w = self.build()?;
         let keys: Vec<Passkey> = passkeys(&ctx.records).into_iter().map(|(_, p)| p).collect();
         if keys.is_empty() {
-            return Err(FactorError::Unavailable("no security key enrolled".into()));
+            return Err(FactorError::coded(
+                FactorErrorKind::Unavailable,
+                "no_usable_credential",
+                "no security key enrolled",
+            ));
         }
         let (options, state) = w
             .start_passkey_authentication(&keys)
@@ -545,7 +632,12 @@ impl AuthFactor for WebAuthnFactor {
         };
         let cred: PublicKeyCredential =
             serde_json::from_value(resp.get("credential").cloned().unwrap_or(resp.clone()))
-                .map_err(|e| FactorError::Invalid(format!("malformed credential: {e}")))?;
+                .map_err(|e| {
+                    invalid(
+                        "malformed_credential",
+                        &format!("malformed credential: {e}"),
+                    )
+                })?;
         let result = match w.finish_passkey_authentication(&cred, &state) {
             Ok(r) => r,
             Err(_) => return Ok(FactorOutcome::Failed { retryable: true }),
@@ -610,10 +702,13 @@ mod tests {
         let rec = f.complete_enroll(&c, json!({"code": code})).await.unwrap();
         assert_eq!(rec.data["last_step"], totp::step_at(then));
         c.now_unix = now_unix();
-        assert!(matches!(
-            f.complete_enroll(&c, json!({"code": code})).await,
-            Err(FactorError::Invalid(_))
-        ));
+        assert_eq!(
+            f.complete_enroll(&c, json!({"code": code}))
+                .await
+                .err()
+                .map(|e| e.code().to_string()),
+            Some("invalid_code".to_string())
+        );
     }
 
     #[tokio::test]
@@ -694,6 +789,53 @@ mod tests {
         assert!(!is_phishing_resistant("webauthn", &amr(&["otp"])));
         assert!(!is_phishing_resistant("otp", &amr(&["hwk"])));
         assert!(!is_phishing_resistant("push", &amr(&["hwk"])));
+    }
+
+    /// H-8/OQ-10: every factor error has a stable code.
+    #[tokio::test]
+    async fn factor_errors_carry_stable_codes() {
+        assert_eq!(
+            FactorError::Unavailable("x".into()).code(),
+            "factor_unavailable"
+        );
+        assert_eq!(FactorError::Invalid("x".into()).code(), "factor_invalid");
+        assert_eq!(FactorError::Internal("x".into()).code(), "factor_internal");
+        let e = FactorError::coded(
+            FactorErrorKind::Invalid,
+            "invalid_code",
+            "The code is not valid",
+        );
+        assert_eq!(
+            (e.kind(), e.code()),
+            (FactorErrorKind::Invalid, "invalid_code")
+        );
+        assert_eq!(e.to_string(), "The code is not valid");
+        // An unsafe code is replaced, never passed on.
+        assert_eq!(
+            FactorError::coded(FactorErrorKind::Invalid, "Bad Code", "m").code(),
+            "plugin_error"
+        );
+        // Built-in factors use codes for what a user can act on.
+        let totp = TotpFactor {
+            issuer: "OpenVox".into(),
+        };
+        let mut c = ctx();
+        c.existing = vec![FactorRecord {
+            id: "t".into(),
+            data: json!({}),
+        }];
+        assert_eq!(
+            totp.begin_enroll(&c).await.err().unwrap().code(),
+            "totp_already_enrolled"
+        );
+        assert_eq!(
+            totp.complete_enroll(&ctx(), json!({}))
+                .await
+                .err()
+                .unwrap()
+                .code(),
+            "no_enrollment_in_progress"
+        );
     }
 
     #[test]

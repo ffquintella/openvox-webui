@@ -20,8 +20,8 @@ use super::manager::PluginManager;
 use crate::models::{AuthFactorDecl, PluginState, RuntimeKind, RuntimeSpec};
 use crate::services::auth_pipeline::factors::{
     is_phishing_resistant, now_unix, AuthFactor, ChallengeContext, ChallengeStart, EnrollContext,
-    EnrollMode, EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorOutcome,
-    FactorRecord,
+    EnrollMode, EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorErrorKind,
+    FactorOutcome, FactorRecord,
 };
 
 pub const FACTOR_CAPABILITY: &str = "auth:factor";
@@ -35,9 +35,6 @@ pub const QUALIFIER: char = ':';
 /// Message of every `Unavailable` the host raises itself. It reaches
 /// unauthenticated clients, so it names nothing internal.
 pub const UNAVAILABLE: &str = "factor_unavailable";
-/// Code used when a plugin's error code is not a safe identifier.
-const FALLBACK_CODE: &str = "plugin_error";
-const MAX_CODE_LEN: usize = 64;
 const MAX_LABEL_CHARS: usize = 64;
 const MAX_FLOW_STATE_BYTES: usize = 64 * 1024;
 
@@ -352,22 +349,10 @@ fn object(v: Value, required: &[&str], optional: &[&str]) -> Result<Map<String, 
     Ok(map)
 }
 
-fn safe_code(code: &str) -> String {
-    let ok = !code.is_empty()
-        && code.len() <= MAX_CODE_LEN
-        && code.bytes().all(|c| {
-            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'_' | b'.' | b'-')
-        });
-    if ok {
-        code.to_string()
-    } else {
-        FALLBACK_CODE.to_string()
-    }
-}
-
-/// `{"error": {"kind", "code"}}` becomes the matching `FactorError`
-/// (`unavailable`, `invalid`, `internal`); any other value is passed on to
-/// the handler's parser.
+/// `{"error": {"kind", "code"}}` becomes a coded `FactorError` of that kind
+/// (`unavailable`, `invalid`, `internal`) whose code and message are the
+/// plugin's code, or `plugin_error` when it is not a safe identifier
+/// (H-8/OQ-10); any other value is passed on to the handler's parser.
 pub fn split_error(v: Value) -> Result<Value, Reject> {
     let is_error = matches!(&v, Value::Object(m) if m.contains_key("error"));
     if !is_error {
@@ -385,13 +370,19 @@ pub fn split_error(v: Value) -> Result<Value, Reject> {
     ) else {
         return Err(Reject::Malformed("the error kind and code must be strings"));
     };
-    let code = safe_code(code);
-    Err(Reject::Factor(match kind {
-        "unavailable" => FactorError::Unavailable(code),
-        "invalid" => FactorError::Invalid(code),
-        "internal" => FactorError::Internal(code),
+    let kind = match kind {
+        "unavailable" => FactorErrorKind::Unavailable,
+        "invalid" => FactorErrorKind::Invalid,
+        "internal" => FactorErrorKind::Internal,
         _ => return Err(Reject::Malformed("unknown error kind")),
-    }))
+    };
+    let e = FactorError::coded(kind, code, "");
+    let code = e.code().to_string();
+    Err(Reject::Factor(FactorError::coded(
+        kind,
+        &code,
+        code.clone(),
+    )))
 }
 
 /// `begin_enroll`: `{client, mode: {pending: v} | {immediate: v}}`.
@@ -424,7 +415,11 @@ pub fn parse_enroll_record(v: Value) -> Result<EnrollRecord, Reject> {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => {
             if s.chars().count() > MAX_LABEL_CHARS || s.chars().any(char::is_control) {
-                return Err(Reject::Factor(FactorError::Invalid("invalid_label".into())));
+                return Err(Reject::Factor(FactorError::coded(
+                    FactorErrorKind::Invalid,
+                    "invalid_label",
+                    "invalid_label",
+                )));
             }
             Some(s)
         }
@@ -1709,15 +1704,33 @@ mod tests {
     fn plugin_errors_map_one_to_one_onto_factor_errors() {
         let err =
             |kind: &str, code: &str| split_error(json!({"error": {"kind": kind, "code": code}}));
-        assert!(matches!(err("unavailable", "no_usable_credential"),
-            Err(Reject::Factor(FactorError::Unavailable(c))) if c == "no_usable_credential"));
-        assert!(matches!(err("invalid", "bad.response-1"),
-            Err(Reject::Factor(FactorError::Invalid(c))) if c == "bad.response-1"));
-        assert!(matches!(err("internal", "x"),
-            Err(Reject::Factor(FactorError::Internal(c))) if c == "x"));
+        // H-8/OQ-10: the plugin's code is kept as a stable code.
+        let coded = |r: Result<Value, Reject>| match r {
+            Err(Reject::Factor(e)) => Some((e.kind(), e.code().to_string(), e.to_string())),
+            _ => None,
+        };
+        use crate::services::auth_pipeline::factors::FactorErrorKind as K;
+        assert_eq!(
+            coded(err("unavailable", "no_usable_credential")),
+            Some((
+                K::Unavailable,
+                "no_usable_credential".into(),
+                "no_usable_credential".into()
+            ))
+        );
+        assert_eq!(
+            coded(err("invalid", "bad.response-1")),
+            Some((K::Invalid, "bad.response-1".into(), "bad.response-1".into()))
+        );
+        assert_eq!(
+            coded(err("internal", "x")),
+            Some((K::Internal, "x".into(), "x".into()))
+        );
         // Unsafe codes never reach a client.
-        assert!(matches!(err("invalid", "<script>"),
-            Err(Reject::Factor(FactorError::Invalid(c))) if c == "plugin_error"));
+        assert_eq!(
+            coded(err("invalid", "<script>")),
+            Some((K::Invalid, "plugin_error".into(), "plugin_error".into()))
+        );
         assert!(malformed(err("fatal", "x")));
         assert!(malformed(split_error(json!({"error": "boom"}))));
         assert!(malformed(split_error(
@@ -1764,11 +1777,14 @@ mod tests {
             .is_none());
         assert!(matches!(
             parse_enroll_record(json!({"data": 1, "label": "x".repeat(65)})),
-            Err(Reject::Factor(FactorError::Invalid(c))) if c == "invalid_label"
+            Err(Reject::Factor(e)) if e.code() == "invalid_label" && e.kind() == FactorErrorKind::Invalid
         ));
         assert!(matches!(
             parse_enroll_record(json!({"data": 1, "label": "a\nb"})),
-            Err(Reject::Factor(FactorError::Invalid(_)))
+            Err(Reject::Factor(FactorError::Coded {
+                kind: FactorErrorKind::Invalid,
+                ..
+            }))
         ));
         assert!(malformed(parse_enroll_record(
             json!({"data": 1, "label": 3})

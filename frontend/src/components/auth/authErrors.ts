@@ -1,11 +1,31 @@
 import { t, type MessageKey } from '../../i18n';
+import en from '../../i18n/locales/en.json';
 import type { AuthFactorDescriptor } from '../../services/api';
 
 interface ApiErrorShape {
   response?: {
     status?: number;
-    data?: { code?: string; details?: { attempts_left?: unknown } };
+    data?: {
+      code?: string;
+      details?: { attempts_left?: unknown; factor_error?: { kind?: unknown; code?: unknown } };
+    };
   };
+}
+
+/**
+ * The factor's own stable code (H-8/OQ-10), from `details.factor_error.code`
+ * of a `factor_unavailable` or `factor_invalid` answer.
+ */
+export function factorErrorCode(err: unknown): string | undefined {
+  const code = (err as ApiErrorShape)?.response?.data?.details?.factor_error?.code;
+  return typeof code === 'string' && /^[a-z0-9_.-]{1,64}$/.test(code) ? code : undefined;
+}
+
+/** Host message for a factor code, when the host catalog has one. */
+function hostFactorMessage(code: string | undefined): string | undefined {
+  if (!code) return undefined;
+  const key = `auth.factor_error.${code}`;
+  return key in en ? t(key as MessageKey) : undefined;
 }
 
 /**
@@ -15,6 +35,10 @@ interface ApiErrorShape {
 export function authErrorMessage(err: unknown, rejectedKey: MessageKey): string {
   const response = (err as ApiErrorShape)?.response;
   const code = response?.data?.code;
+  // Plugin message catalogs (`<plugin>.*` keys) are not served yet; host
+  // codes have host messages, other codes fall back to the category.
+  const specific = hostFactorMessage(factorErrorCode(err));
+  if (specific) return specific;
   switch (code) {
     case 'factor_failed': {
       const left = response?.data?.details?.attempts_left;

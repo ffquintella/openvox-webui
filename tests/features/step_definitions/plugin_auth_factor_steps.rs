@@ -87,6 +87,7 @@ fn code_of(e: &PipelineError) -> String {
         PipelineError::Invalid(_) => "invalid",
         PipelineError::Internal(_) => "internal",
         PipelineError::Forbidden { code, .. } => code,
+        PipelineError::Factor { code, .. } => code.as_str(),
     }
     .to_string()
 }
@@ -488,6 +489,24 @@ async fn given_amr_plugin(world: &mut TestWorld, id: String, declared: String, a
         &id,
         &yaml,
         &factor_guest(challenge, Out::Json(verify)),
+        &["auth:factor"],
+    )
+    .await;
+}
+
+#[given(
+    regex = r#"^an enabled WASM factor plugin "([a-z0-9-]+)" whose challenge answers the error "([a-z]+)" "([^"]+)"$"#
+)]
+async fn given_error_plugin(world: &mut TestWorld, id: String, kind: String, code: String) {
+    let challenge: &'static str = Box::leak(
+        format!(r#"{{"ok":{{"error":{{"kind":"{kind}","code":"{code}"}}}}}}"#).into_boxed_str(),
+    );
+    let s = scenario(world);
+    install(
+        s,
+        &id,
+        &factor_yaml(&id, "timeout_ms: 5000"),
+        &factor_guest(Out::Json(challenge), Out::Json(VERIFIED)),
         &["auth:factor"],
     )
     .await;

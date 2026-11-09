@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AxiosAdapter } from 'axios';
 import '@testing-library/jest-dom/vitest';
 import EnrollmentSession from '../components/auth/EnrollmentSession';
-import { authErrorMessage } from '../components/auth/authErrors';
+import { authErrorMessage, factorErrorCode } from '../components/auth/authErrors';
 import {
   api,
   apiClient,
@@ -139,6 +139,27 @@ describe('enrollment-only session in the API client', () => {
     expect(authErrorMessage(err, 'auth.error.key_rejected')).toBe(
       'This sign-in can only add a verification method. Add one, then sign in again.'
     );
+  });
+
+  it('uses the factor code of a coded factor error when the host knows it (H-8)', () => {
+    const coded = (code: string) => ({
+      response: {
+        status: 503,
+        data: {
+          code: 'factor_unavailable',
+          details: { factor_error: { kind: 'unavailable', code } },
+        },
+      },
+    });
+    expect(factorErrorCode(coded('no_usable_credential'))).toBe('no_usable_credential');
+    expect(authErrorMessage(coded('no_usable_credential'), 'auth.error.key_rejected')).toBe(
+      'No security key registered to this account can be used right now. Use another method or ask your administrator.'
+    );
+    // A plugin code without a host message falls back to the category.
+    expect(authErrorMessage(coded('mfa_fido2_only_code'), 'auth.error.key_rejected')).toBe(
+      'This verification method is unavailable right now. Use another method or try again later.'
+    );
+    expect(factorErrorCode(coded('<b>'))).toBeUndefined();
   });
 
   it('translates the phishing-resistant policy refusal (OQ-6)', () => {

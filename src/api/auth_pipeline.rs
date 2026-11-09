@@ -21,6 +21,7 @@ use crate::{
     middleware::AuthUser,
     models::*,
     services::auth_pipeline::{
+        factors::{self, FactorErrorKind},
         oidc::{self, LinkResult, OidcClient, BROWSER_COOKIE},
         policy::{self, PolicyInput},
         AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, StepUpCheck,
@@ -107,6 +108,37 @@ impl From<PipelineError> for ApiErr {
             PipelineError::Invalid(m) => ApiErr::new(StatusCode::BAD_REQUEST, "bad_request", m),
             PipelineError::Forbidden { code, message } => {
                 ApiErr::new(StatusCode::FORBIDDEN, "forbidden", message).code(code)
+            }
+            // H-8/OQ-10: `code` stays the category clients already handle;
+            // the factor's own code is in `details.factor_error`.
+            PipelineError::Factor {
+                kind,
+                code,
+                message,
+            } => {
+                let detail = json!({"factor_error": {"kind": kind, "code": code}});
+                match kind {
+                    FactorErrorKind::Unavailable => ApiErr::new(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "service_unavailable",
+                        message,
+                    )
+                    .code(factors::CODE_UNAVAILABLE)
+                    .details(detail),
+                    FactorErrorKind::Invalid => {
+                        ApiErr::new(StatusCode::BAD_REQUEST, "bad_request", message)
+                            .code(factors::CODE_INVALID)
+                            .details(detail)
+                    }
+                    FactorErrorKind::Internal => {
+                        tracing::error!("auth factor error: {code}: {message}");
+                        ApiErr::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "internal_error",
+                            "Authentication failed",
+                        )
+                    }
+                }
             }
             PipelineError::Internal(m) => {
                 tracing::error!("auth pipeline error: {m}");
@@ -746,4 +778,45 @@ async fn put_policies(
         )
         .await;
     Ok(Json(json!({ "policies": saved })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn body_of(e: ApiErr) -> (StatusCode, Value) {
+        let r = e.into_response();
+        let status = r.status();
+        let bytes = axum::body::to_bytes(r.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    /// H-8/OQ-10: the category stays in `code`; the factor's own code is in
+    /// `details.factor_error`.
+    #[tokio::test]
+    async fn coded_factor_errors_keep_the_category_and_add_the_factor_code() {
+        let e = |kind| PipelineError::Factor {
+            kind,
+            code: "no_usable_credential".into(),
+            message: "no_usable_credential".into(),
+        };
+        let (status, body) = body_of(e(FactorErrorKind::Unavailable).into()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "factor_unavailable");
+        assert_eq!(
+            body["details"]["factor_error"],
+            json!({"kind": "unavailable", "code": "no_usable_credential"})
+        );
+        let (status, body) = body_of(e(FactorErrorKind::Invalid).into()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["code"], "factor_invalid");
+        assert_eq!(body["details"]["factor_error"]["kind"], "invalid");
+        // Internal errors stay generic.
+        let (status, body) = body_of(e(FactorErrorKind::Internal).into()).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["message"], "Authentication failed");
+        assert!(body.get("details").is_none_or(Value::is_null));
+    }
 }

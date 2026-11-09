@@ -40,7 +40,7 @@ pub use factors::{AuthFactor, FactorDescriptor};
 
 use self::factors::{
     builtin_factors, now_unix, ChallengeContext, ChallengePurpose, EnrollContext, EnrollMode,
-    FactorError, FactorOutcome, FactorRecord,
+    FactorError, FactorErrorKind, FactorOutcome, FactorRecord,
 };
 use self::grace::{GraceStore, GraceWindow, LoginSpend};
 use self::policy::{ACR_MFA, ACR_PHISHING_RESISTANT, ACR_PRIMARY};
@@ -157,6 +157,13 @@ pub enum PipelineError {
     /// A refusal with a stable code (403).
     #[error("{message}")]
     Forbidden { code: &'static str, message: String },
+    /// A coded factor error (H-8/OQ-10), passed on with its code.
+    #[error("{message}")]
+    Factor {
+        kind: FactorErrorKind,
+        code: String,
+        message: String,
+    },
 }
 
 impl From<anyhow::Error> for PipelineError {
@@ -177,6 +184,15 @@ impl From<FactorError> for PipelineError {
             FactorError::Unavailable(m) => PipelineError::Unavailable(m),
             FactorError::Invalid(m) => PipelineError::Invalid(m),
             FactorError::Internal(m) => PipelineError::Internal(m),
+            FactorError::Coded {
+                kind,
+                code,
+                message,
+            } => PipelineError::Factor {
+                kind,
+                code,
+                message,
+            },
         }
     }
 }
@@ -1236,7 +1252,9 @@ impl<'a> AuthPipeline<'a> {
 
         let outcome = match outcome {
             Ok(o) => o,
-            Err(FactorError::Invalid(_)) => FactorOutcome::Failed { retryable: true },
+            Err(e) if e.kind() == FactorErrorKind::Invalid => {
+                FactorOutcome::Failed { retryable: true }
+            }
             // An unavailable or broken factor is a denial, never a pass.
             Err(e) => return Err(e.into()),
         };

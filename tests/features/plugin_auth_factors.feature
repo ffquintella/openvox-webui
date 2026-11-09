@@ -150,6 +150,20 @@ Feature: Plugin second factors
     When alice steps up a password session
     Then a challenge should be offered with the factors "fa:key"
 
+  Scenario Outline: A plugin factor's error code reaches the client as a stable code (H-8)
+    Given an enabled WASM factor plugin "fe" whose challenge answers the error "<kind>" "<code>"
+    And alice has enrolled the factor "fe:key"
+    When alice signs in with her password
+    And alice answers the challenge with the factor "fe:key"
+    Then the answer should be refused with "<seen>"
+    And alice should hold no session
+
+    Examples:
+      | kind        | code                 | seen                 |
+      | unavailable | no_usable_credential | no_usable_credential |
+      | invalid     | ceremony_expired     | ceremony_expired     |
+      | invalid     | Not A Code           | plugin_error         |
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"
