@@ -46,6 +46,11 @@ auth:
   refresh_token_expiry_days: 7
   bcrypt_cost: 12
   password_min_length: 8
+  # Second factors and SSO: see docs/CONFIGURATION.md
+  # mfa:
+  #   max_attempts: 5
+  #   enrollment_grace_secs: 0           # after a factor reset: 0 (off) or 60..604800
+  #   enrollment_grace_on_policy: false  # one window at the first policy denial
 
 # Database settings (SQLite for local storage)
 database:

@@ -17,7 +17,7 @@ use crate::{
     api::auth_pipeline::{client_info, outcome_response, ApiErr},
     middleware::auth::{
         create_access_token_with_levels, ensure_auth_session_active, revoke_auth_session,
-        validate_token, AuthError, AuthUser, TokenType,
+        validate_token, AuthError, AuthUser, TokenType, ENROLLMENT_ONLY_CODE,
     },
     models::{LoginRequest, RefreshTokenRequest, TokenResponse, UserPublic},
     services::{
@@ -131,7 +131,11 @@ async fn login(
             }
         }
     };
-    match pipeline.start_login(ident, &client_info(&headers)).await {
+    // This client can carry an enrollment-only session (OQ-12).
+    match pipeline
+        .start_login_allowing_enrollment(ident, &client_info(&headers))
+        .await
+    {
         Ok(outcome) => outcome_response(outcome),
         Err(e) => ApiErr::from(e).into_response(),
     }
@@ -300,10 +304,20 @@ fn auth_error_message(error: &AuthError) -> &'static str {
         AuthError::TokenExpired => "Authentication token has expired",
         AuthError::SessionExpired => "Session expired due to inactivity",
         AuthError::InvalidTokenType => "Invalid token type",
+        AuthError::EnrollmentOnly => "An enrollment-only session cannot be refreshed",
     }
 }
 
 fn auth_error_response(error: AuthError) -> (StatusCode, Json<ErrorResponse>) {
+    if matches!(error, AuthError::EnrollmentOnly) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(
+                ErrorResponse::new("forbidden", auth_error_message(&error))
+                    .with_code(ENROLLMENT_ONLY_CODE),
+            ),
+        );
+    }
     (
         StatusCode::UNAUTHORIZED,
         Json(ErrorResponse {

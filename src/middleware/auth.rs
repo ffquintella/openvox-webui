@@ -3,13 +3,13 @@
 //! This module provides JWT-based authentication for the API.
 
 use axum::{
-    extract::{FromRequestParts, Request, State},
-    http::{header::AUTHORIZATION, request::Parts, StatusCode},
+    extract::{FromRequestParts, MatchedPath, Request, State},
+    http::{header::AUTHORIZATION, request::Parts, Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
@@ -20,6 +20,67 @@ use crate::{
 };
 
 const SESSION_IDLE_TIMEOUT_MINUTES: i64 = 30;
+
+/// `auth_sessions.scope` of an enrollment-only session (OQ-12).
+pub const SCOPE_ENROLLMENT: &str = "enrollment";
+/// Error code of a request an enrollment-only session may not make.
+pub const ENROLLMENT_ONLY_CODE: &str = "enrollment_only_session";
+const ENROLLMENT_ONLY_MESSAGE: &str =
+    "This session can only enroll a second factor; sign in again once one is enrolled";
+
+/// Route templates (relative to `/api/v1`) an enrollment-only session may
+/// call. The routes are declared with these constants, so the allowlist and
+/// the router cannot drift apart.
+pub const MY_FACTORS_PATH: &str = "/users/me/factors";
+pub const ENROLL_BEGIN_PATH: &str = "/users/me/factors/{factor_id}/enroll/begin";
+pub const ENROLL_COMPLETE_PATH: &str = "/users/me/factors/{factor_id}/enroll/complete";
+const API_PREFIX: &str = "/api/v1";
+
+/// What a session may do. The session row is the authority; the scope is
+/// also put in the request extensions next to [`AuthUser`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SessionScope {
+    /// Everything the user's roles allow.
+    #[default]
+    Full,
+    /// Only listing and enrolling second factors (OQ-12).
+    Enrollment,
+}
+
+impl SessionScope {
+    /// An unknown value is refused, never read as a full session.
+    fn from_column(value: Option<&str>) -> Result<Self, AuthError> {
+        match value {
+            None => Ok(Self::Full),
+            Some(SCOPE_ENROLLMENT) => Ok(Self::Enrollment),
+            Some(_) => Err(AuthError::InvalidToken),
+        }
+    }
+}
+
+/// Whether an enrollment-only session may make this request. Matching uses
+/// the route template axum matched, so path tricks cannot reach another
+/// handler; no template (an unmatched request) means no.
+pub fn enrollment_route_allowed(method: &Method, matched_path: Option<&str>) -> bool {
+    let Some(path) = matched_path else {
+        return false;
+    };
+    let path = path.strip_prefix(API_PREFIX).unwrap_or(path);
+    (method == Method::GET && path == MY_FACTORS_PATH)
+        || (method == Method::POST && (path == ENROLL_BEGIN_PATH || path == ENROLL_COMPLETE_PATH))
+}
+
+fn enrollment_only_rejection() -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: "forbidden".to_string(),
+            message: ENROLLMENT_ONLY_MESSAGE.to_string(),
+            details: None,
+            code: Some(ENROLLMENT_ONLY_CODE.to_string()),
+        }),
+    )
+}
 
 /// JWT Claims structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,7 +202,7 @@ where
     type Rejection = (StatusCode, Json<ErrorResponse>);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts.extensions.get::<AuthUser>().cloned().ok_or_else(|| {
+        let user = parts.extensions.get::<AuthUser>().cloned().ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
                 Json(ErrorResponse {
@@ -151,7 +212,21 @@ where
                     code: None,
                 }),
             )
-        })
+        })?;
+        // Second line of the OQ-12 gate: `auth_middleware` already refused
+        // these requests; a handler reached another way still refuses them.
+        if parts.extensions.get::<SessionScope>() == Some(&SessionScope::Enrollment)
+            && !enrollment_route_allowed(
+                &parts.method,
+                parts
+                    .extensions
+                    .get::<MatchedPath>()
+                    .map(MatchedPath::as_str),
+            )
+        {
+            return Err(enrollment_only_rejection());
+        }
+        Ok(user)
     }
 }
 
@@ -193,8 +268,35 @@ pub fn create_access_token_with_levels(
     amr: Vec<String>,
     acr: u8,
 ) -> Result<String, jsonwebtoken::errors::Error> {
+    create_access_token_expiring_at(
+        user_id,
+        organization_id,
+        session_id,
+        username,
+        email,
+        roles,
+        secret,
+        Utc::now() + Duration::hours(expiry_hours as i64),
+        amr,
+        acr,
+    )
+}
+
+/// An access token that expires at a given instant (an enrollment-only
+/// session lives minutes, not hours).
+pub fn create_access_token_expiring_at(
+    user_id: &Uuid,
+    organization_id: &Uuid,
+    session_id: &Uuid,
+    username: &str,
+    email: &str,
+    roles: Vec<String>,
+    secret: &str,
+    exp: DateTime<Utc>,
+    amr: Vec<String>,
+    acr: u8,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let now = Utc::now();
-    let exp = now + Duration::hours(expiry_hours as i64);
 
     let claims = Claims {
         sub: user_id.to_string(),
@@ -280,6 +382,8 @@ pub enum AuthError {
     TokenExpired,
     SessionExpired,
     InvalidTokenType,
+    /// An enrollment-only session outside the enrollment routes (OQ-12).
+    EnrollmentOnly,
 }
 
 impl IntoResponse for AuthError {
@@ -295,6 +399,7 @@ impl IntoResponse for AuthError {
                 "Session expired due to inactivity",
             ),
             AuthError::InvalidTokenType => (StatusCode::UNAUTHORIZED, "Invalid token type"),
+            AuthError::EnrollmentOnly => return enrollment_only_rejection().into_response(),
         };
 
         let body = ErrorResponse {
@@ -369,12 +474,38 @@ pub async fn create_auth_session_with_levels(
     amr: &[String],
     acr: u8,
 ) -> Result<(), AuthError> {
+    create_auth_session_scoped(
+        pool,
+        session_id,
+        user_id,
+        expires_at,
+        amr,
+        acr,
+        SessionScope::Full,
+    )
+    .await
+}
+
+/// Create a session with an explicit scope (OQ-12: enrollment-only sessions).
+pub async fn create_auth_session_scoped(
+    pool: &SqlitePool,
+    session_id: &Uuid,
+    user_id: &Uuid,
+    expires_at: chrono::DateTime<Utc>,
+    amr: &[String],
+    acr: u8,
+    scope: SessionScope,
+) -> Result<(), AuthError> {
     let now = Utc::now().to_rfc3339();
+    let scope = match scope {
+        SessionScope::Full => None,
+        SessionScope::Enrollment => Some(SCOPE_ENROLLMENT),
+    };
 
     sqlx::query(
         r#"
-        INSERT INTO auth_sessions (id, user_id, last_activity_at, expires_at, revoked_at, created_at, updated_at, amr, acr)
-        VALUES (?1, ?2, ?3, ?4, NULL, ?3, ?3, ?5, ?6)
+        INSERT INTO auth_sessions (id, user_id, last_activity_at, expires_at, revoked_at, created_at, updated_at, amr, acr, scope)
+        VALUES (?1, ?2, ?3, ?4, NULL, ?3, ?3, ?5, ?6, ?7)
         "#,
     )
     .bind(session_id.to_string())
@@ -383,6 +514,7 @@ pub async fn create_auth_session_with_levels(
     .bind(expires_at.to_rfc3339())
     .bind(serde_json::to_string(amr).unwrap_or_else(|_| "[\"pwd\"]".to_string()))
     .bind(acr as i64)
+    .bind(scope)
     .execute(pool)
     .await
     .map_err(|_| AuthError::InvalidToken)?;
@@ -405,15 +537,41 @@ pub async fn revoke_auth_session(pool: &SqlitePool, session_id: &str) -> Result<
     Ok(())
 }
 
+/// Checks that a session is usable as a full session. An enrollment-only
+/// session is refused here (`EnrollmentOnly`), so every caller that only
+/// asks "is this session active?" (refresh, optional authentication, code
+/// added later) fails closed; only `auth_middleware` accepts one, through
+/// [`active_session_scope`], and restricts it to the enrollment routes.
 pub async fn ensure_auth_session_active(
     pool: &SqlitePool,
     session_id: &str,
     touch: bool,
 ) -> Result<(), AuthError> {
+    session_scope_checked(pool, session_id, touch, false)
+        .await
+        .map(|_| ())
+}
+
+/// Checks that a session is active and returns its scope. Callers must
+/// enforce the scope (see [`enrollment_route_allowed`]).
+pub async fn active_session_scope(
+    pool: &SqlitePool,
+    session_id: &str,
+    touch: bool,
+) -> Result<SessionScope, AuthError> {
+    session_scope_checked(pool, session_id, touch, true).await
+}
+
+async fn session_scope_checked(
+    pool: &SqlitePool,
+    session_id: &str,
+    touch: bool,
+    allow_enrollment: bool,
+) -> Result<SessionScope, AuthError> {
     // The user must still exist and be active: a deactivated account loses
     // its sessions even if one escaped revocation.
     let row = sqlx::query(
-        "SELECT s.last_activity_at, s.expires_at, s.revoked_at, u.id AS uid, u.deactivated_at \
+        "SELECT s.last_activity_at, s.expires_at, s.revoked_at, s.scope, u.id AS uid, u.deactivated_at \
          FROM auth_sessions s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = ?1",
     )
     .bind(session_id)
@@ -452,6 +610,12 @@ pub async fn ensure_auth_session_active(
         return Err(AuthError::SessionExpired);
     }
 
+    let scope_column: Option<String> = row.try_get("scope").map_err(|_| AuthError::InvalidToken)?;
+    let scope = SessionScope::from_column(scope_column.as_deref())?;
+    if scope == SessionScope::Enrollment && !allow_enrollment {
+        return Err(AuthError::EnrollmentOnly);
+    }
+
     if touch {
         let now_str = now.to_rfc3339();
         sqlx::query(
@@ -464,7 +628,7 @@ pub async fn ensure_auth_session_active(
         .map_err(|_| AuthError::InvalidToken)?;
     }
 
-    Ok(())
+    Ok(scope)
 }
 
 async fn authenticate_api_key(state: &AppState, token: &str) -> Result<AuthUser, AuthError> {
@@ -580,13 +744,15 @@ pub async fn auth_middleware(
         .get(AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
+    // API keys have no session row and are always full scope.
+    let mut scope = SessionScope::Full;
     let auth_user = if let Some(auth_header) = auth_header {
         if let Some(token) = extract_bearer_token(auth_header) {
             let token_data = validate_token(token, &state.config.auth.jwt_secret)?;
             if token_data.claims.token_type != TokenType::Access {
                 return Err(AuthError::InvalidTokenType);
             }
-            ensure_auth_session_active(&state.db, &token_data.claims.jti, true).await?;
+            scope = active_session_scope(&state.db, &token_data.claims.jti, true).await?;
             let mut user: AuthUser = token_data
                 .claims
                 .try_into()
@@ -617,7 +783,7 @@ pub async fn auth_middleware(
         if token_data.claims.token_type != TokenType::Access {
             return Err(AuthError::InvalidTokenType);
         }
-        ensure_auth_session_active(&state.db, &token_data.claims.jti, true).await?;
+        scope = active_session_scope(&state.db, &token_data.claims.jti, true).await?;
         let mut user: AuthUser = token_data
             .claims
             .try_into()
@@ -633,7 +799,22 @@ pub async fn auth_middleware(
         return Err(AuthError::MissingToken);
     };
 
+    // OQ-12: the one place an enrollment-only session is accepted, and only
+    // for the enrollment routes. Every protected route passes here.
+    if scope == SessionScope::Enrollment
+        && !enrollment_route_allowed(
+            request.method(),
+            request
+                .extensions()
+                .get::<MatchedPath>()
+                .map(MatchedPath::as_str),
+        )
+    {
+        return Err(AuthError::EnrollmentOnly);
+    }
+
     // Insert the authenticated user into request extensions
+    request.extensions_mut().insert(scope);
     request.extensions_mut().insert(auth_user);
 
     // Continue with the request
@@ -779,6 +960,59 @@ mod tests {
 
         let result = validate_token(&token, "wrong-secret-that-is-also-long-enough");
         assert!(matches!(result, Err(AuthError::InvalidToken)));
+    }
+
+    #[test]
+    fn enrollment_sessions_only_reach_the_enrollment_routes() {
+        let allowed = [
+            (Method::GET, "/api/v1/users/me/factors"),
+            (
+                Method::POST,
+                "/api/v1/users/me/factors/{factor_id}/enroll/begin",
+            ),
+            (
+                Method::POST,
+                "/api/v1/users/me/factors/{factor_id}/enroll/complete",
+            ),
+            (Method::GET, "/users/me/factors"),
+        ];
+        for (m, p) in &allowed {
+            assert!(enrollment_route_allowed(m, Some(p)), "{m} {p}");
+        }
+        let refused = [
+            (Method::GET, None),
+            (Method::HEAD, Some("/api/v1/users/me/factors")),
+            (Method::POST, Some("/api/v1/users/me/factors")),
+            (
+                Method::GET,
+                Some("/api/v1/users/me/factors/{factor_id}/enroll/begin"),
+            ),
+            (Method::DELETE, Some("/api/v1/users/me/factors/{id}")),
+            (Method::POST, Some("/api/v1/users/{id}/factors/reset")),
+            (Method::POST, Some("/api/v1/auth/step-up")),
+            (Method::GET, Some("/api/v1/auth/me")),
+            (Method::GET, Some("/api/v2/users/me/factors")),
+            (Method::GET, Some("/api/v1/users/me/factors/")),
+            (Method::GET, Some("/x/api/v1/users/me/factors")),
+            (
+                Method::GET,
+                Some("/api/v1/users/me/factors/totp/enroll/begin"),
+            ),
+        ];
+        for (m, p) in &refused {
+            assert!(!enrollment_route_allowed(m, *p), "{m} {p:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_session_scopes_are_refused() {
+        assert_eq!(SessionScope::from_column(None).unwrap(), SessionScope::Full);
+        assert_eq!(
+            SessionScope::from_column(Some("enrollment")).unwrap(),
+            SessionScope::Enrollment
+        );
+        assert!(SessionScope::from_column(Some("admin")).is_err());
+        assert!(SessionScope::from_column(Some("")).is_err());
     }
 
     #[test]

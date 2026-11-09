@@ -13,10 +13,15 @@
 //!   challenge is a denial. The only way around a policy is the break-glass
 //!   path for a local super administrator who has no usable factor, which is
 //!   audited so they can enroll one.
+//! * Enrollment grace (OQ-12): during a window an administrator opened, a
+//!   user with nothing enrolled gets an enrollment-only session (level 1, no
+//!   refresh, minutes long) instead of a denial; the first enrolled factor
+//!   closes the window and ends that session.
 
 pub mod config;
 pub mod crypto;
 pub mod factors;
+pub mod grace;
 pub mod oidc;
 pub mod policy;
 pub mod store;
@@ -37,14 +42,16 @@ use self::factors::{
     builtin_factors, now_unix, ChallengeContext, EnrollContext, EnrollMode, FactorError,
     FactorOutcome, FactorRecord,
 };
+use self::grace::{GraceStore, GraceWindow, LoginSpend};
 use self::policy::{ACR_MFA, ACR_PRIMARY};
 use self::store::{FactorStore, StoredRecord};
 use crate::{
     config::AppConfig,
     db::AuditRepository,
     middleware::auth::{
-        create_access_token_with_levels, create_auth_session_with_levels, create_refresh_token,
-        revoke_auth_session,
+        create_access_token_expiring_at, create_access_token_with_levels,
+        create_auth_session_scoped, create_auth_session_with_levels, create_refresh_token,
+        revoke_auth_session, SessionScope, SCOPE_ENROLLMENT,
     },
     models::{AuthResponse, User},
     services::AuthService,
@@ -85,10 +92,32 @@ pub struct ChallengeOffer {
     pub required_acr: u8,
 }
 
+/// `Session` also carries enrollment-only sessions, marked by
+/// `AuthResponse::session_scope` (OQ-12).
 pub enum LoginOutcome {
     Session(Box<AuthResponse>),
     Challenge(ChallengeOffer),
     Denied { code: &'static str, message: String },
+}
+
+/// What a session row records.
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub amr: Vec<String>,
+    pub acr: u8,
+    pub scope: SessionScope,
+}
+
+/// Result of looking for an enrollment grace window at login.
+enum GraceDecision {
+    Session(Box<AuthResponse>),
+    /// No window, or the feature is disabled.
+    None,
+    Expired,
+    Exhausted,
+    /// A window is open but this login path cannot carry an enrollment-only
+    /// session (single sign-on redirects).
+    NotOffered,
 }
 
 pub enum VerifyOutcome {
@@ -318,29 +347,130 @@ impl<'a> AuthPipeline<'a> {
             token_type: "Bearer".to_string(),
             expires_in: auth.token_expiry_hours * 3600,
             user: user.clone().into(),
+            session_scope: None,
+        })
+    }
+
+    /// An enrollment-only session (OQ-12): level 1 whatever the methods, no
+    /// roles in the token, no refresh token, and at most `SESSION_MINUTES`
+    /// long and never past the window. It replaces the user's previous
+    /// enrollment-only session.
+    async fn issue_enrollment_session(
+        &self,
+        user: &User,
+        amr: &[String],
+        window_expiry: DateTime<Utc>,
+    ) -> Result<AuthResponse, PipelineError> {
+        self.revoke_enrollment_sessions(user.id).await?;
+        let now = Utc::now();
+        let expires = grace::session_expiry(window_expiry, now);
+        let session_id = Uuid::new_v4();
+        create_auth_session_scoped(
+            self.pool,
+            &session_id,
+            &user.id,
+            expires,
+            amr,
+            ACR_PRIMARY,
+            SessionScope::Enrollment,
+        )
+        .await
+        .map_err(|_| PipelineError::Internal("Failed to create session".into()))?;
+        let access_token = create_access_token_expiring_at(
+            &user.id,
+            &user.organization_id,
+            &session_id,
+            &user.username,
+            &user.email,
+            Vec::new(),
+            &self.config.auth.jwt_secret,
+            expires,
+            amr.to_vec(),
+            ACR_PRIMARY,
+        )
+        .map_err(|e| PipelineError::Internal(format!("Failed to create access token: {e}")))?;
+        Ok(AuthResponse {
+            access_token,
+            refresh_token: String::new(),
+            token_type: "Bearer".to_string(),
+            expires_in: (expires - now).num_seconds().max(0) as u64,
+            user: user.clone().into(),
+            session_scope: Some(SCOPE_ENROLLMENT.to_string()),
+        })
+    }
+
+    /// Revokes every live enrollment-only session of a user.
+    async fn revoke_enrollment_sessions(&self, user: Uuid) -> Result<u64, PipelineError> {
+        let now = Utc::now().to_rfc3339();
+        let r = sqlx::query(
+            "UPDATE auth_sessions SET revoked_at = ?1, updated_at = ?1 \
+             WHERE user_id = ?2 AND scope = ?3 AND revoked_at IS NULL",
+        )
+        .bind(&now)
+        .bind(user.to_string())
+        .bind(SCOPE_ENROLLMENT)
+        .execute(self.pool)
+        .await?;
+        Ok(r.rows_affected())
+    }
+
+    /// Methods, level and scope recorded on a live session, `None` when it
+    /// has no row (API keys). Any scope but none reads as enrollment-only.
+    pub async fn session_info(&self, session_id: &str) -> Option<SessionInfo> {
+        let row: Option<(String, i64, Option<String>)> = sqlx::query_as(
+            "SELECT amr, acr, scope FROM auth_sessions WHERE id = ? AND revoked_at IS NULL",
+        )
+        .bind(session_id)
+        .fetch_optional(self.pool)
+        .await
+        .ok()?;
+        row.map(|(amr, acr, scope)| SessionInfo {
+            amr: serde_json::from_str(&amr).unwrap_or_default(),
+            acr: acr as u8,
+            scope: if scope.is_none() {
+                SessionScope::Full
+            } else {
+                SessionScope::Enrollment
+            },
         })
     }
 
     /// Methods and level recorded on a session, `None` when it has no row
     /// (API keys).
     pub async fn session_levels(&self, session_id: &str) -> Option<(Vec<String>, u8)> {
-        let row: Option<(String, i64)> = sqlx::query_as(
-            "SELECT amr, acr FROM auth_sessions WHERE id = ? AND revoked_at IS NULL",
-        )
-        .bind(session_id)
-        .fetch_optional(self.pool)
-        .await
-        .ok()?;
-        row.map(|(amr, acr)| (serde_json::from_str(&amr).unwrap_or_default(), acr as u8))
+        self.session_info(session_id)
+            .await
+            .map(|info| (info.amr, info.acr))
     }
 
     // ------------------------------------------------------------- login
 
-    /// Applies policy to a validated primary identity.
+    /// Applies policy to a validated primary identity. Never opens an
+    /// enrollment-only session: SSO redirects and other callers that cannot
+    /// carry one keep the denial.
     pub async fn start_login(
         &self,
         ident: PrimaryIdentity,
         client: &ClientInfo,
+    ) -> Result<LoginOutcome, PipelineError> {
+        self.login(ident, client, false).await
+    }
+
+    /// `start_login` for the password login, whose client can carry an
+    /// enrollment-only session during an enrollment grace window (OQ-12).
+    pub async fn start_login_allowing_enrollment(
+        &self,
+        ident: PrimaryIdentity,
+        client: &ClientInfo,
+    ) -> Result<LoginOutcome, PipelineError> {
+        self.login(ident, client, true).await
+    }
+
+    async fn login(
+        &self,
+        ident: PrimaryIdentity,
+        client: &ClientInfo,
+        allow_enrollment: bool,
     ) -> Result<LoginOutcome, PipelineError> {
         let user = &ident.user;
         if !self.is_active(user.id).await? {
@@ -394,19 +524,41 @@ impl<'a> AuthPipeline<'a> {
                     self.issue_session(user, &ident.amr, reached).await?,
                 )));
             }
+            let grace = self
+                .enrollment_grace_login(&ident, allow_enrollment)
+                .await?;
+            let grace_label = match grace {
+                GraceDecision::Session(session) => return Ok(LoginOutcome::Session(session)),
+                GraceDecision::None => None,
+                GraceDecision::Expired => Some("expired"),
+                GraceDecision::Exhausted => Some("exhausted"),
+                GraceDecision::NotOffered => Some("not_offered_for_provider"),
+            };
+            let mut details =
+                json!({"reason": "mfa_enrollment_required", "provider": ident.provider});
+            if let Some(label) = grace_label {
+                details["enrollment_grace"] = json!(label);
+            }
             self.audit(
                 user.organization_id,
                 Some(user.id),
                 "auth.login_denied",
                 &user.username,
-                json!({"reason": "mfa_enrollment_required", "provider": ident.provider}),
+                details,
             )
             .await;
             return Ok(LoginOutcome::Denied {
                 code: "mfa_enrollment_required",
-                message:
-                    "Policy requires a second factor and none is enrolled; ask an administrator"
-                        .into(),
+                message: match grace_label {
+                    Some("expired") | Some("exhausted") => {
+                        "Policy requires a second factor and the time to enroll one has ended; \
+                         ask an administrator"
+                    }
+                    _ => {
+                        "Policy requires a second factor and none is enrolled; ask an administrator"
+                    }
+                }
+                .into(),
             });
         }
         // Enrolled but none of the factors can run (a disabled or failed
@@ -455,7 +607,172 @@ impl<'a> AuthPipeline<'a> {
         Ok(matches!(deactivated, Some(None)))
     }
 
-    /// Starts a step-up for an already authenticated session.
+    // ------------------------------------------------- enrollment grace
+
+    /// A user with nothing enrolled was stopped by a policy: use their open
+    /// grace window, or grant the one policy window of the account when
+    /// configured. Each login spends one use of the window.
+    async fn enrollment_grace_login(
+        &self,
+        ident: &PrimaryIdentity,
+        allow_enrollment: bool,
+    ) -> Result<GraceDecision, PipelineError> {
+        let user = &ident.user;
+        let mfa = &self.config.auth.mfa;
+        let Some(ttl) = mfa.enrollment_grace() else {
+            return Ok(GraceDecision::None);
+        };
+        let store = GraceStore::new(self.pool);
+        let open = store.open_window(user.id).await?;
+        if !allow_enrollment {
+            return Ok(match open {
+                Some(_) => GraceDecision::NotOffered,
+                None => GraceDecision::None,
+            });
+        }
+        let window = match open {
+            Some(w) => w,
+            None if mfa.enrollment_grace_on_policy => {
+                match store.grant_policy_once(user.id, ttl).await? {
+                    Some(w) => {
+                        self.audit_grant(user, None, &w, None).await;
+                        w
+                    }
+                    None => return Ok(GraceDecision::None),
+                }
+            }
+            None => return Ok(GraceDecision::None),
+        };
+        match store.spend_login(&window).await? {
+            LoginSpend::Granted(window_expiry) => {
+                let session = self
+                    .issue_enrollment_session(user, &ident.amr, window_expiry)
+                    .await?;
+                self.audit(
+                    user.organization_id,
+                    Some(user.id),
+                    "auth.enrollment_grace_login",
+                    &user.username,
+                    json!({
+                        "window": window.id,
+                        "reason": window.reason,
+                        "provider": ident.provider,
+                        "logins": window.logins + 1,
+                        "session_expires_in": session.expires_in,
+                        "window_expires_at": window.expires_at,
+                    }),
+                )
+                .await;
+                Ok(GraceDecision::Session(Box::new(session)))
+            }
+            LoginSpend::Expired => {
+                if store.close(&window.id, grace::CLOSED_EXPIRED).await? {
+                    self.audit(
+                        user.organization_id,
+                        Some(user.id),
+                        "auth.enrollment_grace_expired",
+                        &user.username,
+                        json!({"window": window.id, "reason": window.reason, "expires_at": window.expires_at}),
+                    )
+                    .await;
+                }
+                Ok(GraceDecision::Expired)
+            }
+            LoginSpend::Exhausted => {
+                if store.close(&window.id, grace::CLOSED_EXHAUSTED).await? {
+                    self.audit(
+                        user.organization_id,
+                        Some(user.id),
+                        "auth.enrollment_grace_exhausted",
+                        &user.username,
+                        json!({"window": window.id, "reason": window.reason, "logins": grace::MAX_LOGINS, "alert": true}),
+                    )
+                    .await;
+                    tracing::warn!(
+                        "Enrollment grace window of '{}' closed after {} logins without an enrollment",
+                        user.username,
+                        grace::MAX_LOGINS
+                    );
+                }
+                Ok(GraceDecision::Exhausted)
+            }
+            LoginSpend::Closed => Ok(GraceDecision::None),
+        }
+    }
+
+    async fn audit_grant(
+        &self,
+        target: &User,
+        actor: Option<Uuid>,
+        window: &GraceWindow,
+        superseded: Option<String>,
+    ) {
+        self.audit(
+            target.organization_id,
+            actor,
+            "auth.enrollment_grace_granted",
+            &target.username,
+            json!({
+                "window": window.id,
+                "target": target.id,
+                "reason": window.reason,
+                "actor": actor.map(|a| a.to_string()).unwrap_or_else(|| "system".into()),
+                "expires_at": window.expires_at,
+                "ttl_secs": self.config.auth.mfa.enrollment_grace_secs,
+                "superseded": superseded,
+            }),
+        )
+        .await;
+    }
+
+    /// After an administrator reset a user's factors: opens a grace window
+    /// (replacing an open one) and ends the user's enrollment-only sessions.
+    /// `None` when the feature is disabled.
+    pub async fn grant_enrollment_grace(
+        &self,
+        target: &User,
+        actor: Uuid,
+    ) -> Result<Option<GraceWindow>, PipelineError> {
+        let Some(ttl) = self.config.auth.mfa.enrollment_grace() else {
+            return Ok(None);
+        };
+        self.revoke_enrollment_sessions(target.id).await?;
+        let (window, superseded) = GraceStore::new(self.pool)
+            .grant_after_reset(target.id, actor, ttl)
+            .await?;
+        self.audit_grant(target, Some(actor), &window, superseded)
+            .await;
+        Ok(Some(window))
+    }
+
+    /// The first enrolled factor closes the user's grace window and ends
+    /// their enrollment-only sessions: the client signs in again through the
+    /// normal challenge to get a full session.
+    async fn after_enrolled(&self, user: &User, kind: &str) -> Result<(), PipelineError> {
+        let window = GraceStore::new(self.pool)
+            .close_open(user.id, grace::CLOSED_ENROLLED)
+            .await?;
+        let revoked = self.revoke_enrollment_sessions(user.id).await?;
+        if window.is_some() || revoked > 0 {
+            self.audit(
+                user.organization_id,
+                Some(user.id),
+                "auth.enrollment_grace_consumed",
+                &user.username,
+                json!({
+                    "window": window.as_ref().map(|w| w.id.clone()),
+                    "reason": window.as_ref().map(|w| w.reason.clone()),
+                    "factor": kind,
+                    "sessions_revoked": revoked,
+                }),
+            )
+            .await;
+        }
+        Ok(())
+    }
+
+    /// Starts a step-up for an already authenticated session. An
+    /// enrollment-only session can never be raised.
     pub async fn start_step_up(
         &self,
         user: &User,
@@ -474,15 +791,18 @@ impl<'a> AuthPipeline<'a> {
                 "None of the second factors enrolled for this account is available".into(),
             ));
         }
-        let (amr, _) = self
-            .session_levels(session_id)
+        let info = self
+            .session_info(session_id)
             .await
             .ok_or(PipelineError::InvalidChallenge)?;
+        if info.scope != SessionScope::Full {
+            return Err(PipelineError::InvalidChallenge);
+        }
         self.create_challenge(
             user,
             "step_up",
             "step_up",
-            &amr,
+            &info.amr,
             ACR_MFA,
             Some(session_id),
             client,
@@ -887,6 +1207,7 @@ impl<'a> AuthPipeline<'a> {
                     json!({"factor": kind}),
                 )
                 .await;
+                self.after_enrolled(user, kind).await?;
             }
         }
         Ok(start.client)
@@ -938,6 +1259,6 @@ impl<'a> AuthPipeline<'a> {
             json!({"factor": kind}),
         )
         .await;
-        Ok(())
+        self.after_enrolled(user, kind).await
     }
 }

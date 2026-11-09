@@ -872,3 +872,553 @@ mod oidc_linking {
         ));
     }
 }
+
+/// OQ-12: enrollment grace windows and enrollment-only sessions.
+mod enrollment_grace {
+    use super::*;
+    use axum::http::StatusCode;
+    use openvox_webui::middleware::auth::create_refresh_token;
+    use openvox_webui::services::auth_pipeline::{
+        AuthPipeline, ClientInfo, LoginOutcome, PrimaryIdentity,
+    };
+
+    const HOUR: u64 = 3600;
+
+    async fn app_with_grace(secs: u64, on_policy: bool) -> TestApp {
+        let mut config = test_config();
+        config.auth.mfa.enrollment_grace_secs = secs;
+        config.auth.mfa.enrollment_grace_on_policy = on_policy;
+        TestApp::with_config(config).await
+    }
+
+    async fn login_viewer(app: &TestApp, ua: &str) -> TestResponse {
+        call(
+            app,
+            None,
+            ua,
+            "POST",
+            "/api/v1/auth/login",
+            json!({"username": "viewer", "password": PASSWORD}),
+        )
+        .await
+    }
+
+    /// A viewer whose TOTP an administrator reset while a policy requires a
+    /// second factor. Returns the admin token, the viewer id and the reset answer.
+    async fn reset_viewer(app: &TestApp) -> (String, Uuid, Value) {
+        let admin = prepare_admin(app).await;
+        let (viewer_id, viewer) = add_viewer(app).await;
+        enroll_totp(app, &viewer).await;
+        require_mfa_for_everyone(app, &admin).await;
+        let r = call(
+            app,
+            Some(&admin),
+            "t",
+            "POST",
+            &format!("/api/v1/users/{viewer_id}/factors/reset"),
+            json!({}),
+        )
+        .await;
+        r.assert_ok();
+        (admin, viewer_id, r.json())
+    }
+
+    async fn enrollment_token(app: &TestApp, ua: &str) -> String {
+        let r = login_viewer(app, ua).await;
+        r.assert_status(StatusCode::ACCEPTED);
+        let body: Value = r.json();
+        assert_eq!(body["status"], "enrollment_required", "{body}");
+        assert_eq!(body["session_scope"], "enrollment");
+        body["access_token"].as_str().unwrap().to_string()
+    }
+
+    async fn audit_details(app: &TestApp, action: &str) -> Vec<Value> {
+        let rows: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT details FROM audit_log WHERE action = ? ORDER BY created_at, rowid",
+        )
+        .bind(action)
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap();
+        rows.into_iter()
+            .map(|d| serde_json::from_str(&d.unwrap_or_default()).unwrap_or(Value::Null))
+            .collect()
+    }
+
+    async fn window_state(app: &TestApp, user: Uuid) -> Vec<(String, Option<String>, i64)> {
+        sqlx::query_as(
+            "SELECT reason, closed_reason, logins FROM auth_enrollment_grace \
+             WHERE user_id = ? ORDER BY created_at, rowid",
+        )
+        .bind(user.to_string())
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap()
+    }
+
+    fn assert_enrollment_only(r: &TestResponse, what: &str) {
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{what}: {}", r.text());
+        assert_eq!(
+            r.json::<Value>()["code"],
+            "enrollment_only_session",
+            "{what}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reset_opens_a_window_for_an_enrollment_only_session_at_level_1() {
+        let app = app_with_grace(HOUR, false).await;
+        let (_, viewer_id, reset) = reset_viewer(&app).await;
+        assert!(
+            reset["enrollment_grace"]["expires_at"].is_string(),
+            "{reset}"
+        );
+
+        let granted = audit_details(&app, "auth.enrollment_grace_granted").await;
+        assert_eq!(granted.len(), 1);
+        assert_eq!(granted[0]["reason"], "factor_reset");
+        assert_eq!(granted[0]["actor"], ADMIN_ID);
+        assert!(granted[0]["expires_at"].is_string());
+
+        let r = login_viewer(&app, "ua").await;
+        r.assert_status(StatusCode::ACCEPTED);
+        let body: Value = r.json();
+        assert_eq!(body["status"], "enrollment_required");
+        assert!(body.get("refresh_token").is_none(), "no refresh token");
+        assert!(body["expires_in"].as_u64().unwrap() <= 15 * 60);
+        let token = body["access_token"].as_str().unwrap();
+        let claims = claims_of(token);
+        assert_eq!(claims["acr"], 1);
+        assert_eq!(claims["amr"], json!(["pwd"]));
+        assert_eq!(
+            audit_details(&app, "auth.enrollment_grace_login")
+                .await
+                .len(),
+            1
+        );
+
+        let factors = call(
+            &app,
+            Some(token),
+            "ua",
+            "GET",
+            "/api/v1/users/me/factors",
+            json!({}),
+        )
+        .await;
+        factors.assert_ok();
+        let f: Value = factors.json();
+        assert_eq!(f["session"]["scope"], "enrollment");
+        assert_eq!(f["session"]["acr"], 1);
+        assert_eq!(
+            window_state(&app, viewer_id).await[0].2,
+            1,
+            "one login counted"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_enrollment_only_session_is_refused_everywhere_else() {
+        let app = app_with_grace(HOUR, false).await;
+        let (admin, viewer_id, _) = reset_viewer(&app).await;
+        let token = enrollment_token(&app, "ua").await;
+        let other = Uuid::new_v4();
+        let refused: Vec<(&str, String)> = vec![
+            ("GET", "/api/v1/auth/me".into()),
+            ("POST", "/api/v1/auth/change-password".into()),
+            ("POST", "/api/v1/auth/step-up".into()),
+            ("GET", "/api/v1/auth/policies".into()),
+            ("PUT", "/api/v1/auth/policies".into()),
+            ("GET", "/api/v1/nodes".into()),
+            ("GET", "/api/v1/groups".into()),
+            ("POST", "/api/v1/groups".into()),
+            ("GET", "/api/v1/users".into()),
+            ("GET", format!("/api/v1/users/{viewer_id}")),
+            ("POST", format!("/api/v1/users/{viewer_id}/factors/reset")),
+            ("DELETE", format!("/api/v1/users/me/factors/{other}")),
+            ("GET", "/api/v1/roles".into()),
+            ("GET", "/api/v1/permissions".into()),
+            ("GET", "/api/v1/api-keys".into()),
+            ("POST", "/api/v1/api-keys".into()),
+            ("GET", "/api/v1/audit-logs".into()),
+            ("GET", "/api/v1/notifications".into()),
+            ("GET", "/api/v1/reports".into()),
+            ("GET", "/api/v1/facts".into()),
+            ("GET", "/api/v1/settings".into()),
+            ("GET", "/api/v1/plugins".into()),
+            // Plugin API routes (H-7) sit behind the same middleware.
+            ("GET", "/api/v1/plugins/acme/things".into()),
+            ("POST", "/api/v1/plugins/acme/things/1".into()),
+            ("GET", "/api/v1/directories".into()),
+            ("GET", "/api/v1/scim".into()),
+            // The enrollment paths with another method.
+            ("POST", "/api/v1/users/me/factors".into()),
+            ("PUT", "/api/v1/users/me/factors/totp/enroll/begin".into()),
+            (
+                "GET",
+                "/api/v1/users/me/factors/totp/enroll/complete".into(),
+            ),
+            // Recovery codes come with the first factor, never on their own.
+            (
+                "POST",
+                "/api/v1/users/me/factors/recovery/enroll/begin".into(),
+            ),
+        ];
+        for (method, uri) in &refused {
+            let r = call(&app, Some(&token), "ua", method, uri, json!({})).await;
+            assert_enrollment_only(&r, &format!("{method} {uri}"));
+        }
+        // The query-string token (EventSource) goes through the same gate.
+        let r = call(
+            &app,
+            None,
+            "ua",
+            "GET",
+            &format!("/api/v1/notifications?token={token}"),
+            json!({}),
+        )
+        .await;
+        assert_enrollment_only(&r, "query token");
+
+        // A refresh token for that session is refused too.
+        let session = claims_of(&token)["jti"].as_str().unwrap().to_string();
+        let refresh = create_refresh_token(
+            &viewer_id,
+            &Uuid::parse_str(&session).unwrap(),
+            "viewer",
+            "viewer@example.com",
+            &app.state.config.auth.jwt_secret,
+            1,
+        )
+        .unwrap();
+        let r = call(
+            &app,
+            None,
+            "ua",
+            "POST",
+            "/api/v1/auth/refresh",
+            json!({ "refresh_token": refresh }),
+        )
+        .await;
+        assert_enrollment_only(&r, "refresh");
+
+        // A full session still reaches the same routes.
+        call(&app, Some(&admin), "t", "GET", "/api/v1/auth/me", json!({}))
+            .await
+            .assert_ok();
+        // And the enrollment routes stay open to the restricted session.
+        call(
+            &app,
+            Some(&token),
+            "ua",
+            "GET",
+            "/api/v1/users/me/factors",
+            json!({}),
+        )
+        .await
+        .assert_ok();
+    }
+
+    #[tokio::test]
+    async fn the_first_enrollment_ends_the_window_and_the_restricted_session() {
+        let app = app_with_grace(HOUR, false).await;
+        let (_, viewer_id, _) = reset_viewer(&app).await;
+        let token = enrollment_token(&app, "ua").await;
+
+        let begin = call(
+            &app,
+            Some(&token),
+            "ua",
+            "POST",
+            "/api/v1/users/me/factors/totp/enroll/begin",
+            json!({}),
+        )
+        .await;
+        begin.assert_ok();
+        let secret = totp::secret_from_base32(
+            begin.json::<Value>()["enrollment"]["secret"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        let done = call(
+            &app,
+            Some(&token),
+            "ua",
+            "POST",
+            "/api/v1/users/me/factors/totp/enroll/complete",
+            json!({ "code": totp::hotp(&secret, totp::step_at(now())) }),
+        )
+        .await;
+        done.assert_ok();
+        let d: Value = done.json();
+        assert_eq!(d["reauthenticate"], true);
+        assert_eq!(d["recovery"]["codes"].as_array().unwrap().len(), 10);
+
+        // The restricted session is gone: enroll then keep it is impossible.
+        call(
+            &app,
+            Some(&token),
+            "ua",
+            "GET",
+            "/api/v1/users/me/factors",
+            json!({}),
+        )
+        .await
+        .assert_unauthorized();
+        let consumed = audit_details(&app, "auth.enrollment_grace_consumed").await;
+        assert_eq!(consumed.len(), 1);
+        assert_eq!(consumed[0]["factor"], "totp");
+        assert_eq!(consumed[0]["sessions_revoked"], 1);
+        assert_eq!(
+            window_state(&app, viewer_id).await[0].1.as_deref(),
+            Some("enrolled")
+        );
+
+        // The next login goes through the normal challenge and reaches level 2.
+        let r = login_viewer(&app, "ua").await;
+        r.assert_status(StatusCode::ACCEPTED);
+        let c: Value = r.json();
+        assert_eq!(c["status"], "mfa_required");
+        let id = c["challenge_id"].as_str().unwrap();
+        let v = call(
+            &app,
+            None,
+            "ua",
+            "POST",
+            &format!("/api/v1/auth/challenge/{id}/verify"),
+            json!({"factor_id": "totp", "response": {"code": totp::hotp(&secret, totp::step_at(now()) + 1)}}),
+        )
+        .await;
+        v.assert_ok();
+        assert_eq!(
+            claims_of(v.json::<Value>()["access_token"].as_str().unwrap())["acr"],
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn an_expired_window_denies_and_is_audited_once() {
+        let app = app_with_grace(HOUR, false).await;
+        let (_, viewer_id, _) = reset_viewer(&app).await;
+        sqlx::query("UPDATE auth_enrollment_grace SET expires_at = '2000-01-01T00:00:00.000Z'")
+            .execute(&app.state.db)
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            let r = login_viewer(&app, "ua").await;
+            r.assert_forbidden();
+            assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
+        }
+        let expired = audit_details(&app, "auth.enrollment_grace_expired").await;
+        assert_eq!(expired.len(), 1, "audited when the window is found expired");
+        assert_eq!(
+            window_state(&app, viewer_id).await[0].1.as_deref(),
+            Some("expired")
+        );
+        let denied = audit_details(&app, "auth.login_denied").await;
+        assert!(denied.iter().any(
+            |d| d["reason"] == "mfa_enrollment_required" && d["enrollment_grace"] == "expired"
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_window_allows_a_bounded_number_of_logins_and_one_live_session() {
+        let app = app_with_grace(HOUR, false).await;
+        let (_, viewer_id, _) = reset_viewer(&app).await;
+        let first = enrollment_token(&app, "ua").await;
+        let second = enrollment_token(&app, "ua").await;
+        // A new enrollment-only session replaces the previous one.
+        call(
+            &app,
+            Some(&first),
+            "ua",
+            "GET",
+            "/api/v1/users/me/factors",
+            json!({}),
+        )
+        .await
+        .assert_unauthorized();
+        call(
+            &app,
+            Some(&second),
+            "ua",
+            "GET",
+            "/api/v1/users/me/factors",
+            json!({}),
+        )
+        .await
+        .assert_ok();
+        for _ in 2..10 {
+            enrollment_token(&app, "ua").await;
+        }
+        let r = login_viewer(&app, "ua").await;
+        r.assert_forbidden();
+        assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
+        assert_eq!(
+            audit_details(&app, "auth.enrollment_grace_exhausted")
+                .await
+                .len(),
+            1
+        );
+        let w = window_state(&app, viewer_id).await;
+        assert_eq!((w[0].1.as_deref(), w[0].2), (Some("exhausted"), 10));
+    }
+
+    #[tokio::test]
+    async fn a_new_reset_replaces_the_open_window() {
+        let app = app_with_grace(HOUR, false).await;
+        let (admin, viewer_id, _) = reset_viewer(&app).await;
+        call(
+            &app,
+            Some(&admin),
+            "t",
+            "POST",
+            &format!("/api/v1/users/{viewer_id}/factors/reset"),
+            json!({}),
+        )
+        .await
+        .assert_ok();
+        let w = window_state(&app, viewer_id).await;
+        assert_eq!(w.len(), 2);
+        assert_eq!(w[0].1.as_deref(), Some("superseded"));
+        assert_eq!(w[1].1, None, "only the newest window is open");
+        let granted = audit_details(&app, "auth.enrollment_grace_granted").await;
+        assert_eq!(granted.len(), 2);
+        assert!(granted[1]["superseded"].is_string());
+    }
+
+    #[tokio::test]
+    async fn disabled_by_default_a_reset_opens_nothing_and_login_is_denied() {
+        let app = app_with_grace(0, true).await;
+        let (_, viewer_id, reset) = reset_viewer(&app).await;
+        assert!(reset["enrollment_grace"].is_null(), "{reset}");
+        assert!(window_state(&app, viewer_id).await.is_empty());
+        let r = login_viewer(&app, "ua").await;
+        r.assert_forbidden();
+        assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
+        assert!(audit_details(&app, "auth.enrollment_grace_granted")
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn without_a_window_a_user_is_still_denied() {
+        let app = app_with_grace(HOUR, false).await;
+        let admin = prepare_admin(&app).await;
+        add_viewer(&app).await;
+        require_mfa_for_everyone(&app, &admin).await;
+        let r = login_viewer(&app, "ua").await;
+        r.assert_forbidden();
+        assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
+    }
+
+    #[tokio::test]
+    async fn a_policy_window_is_granted_once_per_account_and_never_rearmed() {
+        let app = app_with_grace(HOUR, true).await;
+        let admin = prepare_admin(&app).await;
+        let (viewer_id, _) = add_viewer(&app).await;
+        require_mfa_for_everyone(&app, &admin).await;
+
+        enrollment_token(&app, "ua").await;
+        let granted = audit_details(&app, "auth.enrollment_grace_granted").await;
+        assert_eq!(granted.len(), 1);
+        assert_eq!(granted[0]["reason"], "policy");
+        assert_eq!(granted[0]["actor"], "system");
+
+        sqlx::query("UPDATE auth_enrollment_grace SET expires_at = '2000-01-01T00:00:00.000Z'")
+            .execute(&app.state.db)
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            let r = login_viewer(&app, "ua").await;
+            r.assert_forbidden();
+            assert_eq!(r.json::<Value>()["code"], "mfa_enrollment_required");
+        }
+        assert_eq!(
+            window_state(&app, viewer_id).await.len(),
+            1,
+            "never re-armed"
+        );
+    }
+
+    #[tokio::test]
+    async fn break_glass_is_unchanged_while_a_window_is_open() {
+        let app = app_with_grace(HOUR, false).await;
+        let admin = prepare_admin(&app).await;
+        require_mfa_for_everyone(&app, &admin).await;
+        call(
+            &app,
+            Some(&admin),
+            "t",
+            "POST",
+            &format!("/api/v1/users/{ADMIN_ID}/factors/reset"),
+            json!({}),
+        )
+        .await
+        .assert_ok();
+        let r = login(&app, "ua").await;
+        r.assert_ok();
+        assert!(r.json::<Value>().get("session_scope").is_none());
+        assert_eq!(audit_count(&app, "auth.break_glass").await, 1);
+        assert_eq!(audit_count(&app, "auth.enrollment_grace_login").await, 0);
+    }
+
+    #[tokio::test]
+    async fn the_pipeline_never_raises_an_enrollment_only_session() {
+        let app = app_with_grace(HOUR, false).await;
+        let (_, viewer_id, _) = reset_viewer(&app).await;
+        let token = enrollment_token(&app, "ua").await;
+        let session = claims_of(&token)["jti"].as_str().unwrap().to_string();
+        // Even with a usable factor, step-up from that session is refused.
+        let pipeline = AuthPipeline::new(&app.state.db, &app.state.config);
+        pipeline
+            .store()
+            .insert(
+                viewer_id,
+                "totp",
+                "k",
+                &json!({"secret": "JBSWY3DPEHPK3PXP"}),
+                true,
+            )
+            .await
+            .unwrap();
+        let user = AuthService::new(app.state.db.clone())
+            .get_user_by_id(&viewer_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let r = pipeline
+            .start_step_up(&user, &session, &ClientInfo::default())
+            .await;
+        assert!(r.is_err(), "an enrollment-only session cannot step up");
+        assert_eq!(pipeline.session_levels(&session).await.unwrap().1, 1);
+    }
+
+    #[tokio::test]
+    async fn single_sign_on_logins_never_get_an_enrollment_only_session() {
+        let app = app_with_grace(HOUR, false).await;
+        reset_viewer(&app).await;
+        let user = AuthService::new(app.state.db.clone())
+            .get_user_by_username("viewer")
+            .await
+            .unwrap()
+            .unwrap();
+        let outcome = AuthPipeline::new(&app.state.db, &app.state.config)
+            .start_login(
+                PrimaryIdentity {
+                    user,
+                    provider: "saml".into(),
+                    amr: vec!["fed".into()],
+                },
+                &ClientInfo::default(),
+            )
+            .await
+            .unwrap();
+        match outcome {
+            LoginOutcome::Denied { code, .. } => assert_eq!(code, "mfa_enrollment_required"),
+            _ => panic!("an SSO login must not open an enrollment-only session"),
+        }
+        assert_eq!(audit_count(&app, "auth.enrollment_grace_login").await, 0);
+    }
+}

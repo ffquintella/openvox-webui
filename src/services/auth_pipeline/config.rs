@@ -1,9 +1,27 @@
 //! `auth.mfa` configuration: factor sealing, WebAuthn relying party and SSO providers.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Shortest enrollment grace window that is not "disabled" (one minute).
+pub const MIN_ENROLLMENT_GRACE_SECS: u64 = 60;
+/// Longest enrollment grace window (seven days).
+pub const MAX_ENROLLMENT_GRACE_SECS: u64 = 7 * 24 * 3600;
 
 fn default_max_attempts() -> u32 {
     5
+}
+
+/// `0` disables the grace window; other values must lie between the bounds,
+/// so a typo fails at startup instead of opening a long window.
+fn grace_secs<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    let secs = u64::deserialize(d)?;
+    if secs != 0 && !(MIN_ENROLLMENT_GRACE_SECS..=MAX_ENROLLMENT_GRACE_SECS).contains(&secs) {
+        return Err(serde::de::Error::custom(format!(
+            "auth.mfa.enrollment_grace_secs must be 0 (disabled) or between \
+             {MIN_ENROLLMENT_GRACE_SECS} and {MAX_ENROLLMENT_GRACE_SECS}, got {secs}"
+        )));
+    }
+    Ok(secs)
 }
 
 fn default_totp_issuer() -> String {
@@ -33,6 +51,24 @@ pub struct MfaConfig {
     /// Built-in OIDC providers.
     #[serde(default)]
     pub oidc: Vec<OidcProviderConfig>,
+    /// Enrollment grace window in seconds (OQ-12). When an administrator
+    /// resets a user's factors, the user may sign in with the primary factor
+    /// to an enrollment-only session for this long. `0` (default) disables
+    /// it: a user with nothing enrolled is denied, as before.
+    #[serde(default, deserialize_with = "grace_secs")]
+    pub enrollment_grace_secs: u64,
+    /// Also open one window, once per account, the first time a user with
+    /// nothing enrolled is stopped by a policy. Needs `enrollment_grace_secs`.
+    #[serde(default)]
+    pub enrollment_grace_on_policy: bool,
+}
+
+impl MfaConfig {
+    /// Length of a grace window, `None` when the feature is disabled.
+    pub fn enrollment_grace(&self) -> Option<chrono::Duration> {
+        (self.enrollment_grace_secs > 0)
+            .then(|| chrono::Duration::seconds(self.enrollment_grace_secs as i64))
+    }
 }
 
 impl Default for MfaConfig {
@@ -43,6 +79,8 @@ impl Default for MfaConfig {
             totp_issuer: default_totp_issuer(),
             webauthn: None,
             oidc: Vec::new(),
+            enrollment_grace_secs: 0,
+            enrollment_grace_on_policy: false,
         }
     }
 }
@@ -92,4 +130,42 @@ pub struct OidcProviderConfig {
     /// Claim used as the username of a JIT user.
     #[serde(default)]
     pub username_claim: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(yaml: &str) -> Result<MfaConfig, serde_norway::Error> {
+        serde_norway::from_str(yaml)
+    }
+
+    #[test]
+    fn enrollment_grace_is_off_by_default() {
+        let c = parse("max_attempts: 5").unwrap();
+        assert_eq!(c.enrollment_grace_secs, 0);
+        assert!(!c.enrollment_grace_on_policy);
+        assert!(c.enrollment_grace().is_none());
+        assert!(MfaConfig::default().enrollment_grace().is_none());
+    }
+
+    #[test]
+    fn enrollment_grace_accepts_values_within_the_bounds() {
+        let c = parse("enrollment_grace_secs: 86400\nenrollment_grace_on_policy: true").unwrap();
+        assert_eq!(c.enrollment_grace(), Some(chrono::Duration::hours(24)));
+        assert!(c.enrollment_grace_on_policy);
+        assert!(parse("enrollment_grace_secs: 60").is_ok());
+        assert!(parse("enrollment_grace_secs: 604800").is_ok());
+    }
+
+    #[test]
+    fn enrollment_grace_refuses_values_outside_the_bounds() {
+        for bad in ["1", "59", "604801", "31536000"] {
+            let err = parse(&format!("enrollment_grace_secs: {bad}"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("enrollment_grace_secs"), "{bad}: {err}");
+        }
+        assert!(parse("enrollment_grace_secs: -5").is_err());
+    }
 }

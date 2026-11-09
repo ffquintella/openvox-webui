@@ -452,6 +452,8 @@ auth:
     factor_key: "secret://file//run/secrets/openvox-factor-key"  # default: jwt_secret
     max_attempts: 5            # wrong factor responses per challenge
     totp_issuer: "OpenVox WebUI"
+    enrollment_grace_secs: 0   # window after a factor reset: 0 (off) or 60..604800
+    enrollment_grace_on_policy: false  # also one window at the first policy denial
     webauthn:                  # omit to disable WebAuthn
       rp_id: "puppet.example.com"
       rp_name: "OpenVox WebUI"
@@ -474,6 +476,18 @@ Without a policy nothing changes. Administrators define MFA policies with
 `PUT /api/v1/auth/policies` (`{"policies": [{"name": "admins", "conditions":
 {"roles": ["admin"], "providers": ["local"]}, "required_acr": 2}]}`). Changing
 `factor_key` makes enrolled factors unreadable, so users must re-enroll.
+
+With `enrollment_grace_secs` set, resetting a user's factors (`POST
+/api/v1/users/{id}/factors/reset`) opens an enrollment grace window: until it
+ends, a password login of that user gets an enrollment-only session (`202`,
+`status: enrollment_required`) that can only list and enroll second factors
+(`403 enrollment_only_session` anywhere else, step-up and refresh included).
+The first enrolled factor ends the window and the session, and the user signs
+in again with the new factor. `enrollment_grace_on_policy: true` also opens
+one window, once per account that never had one, when a policy first stops a
+user with nothing enrolled. Single sign-on logins keep the denial. Keep the
+window short: while it is open the password alone can enroll the account's
+factor.
 
 ## Directories (LDAP and Active Directory)
 

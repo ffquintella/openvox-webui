@@ -6,7 +6,7 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -14,6 +14,10 @@ use uuid::Uuid;
 
 use super::plugins::require;
 use crate::{
+    middleware::auth::{
+        SessionScope, ENROLLMENT_ONLY_CODE, ENROLL_BEGIN_PATH, ENROLL_COMPLETE_PATH,
+        MY_FACTORS_PATH, SCOPE_ENROLLMENT,
+    },
     middleware::AuthUser,
     models::*,
     services::auth_pipeline::{
@@ -131,9 +135,28 @@ pub fn client_info(headers: &HeaderMap) -> ClientInfo {
     ClientInfo { ip, user_agent }
 }
 
-/// Renders a login outcome: 200 session, 202 challenge, 403 denied.
+fn enrollment_only(message: &str) -> ApiErr {
+    ApiErr::new(StatusCode::FORBIDDEN, "forbidden", message).code(ENROLLMENT_ONLY_CODE)
+}
+
+/// Renders a login outcome: 200 session, 202 challenge or enrollment-only
+/// session, 403 denied.
 pub fn outcome_response(outcome: LoginOutcome) -> Response {
     match outcome {
+        // OQ-12: not a sign-in yet. The client may only enroll a factor with
+        // this token, then sign in again.
+        LoginOutcome::Session(s) if s.session_scope.is_some() => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "enrollment_required",
+                "session_scope": s.session_scope,
+                "access_token": s.access_token,
+                "token_type": s.token_type,
+                "expires_in": s.expires_in,
+                "user": s.user,
+            })),
+        )
+            .into_response(),
         LoginOutcome::Session(s) => Json(*s).into_response(),
         LoginOutcome::Challenge(offer) => (
             StatusCode::ACCEPTED,
@@ -158,14 +181,23 @@ pub fn outcome_response(outcome: LoginOutcome) -> Response {
 /// factor cannot step up and is let through, so MFA never locks out an account
 /// that has not enrolled; a user who can step up must hold level 2. Enrolled
 /// factors count even while unavailable (a disabled plugin): an outage never
-/// waives step-up.
+/// waives step-up. An enrollment-only session never passes (OQ-12).
 pub async fn require_step_up(state: &AppState, user: &AuthUser) -> ApiResult<()> {
     let pipeline = AuthPipeline::new(&state.db, &state.config);
+    let session = pipeline.session_info(&user.session_id).await;
+    if session
+        .as_ref()
+        .is_some_and(|s| s.scope != SessionScope::Full)
+    {
+        return Err(enrollment_only(
+            "An enrollment-only session cannot confirm sensitive actions",
+        ));
+    }
     if pipeline.store().usable_kinds(user.id).await?.is_empty() {
         return Ok(());
     }
-    match pipeline.session_levels(&user.session_id).await {
-        Some((_, acr)) if acr >= policy::ACR_MFA => Ok(()),
+    match session {
+        Some(s) if s.acr >= policy::ACR_MFA => Ok(()),
         _ => Err(ApiErr::new(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
@@ -205,17 +237,13 @@ pub fn protected_routes() -> Router<AppState> {
         .route("/policies", get(get_policies).put(put_policies))
 }
 
+/// The first three routes are the only ones an enrollment-only session may
+/// call (`middleware::auth::enrollment_route_allowed` uses the same paths).
 pub fn user_routes() -> Router<AppState> {
     Router::new()
-        .route("/users/me/factors", get(my_factors))
-        .route(
-            "/users/me/factors/{factor_id}/enroll/begin",
-            post(enroll_begin),
-        )
-        .route(
-            "/users/me/factors/{factor_id}/enroll/complete",
-            post(enroll_complete),
-        )
+        .route(MY_FACTORS_PATH, get(my_factors))
+        .route(ENROLL_BEGIN_PATH, post(enroll_begin))
+        .route(ENROLL_COMPLETE_PATH, post(enroll_complete))
         .route("/users/me/factors/{id}", delete(remove_factor))
         .route("/users/{id}/factors/reset", post(reset_factors))
 }
@@ -541,26 +569,48 @@ async fn step_up(
 
 // ---------------------------------------------------------------- factors
 
-async fn my_factors(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json<Value>> {
+/// Scope the auth middleware put next to the user; a request without one
+/// (none reaches these handlers) is treated as restricted.
+fn scope_of(scope: Option<Extension<SessionScope>>) -> SessionScope {
+    scope.map_or(SessionScope::Enrollment, |Extension(s)| s)
+}
+
+async fn my_factors(
+    State(state): State<AppState>,
+    user: AuthUser,
+    scope: Option<Extension<SessionScope>>,
+) -> ApiResult<Json<Value>> {
     let pipeline = AuthPipeline::for_state(&state);
     let enrolled = pipeline.store().list(user.id).await?;
     let (amr, acr) = pipeline
         .session_levels(&user.session_id)
         .await
         .unwrap_or((vec![], policy::ACR_PRIMARY));
+    let mut session = json!({"amr": amr, "acr": acr});
+    if scope_of(scope) == SessionScope::Enrollment {
+        session["scope"] = json!(SCOPE_ENROLLMENT);
+    }
     Ok(Json(json!({
         "factors": enrolled.into_iter().filter(|f| f.verified).collect::<Vec<_>>(),
         "available": pipeline.descriptors(),
-        "session": {"amr": amr, "acr": acr},
+        "session": session,
     })))
 }
 
 async fn enroll_begin(
     State(state): State<AppState>,
     user: AuthUser,
+    scope: Option<Extension<SessionScope>>,
     Path(factor_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let pipeline = AuthPipeline::for_state(&state);
+    // OQ-12: an enrollment-only session enrolls a factor; recovery codes come
+    // with the first one and are never enrolled on their own there.
+    if factor_id == "recovery" && scope_of(scope) == SessionScope::Enrollment {
+        return Err(enrollment_only(
+            "Recovery codes are issued with your first factor; enroll a factor first",
+        ));
+    }
     // Replacing recovery codes invalidates the old ones: that needs step-up.
     if factor_id == "recovery"
         && pipeline
@@ -582,6 +632,7 @@ async fn enroll_begin(
 async fn enroll_complete(
     State(state): State<AppState>,
     user: AuthUser,
+    scope: Option<Extension<SessionScope>>,
     Path(factor_id): Path<String>,
     Json(body): Json<Value>,
 ) -> ApiResult<Json<Value>> {
@@ -589,11 +640,16 @@ async fn enroll_complete(
     let u = current_user(&state, &user).await?;
     // The first factor also gets recovery codes, shown once.
     let had_any = !pipeline.store().usable_kinds(u.id).await?.is_empty();
+    // On success the pipeline closes the grace window and revokes this
+    // session if it was enrollment-only (OQ-12).
     pipeline.complete_enroll(&u, &factor_id, body).await?;
     let mut out = json!({ "enrolled": factor_id });
     if !had_any && factor_id != "recovery" {
         let codes = pipeline.begin_enroll(&u, "recovery").await?;
         out["recovery"] = codes;
+    }
+    if scope_of(scope) == SessionScope::Enrollment {
+        out["reauthenticate"] = json!(true);
     }
     Ok(Json(out))
 }
@@ -642,7 +698,13 @@ async fn reset_factors(
             json!({"target": target.id, "removed": removed}),
         )
         .await;
-    Ok(Json(json!({"removed": removed})))
+    // OQ-12: with `auth.mfa.enrollment_grace_secs` set, the user may sign in
+    // to an enrollment-only session until the window ends.
+    let window = pipeline.grant_enrollment_grace(&target, user.id).await?;
+    Ok(Json(json!({
+        "removed": removed,
+        "enrollment_grace": window.map(|w| json!({"expires_at": w.expires_at, "reason": w.reason})),
+    })))
 }
 
 // --------------------------------------------------------------- policies

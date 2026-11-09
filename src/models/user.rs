@@ -249,10 +249,16 @@ pub struct RefreshTokenRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthResponse {
     pub access_token: String,
+    /// Empty (and not serialized) for an enrollment-only session, which
+    /// cannot be refreshed.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub refresh_token: String,
     pub token_type: String,
     pub expires_in: u64,
     pub user: UserPublic,
+    /// `enrollment` for an enrollment-only session (OQ-12); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_scope: Option<String>,
 }
 
 /// Token response for refresh
