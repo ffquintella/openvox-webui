@@ -120,6 +120,36 @@ Feature: Plugin second factors
       | ["hwk","otp"] |
       | []            |
 
+  Scenario: A phishing-resistant policy offers and accepts only security keys (OQ-6)
+    Given the policy requires a phishing-resistant factor
+    And an enabled WASM factor plugin "fa" whose verify succeeds
+    And alice has enrolled the factor "totp"
+    And alice has enrolled the factor "fa:key"
+    When alice signs in with her password
+    Then a challenge should be offered with the factors "fa:key"
+    When alice answers the challenge with the factor "totp"
+    Then the answer should be refused with "invalid"
+    When alice answers the challenge with the factor "fa:key"
+    Then alice should hold a session with the methods "pwd,hwk" at level 3
+
+  Scenario: Without a security key a phishing-resistant policy never falls back to TOTP (OQ-6)
+    Given the policy requires a phishing-resistant factor
+    And an enabled WASM factor plugin "fa" whose verify succeeds
+    And alice has enrolled the factor "totp"
+    When alice signs in with her password
+    Then the sign-in should be refused with "phishing_resistant_factor_required"
+    And alice should hold no session
+    When alice steps up a password session
+    Then the sign-in should be refused with "phishing_resistant_factor_required"
+
+  Scenario: Step-up under a phishing-resistant policy offers only security keys (OQ-6)
+    Given the policy requires a phishing-resistant factor
+    And an enabled WASM factor plugin "fa" whose verify succeeds
+    And alice has enrolled the factor "totp"
+    And alice has enrolled the factor "fa:key"
+    When alice steps up a password session
+    Then a challenge should be offered with the factors "fa:key"
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"

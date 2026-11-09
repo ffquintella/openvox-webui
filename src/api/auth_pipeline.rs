@@ -23,7 +23,8 @@ use crate::{
     services::auth_pipeline::{
         oidc::{self, LinkResult, OidcClient, BROWSER_COOKIE},
         policy::{self, PolicyInput},
-        AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, VerifyOutcome,
+        AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, StepUpCheck,
+        VerifyOutcome,
     },
     services::AuthService,
     utils::error::{AppError, ErrorResponse},
@@ -104,6 +105,9 @@ impl From<PipelineError> for ApiErr {
                     .code("factor_unavailable")
             }
             PipelineError::Invalid(m) => ApiErr::new(StatusCode::BAD_REQUEST, "bad_request", m),
+            PipelineError::Forbidden { code, message } => {
+                ApiErr::new(StatusCode::FORBIDDEN, "forbidden", message).code(code)
+            }
             PipelineError::Internal(m) => {
                 tracing::error!("auth pipeline error: {m}");
                 ApiErr::new(
@@ -184,27 +188,23 @@ pub fn outcome_response(outcome: LoginOutcome) -> Response {
 /// waives step-up. An enrollment-only session never passes (OQ-12).
 pub async fn require_step_up(state: &AppState, user: &AuthUser) -> ApiResult<()> {
     let pipeline = AuthPipeline::new(&state.db, &state.config);
-    let session = pipeline.session_info(&user.session_id).await;
-    if session
-        .as_ref()
-        .is_some_and(|s| s.scope != SessionScope::Full)
+    match pipeline
+        .step_up_check(user.id, user.organization_id, &user.session_id)
+        .await?
     {
-        return Err(enrollment_only(
+        StepUpCheck::Passed => Ok(()),
+        StepUpCheck::EnrollmentOnly => Err(enrollment_only(
             "An enrollment-only session cannot confirm sensitive actions",
-        ));
-    }
-    if pipeline.store().usable_kinds(user.id).await?.is_empty() {
-        return Ok(());
-    }
-    match session {
-        Some(s) if s.acr >= policy::ACR_MFA => Ok(()),
-        _ => Err(ApiErr::new(
+        )),
+        // `required_acr` is 3 when a policy requires a phishing-resistant
+        // factor (OQ-6).
+        StepUpCheck::Required { required_acr } => Err(ApiErr::new(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
             "This action needs a stronger authentication level",
         )
         .code("step_up_required")
-        .details(json!({"required_acr": policy::ACR_MFA, "step_up": "/api/v1/auth/step-up"}))),
+        .details(json!({"required_acr": required_acr, "step_up": "/api/v1/auth/step-up"}))),
     }
 }
 
@@ -611,6 +611,14 @@ async fn enroll_begin(
             "Recovery codes are issued with your first factor; enroll a factor first",
         ));
     }
+    let u = current_user(&state, &user).await?;
+    // OQ-6: under a policy that requires phishing resistance, the window is
+    // only spent on a factor that satisfies it.
+    if scope_of(scope) == SessionScope::Enrollment {
+        pipeline
+            .check_enrollment_only_factor(&u, &factor_id)
+            .await?;
+    }
     // Replacing recovery codes invalidates the old ones: that needs step-up.
     if factor_id == "recovery"
         && pipeline
@@ -622,7 +630,6 @@ async fn enroll_begin(
     {
         require_step_up(&state, &user).await?;
     }
-    let u = current_user(&state, &user).await?;
     let client = pipeline.begin_enroll(&u, &factor_id).await?;
     Ok(Json(
         json!({ "factor_id": factor_id, "enrollment": client }),

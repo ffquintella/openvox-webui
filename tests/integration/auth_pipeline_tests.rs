@@ -582,7 +582,7 @@ async fn a_plugin_factor_is_served_over_http_while_its_plugin_is_enabled() {
         r.json::<Value>()["factors"],
         json!([
             {"id": "recovery", "kind": "recovery", "label": "Recovery code", "amr": "rcv",
-             "enrollment": "host-managed", "fields": ["code"]}
+             "enrollment": "host-managed", "fields": ["code"], "phishing_resistant": false}
         ])
     );
 }
@@ -727,6 +727,29 @@ async fn policy_administration_requires_permission() {
     .await
     .json();
     assert_eq!(r["policies"][0]["name"], "everyone");
+    assert_eq!(r["policies"][0]["require_phishing_resistant"], false);
+}
+
+/// OQ-6: the policy flag round-trips over HTTP and needs level 2.
+#[tokio::test]
+async fn policies_can_require_a_phishing_resistant_factor() {
+    let app = TestApp::new().await;
+    let admin = prepare_admin(&app).await;
+    let put = |body: Value| {
+        let app = &app;
+        let admin = &admin;
+        async move { call(app, Some(admin), "t", "PUT", "/api/v1/auth/policies", body).await }
+    };
+    put(
+        json!({"policies": [{"name": "x", "required_acr": 1, "require_phishing_resistant": true}]}),
+    )
+    .await
+    .assert_bad_request();
+    let r: Value = put(json!({"policies": [{"name": "keys", "conditions": {"roles": ["nobody"]}, "require_phishing_resistant": true}]}))
+        .await
+        .json();
+    assert_eq!(r["policies"][0]["require_phishing_resistant"], true);
+    assert_eq!(r["policies"][0]["required_acr"], 2);
 }
 
 #[tokio::test]

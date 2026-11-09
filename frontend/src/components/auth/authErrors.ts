@@ -31,6 +31,8 @@ export function authErrorMessage(err: unknown, rejectedKey: MessageKey): string 
       return t('auth.error.factor_unavailable');
     case 'enrollment_only_session':
       return t('auth.error.enrollment_only');
+    case 'phishing_resistant_factor_required':
+      return t('auth.error.phishing_resistant_required');
     default:
       break;
   }

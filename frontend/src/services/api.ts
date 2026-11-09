@@ -411,6 +411,8 @@ export interface AuthFactorDescriptor {
   amr?: string | string[];
   enrollment?: string;
   fields: string[];
+  /** Satisfies a policy that requires phishing resistance (OQ-6). */
+  phishing_resistant?: boolean;
 }
 
 // Returned with 202 when an MFA policy requires a second factor

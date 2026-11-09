@@ -43,7 +43,7 @@ use self::factors::{
     FactorError, FactorOutcome, FactorRecord,
 };
 use self::grace::{GraceStore, GraceWindow, LoginSpend};
-use self::policy::{ACR_MFA, ACR_PRIMARY};
+use self::policy::{ACR_MFA, ACR_PHISHING_RESISTANT, ACR_PRIMARY};
 use self::store::{FactorStore, StoredRecord};
 use crate::{
     config::AppConfig,
@@ -58,6 +58,9 @@ use crate::{
 };
 
 pub const AUDIT_AUTH: &str = "auth";
+/// Code of a refusal because a policy requires a phishing-resistant factor
+/// and the user has none that can run (OQ-6).
+pub const PHISHING_RESISTANT_REQUIRED: &str = "phishing_resistant_factor_required";
 const CHALLENGE_TTL_MINUTES: i64 = 5;
 const LOCKOUT_WINDOW_MINUTES: i64 = 15;
 
@@ -120,6 +123,18 @@ enum GraceDecision {
     NotOffered,
 }
 
+/// What step-up decides for a session (`api::auth_pipeline::require_step_up`).
+#[derive(Debug, PartialEq, Eq)]
+pub enum StepUpCheck {
+    Passed,
+    /// An enrollment-only session never confirms anything (OQ-12).
+    EnrollmentOnly,
+    /// The session must be raised to `required_acr` first.
+    Required {
+        required_acr: u8,
+    },
+}
+
 pub enum VerifyOutcome {
     Session(Box<AuthResponse>),
     Failed { attempts_left: u32 },
@@ -139,6 +154,9 @@ pub enum PipelineError {
     Invalid(String),
     #[error("{0}")]
     Internal(String),
+    /// A refusal with a stable code (403).
+    #[error("{message}")]
+    Forbidden { code: &'static str, message: String },
 }
 
 impl From<anyhow::Error> for PipelineError {
@@ -278,6 +296,88 @@ impl<'a> AuthPipeline<'a> {
             .filter(|k| self.factor(k).is_some())
             .cloned()
             .collect()
+    }
+
+    /// The kinds that can satisfy `required`: all of them, or only the
+    /// phishing-resistant ones at level 3 (OQ-6).
+    fn qualifying(&self, kinds: &[String], required: u8) -> Vec<String> {
+        kinds
+            .iter()
+            .filter(|k| {
+                required < ACR_PHISHING_RESISTANT
+                    || self
+                        .factor(k)
+                        .is_some_and(|f| f.descriptor().phishing_resistant)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Level a step-up must reach: 2, or 3 when a policy that matches the
+    /// user's roles requires phishing resistance (any provider condition, as
+    /// the session does not record its provider).
+    pub async fn step_up_level(&self, user: Uuid, org: Uuid) -> Result<u8, PipelineError> {
+        let roles = AuthService::new(self.pool.clone())
+            .get_user_roles(&user)
+            .await
+            .unwrap_or_default();
+        let policies = policy::list(self.pool, org).await?;
+        Ok(policy::required_acr_for_roles(&policies, &roles).max(ACR_MFA))
+    }
+
+    /// Whether the user's policies require a phishing-resistant factor.
+    pub async fn requires_phishing_resistant(&self, user: &User) -> Result<bool, PipelineError> {
+        Ok(self.step_up_level(user.id, user.organization_id).await? >= ACR_PHISHING_RESISTANT)
+    }
+
+    /// In an enrollment-only session, a user whose policies require
+    /// phishing resistance may only enroll a factor that provides it, so the
+    /// window is not spent on a factor that cannot sign them in (OQ-6).
+    pub async fn check_enrollment_only_factor(
+        &self,
+        user: &User,
+        factor_id: &str,
+    ) -> Result<(), PipelineError> {
+        let qualifies = self
+            .factor(factor_id)
+            .is_some_and(|f| f.descriptor().phishing_resistant);
+        if !qualifies && self.requires_phishing_resistant(user).await? {
+            return Err(PipelineError::Forbidden {
+                code: PHISHING_RESISTANT_REQUIRED,
+                message: "Your account requires a phishing-resistant factor; add a security key \
+                          or passkey"
+                    .into(),
+            });
+        }
+        Ok(())
+    }
+
+    /// The step-up gate. A user with no usable second factor passes (MFA
+    /// never locks out an account that has not enrolled); otherwise the
+    /// session must hold the step-up level.
+    pub async fn step_up_check(
+        &self,
+        user: Uuid,
+        org: Uuid,
+        session_id: &str,
+    ) -> Result<StepUpCheck, PipelineError> {
+        let session = self.session_info(session_id).await;
+        if session
+            .as_ref()
+            .is_some_and(|s| s.scope != SessionScope::Full)
+        {
+            return Ok(StepUpCheck::EnrollmentOnly);
+        }
+        if self.store().usable_kinds(user).await?.is_empty() {
+            return Ok(StepUpCheck::Passed);
+        }
+        let required = self.step_up_level(user, org).await?;
+        Ok(match session {
+            Some(s) if s.acr >= required => StepUpCheck::Passed,
+            _ => StepUpCheck::Required {
+                required_acr: required,
+            },
+        })
     }
 
     pub async fn audit(
@@ -528,42 +628,14 @@ impl<'a> AuthPipeline<'a> {
                     self.issue_session(user, &ident.amr, reached).await?,
                 )));
             }
-            let grace = self
-                .enrollment_grace_login(&ident, allow_enrollment)
-                .await?;
-            let grace_label = match grace {
-                GraceDecision::Session(session) => return Ok(LoginOutcome::Session(session)),
-                GraceDecision::None => None,
-                GraceDecision::Expired => Some("expired"),
-                GraceDecision::Exhausted => Some("exhausted"),
-                GraceDecision::NotOffered => Some("not_offered_for_provider"),
-            };
-            let mut details =
-                json!({"reason": "mfa_enrollment_required", "provider": ident.provider});
-            if let Some(label) = grace_label {
-                details["enrollment_grace"] = json!(label);
-            }
-            self.audit(
-                user.organization_id,
-                Some(user.id),
-                "auth.login_denied",
-                &user.username,
-                details,
-            )
-            .await;
-            return Ok(LoginOutcome::Denied {
-                code: "mfa_enrollment_required",
-                message: match grace_label {
-                    Some("expired") | Some("exhausted") => {
-                        "Policy requires a second factor and the time to enroll one has ended; \
-                         ask an administrator"
-                    }
-                    _ => {
-                        "Policy requires a second factor and none is enrolled; ask an administrator"
-                    }
-                }
-                .into(),
-            });
+            return self
+                .enrollment_path(
+                    &ident,
+                    allow_enrollment,
+                    "mfa_enrollment_required",
+                    "Policy requires a second factor and none is enrolled; ask an administrator",
+                )
+                .await;
         }
         // Enrolled but none of the factors can run (a disabled or failed
         // plugin): a denial, never the break-glass path, which is only for
@@ -586,6 +658,40 @@ impl<'a> AuthPipeline<'a> {
             });
         }
 
+        // OQ-6: only phishing-resistant factors are offered at level 3. A
+        // user who has none follows the enrollment path; there is never a
+        // fallback to a weaker factor.
+        let offered = self.qualifying(&kinds, required);
+        if offered.is_empty() {
+            if kinds.len() < enrolled.len() {
+                // An unavailable factor may be the qualifying one: fail
+                // closed rather than open an enrollment window.
+                self.audit(
+                    user.organization_id,
+                    Some(user.id),
+                    "auth.login_denied",
+                    &user.username,
+                    json!({"reason": "factor_unavailable", "provider": ident.provider, "enrolled": enrolled, "required_acr": required}),
+                )
+                .await;
+                return Ok(LoginOutcome::Denied {
+                    code: "factor_unavailable",
+                    message: "None of the second factors this policy accepts is available; \
+                              ask an administrator"
+                        .into(),
+                });
+            }
+            return self
+                .enrollment_path(
+                    &ident,
+                    allow_enrollment,
+                    PHISHING_RESISTANT_REQUIRED,
+                    "Policy requires a phishing-resistant factor such as a security key or a \
+                     passkey, and none is enrolled; ask an administrator",
+                )
+                .await;
+        }
+
         let offer = self
             .create_challenge(
                 user,
@@ -595,10 +701,54 @@ impl<'a> AuthPipeline<'a> {
                 required,
                 None,
                 client,
-                &kinds,
+                &offered,
             )
             .await?;
         Ok(LoginOutcome::Challenge(offer))
+    }
+
+    /// A user stopped by a policy without a factor that satisfies it: an
+    /// enrollment-only session during a grace window (OQ-12), else a denial
+    /// with `code`.
+    async fn enrollment_path(
+        &self,
+        ident: &PrimaryIdentity,
+        allow_enrollment: bool,
+        code: &'static str,
+        message: &str,
+    ) -> Result<LoginOutcome, PipelineError> {
+        let user = &ident.user;
+        let grace = self.enrollment_grace_login(ident, allow_enrollment).await?;
+        let grace_label = match grace {
+            GraceDecision::Session(session) => return Ok(LoginOutcome::Session(session)),
+            GraceDecision::None => None,
+            GraceDecision::Expired => Some("expired"),
+            GraceDecision::Exhausted => Some("exhausted"),
+            GraceDecision::NotOffered => Some("not_offered_for_provider"),
+        };
+        let mut details = json!({"reason": code, "provider": ident.provider});
+        if let Some(label) = grace_label {
+            details["enrollment_grace"] = json!(label);
+        }
+        self.audit(
+            user.organization_id,
+            Some(user.id),
+            "auth.login_denied",
+            &user.username,
+            details,
+        )
+        .await;
+        Ok(LoginOutcome::Denied {
+            code,
+            message: match grace_label {
+                Some("expired") | Some("exhausted") => {
+                    "Policy requires a second factor and the time to enroll one has ended; \
+                     ask an administrator"
+                        .to_string()
+                }
+                _ => message.to_string(),
+            },
+        })
     }
 
     /// Reads the flag from the database: the `User` in hand may be stale.
@@ -802,17 +952,49 @@ impl<'a> AuthPipeline<'a> {
         if info.scope != SessionScope::Full {
             return Err(PipelineError::InvalidChallenge);
         }
+        let required = self.step_up_level(user.id, user.organization_id).await?;
+        let offered = self.qualifying(&kinds, required);
+        if offered.is_empty() {
+            if kinds.len() < enrolled.len() {
+                return Err(PipelineError::Unavailable(
+                    "None of the second factors this policy accepts is available".into(),
+                ));
+            }
+            return Err(PipelineError::Forbidden {
+                code: PHISHING_RESISTANT_REQUIRED,
+                message: "Your account requires a phishing-resistant factor such as a security \
+                          key or a passkey; add one first"
+                    .into(),
+            });
+        }
         self.create_challenge(
             user,
             ChallengePurpose::StepUp.as_str(),
             "step_up",
             &info.amr,
-            ACR_MFA,
+            required,
             Some(session_id),
             client,
-            &kinds,
+            &offered,
         )
         .await
+    }
+
+    /// A factor that cannot reach the challenge's level is refused before it
+    /// runs (OQ-6), without spending an attempt.
+    fn check_factor_level(
+        &self,
+        row: &ChallengeRow,
+        factor: &dyn AuthFactor,
+    ) -> Result<(), PipelineError> {
+        if row.required_acr >= ACR_PHISHING_RESISTANT as i64
+            && !factor.descriptor().phishing_resistant
+        {
+            return Err(PipelineError::Invalid(
+                "That factor does not meet the policy; use a security key or a passkey".into(),
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -956,6 +1138,7 @@ impl<'a> AuthPipeline<'a> {
         let factor = self
             .factor(factor_id)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{factor_id}'")))?;
+        self.check_factor_level(&row, factor)?;
         let kind = factor.descriptor().id;
         let purpose = Self::purpose_of(&row)?;
         let records = self.store().records(user.id, &kind, true).await?;
@@ -1010,6 +1193,7 @@ impl<'a> AuthPipeline<'a> {
         let factor = self
             .factor(&active)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{active}'")))?;
+        self.check_factor_level(&row, factor)?;
         let purpose = Self::purpose_of(&row)?;
         let max = self.config.auth.mfa.max_attempts as i64;
 
@@ -1116,7 +1300,19 @@ impl<'a> AuthPipeline<'a> {
                         methods.push(m.clone());
                     }
                 }
-                let acr = acr_of(&methods).max(ACR_PRIMARY);
+                let mut acr = acr_of(&methods).max(ACR_PRIMARY);
+                // OQ-6: level 3 is recorded only when the challenge asked for
+                // it (sessions without such a policy keep level 2, as before)
+                // and this verification was phishing-resistant.
+                if acr >= ACR_MFA
+                    && row.required_acr >= ACR_PHISHING_RESISTANT as i64
+                    && factor.descriptor().phishing_resistant
+                    && amr
+                        .iter()
+                        .any(|m| factors::PHISHING_RESISTANT_METHODS.contains(&m.as_str()))
+                {
+                    acr = ACR_PHISHING_RESISTANT;
+                }
                 if (acr as i64) < row.required_acr {
                     return Err(PipelineError::Internal(
                         "Factor did not reach the required level".into(),

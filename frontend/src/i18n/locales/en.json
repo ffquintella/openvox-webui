@@ -30,6 +30,7 @@
   "auth.error.factor_unavailable": "This verification method is unavailable right now. Use another method or try again later.",
   "auth.error.generic": "The request could not be completed. Try again.",
   "auth.error.enrollment_only": "This sign-in can only add a verification method. Add one, then sign in again.",
+  "auth.error.phishing_resistant_required": "Your organization requires a security key or passkey for this account. Add one, or ask your administrator.",
   "enrollment.title": "Add a verification method",
   "enrollment.description": "Signed in as {username}. Your organization requires a second factor and your account has none. This sign-in can only add one and ends in {minutes} minutes.",
   "enrollment.no_method": "No verification method can be added from this page. Contact your administrator.",

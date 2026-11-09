@@ -19,8 +19,9 @@ use super::invoke::{
 use super::manager::PluginManager;
 use crate::models::{AuthFactorDecl, PluginState, RuntimeKind, RuntimeSpec};
 use crate::services::auth_pipeline::factors::{
-    now_unix, AuthFactor, ChallengeContext, ChallengeStart, EnrollContext, EnrollMode,
-    EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorOutcome, FactorRecord,
+    is_phishing_resistant, now_unix, AuthFactor, ChallengeContext, ChallengeStart, EnrollContext,
+    EnrollMode, EnrollRecord, EnrollStart, FactorDescriptor, FactorError, FactorOutcome,
+    FactorRecord,
 };
 
 pub const FACTOR_CAPABILITY: &str = "auth:factor";
@@ -59,11 +60,13 @@ impl PluginFactorEntry {
     }
 
     pub fn descriptor(&self) -> FactorDescriptor {
+        let amr = self.decl.amr.values();
         FactorDescriptor {
             id: self.qualified_id(),
             kind: self.decl.kind.clone(),
             label: self.decl.label.clone(),
-            amr: self.decl.amr.values(),
+            phishing_resistant: is_phishing_resistant(&self.decl.kind, &amr),
+            amr,
             enrollment: self.decl.enrollment.clone(),
             fields: self.decl.fields.clone(),
         }
@@ -564,7 +567,8 @@ mod tests {
     use crate::services::auth_pipeline::factors::generate_recovery_codes;
     use crate::services::auth_pipeline::policy::{self, PolicyInput};
     use crate::services::auth_pipeline::{
-        AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, VerifyOutcome,
+        AuthPipeline, ClientInfo, LoginOutcome, PipelineError, PrimaryIdentity, StepUpCheck,
+        VerifyOutcome,
     };
     use crate::services::plugins::host::{HostApiImpl, PackageModuleSource};
     use crate::services::plugins::manager::BuiltinPlugin;
@@ -792,6 +796,7 @@ mod tests {
                 priority: 100,
                 conditions: Default::default(),
                 required_acr: 2,
+                require_phishing_resistant: false,
             }],
         )
         .await
@@ -950,6 +955,7 @@ mod tests {
                 kind: "otp".into(),
                 label: "Stub".into(),
                 amr: vec!["otp".into()],
+                phishing_resistant: false,
                 enrollment: "host-managed".into(),
                 fields: vec![],
             }
@@ -1467,6 +1473,223 @@ mod tests {
         let calls = cap.calls.lock().unwrap().clone();
         let purposes: Vec<&Value> = calls.iter().map(|c| &c.2["purpose"]).collect();
         assert_eq!(purposes, [&json!("step_up"), &json!("step_up")]);
+    }
+
+    // ---- phishing-resistant policies (OQ-6) ----------------------------------
+
+    /// A builtin plugin factor of kind `webauthn` (phishing-resistant), the
+    /// user's TOTP and a policy that requires phishing resistance.
+    async fn pr_env(with_key: bool) -> Env {
+        let cap = Arc::new(Capture::default());
+        let e = env(vec![("cap", cap as Arc<dyn BuiltinPlugin>)]).await;
+        let y = factor_yaml("cap", "{ kind: builtin, entry: cap }");
+        let pkg = build_signed_package(&[("plugin.yaml", y.as_bytes())], "cap", "1.0.0", 2, SEED);
+        e.manager.install(&pkg, "admin", None).await.unwrap();
+        e.manager.enable("cap").await.unwrap();
+        e.enroll("totp", json!({"secret": "x"})).await;
+        if with_key {
+            e.enroll("cap:key", json!({"credential": "c1", "n": 0}))
+                .await;
+        }
+        let saved = policy::replace(
+            &e.pool,
+            e.user.organization_id,
+            &[PolicyInput {
+                name: "keys".into(),
+                enabled: true,
+                priority: 100,
+                conditions: Default::default(),
+                required_acr: 2,
+                require_phishing_resistant: true,
+            }],
+        )
+        .await
+        .unwrap();
+        assert!(saved[0].policy.require_phishing_resistant, "stored");
+        e
+    }
+
+    async fn session_id(e: &Env) -> String {
+        sqlx::query_scalar(
+            "SELECT id FROM auth_sessions WHERE user_id = ? AND revoked_at IS NULL \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(e.user.id.to_string())
+        .fetch_one(&e.pool)
+        .await
+        .unwrap()
+    }
+
+    #[test]
+    fn plugin_descriptors_say_whether_they_are_phishing_resistant() {
+        let entry = |kind: &str, amr: crate::models::FactorAmr| PluginFactorEntry {
+            plugin_id: "p".into(),
+            version: "1".into(),
+            runtime: serde_json::from_value(json!({"kind": "builtin", "entry": "p"})).unwrap(),
+            decl: AuthFactorDecl {
+                id: "k".into(),
+                kind: kind.into(),
+                label: "K".into(),
+                amr,
+                enrollment: "host-managed".into(),
+                fields: vec![],
+            },
+        };
+        use crate::models::FactorAmr;
+        assert!(
+            entry("webauthn", "hwk".into())
+                .descriptor()
+                .phishing_resistant
+        );
+        assert!(
+            entry(
+                "webauthn",
+                FactorAmr::Many(vec!["swk".into(), "pin".into()])
+            )
+            .descriptor()
+            .phishing_resistant
+        );
+        assert!(!entry("otp", "hwk".into()).descriptor().phishing_resistant);
+        assert!(
+            !entry("webauthn", "otp".into())
+                .descriptor()
+                .phishing_resistant
+        );
+    }
+
+    #[tokio::test]
+    async fn a_phishing_resistant_policy_offers_and_accepts_only_qualifying_factors() {
+        let e = pr_env(true).await;
+        let p = e.pipeline();
+        let c = ClientInfo::default();
+        let LoginOutcome::Challenge(offer) = e.login().await else {
+            panic!("a challenge")
+        };
+        assert_eq!(offer.required_acr, policy::ACR_PHISHING_RESISTANT);
+        let offered: Vec<&str> = offer.factors.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(offered, ["cap:key"]);
+        let id = offer.challenge_id;
+        // TOTP can neither start nor answer this challenge.
+        assert!(matches!(
+            p.begin_challenge(&id, "totp", &c).await,
+            Err(PipelineError::Invalid(_))
+        ));
+        assert!(matches!(
+            p.verify_challenge(&id, Some("totp"), json!({"code": "123456"}), &c)
+                .await,
+            Err(PipelineError::Invalid(_))
+        ));
+        p.begin_challenge(&id, "cap:key", &c).await.unwrap();
+        let r = p
+            .verify_challenge(&id, Some("cap:key"), json!({}), &c)
+            .await
+            .unwrap();
+        assert!(matches!(r, VerifyOutcome::Session(_)));
+        let info = p.session_info(&session_id(&e).await).await.unwrap();
+        assert_eq!(info.acr, policy::ACR_PHISHING_RESISTANT);
+        assert_eq!(info.amr, ["pwd", "hwk"]);
+    }
+
+    #[tokio::test]
+    async fn without_a_qualifying_factor_the_user_must_enroll_one() {
+        let e = pr_env(false).await;
+        assert_eq!(
+            denied_code(e.login().await),
+            "phishing_resistant_factor_required"
+        );
+        assert_eq!(e.sessions().await, 0, "never a fallback to TOTP");
+        assert!(e
+            .pipeline()
+            .requires_phishing_resistant(&e.user)
+            .await
+            .unwrap());
+        // An enrollment-only session may only add a qualifying factor.
+        assert!(matches!(
+            e.pipeline()
+                .check_enrollment_only_factor(&e.user, "totp")
+                .await,
+            Err(PipelineError::Forbidden {
+                code: "phishing_resistant_factor_required",
+                ..
+            })
+        ));
+        assert!(e
+            .pipeline()
+            .check_enrollment_only_factor(&e.user, "cap:key")
+            .await
+            .is_ok());
+
+        // The enrollment grace path of T118 applies.
+        let mut cfg = AppConfig::default();
+        cfg.auth.mfa.enrollment_grace_secs = 3600;
+        cfg.auth.mfa.enrollment_grace_on_policy = true;
+        let p = AuthPipeline::new(&e.pool, &cfg).with_plugin_factors(e.manager.auth_factors());
+        let ident = PrimaryIdentity {
+            user: e.user.clone(),
+            provider: "local".into(),
+            amr: vec!["pwd".into()],
+        };
+        match p
+            .start_login_allowing_enrollment(ident, &ClientInfo::default())
+            .await
+            .unwrap()
+        {
+            LoginOutcome::Session(s) => assert_eq!(s.session_scope.as_deref(), Some("enrollment")),
+            _ => panic!("an enrollment-only session"),
+        }
+
+        // Step-up never falls back to TOTP either.
+        p.issue_session(&e.user, &["pwd".into(), "otp".into()], 2)
+            .await
+            .unwrap();
+        let sid = session_id(&e).await;
+        assert!(matches!(
+            p.start_step_up(&e.user, &sid, &ClientInfo::default()).await,
+            Err(PipelineError::Forbidden {
+                code: "phishing_resistant_factor_required",
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn step_up_under_a_phishing_resistant_policy_needs_level_three() {
+        let e = pr_env(true).await;
+        let p = e.pipeline();
+        p.issue_session(&e.user, &["pwd".into(), "otp".into()], 2)
+            .await
+            .unwrap();
+        let sid = session_id(&e).await;
+        assert!(matches!(
+            p.step_up_check(e.user.id, e.user.organization_id, &sid)
+                .await
+                .unwrap(),
+            StepUpCheck::Required {
+                required_acr: 3,
+                ..
+            }
+        ));
+        let offer = p
+            .start_step_up(&e.user, &sid, &ClientInfo::default())
+            .await
+            .unwrap();
+        assert_eq!(offer.required_acr, 3);
+        let offered: Vec<&str> = offer.factors.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(offered, ["cap:key"]);
+        let c = ClientInfo::default();
+        p.begin_challenge(&offer.challenge_id, "cap:key", &c)
+            .await
+            .unwrap();
+        p.verify_challenge(&offer.challenge_id, Some("cap:key"), json!({}), &c)
+            .await
+            .unwrap();
+        let sid = session_id(&e).await;
+        assert!(matches!(
+            p.step_up_check(e.user.id, e.user.organization_id, &sid)
+                .await
+                .unwrap(),
+            StepUpCheck::Passed
+        ));
     }
 
     // ---- wire format ---------------------------------------------------------

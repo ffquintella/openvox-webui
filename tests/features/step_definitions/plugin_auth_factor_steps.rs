@@ -86,6 +86,7 @@ fn code_of(e: &PipelineError) -> String {
         PipelineError::Locked => "locked",
         PipelineError::Invalid(_) => "invalid",
         PipelineError::Internal(_) => "internal",
+        PipelineError::Forbidden { code, .. } => code,
     }
     .to_string()
 }
@@ -323,6 +324,7 @@ async fn given_host(world: &mut TestWorld, username: String) {
             priority: 100,
             conditions: Default::default(),
             required_acr: 2,
+            require_phishing_resistant: false,
         }],
     )
     .await
@@ -616,12 +618,39 @@ async fn when_step_up(world: &mut TestWorld) {
     .fetch_one(&s.pool)
     .await
     .unwrap();
-    let offer = p
+    let result = p
         .start_step_up(&s.user, &session, &ClientInfo::default())
-        .await
-        .unwrap();
-    s.challenge = Some(offer.challenge_id);
-    s.offered = offer.factors.into_iter().map(|f| f.id).collect();
+        .await;
+    drop(p);
+    s.challenge = None;
+    s.offered.clear();
+    s.denied = None;
+    match result {
+        Ok(offer) => {
+            s.challenge = Some(offer.challenge_id);
+            s.offered = offer.factors.into_iter().map(|f| f.id).collect();
+        }
+        Err(e) => s.denied = Some(code_of(&e)),
+    }
+}
+
+#[given("the policy requires a phishing-resistant factor")]
+async fn given_pr_policy(world: &mut TestWorld) {
+    let s = scenario(world);
+    policy::replace(
+        &s.pool,
+        s.user.organization_id,
+        &[PolicyInput {
+            name: "keys".into(),
+            enabled: true,
+            priority: 100,
+            conditions: Default::default(),
+            required_acr: 2,
+            require_phishing_resistant: true,
+        }],
+    )
+    .await
+    .unwrap();
 }
 
 #[then(expr = "the plugin should have received the purpose {string}")]

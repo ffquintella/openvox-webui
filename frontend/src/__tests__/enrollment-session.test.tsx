@@ -140,4 +140,13 @@ describe('enrollment-only session in the API client', () => {
       'This sign-in can only add a verification method. Add one, then sign in again.'
     );
   });
+
+  it('translates the phishing-resistant policy refusal (OQ-6)', () => {
+    const err = {
+      response: { status: 403, data: { code: 'phishing_resistant_factor_required' } },
+    };
+    expect(authErrorMessage(err, 'auth.error.key_rejected')).toBe(
+      'Your organization requires a security key or passkey for this account. Add one, or ask your administrator.'
+    );
+  });
 });

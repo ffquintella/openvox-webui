@@ -32,6 +32,21 @@ pub struct FactorDescriptor {
     pub enrollment: String,
     /// What the client must supply for a challenge, so the host can render it.
     pub fields: Vec<String>,
+    /// Satisfies a policy that requires phishing resistance (OQ-6).
+    pub phishing_resistant: bool,
+}
+
+/// Methods that, proved through a WebAuthn ceremony, resist phishing (OQ-6).
+pub const PHISHING_RESISTANT_METHODS: &[&str] = &["hwk", "swk"];
+
+/// A factor resists phishing when the host runs a WebAuthn ceremony for it
+/// (the browser binds the answer to the origin) and it proves a key method.
+/// A one-time code, even from a hardware token, does not.
+pub fn is_phishing_resistant(kind: &str, amr: &[String]) -> bool {
+    kind == "webauthn"
+        && amr
+            .iter()
+            .any(|m| PHISHING_RESISTANT_METHODS.contains(&m.as_str()))
 }
 
 fn one_or_many<S: serde::Serializer>(v: &[String], s: S) -> Result<S::Ok, S::Error> {
@@ -50,6 +65,7 @@ impl FactorDescriptor {
             amr: vec![amr.into()],
             enrollment: "host-managed".into(),
             fields: fields.iter().map(|f| f.to_string()).collect(),
+            phishing_resistant: is_phishing_resistant(kind, &[amr.to_string()]),
         }
     }
 }
@@ -648,6 +664,36 @@ mod tests {
             purpose: ChallengePurpose::Login,
         };
         assert!(f.begin_challenge(&c).await.is_err());
+    }
+
+    /// OQ-6: only a WebAuthn ceremony with a key method is phishing-resistant.
+    #[test]
+    fn only_webauthn_key_factors_are_phishing_resistant() {
+        let cfg = MfaConfig {
+            webauthn: Some(WebAuthnConfig {
+                rp_id: "puppet.example.com".into(),
+                rp_name: "OpenVox".into(),
+                origin: "https://puppet.example.com".into(),
+            }),
+            ..MfaConfig::default()
+        };
+        let pr: Vec<(String, bool)> = builtin_factors(&cfg)
+            .iter()
+            .map(|f| (f.descriptor().id, f.descriptor().phishing_resistant))
+            .collect();
+        assert_eq!(
+            pr,
+            [
+                ("totp".to_string(), false),
+                ("recovery".to_string(), false),
+                ("webauthn".to_string(), true)
+            ]
+        );
+        let amr = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_phishing_resistant("webauthn", &amr(&["swk", "pin"])));
+        assert!(!is_phishing_resistant("webauthn", &amr(&["otp"])));
+        assert!(!is_phishing_resistant("otp", &amr(&["hwk"])));
+        assert!(!is_phishing_resistant("push", &amr(&["hwk"])));
     }
 
     #[test]
