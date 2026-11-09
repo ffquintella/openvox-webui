@@ -464,6 +464,21 @@ export interface FactorEnrollResult {
 
 const factorPath = (factorId: string) => encodeURIComponent(factorId);
 
+/**
+ * A filled plugin route path: `/` and 1 to 8 segments, each a fixed
+ * segment or an encoded parameter value; no dot segments, no `//`, no
+ * query or fragment. Keeps a declarative spec inside its plugin's routes.
+ */
+export function isPluginRoutePath(path: string): boolean {
+  if (!/^(\/[A-Za-z0-9._~%!$&'()*+,;=:@-]+){1,8}$/.test(path)) {
+    return false;
+  }
+  return path
+    .split('/')
+    .slice(1)
+    .every((seg) => seg !== '.' && seg !== '..' && !/%(2f|5c|00)/i.test(seg));
+}
+
 export const isMfaChallenge = (r: LoginResult): r is MfaChallenge =>
   (r as MfaChallenge).status === 'mfa_required';
 
@@ -2203,6 +2218,30 @@ export const pluginsApi = {
       `/plugins/ui/contributions/${encodeURIComponent(pluginId)}/${encodeURIComponent(contributionId)}`
     );
     return response.data;
+  },
+
+  /**
+   * Calls one of a plugin's own API routes (H-6). `path` is the declared
+   * route with its parameters already encoded; it never leaves
+   * `/api/v1/plugins/<id>/`, and the shared client adds the session, the
+   * step-up retry and the error handling.
+   */
+  callPluginRoute: async (
+    pluginId: string,
+    method: string,
+    path: string,
+    options: { query?: Record<string, string>; body?: unknown } = {}
+  ): Promise<unknown> => {
+    if (!isPluginRoutePath(path)) {
+      throw new Error('Refused: not a plugin route path');
+    }
+    const response = await client.request({
+      method,
+      url: `/plugins/${encodeURIComponent(pluginId)}${path}`,
+      params: options.query,
+      data: options.body,
+    });
+    return response.status === 204 ? null : response.data;
   },
 
   getUiCatalog: async (): Promise<PluginSlotCatalog> => {

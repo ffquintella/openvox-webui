@@ -8,7 +8,13 @@ import type { UiContribution } from '../../types';
 
 export type SlotVariant = 'card' | 'bare';
 
-function DeclarativeBody({ contribution }: { contribution: UiContribution }) {
+function DeclarativeBody({
+  contribution,
+  params,
+}: {
+  contribution: UiContribution;
+  params?: Record<string, string>;
+}) {
   const { data, isLoading, isError } = usePluginContribution(
     contribution.plugin_id,
     contribution.id
@@ -16,7 +22,14 @@ function DeclarativeBody({ contribution }: { contribution: UiContribution }) {
   if (isLoading) return <Loader2 className="w-5 h-5 animate-spin text-primary-600" />;
   if (isError || !data)
     return <p className="text-sm text-gray-500">This content could not be loaded.</p>;
-  return <DeclarativeRenderer spec={data.spec} />;
+  return (
+    <DeclarativeRenderer
+      spec={data.spec}
+      pluginId={contribution.plugin_id}
+      routes={data.routes}
+      params={params}
+    />
+  );
 }
 
 /** One contribution, whichever way it renders. */
@@ -35,7 +48,7 @@ export function PluginContributionView({
     contribution.render === 'iframe' ? (
       <PluginFrame contribution={contribution} slot={slot} params={params} />
     ) : contribution.render === 'declarative' ? (
-      <DeclarativeBody contribution={contribution} />
+      <DeclarativeBody contribution={contribution} params={params} />
     ) : contribution.render === 'module' ? (
       <TrustedModule contribution={contribution} slot={slot} params={params} />
     ) : null;

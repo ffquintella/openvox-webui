@@ -89,7 +89,11 @@ export default function PluginPage() {
         ) : isError || !detail ? (
           <p className="text-sm text-gray-500">This page could not be loaded.</p>
         ) : (
-          <DeclarativeRenderer spec={detail.spec} />
+          <DeclarativeRenderer
+            spec={detail.spec}
+            pluginId={contribution.plugin_id}
+            routes={detail.routes}
+          />
         )}
       </div>
     </div>

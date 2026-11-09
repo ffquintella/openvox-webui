@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import PluginSlot from '../components/plugins/PluginSlot';
+import { usePluginSlot } from '../hooks/usePlugins';
+import { t } from '../i18n';
 import {
   Save,
   Database,
@@ -27,6 +29,7 @@ import {
   Trash2,
   Plus,
   Play,
+  KeyRound,
 } from 'lucide-react';
 import {
   useSettings,
@@ -68,7 +71,8 @@ type TabId =
   | 'smtp'
   | 'update-jobs'
   | 'server'
-  | 'cve-feeds';
+  | 'cve-feeds'
+  | 'authentication';
 
 interface Tab {
   id: TabId;
@@ -89,6 +93,12 @@ const tabs: Tab[] = [
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<TabId>('general');
+  // The tab appears only when the server lists admin.auth contributions this
+  // user may see (each one's `requires` is checked server-side, H-6).
+  const hasAuthPanels = usePluginSlot('admin.auth').length > 0;
+  const visibleTabs: Tab[] = hasAuthPanels
+    ? [...tabs, { id: 'authentication', name: t('settings.authentication_tab'), icon: KeyRound }]
+    : tabs;
 
   return (
     <div>
@@ -97,7 +107,7 @@ export default function Settings() {
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 mb-6">
         <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
@@ -130,6 +140,7 @@ export default function Settings() {
         {activeTab === 'import-export' && <ImportExportTab />}
         {activeTab === 'server' && <ServerInfoTab />}
         {activeTab === 'cve-feeds' && <CveFeedsTab />}
+        {activeTab === 'authentication' && hasAuthPanels && <AuthenticationTab />}
       </div>
 
       <PluginSlot
@@ -137,6 +148,16 @@ export default function Settings() {
         heading="Plugins"
         className="max-w-4xl mt-10 space-y-6"
       />
+    </div>
+  );
+}
+
+/** Authentication panels contributed by plugins (`admin.auth`, H-6). */
+function AuthenticationTab() {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-gray-500">{t('settings.authentication_description')}</p>
+      <PluginSlot slot="admin.auth" className="space-y-6" />
     </div>
   );
 }

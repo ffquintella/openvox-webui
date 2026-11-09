@@ -25,13 +25,17 @@ describe('DeclarativeRenderer', () => {
     expect(screen.getByText('ok')).toBeInTheDocument();
   });
 
-  it('shows a note when a table declares a data_source', () => {
+  it('does not render data-bound blocks without a plugin context', () => {
     render(
       <DeclarativeRenderer
-        spec={{ layout: 'table', columns: [], rows: [], data_source: { fn: 'list' } }}
+        spec={{
+          layout: 'table',
+          columns: [{ key: 'a', label: 'A' }],
+          source: { route: '/items' },
+        }}
       />
     );
-    expect(screen.getByText(/Data sources arrive with the WASM runtime/)).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(/not supported/);
   });
 
   it('renders stats items with label, value and hint', () => {
@@ -92,13 +96,13 @@ describe('DeclarativeRenderer', () => {
     expect(screen.getByText('<script>alert(1)</script>')).toBeInTheDocument();
   });
 
-  it('escapes HTML in markdown and only links http/https', () => {
+  it('escapes HTML in markdown and only links host routes', () => {
     const { container } = render(
       <DeclarativeRenderer
         spec={{
           layout: 'markdown',
           content:
-            '<script>alert(1)</script> and <img src=x onerror=alert(1)>\n\n[ok](https://example.com) [bad](javascript:alert(1)) [data](data:text/html,x)',
+            '<script>alert(1)</script> and <img src=x onerror=alert(1)>\n\n[nodes](/nodes?status=failed) [ext](https://example.com) [bad](javascript:alert(1)) [data](data:text/html,x) [api](/api/v1/users) [proto](//evil.example)',
         }}
       />
     );
@@ -106,9 +110,10 @@ describe('DeclarativeRenderer', () => {
     expect(container.querySelector('img')).toBeNull();
     const links = container.querySelectorAll('a');
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute('href', 'https://example.com');
-    expect(links[0]).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    expect(links[0]).toHaveAttribute('href', '/nodes?status=failed');
     expect(container.innerHTML).not.toContain('javascript:');
+    expect(container.innerHTML).not.toContain('https://example.com');
+    expect(screen.getByText(/ext/)).toBeInTheDocument();
     expect(screen.getByText(/<script>alert\(1\)<\/script>/)).toBeInTheDocument();
   });
 

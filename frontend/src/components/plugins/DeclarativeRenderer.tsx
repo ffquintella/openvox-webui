@@ -1,27 +1,47 @@
-import { Fragment, type ReactNode } from 'react';
-import { Info } from 'lucide-react';
-import { isSafeHttpUrl, toText } from './pluginHelpers';
+import { Fragment, useMemo, type ReactNode } from 'react';
+import { Link, useInRouterContext } from 'react-router-dom';
+import { DeclarativeContext, type DeclarativeEnv } from './declarativeContext';
+import { isHostRoute, isObject, str, type Json } from './declarativeSpec';
+import {
+  BlockHeader,
+  DetailBlock,
+  FormBlock,
+  NoticeBlock,
+  StatsBlock,
+  TableBlock,
+  Unsupported,
+} from './DeclarativeData';
+import type { UiRouteAccess } from '../../types';
 
 /**
- * Renders a plugin-supplied declarative page spec with host components only.
- * Every value is rendered as React text (escaped by React); there is no
- * dangerouslySetInnerHTML and no plugin JavaScript.
+ * Renders a plugin-supplied declarative spec with host components only
+ * (format in PLUGIN_PLATFORM.md section 17.18). Every value is rendered as
+ * React text; there is no dangerouslySetInnerHTML and no plugin JavaScript.
+ * Links go only to host routes; data and actions only to the plugin's own
+ * routes that the server listed for this user.
  */
-
-type Json = Record<string, unknown>;
-
-function isObject(v: unknown): v is Json {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 const MAX_DEPTH = 4;
 
 // ---------------------------------------------------------------------------
-// Minimal markdown: headings, bullet lists, paragraphs, **bold**, `code`,
-// [text](http/https url). Everything else is plain text.
+// Minimal markdown: headings, bullet lists, paragraphs, **bold**, `code` and
+// [text](/host/route). Everything else, including other links, is text.
 // ---------------------------------------------------------------------------
 
 const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
+
+function HostLink({ to, children }: { to: string; children: ReactNode }) {
+  const className = 'text-primary-600 hover:underline';
+  return useInRouterContext() ? (
+    <Link to={to} className={className}>
+      {children}
+    </Link>
+  ) : (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  );
+}
 
 function renderInline(text: string): ReactNode[] {
   return text.split(INLINE_RE).map((part, i) => {
@@ -38,20 +58,13 @@ function renderInline(text: string): ReactNode[] {
     }
     const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part);
     if (link) {
-      if (isSafeHttpUrl(link[2])) {
-        return (
-          <a
-            key={i}
-            href={link[2]}
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            className="text-primary-600 hover:underline"
-          >
-            {link[1]}
-          </a>
-        );
-      }
-      return <Fragment key={i}>{link[1]}</Fragment>;
+      return isHostRoute(link[2]) ? (
+        <HostLink key={i} to={link[2]}>
+          {link[1]}
+        </HostLink>
+      ) : (
+        <Fragment key={i}>{link[1]}</Fragment>
+      );
     }
     return <Fragment key={i}>{part}</Fragment>;
   });
@@ -123,144 +136,36 @@ function MarkdownBlock({ content }: { content: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Layouts
+// Blocks
 // ---------------------------------------------------------------------------
-
-function Unsupported({ layout }: { layout?: string }) {
-  return (
-    <div
-      role="note"
-      className="flex items-start gap-2 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 text-sm text-gray-600 dark:text-gray-300"
-    >
-      <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-      <span>
-        This content uses a layout that is not supported by this version of OpenVox WebUI
-        {layout ? ` (${layout})` : ''}.
-      </span>
-    </div>
-  );
-}
-
-function TableBlock({ spec }: { spec: Json }) {
-  const columns = (Array.isArray(spec.columns) ? spec.columns : []).filter(isObject);
-  const rows = (Array.isArray(spec.rows) ? spec.rows : []).filter(isObject);
-  const hasDataSource = spec.data_source !== undefined && spec.data_source !== null;
-
-  return (
-    <div className="space-y-2">
-      {hasDataSource && (
-        <p role="note" className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <Info className="w-3 h-3" />
-          Data sources arrive with the WASM runtime; only the static rows are shown.
-        </p>
-      )}
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-800">
-            <tr>
-              {columns.map((col, i) => (
-                <th
-                  key={i}
-                  className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"
-                >
-                  {toText(col.label ?? col.key)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={Math.max(columns.length, 1)}
-                  className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400"
-                >
-                  No rows
-                </td>
-              </tr>
-            ) : (
-              rows.map((row, r) => (
-                <tr key={r}>
-                  {columns.map((col, c) => (
-                    <td key={c} className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                      {toText(row[toText(col.key)])}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function StatsBlock({ spec }: { spec: Json }) {
-  const items = (Array.isArray(spec.items) ? spec.items : []).filter(isObject);
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {items.map((item, i) => (
-        <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">{toText(item.label)}</p>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-            {toText(item.value)}
-          </p>
-          {item.hint !== undefined && item.hint !== null && (
-            <p className="text-xs text-gray-400 dark:text-gray-500">{toText(item.hint)}</p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DetailBlock({ spec }: { spec: Json }) {
-  const fields = (Array.isArray(spec.fields) ? spec.fields : []).filter(isObject);
-  return (
-    <div className="space-y-3">
-      {spec.title !== undefined && spec.title !== null && (
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-          {toText(spec.title)}
-        </h3>
-      )}
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-        {fields.map((field, i) => (
-          <div key={i}>
-            <dt className="text-xs uppercase text-gray-500 dark:text-gray-400">
-              {toText(field.label)}
-            </dt>
-            <dd className="text-sm text-gray-900 dark:text-gray-100 break-words">
-              {toText(field.value)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-export interface DeclarativeRendererProps {
-  spec: unknown;
-}
 
 function renderBlock(spec: unknown, depth: number): ReactNode {
   if (!isObject(spec)) return <Unsupported />;
-  const layout = typeof spec.layout === 'string' ? spec.layout : undefined;
+  const layout = str(spec.layout);
   switch (layout) {
     case 'markdown':
-      return <MarkdownBlock content={toText(spec.content)} />;
+      return (
+        <div className="space-y-2">
+          <BlockHeader spec={spec} />
+          <MarkdownBlock content={str(spec.content) ?? ''} />
+        </div>
+      );
+    case 'notice':
+      return <NoticeBlock spec={spec} />;
     case 'table':
       return <TableBlock spec={spec} />;
     case 'stats':
       return <StatsBlock spec={spec} />;
     case 'detail':
       return <DetailBlock spec={spec} />;
+    case 'form':
+      return <FormBlock spec={spec} />;
     case 'stack': {
       if (depth >= MAX_DEPTH) return <Unsupported layout="nesting too deep" />;
       const blocks = Array.isArray(spec.blocks) ? spec.blocks : [];
       return (
         <div className="space-y-6">
+          <BlockHeader spec={spec as Json} />
           {blocks.map((b, i) => (
             <Fragment key={i}>{renderBlock(b, depth + 1)}</Fragment>
           ))}
@@ -272,6 +177,37 @@ function renderBlock(spec: unknown, depth: number): ReactNode {
   }
 }
 
-export default function DeclarativeRenderer({ spec }: DeclarativeRendererProps) {
-  return <div data-testid="declarative-renderer">{renderBlock(spec, 0)}</div>;
+export interface DeclarativeRendererProps {
+  spec: unknown;
+  /** The contributing plugin; without it, data-bound blocks are not rendered. */
+  pluginId?: string;
+  /** Routes of the plugin the spec uses, as the server listed them for this user. */
+  routes?: UiRouteAccess[];
+  /** The slot context (for example `certname`), for route parameters. */
+  params?: Record<string, string>;
+}
+
+export default function DeclarativeRenderer({
+  spec,
+  pluginId,
+  routes,
+  params,
+}: DeclarativeRendererProps) {
+  const paramsKey = JSON.stringify(params ?? {});
+  const env = useMemo<DeclarativeEnv | null>(
+    () =>
+      pluginId
+        ? {
+            pluginId,
+            routes: routes ?? [],
+            params: JSON.parse(paramsKey) as Record<string, string>,
+          }
+        : null,
+    [pluginId, routes, paramsKey]
+  );
+  return (
+    <DeclarativeContext.Provider value={env}>
+      <div data-testid="declarative-renderer">{renderBlock(spec, 0)}</div>
+    </DeclarativeContext.Provider>
+  );
 }

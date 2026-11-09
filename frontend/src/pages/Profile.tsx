@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
 import SecurityKeys from '../components/auth/SecurityKeys';
+import PluginSlot from '../components/plugins/PluginSlot';
 
 export default function Profile() {
   const user = useAuthStore((state) => state.user);
@@ -146,6 +147,13 @@ export default function Profile() {
       </div>
 
       <SecurityKeys />
+
+      {/* Security panels contributed by plugins (declarative only, H-6). */}
+      <PluginSlot
+        slot="profile.security"
+        params={{ user: user?.username ?? '' }}
+        className="space-y-6 mb-6"
+      />
 
       {user?.directory_id && (
         <div className="card">

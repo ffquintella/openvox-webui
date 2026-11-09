@@ -2984,6 +2984,17 @@ export interface UiSlots {
 
 export interface UiContributionDetail extends UiContribution {
   spec: unknown | null;
+  /** Plugin routes the declarative spec uses and whether this user may call them (H-6). */
+  routes?: UiRouteAccess[];
+}
+
+/** One plugin route a declarative spec refers to, for the current user. */
+export interface UiRouteAccess {
+  method: string;
+  /** As declared, e.g. `/me/credentials/{credential_ref}`. */
+  path: string;
+  allowed: boolean;
+  step_up: boolean;
 }
 
 // Plugin UI sessions and slot catalog (M23)
@@ -2996,6 +3007,10 @@ export interface PluginSlotSpec {
   max_items: number;
   mounted: boolean;
   default_height: number;
+  /** Security surfaces accept declarative contributions only (H-6). */
+  declarative_only: boolean;
+  /** Contributions must declare the permission they need. */
+  requires_permission: boolean;
 }
 
 export interface PluginSlotCatalog {
