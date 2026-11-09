@@ -94,6 +94,11 @@ pub struct TestWorld {
     /// and the WASM runtime (H-7)
     pub plugin_routes: Option<crate::features::step_definitions::plugin_route_steps::RouteScenario>,
 
+    /// Declarative plugin panel scenarios run the real router, the plugin
+    /// manager and the slot registry (H-6)
+    pub declarative_ui:
+        Option<crate::features::step_definitions::plugin_declarative_ui_steps::DeclarativeScenario>,
+
     /// Enrollment grace scenarios run the real router, authentication
     /// middleware and pipeline (OQ-12)
     pub enrollment_grace:
