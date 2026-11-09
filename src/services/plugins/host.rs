@@ -501,6 +501,12 @@ impl HostApiImpl {
                 let cap = self.require(plugin, "http:egress").await?;
                 http_fetch(&cap, &req).await
             }
+            "crypto.random" => {
+                // H-2: challenges and user handles need real entropy; a
+                // guest has no other source (no WASI).
+                self.require(plugin, "crypto:random").await?;
+                crypto_random(&req)
+            }
             "email.send" | "notify.send" | "secrets.resolve" => Err(HostError {
                 code: "unavailable".into(),
                 message: format!("'{}' is not available in this version", op),
@@ -531,6 +537,37 @@ impl HostApi for HostApiImpl {
         // Runs on a blocking thread dedicated to the guest.
         self.handle.block_on(self.dispatch(ctx, op, request))
     }
+}
+
+// ---- crypto.random -----------------------------------------------------------
+
+/// Largest `len` of one `crypto.random` call.
+pub const MAX_RANDOM_BYTES: u64 = 64;
+
+/// `{len: 1..=64}` -> `{bytes: <base64url, no padding>}` from the operating
+/// system CSPRNG. Never seeded from anything the guest controls; a failing
+/// source is an error, never weaker bytes.
+fn crypto_random(req: &Value) -> Result<Value, HostError> {
+    use base64::Engine;
+    use rand::TryRng;
+    let len = req
+        .get("len")
+        .and_then(Value::as_u64)
+        .filter(|n| (1..=MAX_RANDOM_BYTES).contains(n))
+        .ok_or_else(|| {
+            invalid(format!(
+                "'len' must be an integer from 1 to {}",
+                MAX_RANDOM_BYTES
+            ))
+        })?;
+    let mut buf = vec![0u8; len as usize];
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut buf)
+        .map_err(|_| HostError {
+            code: "unavailable".into(),
+            message: "the random source is unavailable".into(),
+        })?;
+    Ok(json!({ "bytes": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buf) }))
 }
 
 // ---- http.fetch ------------------------------------------------------------
@@ -840,6 +877,10 @@ mod tests {
     }
 
     async fn env(policy: PluginPolicyConfig) -> Env {
+        env_with(policy, WasmConfig::default()).await
+    }
+
+    async fn env_with(policy: PluginPolicyConfig, wasm_cfg: WasmConfig) -> Env {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -865,7 +906,7 @@ mod tests {
             data_dir: dir.clone(),
             max_package_bytes: 8 * 1024 * 1024,
         });
-        let wasm = Arc::new(WasmInvoker::new(WasmConfig::default(), source, host).unwrap());
+        let wasm = Arc::new(WasmInvoker::new(wasm_cfg, source, host).unwrap());
         manager.attach_wasm(storage.clone(), wasm);
         Env {
             manager,
@@ -1173,6 +1214,179 @@ mod tests {
         let list = e.manager.report_annotations(hash).await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].plugin_id, "annok");
+    }
+
+    // ---- crypto.random (H-2) ----------------------------------------------
+
+    async fn random_plugin(e: &Env, id: &str, caps: &str, req: &str, approve_it: bool) {
+        e.manager
+            .install(
+                &package(id, caps, "crypto.random", req, false),
+                "admin",
+                None,
+            )
+            .await
+            .unwrap();
+        if approve_it {
+            e.manager
+                .approve_capabilities(id, &approve(&["crypto:random"]), "admin")
+                .await
+                .unwrap();
+        }
+        e.manager.enable(id).await.unwrap();
+    }
+
+    fn decoded(out: &Value) -> Vec<u8> {
+        use base64::Engine;
+        let b64 = out["ok"]["bytes"].as_str().expect("bytes");
+        assert!(!b64.contains(['=', '+', '/']), "{b64}");
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(b64)
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn crypto_random_returns_fresh_base64url_bytes() {
+        let e = env(Default::default()).await;
+        random_plugin(&e, "rnd", "  - crypto:random\n", r#"{"len":32}"#, true).await;
+        let a = decoded(&run(&e, "rnd").await);
+        let b = decoded(&run(&e, "rnd").await);
+        assert_eq!(a.len(), 32);
+        assert_eq!(b.len(), 32);
+        assert_ne!(a, b, "two calls must not return the same bytes");
+        random_plugin(&e, "rnd64", "  - crypto:random\n", r#"{"len":64}"#, true).await;
+        assert_eq!(decoded(&run(&e, "rnd64").await).len(), 64);
+        random_plugin(&e, "rnd1", "  - crypto:random\n", r#"{"len":1}"#, true).await;
+        assert_eq!(decoded(&run(&e, "rnd1").await).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn crypto_random_refuses_bad_lengths_and_needs_the_capability() {
+        let e = env(Default::default()).await;
+        for (id, req) in [
+            ("rzero", r#"{"len":0}"#),
+            ("rbig", r#"{"len":65}"#),
+            ("rneg", r#"{"len":-1}"#),
+            ("rstr", r#"{"len":"32"}"#),
+            ("rnone", r#"{}"#),
+        ] {
+            random_plugin(&e, id, "  - crypto:random\n", req, true).await;
+            let out = run(&e, id).await;
+            assert_eq!(out["error"]["code"], "invalid", "{id}: {out}");
+            assert!(out["ok"].is_null(), "{id}: {out}");
+        }
+        // Declared but not approved, and not declared at all: forbidden.
+        random_plugin(
+            &e,
+            "rnoapp",
+            "  - crypto:random: { optional: true }\n",
+            r#"{"len":32}"#,
+            false,
+        )
+        .await;
+        assert_eq!(run(&e, "rnoapp").await["error"]["code"], "forbidden");
+        e.manager
+            .install(
+                &package(
+                    "rundecl",
+                    "  - kv:rw\n",
+                    "crypto.random",
+                    r#"{"len":32}"#,
+                    false,
+                ),
+                "admin",
+                None,
+            )
+            .await
+            .unwrap();
+        e.manager
+            .approve_capabilities("rundecl", &approve(&["kv:rw"]), "admin")
+            .await
+            .unwrap();
+        e.manager.enable("rundecl").await.unwrap();
+        assert_eq!(run(&e, "rundecl").await["error"]["code"], "forbidden");
+    }
+
+    /// A guest whose event handler calls `crypto.random {len: 8}` `n` times,
+    /// then returns `{"ok":{}}`.
+    fn looping_random_guest(n: u32) -> Vec<u8> {
+        let op = "crypto.random";
+        let req = r#"{"len":8}"#;
+        let out = r#"{"ok":{}}"#;
+        let wat = format!(
+            r#"(module
+  (import "openvox" "host_call" (func $hc (param i32 i32 i32 i32) (result i64)))
+  (memory (export "memory") 2)
+  (global $bump (mut i32) (i32.const 8192))
+  (data (i32.const 256) "{op}")
+  (data (i32.const 512) "{req_esc}")
+  (data (i32.const 1024) "{out_esc}")
+  (func $alloc (export "alloc") (param $n i32) (result i32)
+    (local $p i32)
+    (local.set $p (global.get $bump))
+    (global.set $bump (i32.add (global.get $bump) (local.get $n)))
+    (local.get $p))
+  (func (export "handle") (param $p i32) (param $l i32) (result i64)
+    (local $i i32)
+    ;; only the event handler loops: byte 9 of the request is the kind's first letter
+    (if (i32.ne (i32.load8_u (i32.add (local.get $p) (i32.const 9))) (i32.const 101))
+      (then (return (i64.or (i64.shl (i64.const 1024) (i64.const 32)) (i64.const {outlen})))))
+    (block $done
+      (loop $next
+        (br_if $done (i32.ge_u (local.get $i) (i32.const {n})))
+        (drop (call $hc (i32.const 256) (i32.const {oplen}) (i32.const 512) (i32.const {reqlen})))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $next)))
+    (i64.or (i64.shl (i64.const 1024) (i64.const 32)) (i64.const {outlen}))))"#,
+            req_esc = req.replace('"', "\\\""),
+            out_esc = out.replace('"', "\\\""),
+            oplen = op.len(),
+            reqlen = req.len(),
+            outlen = out.len(),
+        );
+        wat::parse_str(wat).unwrap()
+    }
+
+    #[tokio::test]
+    async fn crypto_random_counts_against_the_host_call_limit() {
+        let e = env_with(
+            Default::default(),
+            WasmConfig {
+                max_host_calls: 3,
+                ..WasmConfig::default()
+            },
+        )
+        .await;
+        for (id, n) in [("rthree", 3), ("rfour", 4)] {
+            let y = manifest(id, "  - crypto:random\n", false);
+            let wasm = looping_random_guest(n);
+            let pkg = build_signed_package(
+                &[("plugin.yaml", y.as_bytes()), ("plugin.wasm", &wasm)],
+                id,
+                "1.0.0",
+                2,
+                SEED,
+            );
+            e.manager.install(&pkg, "admin", None).await.unwrap();
+            e.manager
+                .approve_capabilities(id, &approve(&["crypto:random"]), "admin")
+                .await
+                .unwrap();
+            e.manager.enable(id).await.unwrap();
+        }
+        let call = |id: &str| {
+            e.manager
+                .hooks()
+                .get(id)
+                .unwrap()
+                .call(HandlerKind::Event, "on_event", json!({}))
+        };
+        assert_eq!(e.manager.invoke(call("rthree")).await.unwrap(), json!({}));
+        let err = e.manager.invoke(call("rfour")).await.unwrap_err();
+        assert!(
+            err.to_string().contains("host call limit exceeded"),
+            "{err}"
+        );
     }
 
     #[tokio::test]
