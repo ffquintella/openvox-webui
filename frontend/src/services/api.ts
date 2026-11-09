@@ -255,6 +255,14 @@ export function registerStepUpHandler(handler: StepUpHandler | null): void {
   stepUpHandler = handler;
 }
 
+// Enrollment-only session (OQ-12): kept in memory only, never stored, so a
+// reload drops it and the app never treats it as a signed-in session.
+let enrollmentSessionToken: string | null = null;
+
+export function setEnrollmentSessionToken(token: string | null): void {
+  enrollmentSessionToken = token;
+}
+
 /** Asks the registered step-up handler for a stronger session. */
 export function requestStepUp(): Promise<boolean> {
   return stepUpHandler ? stepUpHandler() : Promise.resolve(false);
@@ -299,7 +307,7 @@ const refreshAccessToken = async (): Promise<string> => {
 
 // Add auth interceptor
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = enrollmentSessionToken ?? localStorage.getItem('auth_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -413,7 +421,19 @@ export interface MfaChallenge {
   factors: AuthFactorDescriptor[];
 }
 
-export type LoginResult = LoginResponse | MfaChallenge;
+// Returned with 202 during an enrollment grace window (OQ-12): the token may
+// only list and enroll second factors, cannot be refreshed and ends at the
+// first enrolled factor; the user then signs in again.
+export interface EnrollmentSession {
+  status: 'enrollment_required';
+  session_scope: 'enrollment';
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: LoginResponse['user'];
+}
+
+export type LoginResult = LoginResponse | MfaChallenge | EnrollmentSession;
 export type SessionResponse = LoginResponse;
 
 export interface EnrolledFactor {
@@ -430,19 +450,25 @@ export interface EnrolledFactor {
 export interface MyFactors {
   factors: EnrolledFactor[];
   available: AuthFactorDescriptor[];
-  session: { amr: string[]; acr: number };
+  /** `scope` is `enrollment` for an enrollment-only session. */
+  session: { amr: string[]; acr: number; scope?: string };
 }
 
 export interface FactorEnrollResult {
   enrolled: string;
   /** Recovery codes issued with the first factor, shown only once. */
   recovery?: { codes: string[]; shown_once?: boolean };
+  /** The enrollment-only session ended: the user signs in again. */
+  reauthenticate?: boolean;
 }
 
 const factorPath = (factorId: string) => encodeURIComponent(factorId);
 
 export const isMfaChallenge = (r: LoginResult): r is MfaChallenge =>
   (r as MfaChallenge).status === 'mfa_required';
+
+export const isEnrollmentSession = (r: LoginResult): r is EnrollmentSession =>
+  (r as EnrollmentSession).status === 'enrollment_required';
 
 interface RefreshResponse {
   access_token: string;

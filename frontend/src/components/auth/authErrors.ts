@@ -29,6 +29,8 @@ export function authErrorMessage(err: unknown, rejectedKey: MessageKey): string 
       return t('auth.error.locked');
     case 'factor_unavailable':
       return t('auth.error.factor_unavailable');
+    case 'enrollment_only_session':
+      return t('auth.error.enrollment_only');
     default:
       break;
   }

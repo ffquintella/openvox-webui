@@ -2,10 +2,18 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, User, AlertCircle, Shield } from 'lucide-react';
-import { api, isMfaChallenge, type AuthFactorDescriptor, type LoginResult } from '../services/api';
+import {
+  api,
+  isEnrollmentSession,
+  isMfaChallenge,
+  setEnrollmentSessionToken,
+  type AuthFactorDescriptor,
+  type SessionResponse,
+} from '../services/api';
 import { consumeSessionLogoutReason, useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import FactorChallenge from '../components/auth/FactorChallenge';
+import EnrollmentSession, { type EnrollmentEnd } from '../components/auth/EnrollmentSession';
 import { descriptorFromId } from '../components/auth/authErrors';
 import { t } from '../i18n';
 
@@ -26,6 +34,20 @@ export default function Login() {
     /** SSO redirects carry factor ids only; descriptors are fetched. */
     fromRedirect: boolean;
   } | null>(null);
+  // Enrollment-only sign-in (OQ-12); its token lives in the API client only.
+  const [enrollment, setEnrollment] = useState<{ username: string; expiresIn: number } | null>(
+    null
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => () => setEnrollmentSessionToken(null), []);
+
+  const endEnrollment = (end: EnrollmentEnd) => {
+    setEnrollmentSessionToken(null);
+    setEnrollment(null);
+    setPassword('');
+    setNotice(end === 'enrolled' ? t('enrollment.signed_out') : null);
+  };
 
   // Kinds and labels for factors named only by id in an SSO redirect.
   const { data: factorDescriptors } = useQuery({
@@ -112,7 +134,7 @@ export default function Login() {
     }
   }, [searchParams, login, fetchPermissions, navigate]);
 
-  const completeLogin = async (data: Extract<LoginResult, { access_token: string }>) => {
+  const completeLogin = async (data: SessionResponse) => {
     login(
       {
         id: data.user.id,
@@ -135,6 +157,12 @@ export default function Login() {
         setChallenge({ id: data.challenge_id, factors: data.factors, fromRedirect: false });
         return;
       }
+      if (isEnrollmentSession(data)) {
+        // Not a sign-in: the app stays signed out while a factor is added.
+        setEnrollmentSessionToken(data.access_token);
+        setEnrollment({ username: data.user.username, expiresIn: data.expires_in });
+        return;
+      }
       await completeLogin(data);
     },
     onError: (err: Error) => {
@@ -145,6 +173,7 @@ export default function Login() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
 
     if (!username.trim()) {
       setError('Username is required');
@@ -188,6 +217,24 @@ export default function Login() {
             </div>
           )}
 
+          {notice && (
+            <div
+              role="status"
+              className="mb-6 p-4 bg-primary-50 border border-primary-200 rounded-lg text-sm text-primary-800"
+            >
+              {notice}
+            </div>
+          )}
+
+          {/* Enrollment-only sign-in during a grace window (OQ-12) */}
+          {enrollment && (
+            <EnrollmentSession
+              username={enrollment.username}
+              expiresIn={enrollment.expiresIn}
+              onDone={endEnrollment}
+            />
+          )}
+
           {/* Second factor (MFA policy) */}
           {challenge && (
             <FactorChallenge
@@ -204,7 +251,7 @@ export default function Login() {
           )}
 
           {/* SSO Button (shown when SAML is enabled) */}
-          {!challenge && samlEnabled && samlLoginUrl && (
+          {!challenge && !enrollment && samlEnabled && samlLoginUrl && (
             <>
               <button
                 type="button"
@@ -228,7 +275,7 @@ export default function Login() {
           )}
 
           {/* Login Form */}
-          {!challenge && (
+          {!challenge && !enrollment && (
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username Field */}
               <div>

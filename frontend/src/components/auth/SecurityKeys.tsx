@@ -2,7 +2,12 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
 import { t } from '../../i18n';
-import { api, type AuthFactorDescriptor, type EnrolledFactor } from '../../services/api';
+import {
+  api,
+  type AuthFactorDescriptor,
+  type EnrolledFactor,
+  type FactorEnrollResult,
+} from '../../services/api';
 import type { WebAuthnEnvironment } from '../../services/webauthn';
 import WebAuthnCeremony from './WebAuthnCeremony';
 import { isWebAuthnFactor } from './authErrors';
@@ -14,7 +19,7 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
-function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const headingId = useId();
 
@@ -56,17 +61,20 @@ function FactorEnrolment({
   records,
   showLabel,
   onRecoveryCodes,
+  onEnrolled,
   environment,
 }: {
   factor: AuthFactorDescriptor;
   records: EnrolledFactor[];
   showLabel: boolean;
   onRecoveryCodes: (codes: string[]) => void;
+  onEnrolled?: (result: FactorEnrollResult) => void;
   environment?: WebAuthnEnvironment;
 }) {
   const queryClient = useQueryClient();
   const [nickname, setNickname] = useState('');
   const nicknameId = useId();
+  const resultRef = useRef<FactorEnrollResult | null>(null);
 
   return (
     <div className="space-y-4">
@@ -129,12 +137,19 @@ function FactorEnrolment({
             factor.id,
             label ? { credential, label } : { credential }
           );
-          if (result?.recovery?.codes?.length) {
+          resultRef.current = result;
+          if (!onEnrolled && result?.recovery?.codes?.length) {
             onRecoveryCodes(result.recovery.codes);
           }
         }}
         onSuccess={() => {
           setNickname('');
+          if (onEnrolled) {
+            // The caller takes over (an enrollment-only session has ended,
+            // so nothing is fetched again with it).
+            onEnrolled(resultRef.current ?? { enrolled: factor.id });
+            return;
+          }
           void queryClient.invalidateQueries({ queryKey: MY_FACTORS_KEY });
         }}
       />
@@ -142,8 +157,18 @@ function FactorEnrolment({
   );
 }
 
-/** Profile security section: enrol WebAuthn factors (built-in or plugin). */
-export default function SecurityKeys({ environment }: { environment?: WebAuthnEnvironment }) {
+/**
+ * Profile security section: enrol WebAuthn factors (built-in or plugin).
+ * With `onEnrolled`, a successful enrolment is handed to the caller, which
+ * shows the recovery codes itself (enrollment-only sign-in, OQ-12).
+ */
+export default function SecurityKeys({
+  environment,
+  onEnrolled,
+}: {
+  environment?: WebAuthnEnvironment;
+  onEnrolled?: (result: FactorEnrollResult) => void;
+}) {
   const headingId = useId();
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const { data, isLoading, isError } = useQuery({
@@ -189,6 +214,7 @@ export default function SecurityKeys({ environment }: { environment?: WebAuthnEn
             records={(data.factors ?? []).filter((r) => r.kind === factor.id)}
             showLabel={factors.length > 1}
             onRecoveryCodes={setRecoveryCodes}
+            onEnrolled={onEnrolled}
             environment={environment}
           />
         ))}
