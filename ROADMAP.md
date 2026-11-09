@@ -300,7 +300,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T100 Add built-in TOTP, recovery codes and WebAuthn (S22)
 - [x] T101 Add OIDC and refactor local and SAML as providers (S22)
 - [x] T102 Add MFA policies (S22)
-- [ ] T116 Add plugin second factors on the WASM runtime and the crypto.random host operation (S21)
+- [x] T116 Add plugin second factors on the WASM runtime and the crypto.random host operation (S21)
 
 ## [M30] Directory Providers
 > outcome: Users authenticate and are provisioned from LDAP or Active Directory with group-to-role mapping.

@@ -85,6 +85,11 @@ pub struct TestWorld {
     pub scim_groups: Vec<openvox_webui::services::scim::resources::GroupRef>,
     pub scim_mappings: Vec<openvox_webui::services::directory::mapping::RoleMapping>,
 
+    /// Plugin second factor scenarios run the real manager, WASM runtime
+    /// and authentication pipeline (T116)
+    pub plugin_factors:
+        Option<crate::features::step_definitions::plugin_auth_factor_steps::FactorScenario>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,
