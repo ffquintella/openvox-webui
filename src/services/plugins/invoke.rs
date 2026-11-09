@@ -103,14 +103,24 @@ pub enum InvokeError {
 #[async_trait]
 pub trait HandlerInvoker: Send + Sync {
     async fn invoke(&self, call: HandlerCall) -> Result<Value, InvokeError>;
+
+    /// One-off work a call needs before it runs, such as loading and
+    /// compiling a WASM module, done once per plugin version and kept. It is
+    /// not part of the handler's time budget. A failure here is not final:
+    /// the call itself fails the same way and is counted by the governor.
+    async fn prepare(&self, _call: &HandlerCall) -> Result<(), InvokeError> {
+        Ok(())
+    }
 }
 
-/// Runs the call under the plugin's timeout (capped by the host ceiling).
+/// Runs the call under the plugin's timeout (capped by the host ceiling),
+/// after [`HandlerInvoker::prepare`], which the timeout does not cover.
 pub async fn invoke_with_timeout(
     invoker: &dyn HandlerInvoker,
     call: HandlerCall,
     timeout_ms: u64,
 ) -> Result<Value, InvokeError> {
+    let _ = invoker.prepare(&call).await;
     let ms = timeout_ms.clamp(1, MAX_HANDLER_TIMEOUT_MS);
     match tokio::time::timeout(Duration::from_millis(ms), invoker.invoke(call)).await {
         Ok(r) => r,

@@ -15,8 +15,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::invoke::{
-    invoke_with_timeout, DelegatedActor, HandlerCall, HandlerKind, HookIndex, InvokeError,
-    DEFAULT_HANDLER_TIMEOUT_MS,
+    invoke_with_timeout, DelegatedActor, HandlerCall, HandlerInvoker, HandlerKind, HookIndex,
+    InvokeError, DEFAULT_HANDLER_TIMEOUT_MS,
 };
 use super::manager::PluginManager;
 use crate::models::{ApiRouteDecl, PluginState, Requires, RuntimeKind, RuntimeSpec};
@@ -607,6 +607,8 @@ impl PluginManager {
             }),
         };
         let timeout = r.timeout_ms();
+        // Loading and compiling the module is not the handler's time.
+        let _ = self.prepare(&call).await;
         let started = Instant::now();
         let result = invoke_with_timeout(self, call, timeout).await;
         let failed = |why: &str| {

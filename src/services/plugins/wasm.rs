@@ -626,6 +626,18 @@ impl Drop for WasmInvoker {
 
 #[async_trait]
 impl HandlerInvoker for WasmInvoker {
+    /// Loads and compiles the module of the call's plugin version once; the
+    /// handler timeout then covers only the run itself.
+    async fn prepare(&self, call: &HandlerCall) -> Result<(), InvokeError> {
+        match call.runtime.entry.as_deref().filter(|e| !e.is_empty()) {
+            Some(entry) => self
+                .module(&call.plugin_id, &call.version, entry)
+                .await
+                .map(|_| ()),
+            None => Ok(()),
+        }
+    }
+
     async fn invoke(&self, call: HandlerCall) -> Result<Value, InvokeError> {
         let entry = call
             .runtime
@@ -823,6 +835,8 @@ mod tests {
     struct FakeSource {
         modules: Mutex<HashMap<(String, String), Vec<u8>>>,
         loads: AtomicUsize,
+        /// Milliseconds every load takes (a slow disk or a large module).
+        delay_ms: AtomicUsize,
     }
 
     impl FakeSource {
@@ -843,6 +857,8 @@ mod tests {
             _entry: &str,
         ) -> Result<Vec<u8>, String> {
             self.loads.fetch_add(1, Ordering::SeqCst);
+            let delay = self.delay_ms.load(Ordering::SeqCst) as u64;
+            tokio::time::sleep(Duration::from_millis(delay)).await;
             self.modules
                 .lock()
                 .unwrap()
@@ -948,6 +964,24 @@ mod tests {
     #[tokio::test]
     async fn error_envelope_is_a_failure_with_the_message() {
         assert_eq!(failed_msg(rig().inv.invoke(call("error")).await), "boom");
+    }
+
+    #[tokio::test]
+    async fn loading_and_compiling_a_module_is_not_charged_to_the_handler_timeout() {
+        let r = rig();
+        r.source.delay_ms.store(300, Ordering::SeqCst);
+        let c = call_with(
+            "ok",
+            HandlerKind::Event,
+            limits(None, None, Some(100)),
+            json!(null),
+        );
+        let out =
+            crate::services::plugins::invoke::invoke_with_timeout(&r.inv, c.clone(), 100).await;
+        assert!(out.is_ok(), "{:?}", out);
+        // The module is cached: later calls keep the full time budget.
+        assert!(r.inv.invoke(c).await.is_ok());
+        assert_eq!(r.source.loads.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

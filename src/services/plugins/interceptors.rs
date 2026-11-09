@@ -14,7 +14,9 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use super::governance::CIRCUIT_REASON;
-use super::invoke::{invoke_with_timeout, HandlerKind, Interceptor, InvokeError, PluginHooks};
+use super::invoke::{
+    invoke_with_timeout, HandlerInvoker, HandlerKind, Interceptor, InvokeError, PluginHooks,
+};
 use super::manager::{PluginError, PluginManager, AUDIT_PLUGINS};
 use super::manifest::{valid_fact_identifier, RESERVED_FACT_NAMESPACES};
 use crate::models::*;
@@ -697,6 +699,8 @@ impl PluginManager {
                 })
                 .max(1),
         );
+        // Loading and compiling the module is not the handler's time.
+        let _ = self.prepare(&call).await;
         let started = Instant::now();
         let result = invoke_with_timeout(self, call, event.timeout_ms).await;
         // A late answer is discarded: built-in handlers cannot be preempted

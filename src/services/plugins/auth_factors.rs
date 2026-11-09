@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use serde_json::{json, Map, Value};
 
 use super::invoke::{
-    invoke_with_timeout, HandlerCall, HandlerKind, HookIndex, InvokeError,
+    invoke_with_timeout, HandlerCall, HandlerInvoker, HandlerKind, HookIndex, InvokeError,
     DEFAULT_HANDLER_TIMEOUT_MS,
 };
 use super::manager::PluginManager;
@@ -214,6 +214,8 @@ impl PluginFactor {
             actor: None,
         };
         let timeout = e.timeout_ms();
+        // Loading and compiling the module is not the handler's time.
+        let _ = self.manager.prepare(&call).await;
         let started = Instant::now();
         let result = invoke_with_timeout(self.manager.as_ref(), call, timeout).await;
         match result {
@@ -734,7 +736,34 @@ mod tests {
         user: User,
     }
 
+    /// Loads modules like the server, `delay` later (a slow disk, or a
+    /// module that takes long to compile).
+    struct SlowSource {
+        inner: PackageModuleSource,
+        delay: Duration,
+    }
+
+    #[async_trait]
+    impl crate::services::plugins::wasm::ModuleSource for SlowSource {
+        async fn load(
+            &self,
+            plugin_id: &str,
+            version: &str,
+            entry: &str,
+        ) -> Result<Vec<u8>, String> {
+            tokio::time::sleep(self.delay).await;
+            self.inner.load(plugin_id, version, entry).await
+        }
+    }
+
     async fn env(builtins: Vec<(&str, Arc<dyn BuiltinPlugin>)>) -> Env {
+        env_with_load_delay(builtins, Duration::ZERO).await
+    }
+
+    async fn env_with_load_delay(
+        builtins: Vec<(&str, Arc<dyn BuiltinPlugin>)>,
+        delay: Duration,
+    ) -> Env {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -762,9 +791,12 @@ mod tests {
             storage.clone(),
             None,
         ));
-        let source = Arc::new(PackageModuleSource {
-            data_dir: dir,
-            max_package_bytes: 8 * 1024 * 1024,
+        let source = Arc::new(SlowSource {
+            inner: PackageModuleSource {
+                data_dir: dir,
+                max_package_bytes: 8 * 1024 * 1024,
+            },
+            delay,
         });
         let wasm = Arc::new(WasmInvoker::new(WasmConfig::default(), source, host).unwrap());
         manager.attach_wasm(storage, wasm);
@@ -1054,6 +1086,23 @@ mod tests {
             p.verify_challenge(&id, Some("fa:key"), json!({}), &c).await,
             Err(PipelineError::InvalidChallenge)
         ));
+    }
+
+    #[tokio::test]
+    async fn the_first_call_is_not_charged_for_loading_and_compiling_the_module() {
+        // A real factor module can take longer to load and compile than the
+        // handler timeout (about 2 s for 220 KB in a debug build); that one-off
+        // work must not turn the first sign-in after a (re)load into a denial.
+        let e = env_with_load_delay(vec![], Duration::from_millis(700)).await;
+        e.install_wasm("fa", "timeout_ms: 300", &Guest::default())
+            .await;
+        e.enroll("fa:key", json!({"credential": "c1"})).await;
+        let (id, _) = e.challenge().await;
+        let client = e
+            .pipeline()
+            .begin_challenge(&id, "fa:key", &ClientInfo::default())
+            .await;
+        assert_eq!(client.unwrap(), json!({"publicKey": {}}));
     }
 
     #[tokio::test]

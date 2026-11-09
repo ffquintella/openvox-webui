@@ -1738,6 +1738,14 @@ impl HandlerInvoker for PluginManager {
         }
         result
     }
+
+    /// Not a handler call: neither admitted nor measured by the governor.
+    async fn prepare(&self, call: &HandlerCall) -> Result<(), InvokeError> {
+        match (call.runtime.kind, self.external_invoker.get()) {
+            (crate::models::RuntimeKind::Builtin, _) | (_, None) => Ok(()),
+            (_, Some(inv)) => inv.prepare(call).await,
+        }
+    }
 }
 
 impl PluginManager {

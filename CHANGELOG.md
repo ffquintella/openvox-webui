@@ -35,6 +35,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 - The enrollment context of second factors now carries the host time (H-3, OQ-3): `EnrollContext` gains `now_unix`, read once per call like the challenge context, and plugin factors receive that value as `now_unix` in the `begin_enroll` and `complete_enroll` input (the field was already sent; it now comes from the context instead of a second clock read). The built-in TOTP factor checks the enrolment code at that time (T120)
 - Declarative plugin specs are now validated when a package is read, and links in their markdown may only point to host routes such as `/nodes`: external, `javascript:`, protocol-relative and `/api` links refuse the package and, in the renderer, show as plain text. The table key `data_source` is refused (use `source`), and a spec file may be at most 64 KiB (was 256 KiB) (T119)
 
+### Fixed
+- Plugin handlers are no longer charged for loading and compiling their WASM module: the first call of a plugin version (after enabling, upgrading or restarting) used to include that one-off work in the handler timeout, so a module that takes long to compile (about 2 s for the 220 KB mfa-fido2 stand-in in a debug build, against the 2000 ms `timeout_ms` of its manifest) made enabling fail with `lifecycle_failed` (install hook timed out) or failed the first second-factor, API route or interceptor call closed. The module is now loaded and compiled before the timeout starts, once per plugin version (`HandlerInvoker::prepare`); a module that cannot be loaded or compiled still fails the call and counts for the circuit breaker (T121)
+
 ## [0.51.1] - 2026-11-09
 
 ### Changed
