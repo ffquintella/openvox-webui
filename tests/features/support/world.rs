@@ -90,6 +90,10 @@ pub struct TestWorld {
     pub plugin_factors:
         Option<crate::features::step_definitions::plugin_auth_factor_steps::FactorScenario>,
 
+    /// Plugin API route scenarios run the real router, the plugin manager
+    /// and the WASM runtime (H-7)
+    pub plugin_routes: Option<crate::features::step_definitions::plugin_route_steps::RouteScenario>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,
