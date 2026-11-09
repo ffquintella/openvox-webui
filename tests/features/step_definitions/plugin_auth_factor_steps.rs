@@ -95,13 +95,17 @@ fn code_of(e: &PipelineError) -> String {
 #[derive(Clone, Copy)]
 enum Out {
     Json(&'static str),
+    /// `{"ok":{"client":<the request>,"flow_state":null}}` (begin_challenge).
     Echo,
+    /// `{"ok":{"client":<the request>,"mode":{"pending":{}}}}` (begin_enroll).
+    EchoEnroll,
     Trap,
     Spin,
 }
 
 const ECHO_PREFIX: &str = r#"{"ok":{"client":"#;
 const ECHO_SUFFIX: &str = r#","flow_state":null}}"#;
+const ECHO_ENROLL_SUFFIX: &str = r#","mode":{"pending":{}}}}"#;
 const EMPTY_OK: &str = r#"{"ok":{}}"#;
 const VERIFIED: &str = r#"{"ok":{"outcome":"verified","amr":"hwk"}}"#;
 
@@ -112,13 +116,21 @@ fn wat_str(s: &str) -> String {
 /// A factor guest. Requests start with `{"kind":"factor","handler":"`, so the
 /// handler name is at offset 28; other kinds (lifecycle hooks) answer `{}`.
 fn factor_guest(challenge: Out, verify: Out) -> Vec<u8> {
-    let outs = [
+    factor_guest_with(
         Out::Json(r#"{"ok":{"client":{},"mode":{"pending":{}}}}"#),
+        challenge,
+        verify,
+    )
+}
+
+fn factor_guest_with(enroll: Out, challenge: Out, verify: Out) -> Vec<u8> {
+    let outs = [
+        enroll,
         Out::Json(r#"{"ok":{"data":{},"label":"Key"}}"#),
         challenge,
         verify,
     ];
-    let (pre, suf) = (ECHO_PREFIX.len(), ECHO_SUFFIX.len());
+    let pre = ECHO_PREFIX.len();
     let mut data = String::new();
     let mut funcs = String::new();
     for (i, out) in outs.iter().enumerate() {
@@ -133,15 +145,21 @@ fn factor_guest(challenge: Out, verify: Out) -> Vec<u8> {
             }
             Out::Trap => "(unreachable)".to_string(),
             Out::Spin => "(loop $spin (br $spin)) (unreachable)".to_string(),
-            Out::Echo => format!(
-                "(local.set $out (call $alloc (i32.add (local.get $l) (i32.const {n})))) \
-                 (memory.copy (local.get $out) (i32.const 40960) (i32.const {pre})) \
-                 (memory.copy (i32.add (local.get $out) (i32.const {pre})) (local.get $p) (local.get $l)) \
-                 (memory.copy (i32.add (i32.add (local.get $out) (i32.const {pre})) (local.get $l)) (i32.const 41000) (i32.const {suf})) \
-                 (i64.or (i64.shl (i64.extend_i32_u (local.get $out)) (i64.const 32)) \
-                         (i64.extend_i32_u (i32.add (local.get $l) (i32.const {n}))))",
-                n = pre + suf
-            ),
+            Out::Echo | Out::EchoEnroll => {
+                let (at, suf) = match out {
+                    Out::Echo => (41000, ECHO_SUFFIX.len()),
+                    _ => (41200, ECHO_ENROLL_SUFFIX.len()),
+                };
+                format!(
+                    "(local.set $out (call $alloc (i32.add (local.get $l) (i32.const {n})))) \
+                     (memory.copy (local.get $out) (i32.const 40960) (i32.const {pre})) \
+                     (memory.copy (i32.add (local.get $out) (i32.const {pre})) (local.get $p) (local.get $l)) \
+                     (memory.copy (i32.add (i32.add (local.get $out) (i32.const {pre})) (local.get $l)) (i32.const {at}) (i32.const {suf})) \
+                     (i64.or (i64.shl (i64.extend_i32_u (local.get $out)) (i64.const 32)) \
+                             (i64.extend_i32_u (i32.add (local.get $l) (i32.const {n}))))",
+                    n = pre + suf
+                )
+            }
         };
         funcs += &format!(
             "  (func $emit{i} (param $p i32) (param $l i32) (result i64) (local $out i32) {body})\n"
@@ -155,6 +173,7 @@ fn factor_guest(challenge: Out, verify: Out) -> Vec<u8> {
 {data}  (data (i32.const 40960) "{prefix}")
   (data (i32.const 41000) "{suffix}")
   (data (i32.const 41100) "{empty}")
+  (data (i32.const 41200) "{enroll_suffix}")
   (func $alloc (export "alloc") (param $n i32) (result i32)
     (local $r i32)
     (local.set $r (global.get $bump))
@@ -172,6 +191,7 @@ fn factor_guest(challenge: Out, verify: Out) -> Vec<u8> {
     (call $emit2 (local.get $p) (local.get $l))))"#,
         prefix = wat_str(ECHO_PREFIX),
         suffix = wat_str(ECHO_SUFFIX),
+        enroll_suffix = wat_str(ECHO_ENROLL_SUFFIX),
         empty = wat_str(EMPTY_OK),
         empty_len = EMPTY_OK.len(),
     );
@@ -442,6 +462,36 @@ async fn given_echo_plugin(world: &mut TestWorld, id: String) {
         &["auth:factor"],
     )
     .await;
+}
+
+#[given(
+    regex = r#"^an enabled WASM factor plugin "([a-z0-9-]+)" that echoes its enrolment input$"#
+)]
+async fn given_enroll_echo_plugin(world: &mut TestWorld, id: String) {
+    let s = scenario(world);
+    install(
+        s,
+        &id,
+        &factor_yaml(&id, "timeout_ms: 5000"),
+        &factor_guest_with(Out::EchoEnroll, Out::Echo, Out::Json(VERIFIED)),
+        &["auth:factor"],
+    )
+    .await;
+}
+
+#[when(expr = "alice begins enrolling the factor {string}")]
+async fn when_begin_enroll(world: &mut TestWorld, factor: String) {
+    let s = scenario(world);
+    let client = s.pipeline().begin_enroll(&s.user, &factor).await.unwrap();
+    s.echoed = Some(client);
+}
+
+#[then("the plugin should have received the host time in its enrolment input")]
+async fn then_enroll_time(world: &mut TestWorld) {
+    let echoed = scenario(world).echoed.clone().expect("an echoed request");
+    assert_eq!(echoed["handler"], "begin_enroll");
+    let sent = echoed["input"]["now_unix"].as_u64().expect("now_unix");
+    assert!(now_unix().abs_diff(sent) <= 60, "{sent}");
 }
 
 #[given(regex = r#"^alice has enrolled the factor "([^"]+)"(.*)$"#)]

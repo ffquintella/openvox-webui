@@ -1187,6 +1187,7 @@ impl<'a> AuthPipeline<'a> {
                 })
                 .collect(),
             pending: None,
+            now_unix: now_unix(),
         };
         let start = factor.begin_enroll(&ctx).await?;
         match start.mode {
@@ -1246,6 +1247,7 @@ impl<'a> AuthPipeline<'a> {
                 id: pending.id.clone(),
                 data: pending.data.clone(),
             }),
+            now_unix: now_unix(),
         };
         let rec = factor.complete_enroll(&ctx, resp).await?;
         self.store()

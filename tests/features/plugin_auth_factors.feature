@@ -90,6 +90,11 @@ Feature: Plugin second factors
     And alice begins the challenge with the factor "pb:key"
     Then the plugin should have received exactly alice's "pb:key" records
 
+  Scenario: A plugin factor reads the enrolment time from the host (H-3)
+    Given an enabled WASM factor plugin "pe" that echoes its enrolment input
+    When alice begins enrolling the factor "pe:key"
+    Then the plugin should have received the host time in its enrolment input
+
   Scenario: crypto.random returns fresh secure random bytes
     Given an enabled WASM plugin "rnd" with crypto:random that asks for 32 random bytes
     When the plugin runs 2 times

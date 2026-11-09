@@ -68,6 +68,8 @@ pub struct EnrollContext {
     pub existing: Vec<FactorRecord>,
     /// The pending record of an enrollment in progress, on completion.
     pub pending: Option<FactorRecord>,
+    /// Host time, read once per call as for a challenge (H-3/OQ-3).
+    pub now_unix: u64,
 }
 
 pub enum EnrollMode {
@@ -196,8 +198,7 @@ impl AuthFactor for TotpFactor {
         let secret = totp::secret_from_base32(&data.secret)
             .ok_or_else(|| FactorError::Internal("corrupt seed".into()))?;
         let code = resp.get("code").and_then(Value::as_str).unwrap_or("");
-        let now = now_unix();
-        let step = totp::verify(&secret, code, now, None)
+        let step = totp::verify(&secret, code, ctx.now_unix, None)
             .ok_or_else(|| FactorError::Invalid("The code is not valid".into()))?;
         Ok(EnrollRecord {
             data: json!({ "secret": data.secret, "last_step": step }),
@@ -524,7 +525,36 @@ mod tests {
             username: "alice".into(),
             existing: vec![],
             pending: None,
+            now_unix: now_unix(),
         }
+    }
+
+    /// H-3/OQ-3: enrollment reads the time from the context, like a challenge.
+    #[tokio::test]
+    async fn totp_enrollment_checks_the_code_at_the_context_time() {
+        let f = TotpFactor {
+            issuer: "OpenVox".into(),
+        };
+        let start = f.begin_enroll(&ctx()).await.unwrap();
+        let EnrollMode::Pending(pending) = start.mode else {
+            panic!("pending expected")
+        };
+        let secret = totp::secret_from_base32(pending["secret"].as_str().unwrap()).unwrap();
+        let then = 1_000_000_000;
+        let code = totp::hotp(&secret, totp::step_at(then));
+        let mut c = ctx();
+        c.pending = Some(FactorRecord {
+            id: "p1".into(),
+            data: pending,
+        });
+        c.now_unix = then;
+        let rec = f.complete_enroll(&c, json!({"code": code})).await.unwrap();
+        assert_eq!(rec.data["last_step"], totp::step_at(then));
+        c.now_unix = now_unix();
+        assert!(matches!(
+            f.complete_enroll(&c, json!({"code": code})).await,
+            Err(FactorError::Invalid(_))
+        ));
     }
 
     #[tokio::test]

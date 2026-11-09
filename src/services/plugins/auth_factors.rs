@@ -235,7 +235,7 @@ impl PluginFactor {
             "username": ctx.username,
             "existing": records_json(&ctx.existing),
             "pending": ctx.pending.as_ref().map(record_json),
-            "now_unix": now_unix(),
+            "now_unix": ctx.now_unix,
         });
         if let Some(r) = response {
             v["response"] = r;
@@ -1370,6 +1370,36 @@ mod tests {
         assert_eq!(ve["response"], json!({"assertion": 1}));
         let text = serde_json::to_string(&calls.iter().map(|c| &c.2).collect::<Vec<_>>()).unwrap();
         assert!(!text.contains(&other) && !text.contains(&web));
+    }
+
+    /// H-3/OQ-3: the enrollment input carries the context's time, not a
+    /// clock read by the adapter.
+    #[tokio::test]
+    async fn enrollment_inputs_carry_the_context_time() {
+        let cap = Arc::new(Capture::default());
+        let e = env(vec![("cap", cap.clone() as Arc<dyn BuiltinPlugin>)]).await;
+        let y = factor_yaml("cap", "{ kind: builtin, entry: cap }");
+        let pkg = build_signed_package(&[("plugin.yaml", y.as_bytes())], "cap", "1.0.0", 2, SEED);
+        e.manager.install(&pkg, "admin", None).await.unwrap();
+        e.manager.enable("cap").await.unwrap();
+        let factor = e
+            .manager
+            .auth_factors()
+            .into_iter()
+            .find(|f| f.descriptor().id == "cap:key")
+            .unwrap();
+        let ctx = EnrollContext {
+            user_id: e.user.id,
+            username: "alice".into(),
+            existing: vec![],
+            pending: None,
+            now_unix: 1_794_220_800,
+        };
+        factor.begin_enroll(&ctx).await.unwrap();
+        factor.complete_enroll(&ctx, json!({})).await.unwrap();
+        let calls = cap.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 2);
+        assert!(calls.iter().all(|c| c.2["now_unix"] == 1_794_220_800u64));
     }
 
     // ---- wire format ---------------------------------------------------------
