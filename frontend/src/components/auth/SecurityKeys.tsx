@@ -10,7 +10,7 @@ import {
 } from '../../services/api';
 import type { WebAuthnEnvironment } from '../../services/webauthn';
 import WebAuthnCeremony from './WebAuthnCeremony';
-import { isWebAuthnFactor } from './authErrors';
+import { authErrorMessage, isWebAuthnFactor } from './authErrors';
 
 const MY_FACTORS_KEY = ['myFactors'];
 
@@ -56,6 +56,108 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () =
   );
 }
 
+/** One enrolled record, with an inline rename form when `canRename` (OQ-15). */
+function RecordRow({
+  record,
+  fallbackLabel,
+  canRename,
+}: {
+  record: EnrolledFactor;
+  fallbackLabel: string;
+  canRename: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(record.label);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const inputId = useId();
+  const shown = record.label || fallbackLabel;
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.renameMyFactor(record.id, label.trim());
+      setEditing(false);
+      void queryClient.invalidateQueries({ queryKey: MY_FACTORS_KEY });
+    } catch (err) {
+      setError(authErrorMessage(err, 'auth.factor_error.invalid_label'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="py-2 flex items-start gap-3">
+      <KeyRound aria-hidden="true" className="w-4 h-4 mt-1 text-gray-400" />
+      <div className="flex-1">
+        {editing ? (
+          <form
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
+          >
+            <label htmlFor={inputId} className="sr-only">
+              {t('security.rename_label')}
+            </label>
+            <input
+              id={inputId}
+              type="text"
+              className="input"
+              maxLength={64}
+              autoComplete="off"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              aria-invalid={error ? true : undefined}
+            />
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {t('security.rename_save')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setEditing(false);
+                setLabel(record.label);
+                setError(null);
+              }}
+            >
+              {t('security.rename_cancel')}
+            </button>
+            {error && (
+              <p role="alert" className="w-full text-sm text-danger-700">
+                {error}
+              </p>
+            )}
+          </form>
+        ) : (
+          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{shown}</p>
+        )}
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {t('security.added_on', { date: formatDate(record.created_at) })}
+          {' · '}
+          {record.last_used_at
+            ? t('security.last_used', { date: formatDate(record.last_used_at) })
+            : t('security.never_used')}
+        </p>
+      </div>
+      {canRename && !editing && (
+        <button
+          type="button"
+          className="text-sm text-primary-600 hover:underline"
+          aria-label={t('security.rename_action', { name: shown })}
+          onClick={() => setEditing(true)}
+        >
+          {t('security.rename')}
+        </button>
+      )}
+    </li>
+  );
+}
+
 function FactorEnrolment({
   factor,
   records,
@@ -90,21 +192,12 @@ function FactorEnrolment({
         ) : (
           <ul className="divide-y divide-gray-200 dark:divide-gray-700">
             {records.map((record) => (
-              <li key={record.id} className="py-2 flex items-start gap-3">
-                <KeyRound aria-hidden="true" className="w-4 h-4 mt-1 text-gray-400" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {record.label || factor.label}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {t('security.added_on', { date: formatDate(record.created_at) })}
-                    {' · '}
-                    {record.last_used_at
-                      ? t('security.last_used', { date: formatDate(record.last_used_at) })
-                      : t('security.never_used')}
-                  </p>
-                </div>
-              </li>
+              <RecordRow
+                key={record.id}
+                record={record}
+                fallbackLabel={factor.label}
+                canRename={!onEnrolled}
+              />
             ))}
           </ul>
         )}

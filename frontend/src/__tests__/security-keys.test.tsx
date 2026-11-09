@@ -94,6 +94,35 @@ describe('SecurityKeys', () => {
     expect(screen.queryByText('AAAAA-BBBBB')).not.toBeInTheDocument();
   });
 
+  it('renames a registered key and shows a refused name (OQ-15)', async () => {
+    installWebAuthn();
+    vi.spyOn(api, 'getMyFactors').mockResolvedValue(myFactors);
+    const rename = vi
+      .spyOn(api, 'renameMyFactor')
+      .mockRejectedValueOnce({
+        response: {
+          status: 400,
+          data: {
+            code: 'factor_invalid',
+            details: { factor_error: { kind: 'invalid', code: 'invalid_label' } },
+          },
+        },
+      })
+      .mockResolvedValueOnce({ id: 'rec-1', label: 'Desk key' });
+    renderKeys();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename Office key' }));
+    const input = screen.getByLabelText('New name');
+    fireEvent.change(input, { target: { value: ' ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The name is not valid');
+
+    fireEvent.change(input, { target: { value: ' Desk key ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(rename).toHaveBeenLastCalledWith('rec-1', 'Desk key'));
+    await waitFor(() => expect(screen.queryByLabelText('New name')).not.toBeInTheDocument());
+  });
+
   it('reports a key that is already registered', async () => {
     const browser = installWebAuthn();
     browser.create.mockRejectedValue(domError('InvalidStateError'));

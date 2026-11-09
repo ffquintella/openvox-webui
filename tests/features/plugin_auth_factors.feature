@@ -184,6 +184,15 @@ Feature: Plugin second factors
     And adding another credential of "totp" should not need step-up
     And the event "auth.factor.enrolled" should have been published for "pe:key"
 
+  Scenario: A user renames a security key (OQ-15)
+    Given alice has enrolled the factor "fa:key"
+    When alice renames her "fa:key" credential to "  Office key  "
+    Then her "fa:key" credential should be labelled "Office key"
+    When alice renames her "fa:key" credential to a 65-character name
+    Then the answer should be refused with "invalid_label"
+    When alice renames her "fa:key" credential to ""
+    Then the answer should be refused with "invalid_label"
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"

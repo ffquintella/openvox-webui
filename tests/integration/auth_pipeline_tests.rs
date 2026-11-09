@@ -786,6 +786,70 @@ async fn policies_can_require_a_phishing_resistant_factor() {
     assert_eq!(r["policies"][0]["required_acr"], 2);
 }
 
+/// OQ-15: `PATCH /api/v1/users/me/factors/{id}` renames the caller's own record.
+#[tokio::test]
+async fn users_rename_their_own_factors() {
+    let app = TestApp::new().await;
+    let admin = prepare_admin(&app).await;
+    enroll_totp(&app, &admin).await;
+    let (_, viewer) = add_viewer(&app).await;
+    let factors: Value = call(
+        &app,
+        Some(&admin),
+        "t",
+        "GET",
+        "/api/v1/users/me/factors",
+        json!({}),
+    )
+    .await
+    .json();
+    let id = factors["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["kind"] == "totp")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let path = format!("/api/v1/users/me/factors/{id}");
+    let r = call(
+        &app,
+        Some(&admin),
+        "t",
+        "PATCH",
+        &path,
+        json!({"label": "Phone app"}),
+    )
+    .await;
+    r.assert_ok();
+    assert_eq!(r.json::<Value>(), json!({"id": id, "label": "Phone app"}));
+    let bad = call(
+        &app,
+        Some(&admin),
+        "t",
+        "PATCH",
+        &path,
+        json!({"label": "a\u{7}b"}),
+    )
+    .await;
+    bad.assert_bad_request();
+    let body: Value = bad.json();
+    assert_eq!(body["code"], "factor_invalid");
+    assert_eq!(body["details"]["factor_error"]["code"], "invalid_label");
+    call(
+        &app,
+        Some(&viewer),
+        "t",
+        "PATCH",
+        &path,
+        json!({"label": "x"}),
+    )
+    .await
+    .assert_not_found();
+    assert_eq!(audit_count(&app, "auth.factor_renamed").await, 1);
+}
+
 #[tokio::test]
 async fn admin_can_reset_a_users_factors() {
     let app = TestApp::new().await;

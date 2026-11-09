@@ -289,7 +289,10 @@ pub fn user_routes() -> Router<AppState> {
         .route(MY_FACTORS_PATH, get(my_factors))
         .route(ENROLL_BEGIN_PATH, post(enroll_begin))
         .route(ENROLL_COMPLETE_PATH, post(enroll_complete))
-        .route("/users/me/factors/{id}", delete(remove_factor))
+        .route(
+            "/users/me/factors/{id}",
+            delete(remove_factor).patch(rename_factor),
+        )
         .route("/users/{id}/factors/reset", post(reset_factors))
 }
 
@@ -724,6 +727,28 @@ async fn remove_factor(
         )
         .await;
     Ok(Json(json!({"removed": id})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RenameBody {
+    label: String,
+}
+
+/// OQ-15: the owner renames one of their verified records. A cosmetic
+/// change, so no step-up; enrollment-only sessions cannot reach it.
+async fn rename_factor(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(body): Json<RenameBody>,
+) -> ApiResult<Json<Value>> {
+    let u = current_user(&state, &user).await?;
+    let label = AuthPipeline::for_state(&state)
+        .rename_factor(&u, &id, &body.label)
+        .await?
+        .ok_or_else(|| AppError::not_found("Factor not found"))?;
+    Ok(Json(json!({"id": id, "label": label})))
 }
 
 async fn reset_factors(

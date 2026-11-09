@@ -1449,6 +1449,40 @@ impl<'a> AuthPipeline<'a> {
             .any(|f| f.verified && f.kind == factor_id))
     }
 
+    /// Renames one of the user's verified records (OQ-15). The label is
+    /// trimmed and must be 1 to 64 characters without control characters
+    /// (`invalid_label`, as for a plugin's enrolment label). `None` when the
+    /// user has no such verified record.
+    pub async fn rename_factor(
+        &self,
+        user: &User,
+        record_id: &str,
+        label: &str,
+    ) -> Result<Option<String>, PipelineError> {
+        let label = label.trim();
+        let n = label.chars().count();
+        if !(1..=64).contains(&n) || label.chars().any(char::is_control) {
+            return Err(FactorError::coded(
+                FactorErrorKind::Invalid,
+                "invalid_label",
+                "A name is 1 to 64 characters without control characters",
+            )
+            .into());
+        }
+        let Some(kind) = self.store().rename(user.id, record_id, label).await? else {
+            return Ok(None);
+        };
+        self.audit(
+            user.organization_id,
+            Some(user.id),
+            "auth.factor_renamed",
+            &user.username,
+            json!({"factor": kind, "record": record_id, "label": label}),
+        )
+        .await;
+        Ok(Some(label.to_string()))
+    }
+
     /// Records a new credential: the audit entry and the core event
     /// `auth.factor.enrolled` `{user_id, factor, record_id}`. The event is
     /// the hook for telling the user about it; the host sends no
@@ -1598,6 +1632,81 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    /// OQ-15: owners rename their verified records; labels are 1 to 64
+    /// characters without control characters, and the rename is audited.
+    #[tokio::test]
+    async fn owners_rename_their_factor_records() {
+        let (pool, user) = db_user().await;
+        let cfg = AppConfig::default();
+        let p = AuthPipeline::new(&pool, &cfg);
+        let mine = p
+            .store()
+            .insert(user.id, "webauthn", "Key", &json!({}), true)
+            .await
+            .unwrap();
+        let pending = p
+            .store()
+            .insert(user.id, "webauthn", "", &json!({}), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            p.rename_factor(&user, &mine.id, "  Office key ")
+                .await
+                .unwrap(),
+            Some("Office key".to_string())
+        );
+        let listed = p.store().list(user.id).await.unwrap();
+        assert_eq!(listed[0].label, "Office key");
+        for bad in ["", "   ", "a\nb", "tab\there", &"x".repeat(65)] {
+            match p.rename_factor(&user, &mine.id, bad).await {
+                Err(PipelineError::Factor { code, kind, .. }) => {
+                    assert_eq!(
+                        (code.as_str(), kind),
+                        ("invalid_label", FactorErrorKind::Invalid)
+                    )
+                }
+                other => panic!("{bad:?}: {:?}", other.map(|_| ())),
+            }
+        }
+        assert!(p
+            .rename_factor(&user, &"y".repeat(64), "ok")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(p
+            .rename_factor(&user, &pending.id, "x")
+            .await
+            .unwrap()
+            .is_none());
+        // Somebody else's record is not found.
+        let other = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash, role) \
+             VALUES (?, 'bob', 'bob@example.com', 'x', 'viewer')",
+        )
+        .bind(other.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let bob = AuthService::new(pool.clone())
+            .get_user_by_id(&other)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(p
+            .rename_factor(&bob, &mine.id, "mine now")
+            .await
+            .unwrap()
+            .is_none());
+        let audited: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'auth.factor_renamed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audited, 1);
     }
 
     /// OQ-13: with `auth.step_up.max_age_secs`, a level 2 session older

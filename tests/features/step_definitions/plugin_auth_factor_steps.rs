@@ -702,6 +702,36 @@ async fn then_event_published(world: &mut TestWorld, event: String, factor: Stri
     assert_eq!(p["user_id"], s.user.id.to_string());
 }
 
+#[when(
+    regex = r#"^alice renames her "([^"]+)" credential to (?:"([^"]*)"|a (\d+)-character name)$"#
+)]
+async fn when_rename(world: &mut TestWorld, factor: String, label: String, len: String) {
+    let s = scenario(world);
+    let id = s.records[&factor][0].clone();
+    let label = if len.is_empty() {
+        label
+    } else {
+        "k".repeat(len.parse().unwrap())
+    };
+    s.answer = Some(
+        match s.pipeline().rename_factor(&s.user, &id, &label).await {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) => Err("not_found".into()),
+            Err(e) => Err(code_of(&e)),
+        },
+    );
+}
+
+#[then(expr = "her {string} credential should be labelled {string}")]
+async fn then_labelled(world: &mut TestWorld, factor: String, label: String) {
+    let s = scenario(world);
+    assert_eq!(s.answer, Some(Ok(())));
+    let id = s.records[&factor][0].clone();
+    let listed = s.pipeline().store().list(s.user.id).await.unwrap();
+    let rec = listed.iter().find(|f| f.id.to_string() == id).unwrap();
+    assert_eq!(rec.label, label);
+}
+
 #[given(expr = "step-up freshness is {int} seconds")]
 async fn given_freshness(world: &mut TestWorld, secs: u64) {
     scenario(world).config.auth.step_up.max_age_secs = secs;

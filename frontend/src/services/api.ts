@@ -561,6 +561,12 @@ export const api = {
     return response.data;
   },
 
+  /** Renames one of the caller's enrolled factor records (OQ-15). */
+  renameMyFactor: async (id: string, label: string): Promise<{ id: string; label: string }> => {
+    const response = await client.patch(`/users/me/factors/${encodeURIComponent(id)}`, { label });
+    return response.data;
+  },
+
   logout: async (): Promise<void> => {
     await client.post('/auth/logout');
   },

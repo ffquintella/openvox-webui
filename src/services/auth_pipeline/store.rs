@@ -214,6 +214,20 @@ impl<'a> FactorStore<'a> {
         Ok(())
     }
 
+    /// Renames a verified record of the user; false when there is none.
+    pub async fn rename(&self, user: Uuid, id: &str, label: &str) -> Result<Option<String>> {
+        let kind: Option<String> = sqlx::query_scalar(
+            "UPDATE user_factors SET label = ? WHERE id = ? AND user_id = ? AND verified = 1 \
+             RETURNING kind",
+        )
+        .bind(label)
+        .bind(id)
+        .bind(user.to_string())
+        .fetch_optional(self.pool)
+        .await?;
+        Ok(kind)
+    }
+
     pub async fn delete(&self, user: Uuid, id: &str) -> Result<bool> {
         let r = sqlx::query("DELETE FROM user_factors WHERE id = ? AND user_id = ?")
             .bind(id)
