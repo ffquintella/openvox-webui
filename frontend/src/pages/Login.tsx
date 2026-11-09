@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, Lock, User, AlertCircle, Shield } from 'lucide-react';
-import { api, isMfaChallenge, type LoginResult } from '../services/api';
+import { api, isMfaChallenge, type AuthFactorDescriptor, type LoginResult } from '../services/api';
 import { consumeSessionLogoutReason, useAuthStore } from '../stores/authStore';
 import { usePermissionsStore } from '../stores/permissionsStore';
+import FactorChallenge from '../components/auth/FactorChallenge';
+import { descriptorFromId } from '../components/auth/authErrors';
+import { t } from '../i18n';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -19,10 +22,28 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<{
     id: string;
-    factors: { id: string; label: string }[];
+    factors: AuthFactorDescriptor[];
+    /** SSO redirects carry factor ids only; descriptors are fetched. */
+    fromRedirect: boolean;
   } | null>(null);
-  const [factorId, setFactorId] = useState('totp');
-  const [code, setCode] = useState('');
+
+  // Kinds and labels for factors named only by id in an SSO redirect.
+  const { data: factorDescriptors } = useQuery({
+    queryKey: ['authFactors'],
+    queryFn: api.getAuthFactors,
+    enabled: !!challenge?.fromRedirect,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const challengeFactors = useMemo(() => {
+    if (!challenge) {
+      return [];
+    }
+    if (!challenge.fromRedirect || !factorDescriptors) {
+      return challenge.factors;
+    }
+    return challenge.factors.map((f) => factorDescriptors.find((d) => d.id === f.id) ?? f);
+  }, [challenge, factorDescriptors]);
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
@@ -53,8 +74,7 @@ export default function Login() {
     if (challengeId) {
       // SSO login that still needs a second factor
       const ids = (searchParams.get('factors') || 'totp').split(',').filter(Boolean);
-      setChallenge({ id: challengeId, factors: ids.map((id) => ({ id, label: id })) });
-      setFactorId(ids[0] || 'totp');
+      setChallenge({ id: challengeId, factors: ids.map(descriptorFromId), fromRedirect: true });
       return;
     }
 
@@ -112,23 +132,13 @@ export default function Login() {
     mutationFn: () => api.login(username, password),
     onSuccess: async (data) => {
       if (isMfaChallenge(data)) {
-        setChallenge({ id: data.challenge_id, factors: data.factors });
-        setFactorId(data.factors[0]?.id || 'totp');
-        setCode('');
+        setChallenge({ id: data.challenge_id, factors: data.factors, fromRedirect: false });
         return;
       }
       await completeLogin(data);
     },
     onError: (err: Error) => {
       setError(err.message || 'Invalid username or password');
-    },
-  });
-
-  const challengeMutation = useMutation({
-    mutationFn: () => api.verifyChallenge(challenge!.id, factorId, code),
-    onSuccess: completeLogin,
-    onError: () => {
-      setError('The code was not accepted. Check it and try again.');
     },
   });
 
@@ -180,63 +190,17 @@ export default function Login() {
 
           {/* Second factor (MFA policy) */}
           {challenge && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
+            <FactorChallenge
+              key={challenge.id}
+              challengeId={challenge.id}
+              factors={challengeFactors}
+              onSession={completeLogin}
+              onCancel={() => {
+                setChallenge(null);
                 setError(null);
-                challengeMutation.mutate();
               }}
-              className="space-y-6"
-            >
-              <p className="text-sm text-gray-600">
-                Enter the code from your authenticator app, or one of your recovery codes.
-              </p>
-              {challenge.factors.length > 1 && (
-                <select
-                  value={factorId}
-                  onChange={(e) => setFactorId(e.target.value)}
-                  className="block w-full py-2.5 px-3 border border-gray-300 rounded-lg text-gray-900"
-                >
-                  {challenge.factors
-                    .filter((f) => f.id === 'totp' || f.id === 'recovery')
-                    .map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
-                      </option>
-                    ))}
-                </select>
-              )}
-              <input
-                id="mfa-code"
-                name="mfa-code"
-                type="text"
-                inputMode="text"
-                autoComplete="one-time-code"
-                autoFocus
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900"
-                placeholder={factorId === 'recovery' ? 'XXXXX-XXXXX' : '123456'}
-              />
-              <button
-                type="submit"
-                disabled={challengeMutation.isPending || !code.trim()}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Verify
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChallenge(null);
-                  setCode('');
-                  setError(null);
-                }}
-                className="w-full text-sm text-gray-500 hover:text-gray-700"
-              >
-                Back to sign in
-              </button>
-            </form>
+              cancelLabel={t('mfa.back_to_sign_in')}
+            />
           )}
 
           {/* SSO Button (shown when SAML is enabled) */}

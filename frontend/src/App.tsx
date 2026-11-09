@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AccessDenied } from './components/AccessDenied';
 import ForcePasswordChange from './components/ForcePasswordChange';
+import StepUpDialog from './components/auth/StepUpDialog';
 import {
   getLastSessionActivity,
   recordSessionActivity,
@@ -133,6 +134,9 @@ function App() {
     <>
       {/* Force Password Change Modal */}
       {showForcePasswordChange && <ForcePasswordChange onSuccess={handlePasswordChangeSuccess} />}
+
+      {/* Second factor for guarded calls (401 step_up_required) */}
+      {isAuthenticated && <StepUpDialog />}
 
       <Suspense fallback={<PageLoader />}>
         <Routes>

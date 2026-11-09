@@ -4,6 +4,7 @@ import { User, Lock, Mail, AlertCircle, CheckCircle, Eye, EyeOff, Sun, Moon } fr
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeStore } from '../stores/themeStore';
+import SecurityKeys from '../components/auth/SecurityKeys';
 
 export default function Profile() {
   const user = useAuthStore((state) => state.user);
@@ -143,6 +144,8 @@ export default function Profile() {
           </button>
         </div>
       </div>
+
+      <SecurityKeys />
 
       {user?.directory_id && (
         <div className="card">

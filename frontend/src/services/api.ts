@@ -234,13 +234,31 @@ const client = axios.create({
   },
 });
 
+/** The shared axios instance (exported so tests can install an adapter). */
+export { client as apiClient };
+
 interface RetriableRequestConfig {
   _retry?: boolean;
+  _stepUp?: boolean;
   url?: string;
   headers?: Record<string, string>;
 }
 
 let refreshRequestPromise: Promise<string> | null = null;
+
+// Step-up (M29): the dialog registers a handler that runs the second factor
+// and resolves true once a new session is stored; the guarded call is retried.
+type StepUpHandler = () => Promise<boolean>;
+let stepUpHandler: StepUpHandler | null = null;
+
+export function registerStepUpHandler(handler: StepUpHandler | null): void {
+  stepUpHandler = handler;
+}
+
+/** Asks the registered step-up handler for a stronger session. */
+export function requestStepUp(): Promise<boolean> {
+  return stepUpHandler ? stepUpHandler() : Promise.resolve(false);
+}
 
 const isAuthEndpoint = (url?: string): boolean => {
   if (!url) {
@@ -294,9 +312,21 @@ client.interceptors.response.use(
     const status = error.response?.status;
     const originalRequest = (error.config ?? {}) as RetriableRequestConfig;
 
-    // Step-up (M29) is not an expired session: keep the session, let the
-    // caller show the message.
+    // Step-up (M29) is not an expired session: keep the session, ask for a
+    // second factor once and repeat the call; otherwise the caller shows it.
     if (status === 401 && error.response?.data?.code === 'step_up_required') {
+      if (
+        stepUpHandler &&
+        !originalRequest._stepUp &&
+        !originalRequest.url?.includes('/auth/step-up')
+      ) {
+        originalRequest._stepUp = true;
+        const stepped = await stepUpHandler().catch(() => false);
+        if (stepped) {
+          // The request interceptor attaches the new session's token.
+          return client(originalRequest);
+        }
+      }
       return Promise.reject(error);
     }
 
@@ -363,16 +393,53 @@ interface LoginResponse {
   };
 }
 
+// Second factor descriptor (`GET /auth/providers`, challenge offers). Plugin
+// factors carry qualified ids such as `mfa-fido2:security-key`.
+export interface AuthFactorDescriptor {
+  id: string;
+  kind: string;
+  label: string;
+  amr?: string;
+  enrollment?: string;
+  fields: string[];
+}
+
 // Returned with 202 when an MFA policy requires a second factor
 export interface MfaChallenge {
   status: 'mfa_required';
   challenge_id: string;
   expires_in: number;
   required_acr: number;
-  factors: { id: string; label: string; fields: string[] }[];
+  factors: AuthFactorDescriptor[];
 }
 
 export type LoginResult = LoginResponse | MfaChallenge;
+export type SessionResponse = LoginResponse;
+
+export interface EnrolledFactor {
+  id: string;
+  /** Id of the factor this record belongs to. */
+  kind: string;
+  label: string;
+  verified: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  remaining?: number;
+}
+
+export interface MyFactors {
+  factors: EnrolledFactor[];
+  available: AuthFactorDescriptor[];
+  session: { amr: string[]; acr: number };
+}
+
+export interface FactorEnrollResult {
+  enrolled: string;
+  /** Recovery codes issued with the first factor, shown only once. */
+  recovery?: { codes: string[]; shown_once?: boolean };
+}
+
+const factorPath = (factorId: string) => encodeURIComponent(factorId);
 
 export const isMfaChallenge = (r: LoginResult): r is MfaChallenge =>
   (r as MfaChallenge).status === 'mfa_required';
@@ -394,11 +461,59 @@ export const api = {
     challengeId: string,
     factorId: string,
     code: string
-  ): Promise<LoginResponse> => {
-    const response = await client.post(`/auth/challenge/${challengeId}/verify`, {
+  ): Promise<LoginResponse> => api.verifyChallengeResponse(challengeId, factorId, { code }),
+
+  /** Factor descriptors offered by the server (public). */
+  getAuthFactors: async (): Promise<AuthFactorDescriptor[]> => {
+    const response = await client.get('/auth/providers');
+    return response.data?.factors ?? [];
+  },
+
+  /** Starts a factor on a challenge; returns what the client needs (WebAuthn options). */
+  beginChallenge: async (challengeId: string, factorId: string): Promise<unknown> => {
+    const response = await client.post(`/auth/challenge/${encodeURIComponent(challengeId)}/begin`, {
       factor_id: factorId,
-      response: { code },
     });
+    return response.data?.challenge;
+  },
+
+  verifyChallengeResponse: async (
+    challengeId: string,
+    factorId: string,
+    factorResponse: Record<string, unknown>
+  ): Promise<LoginResponse> => {
+    const response = await client.post(
+      `/auth/challenge/${encodeURIComponent(challengeId)}/verify`,
+      { factor_id: factorId, response: factorResponse }
+    );
+    return response.data;
+  },
+
+  /** Opens a step-up challenge for the current session (202 offer). */
+  stepUp: async (): Promise<MfaChallenge> => {
+    const response = await client.post('/auth/step-up');
+    return response.data;
+  },
+
+  getMyFactors: async (): Promise<MyFactors> => {
+    const response = await client.get('/users/me/factors');
+    return response.data;
+  },
+
+  /** Starts enrolment; returns what the client needs (WebAuthn creation options). */
+  beginFactorEnroll: async (factorId: string): Promise<unknown> => {
+    const response = await client.post(`/users/me/factors/${factorPath(factorId)}/enroll/begin`);
+    return response.data?.enrollment;
+  },
+
+  completeFactorEnroll: async (
+    factorId: string,
+    body: Record<string, unknown>
+  ): Promise<FactorEnrollResult> => {
+    const response = await client.post(
+      `/users/me/factors/${factorPath(factorId)}/enroll/complete`,
+      body
+    );
     return response.data;
   },
 
