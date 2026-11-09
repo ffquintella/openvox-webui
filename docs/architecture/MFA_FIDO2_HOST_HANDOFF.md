@@ -58,8 +58,9 @@ Status: answered differently in details (done). Code: `src/services/plugins/auth
   `{"outcome":"failed","retryable":true|false}` or `{"outcome":"pending"}`; any handler may answer
   `{"error":{"kind":"unavailable"|"invalid"|"internal","code":"<code>"}}`.
 - Fail closed: unknown fields, a malformed answer, a trap, a timeout, a late answer, a quota or breaker
-  refusal, a disabled plugin or a withdrawn `auth:factor` grant are `factor_unavailable` (HTTP 503 at
-  `begin`). `verified` counts only with declared `amr` values and updates of records the plugin was
+  refusal, a plugin that is no longer enabled when the call runs or a withdrawn `auth:factor` grant
+  are `factor_unavailable` (HTTP 503 at `begin`; transcript A section 8a). A plugin disabled by an
+  administrator is different: its factor is no longer offered at all (OQ-23). `verified` counts only with declared `amr` values and updates of records the plugin was
   given, each at most once; updates are written with compare-and-set.
 - The client sees the plugin's `client` unchanged: `POST /api/v1/users/me/factors/{factor_id}/enroll/begin`
   answers `{"factor_id": "...", "enrollment": <client>}` and `POST /api/v1/auth/challenge/{id}/begin`
