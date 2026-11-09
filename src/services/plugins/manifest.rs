@@ -112,6 +112,7 @@ pub fn validate(m: &PluginManifest, files: &BTreeSet<String>) -> Vec<String> {
     validate_facts(&mut p, m, &names);
     validate_reports(&mut p, m, &names);
     validate_classification(&mut p, m, &names);
+    validate_auth_factors(&mut p, m);
 
     if let Some(mig) = &m.migrations {
         if !safe_package_path(&mig.dir) {
@@ -327,6 +328,105 @@ fn validate_module(
             "contribution '{}': authentication and user-provider plugins cannot contribute trusted modules",
             s.id
         ));
+    }
+}
+
+/// Factor kinds the host client knows how to run (`recovery` is the host's).
+pub const FACTOR_KINDS: &[&str] = &["otp", "webauthn", "push"];
+/// Methods a plugin factor may add to a session. Both reach level 2; `rcv`
+/// (recovery codes) and `mfa` (asserted by an identity provider) are the
+/// host's, and primary methods (`pwd`, `fed`) never come from a factor.
+pub const FACTOR_AMR: &[&str] = &["otp", "hwk"];
+pub const MAX_AUTH_FACTORS: usize = 4;
+
+/// Local id of a plugin factor: `[a-z][a-z0-9-]`, at most 32 characters,
+/// so the qualified id `<plugin-id>:<factor-id>` has exactly one `:`.
+pub fn valid_factor_id(id: &str) -> bool {
+    let b = id.as_bytes();
+    (1..=32).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+        && !id.ends_with('-')
+}
+
+fn valid_factor_field(f: &str) -> bool {
+    let b = f.as_bytes();
+    (1..=32).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_')
+}
+
+/// `contributes.auth_factors` (H-1): the critical `auth:factor` capability,
+/// declared and not optional, a runtime the host can invoke, and descriptors
+/// the login screen can render safely.
+fn validate_auth_factors(p: &mut Vec<String>, m: &PluginManifest) {
+    let factors = &m.contributes.auth_factors;
+    if factors.is_empty() {
+        return;
+    }
+    match capabilities(m).iter().find(|c| c.name == "auth:factor") {
+        None => p.push("auth_factors need the capability auth:factor".to_string()),
+        Some(c) if c.optional => p.push(
+            "auth:factor cannot be optional for a plugin that contributes auth_factors".to_string(),
+        ),
+        Some(_) => {}
+    }
+    if !matches!(m.runtime.kind, RuntimeKind::Wasm | RuntimeKind::Builtin) {
+        p.push("auth_factors need the wasm or builtin runtime".to_string());
+    }
+    if factors.len() > MAX_AUTH_FACTORS {
+        p.push(format!(
+            "more than {} auth_factors declared",
+            MAX_AUTH_FACTORS
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for f in factors {
+        if !valid_factor_id(&f.id) {
+            p.push(format!(
+                "factor id '{}' is invalid: use 1 to 32 characters of a-z, 0-9 and '-', starting with a letter",
+                f.id
+            ));
+        } else if !seen.insert(f.id.clone()) {
+            p.push(format!("factor id '{}' is used twice", f.id));
+        }
+        if !FACTOR_KINDS.contains(&f.kind.as_str()) {
+            p.push(format!(
+                "factor '{}': kind '{}' is not supported (use {})",
+                f.id,
+                f.kind,
+                FACTOR_KINDS.join(", ")
+            ));
+        }
+        if !FACTOR_AMR.contains(&f.amr.as_str()) {
+            p.push(format!(
+                "factor '{}': amr '{}' is not allowed (use {})",
+                f.id,
+                f.amr,
+                FACTOR_AMR.join(", ")
+            ));
+        }
+        if !matches!(f.enrollment.as_str(), "host-managed" | "external") {
+            p.push(format!(
+                "factor '{}': enrollment must be host-managed or external",
+                f.id
+            ));
+        }
+        check_text(p, "factor label", &f.label, 64);
+        if f.fields.len() > 8 {
+            p.push(format!("factor '{}': more than 8 fields", f.id));
+        }
+        let mut names = BTreeSet::new();
+        for field in &f.fields {
+            if !valid_factor_field(field) || !names.insert(field.clone()) {
+                p.push(format!(
+                    "factor '{}': field '{}' is invalid or repeated",
+                    f.id, field
+                ));
+            }
+        }
     }
 }
 
@@ -1121,6 +1221,7 @@ const EXACT_CAPABILITIES: &[&str] = &[
     "classification:inject",
     "groups:read",
     "groups:write:own",
+    "crypto:random",
 ];
 
 const PREFIX_CAPABILITIES: &[&str] = &[
@@ -1246,6 +1347,10 @@ pub fn describe_capability(c: &Capability) -> CapabilityInfo {
         "email:send" => (RiskLevel::High, "Send email from this server".to_string()),
         "events:subscribe" => (RiskLevel::Medium, "Receive platform events".to_string()),
         "audit:write" => (RiskLevel::Low, "Write entries to the audit log".to_string()),
+        "crypto:random" => (
+            RiskLevel::Low,
+            "Read secure random bytes from the host (for challenges and keys)".to_string(),
+        ),
         "http:egress" => {
             let hosts = c
                 .scope
@@ -1899,6 +2004,172 @@ contributes:
                 "expected '{needle}' in {p:?}"
             );
         }
+    }
+
+    const FACTOR: &str = r#"
+api_version: 2
+id: mfa-fido2
+name: FIDO2 keys
+version: 0.1.0
+publisher: ACME
+runtime: { kind: wasm, entry: backend/plugin.wasm }
+capabilities: [auth:factor, crypto:random]
+contributes:
+  auth_factors:
+    - { id: security-key, kind: webauthn, label: Security key, amr: hwk, enrollment: host-managed, fields: [credential] }
+"#;
+
+    fn factor_problems(yaml: &str) -> Vec<String> {
+        match parse_and_validate(yaml.as_bytes(), &files(&["backend/plugin.wasm"])) {
+            Ok(_) => Vec::new(),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn auth_factors_are_accepted_with_the_factor_capability() {
+        let m = parse_and_validate(FACTOR.as_bytes(), &files(&["backend/plugin.wasm"])).unwrap();
+        assert_eq!(m.api_version, 2);
+        let f = &m.contributes.auth_factors[0];
+        assert_eq!(
+            (f.id.as_str(), f.kind.as_str(), f.amr.as_str()),
+            ("security-key", "webauthn", "hwk")
+        );
+        assert_eq!(f.fields, vec!["credential".to_string()]);
+        // Manifests without the key keep working (backward compatible).
+        let m = parse_and_validate(OK.as_bytes(), &files(&["ui/home.json"])).unwrap();
+        assert!(m.contributes.auth_factors.is_empty());
+    }
+
+    #[test]
+    fn auth_factors_are_refused_unless_well_formed() {
+        let line = "    - { id: security-key, kind: webauthn, label: Security key, amr: hwk, enrollment: host-managed, fields: [credential] }\n";
+        let with = |entry: &str| FACTOR.replace(line, entry);
+        let cases: Vec<(String, &str)> = vec![
+            (
+                FACTOR.replace("[auth:factor, crypto:random]", "[crypto:random]"),
+                "auth_factors need the capability auth:factor",
+            ),
+            (
+                FACTOR.replace(
+                    "[auth:factor, crypto:random]",
+                    "[\"auth:factor\": { optional: true }]",
+                ),
+                "auth:factor cannot be optional",
+            ),
+            (
+                with("    - { id: \"a:b\", kind: otp, label: Code, amr: otp, enrollment: host-managed }\n"),
+                "factor id 'a:b' is invalid",
+            ),
+            (
+                with("    - { id: Key, kind: otp, label: Code, amr: otp, enrollment: host-managed }\n"),
+                "factor id 'Key' is invalid",
+            ),
+            (
+                format!("{FACTOR}    - {{ id: security-key, kind: otp, label: Code, amr: otp, enrollment: host-managed }}\n"),
+                "factor id 'security-key' is used twice",
+            ),
+            (
+                with("    - { id: k, kind: recovery, label: Code, amr: otp, enrollment: host-managed }\n"),
+                "factor 'k': kind 'recovery' is not supported",
+            ),
+            (
+                with("    - { id: k, kind: otp, label: Code, amr: rcv, enrollment: host-managed }\n"),
+                "factor 'k': amr 'rcv' is not allowed",
+            ),
+            (
+                with("    - { id: k, kind: otp, label: Code, amr: mfa, enrollment: host-managed }\n"),
+                "factor 'k': amr 'mfa' is not allowed",
+            ),
+            (
+                with("    - { id: k, kind: otp, label: Code, amr: otp, enrollment: plugin }\n"),
+                "factor 'k': enrollment must be host-managed or external",
+            ),
+            (
+                with("    - { id: k, kind: otp, label: Code, amr: otp, enrollment: external, fields: [\"Bad Field\"] }\n"),
+                "factor 'k': field 'Bad Field' is invalid",
+            ),
+            (
+                with("    - { id: k, kind: otp, label: \"<b>\", amr: otp, enrollment: external }\n"),
+                "factor label contains forbidden characters",
+            ),
+            (
+                FACTOR.replace(
+                    "runtime: { kind: wasm, entry: backend/plugin.wasm }",
+                    "runtime: { kind: remote, endpoint: \"https://f.example.com\" }",
+                ),
+                "auth_factors need the wasm or builtin runtime",
+            ),
+            (
+                format!(
+                    "{FACTOR}    - {{ id: b, kind: otp, label: B, amr: otp, enrollment: external }}\n    - {{ id: c, kind: otp, label: C, amr: otp, enrollment: external }}\n    - {{ id: d, kind: otp, label: D, amr: otp, enrollment: external }}\n    - {{ id: e, kind: otp, label: E, amr: otp, enrollment: external }}\n"
+                ),
+                "more than 4 auth_factors declared",
+            ),
+        ];
+        for (yaml, needle) in cases {
+            let p = factor_problems(&yaml);
+            assert!(
+                p.iter().any(|m| m.contains(needle)),
+                "expected '{needle}' in {p:?}"
+            );
+        }
+        // Unknown fields in an entry are a parse error.
+        let p = factor_problems(&with(
+            "    - { id: k, kind: otp, label: Code, amr: otp, enrollment: external, handler: x }\n",
+        ));
+        assert!(p.iter().any(|m| m.contains("unknown field")), "{p:?}");
+    }
+
+    #[test]
+    fn factor_plugins_cannot_contribute_trusted_modules() {
+        use super::super::modules::{sri_of, SriAlgorithm};
+        let sri = sri_of(SriAlgorithm::Sha384, b"x");
+        let yaml = FACTOR
+            .replace(
+                "[auth:factor, crypto:random]",
+                "[auth:factor, crypto:random, ui:slot:page]",
+            )
+            .replace(
+                "contributes:\n",
+                &format!("contributes:\n  slots:\n    - {{ slot: page, id: console, render: module, src: ui/remoteEntry.js, integrity: \"{sri}\", path: /p/mfa-fido2/console }}\n"),
+            );
+        let p = match parse_and_validate(
+            yaml.as_bytes(),
+            &files(&["backend/plugin.wasm", "ui/remoteEntry.js"]),
+        ) {
+            Ok(_) => Vec::new(),
+            Err(e) => e,
+        };
+        assert!(
+            p.iter()
+                .any(|m| m.contains("cannot contribute trusted modules")),
+            "{p:?}"
+        );
+    }
+
+    #[test]
+    fn crypto_random_is_a_low_risk_capability_without_scope() {
+        let c = Capability {
+            name: "crypto:random".into(),
+            scope: None,
+            optional: false,
+        };
+        assert!(validate_capability(&c).is_ok());
+        let info = describe_capability(&c);
+        assert_eq!(info.risk, RiskLevel::Low);
+        assert!(info.description.contains("random"), "{}", info.description);
+        let scoped = Capability {
+            scope: Some(serde_json::json!({"len": 64})),
+            ..c
+        };
+        assert!(validate_capability(&scoped).is_err());
+        let factor = describe_capability(&Capability {
+            name: "auth:factor".into(),
+            scope: None,
+            optional: false,
+        });
+        assert_eq!(factor.risk, RiskLevel::Critical);
     }
 
     #[test]

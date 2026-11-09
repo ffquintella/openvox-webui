@@ -476,7 +476,7 @@ impl<'a> AuthPipeline<'a> {
             factors: self
                 .descriptors()
                 .into_iter()
-                .filter(|d| kinds.iter().any(|k| k == d.id))
+                .filter(|d| kinds.contains(&d.id))
                 .collect(),
             required_acr: required,
         })
@@ -563,7 +563,7 @@ impl<'a> AuthPipeline<'a> {
             .factor(factor_id)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{factor_id}'")))?;
         let kind = factor.descriptor().id;
-        let records = self.store().records(user.id, kind, true).await?;
+        let records = self.store().records(user.id, &kind, true).await?;
         if records.is_empty() {
             return Err(PipelineError::Invalid(
                 "That factor is not enrolled for this account".into(),
@@ -577,7 +577,7 @@ impl<'a> AuthPipeline<'a> {
             None => None,
         };
         sqlx::query("UPDATE auth_challenges SET active_factor = ?, flow_state = ? WHERE id = ? AND consumed_at IS NULL")
-            .bind(kind)
+            .bind(&kind)
             .bind(sealed)
             .bind(&row.id)
             .execute(self.pool)
@@ -792,6 +792,7 @@ impl<'a> AuthPipeline<'a> {
             .factor(factor_id)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{factor_id}'")))?;
         let kind = factor.descriptor().id;
+        let kind = kind.as_str();
         let existing = self.store().records(user.id, kind, true).await?;
         let ctx = EnrollContext {
             user_id: user.id,
@@ -839,6 +840,7 @@ impl<'a> AuthPipeline<'a> {
             .factor(factor_id)
             .ok_or_else(|| PipelineError::Invalid(format!("Unknown factor '{factor_id}'")))?;
         let kind = factor.descriptor().id;
+        let kind = kind.as_str();
         let pending = self
             .store()
             .records(user.id, kind, false)

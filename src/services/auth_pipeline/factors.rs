@@ -16,17 +16,32 @@ use super::config::{MfaConfig, WebAuthnConfig};
 use super::totp;
 use crate::services::AuthService;
 
-#[derive(Debug, Clone, Serialize)]
+/// What the host shows and checks for a factor. Plugin factors (H-1) carry
+/// their qualified id `<plugin-id>:<factor-id>`, so the fields are owned.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FactorDescriptor {
-    pub id: &'static str,
-    pub kind: &'static str,
-    pub label: &'static str,
+    pub id: String,
+    pub kind: String,
+    pub label: String,
     /// Value added to the session's `amr` once the factor verifies.
-    pub amr: &'static str,
+    pub amr: String,
     /// `host-managed` (the host stores the data) or `external`.
-    pub enrollment: &'static str,
+    pub enrollment: String,
     /// What the client must supply for a challenge, so the host can render it.
-    pub fields: Vec<&'static str>,
+    pub fields: Vec<String>,
+}
+
+impl FactorDescriptor {
+    fn builtin(id: &str, kind: &str, label: &str, amr: &str, fields: &[&str]) -> Self {
+        Self {
+            id: id.into(),
+            kind: kind.into(),
+            label: label.into(),
+            amr: amr.into(),
+            enrollment: "host-managed".into(),
+            fields: fields.iter().map(|f| f.to_string()).collect(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -147,14 +162,7 @@ struct TotpData {
 #[async_trait]
 impl AuthFactor for TotpFactor {
     fn descriptor(&self) -> FactorDescriptor {
-        FactorDescriptor {
-            id: "totp",
-            kind: "otp",
-            label: "Authenticator app",
-            amr: "otp",
-            enrollment: "host-managed",
-            fields: vec!["code"],
-        }
+        FactorDescriptor::builtin("totp", "otp", "Authenticator app", "otp", &["code"])
     }
 
     async fn begin_enroll(&self, ctx: &EnrollContext) -> Result<EnrollStart, FactorError> {
@@ -268,14 +276,7 @@ pub fn generate_recovery_codes() -> Result<(Vec<String>, Value), FactorError> {
 #[async_trait]
 impl AuthFactor for RecoveryFactor {
     fn descriptor(&self) -> FactorDescriptor {
-        FactorDescriptor {
-            id: "recovery",
-            kind: "recovery",
-            label: "Recovery code",
-            amr: "rcv",
-            enrollment: "host-managed",
-            fields: vec!["code"],
-        }
+        FactorDescriptor::builtin("recovery", "recovery", "Recovery code", "rcv", &["code"])
     }
 
     async fn begin_enroll(&self, _ctx: &EnrollContext) -> Result<EnrollStart, FactorError> {
@@ -376,14 +377,13 @@ fn passkeys(records: &[FactorRecord]) -> Vec<(String, Passkey)> {
 #[async_trait]
 impl AuthFactor for WebAuthnFactor {
     fn descriptor(&self) -> FactorDescriptor {
-        FactorDescriptor {
-            id: "webauthn",
-            kind: "webauthn",
-            label: "Security key or passkey",
-            amr: "hwk",
-            enrollment: "host-managed",
-            fields: vec!["credential"],
-        }
+        FactorDescriptor::builtin(
+            "webauthn",
+            "webauthn",
+            "Security key or passkey",
+            "hwk",
+            &["credential"],
+        )
     }
 
     async fn begin_enroll(&self, ctx: &EnrollContext) -> Result<EnrollStart, FactorError> {

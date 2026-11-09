@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Accept plugin second factors in the manifest (H-1): `contributes.auth_factors` (optional, `api_version` stays 2) lists factor descriptors `{id, kind, label, amr, enrollment, fields}`. A plugin that declares one must declare the critical capability `auth:factor` as non-optional and run on the `wasm` or `builtin` runtime; ids are 1 to 32 characters of `a-z`, `0-9` and `-` (at most 4 factors per plugin), `kind` is `otp`, `webauthn` or `push`, `amr` is `otp` or `hwk` (`rcv` and `mfa` stay reserved to the host), `enrollment` is `host-managed` or `external`, and such a plugin still cannot contribute trusted `module` UI. Factor descriptors now carry owned strings so plugin factors can be described (T116)
+
 ## [0.51.1] - 2026-11-09
 
 ### Changed

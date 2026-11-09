@@ -156,6 +156,31 @@ pub struct Contributes {
     /// providers, group templates and merge strategies (M27).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classification: Option<super::ClassificationContribution>,
+    /// Second factors run by the plugin (H-1). Needs the critical,
+    /// non-optional capability `auth:factor`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auth_factors: Vec<AuthFactorDecl>,
+}
+
+/// One second factor contributed by a plugin. The fields mirror the host
+/// `FactorDescriptor`; the host serves it under the qualified id
+/// `<plugin-id>:<id>`, so it can never be confused with a built-in factor or
+/// a factor of another plugin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthFactorDecl {
+    /// Local id, unique within the plugin (`[a-z][a-z0-9-]`, at most 32).
+    pub id: String,
+    /// How the host client runs the challenge: `otp`, `webauthn` or `push`.
+    pub kind: String,
+    pub label: String,
+    /// Method added to the session once the factor verifies: `otp` or `hwk`.
+    pub amr: String,
+    /// `host-managed` (the host stores the record) or `external`.
+    pub enrollment: String,
+    /// Fields the client must supply for a challenge.
+    #[serde(default)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

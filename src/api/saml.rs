@@ -582,7 +582,7 @@ async fn saml_acs(
             offer
                 .factors
                 .iter()
-                .map(|f| f.id)
+                .map(|f| f.id.as_str())
                 .collect::<Vec<_>>()
                 .join(","),
             urlencoding::encode(&safe_redirect)
