@@ -141,6 +141,32 @@ WEBUI_URL=https://puppet.example.com ./test-notifications-and-enc.sh
 
 ---
 
+## Plugin End-to-End Checks
+
+### mfa-fido2 in a real browser
+
+**[e2e-mfa-fido2-browser.mjs](e2e-mfa-fido2-browser.mjs)** - Runs the mfa-fido2 stand-in plugin through the real server, the built web UI and Google Chrome with a virtual WebAuthn authenticator (Chrome DevTools protocol)
+
+```bash
+cargo build && (cd frontend && npm run build)
+node scripts/e2e-mfa-fido2-browser.mjs
+# Keep the work directory and write the transcript to a file
+OVX_E2E_KEEP=1 OVX_E2E_OUT=/tmp/fido2-transcript.md node scripts/e2e-mfa-fido2-browser.mjs
+```
+
+**What it does:**
+- Exports the signed stand-in package (`cargo test ... export_the_standin_package -- --ignored`)
+- Starts `target/debug/openvox-webui` on a fresh database in a temporary directory (port `OVX_E2E_PORT`, default 5099)
+- Installs, approves, configures and enables the plugin over the API, creates a user
+- Drives the web UI in headless Chrome: password sign-in, key enrolment from the profile, the step-up dialog, sign-out, sign-in with the key, a wrong signature, an outage, a disabled plugin and break-glass
+- Prints a redacted transcript (tokens, passwords and recovery codes are never shown)
+
+**Requirements:**
+- Google Chrome (`OVX_E2E_CHROME` for another path), Node.js 22 or later, `sqlite3`
+- The `wasm32-unknown-unknown` Rust target (the stand-in is built from `tests/fixtures/plugins/mfa-fido2-standin`)
+
+The authenticator is software (CDP `WebAuthn.addVirtualAuthenticator`); no physical security key is used. The same flow without a browser runs in `cargo test` (`tests/integration/mfa_fido2_e2e_tests.rs`).
+
 ## Common Usage Patterns
 
 ### Initial Setup (Fresh Install)
