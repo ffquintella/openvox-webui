@@ -2,6 +2,11 @@
 
 Status: **Proposal** (no implementation yet)
 
+The implemented platform is described in [PLUGIN_PLATFORM.md](PLUGIN_PLATFORM.md), which prevails over
+this proposal. For plugin second factors, plugin API routes (they run in the plugin runtime, not behind
+the reverse proxy of §9) and the authentication slots, see PLUGIN_PLATFORM.md §17.15 to §17.20 and the
+module-facing summary in [MFA_FIDO2_HOST_HANDOFF.md](MFA_FIDO2_HOST_HANDOFF.md).
+
 ## 1. Goals and non-goals
 
 A plugin can extend OpenVox WebUI in six ways (*extension points*):
