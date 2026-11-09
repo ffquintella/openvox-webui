@@ -1,0 +1,33 @@
+# Test-only stand-in for the backend of the mfa-fido2 plugin
+# (openvox-webui-modules/plugins/mfa-fido2). It is NOT the plugin: it
+# implements the host contracts (factor handlers, API routes, events) with a
+# real WebAuthn ES256 verification so that the host can be checked end to end
+# before the real module exists. Built for wasm32-unknown-unknown by
+# tests/integration/mfa_fido2_e2e_tests.rs and scripts/e2e-mfa-fido2.sh.
+[package]
+name = "mfa-fido2-standin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+
+# Not a member of the openvox-webui package: built on its own.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+sha2 = { version = "0.10", default-features = false }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false

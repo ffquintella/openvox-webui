@@ -162,6 +162,8 @@ rstest = "0.28"
 bytes = "1.11"
 wat = "1"
 tempfile = "3"
+# Software WebAuthn authenticator of the mfa-fido2 end-to-end check (ES256)
+p256 = { version = "0.13", features = ["ecdsa"] }
 
 [[bin]]
 name = "openvox-webui"

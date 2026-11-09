@@ -1,0 +1,237 @@
+# Manifest of the test-only mfa-fido2 stand-in. Derived from the draft
+# openvox-webui-modules/plugins/mfa-fido2/plugin.yaml; every change is listed
+# in docs/architecture/MFA_FIDO2_HOST_HANDOFF.md ("Manifest adjustments").
+api_version: 2
+id: mfa-fido2
+name: FIDO2 Security Keys (WebAuthn MFA)
+version: 0.1.0
+publisher: OpenVox WebUI Modules
+min_webui_version: 0.51.1
+license: Apache-2.0
+
+runtime:
+  kind: wasm
+  entry: backend/plugin.wasm
+  limits:
+    memory_mb: 64
+    fuel_per_call: 200000000
+    timeout_ms: 2000
+
+capabilities:
+  - auth:factor
+  - crypto:random
+  - api:routes
+  - db:own
+  - audit:write
+  - events:publish:mfa-fido2.*
+  - events:subscribe: { optional: true }
+  - ui:slot:profile.security
+  - ui:slot:admin.auth
+
+events:
+  subscribe:
+    - { type: auth.factor.removed, priority: 100, handler: on_factor_removed }
+  publish:
+    - mfa-fido2.credential.registered
+    - mfa-fido2.credential.registration_rejected
+    - mfa-fido2.credential.clone_suspected
+    - mfa-fido2.credential.suspended
+    - mfa-fido2.credential.unsuspended
+    - mfa-fido2.credential.removed
+    - mfa-fido2.config.invalid
+
+contributes:
+  auth_factors:
+    - id: security-key
+      kind: webauthn
+      label: Security key
+      amr: [hwk, swk, pin]
+      enrollment: host-managed
+      fields: [credential]
+
+  slots:
+    - slot: profile.security
+      id: security-keys
+      render: declarative
+      spec: ui/profile-security.json
+      title: Security keys
+      order: 100
+    - slot: admin.auth
+      id: security-key-admin
+      render: declarative
+      spec: ui/admin-auth.json
+      title: Security keys (FIDO2)
+      order: 100
+      requires: { resource: plugin.mfa-fido2.admin, action: read }
+
+  api_routes:
+    - { method: GET,   path: /me/credentials, rate_limit: 60/min }
+    - { method: PATCH, path: "/me/credentials/{credential_ref}", rate_limit: 10/min }
+    - method: GET
+      path: /admin/credentials
+      requires: { resource: plugin.mfa-fido2.admin, action: read }
+      rate_limit: 60/min
+    - method: GET
+      path: /admin/summary
+      requires: { resource: plugin.mfa-fido2.admin, action: read }
+      rate_limit: 60/min
+    - method: GET
+      path: /admin/authenticators
+      requires: { resource: plugin.mfa-fido2.admin, action: read }
+      rate_limit: 60/min
+    - method: POST
+      path: "/admin/credentials/{credential_ref}/suspend"
+      requires: { resource: plugin.mfa-fido2.admin, action: write }
+      rate_limit: 20/min
+    - method: POST
+      path: "/admin/credentials/{credential_ref}/unsuspend"
+      requires: { resource: plugin.mfa-fido2.admin, action: write }
+      rate_limit: 20/min
+      step_up: true
+    - method: POST
+      path: /admin/policy/preview
+      requires: { resource: plugin.mfa-fido2.admin, action: read }
+      rate_limit: 10/min
+
+  jobs:
+    - { id: purge, cron: "*/15 * * * *", handler: on_purge }
+
+config_schema:
+  type: object
+  additionalProperties: false
+  required: [rp]
+  properties:
+    rp:
+      type: object
+      additionalProperties: false
+      required: [id, origins]
+      properties:
+        id:
+          type: string
+          description: WebAuthn RP ID, a registrable domain or a parent of every origin host. Changing it invalidates existing credentials.
+          maxLength: 253
+          pattern: '^(localhost|([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63})$'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: OpenVox WebUI
+        origins:
+          type: array
+          description: Exact origins the browser reports (scheme, host, optional port). Never derived from request headers.
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 263
+            pattern: '^(https://[a-z0-9.-]+(:[0-9]{1,5})?|http://localhost(:[0-9]{1,5})?)$'
+    authenticators:
+      type: object
+      additionalProperties: false
+      default: {}
+      properties:
+        attachment:
+          type: string
+          enum: [cross-platform, any]
+          default: cross-platform
+        allow_backup_eligible:
+          type: boolean
+          description: Accept backup-eligible (synced) credentials.
+          default: false
+        resident_key:
+          type: string
+          enum: [discouraged, preferred, required]
+          default: discouraged
+        user_verification:
+          type: string
+          enum: [discouraged, preferred, required]
+          default: discouraged
+        algorithms:
+          type: array
+          description: COSE algorithms in preference order (-7 ES256, -8 EdDSA, -257 RS256).
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            enum: [-7, -8, -257]
+          default: [-7, -8, -257]
+        timeout_ms:
+          type: integer
+          minimum: 30000
+          maximum: 240000
+          default: 120000
+        max_credentials_per_user:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 10
+        recommended_min_credentials:
+          type: integer
+          description: Advisory; shown to users and counted in the admin summary.
+          minimum: 1
+          maximum: 5
+          default: 2
+    attestation:
+      type: object
+      additionalProperties: false
+      default: {}
+      properties:
+        policy:
+          type: string
+          enum: [none, optional, required]
+          default: optional
+        trust_roots_pem:
+          type: array
+          description: Public attestation root CA certificates (PEM). Not secrets.
+          maxItems: 50
+          default: []
+          items:
+            type: string
+            maxLength: 8192
+            pattern: '^-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----\s*$'
+        aaguid_allow:
+          type: array
+          description: Only valid with policy required.
+          maxItems: 500
+          uniqueItems: true
+          default: []
+          items:
+            type: string
+            pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        aaguid_deny:
+          type: array
+          description: Applied at registration and at every authentication.
+          maxItems: 500
+          uniqueItems: true
+          default: []
+          items:
+            type: string
+            pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        catalog_extra:
+          type: array
+          maxItems: 200
+          default: []
+          items:
+            type: object
+            additionalProperties: false
+            required: [aaguid, vendor, model]
+            properties:
+              aaguid:
+                type: string
+                pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              vendor: { type: string, minLength: 1, maxLength: 64 }
+              model: { type: string, minLength: 1, maxLength: 96 }
+              fips: { type: boolean, default: false }
+    fips_mode:
+      type: boolean
+      description: Requires attestation required, a FIPS-only allow-list, user verification required, ES256 only, roaming device-bound keys (SPEC.md section 7.5).
+      default: false
+    clone_detection:
+      type: string
+      enum: [block, flag]
+      default: block
+
+migrations: { dir: migrations, target: 1 }
+lifecycle: { on_install: install, on_upgrade: upgrade, on_uninstall: uninstall }
+telemetry: { declared_pii_fields: [user_id, username] }
