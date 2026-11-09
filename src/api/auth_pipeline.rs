@@ -664,15 +664,9 @@ async fn enroll_begin(
             .check_enrollment_only_factor(&u, &factor_id)
             .await?;
     }
-    // Replacing recovery codes invalidates the old ones: that needs step-up.
-    if factor_id == "recovery"
-        && pipeline
-            .store()
-            .list(user.id)
-            .await?
-            .iter()
-            .any(|f| f.kind == "recovery" && f.verified)
-    {
+    // OQ-14: a second credential of a factor the user holds (another key,
+    // new recovery codes, which invalidate the old ones) needs step-up.
+    if pipeline.adding_needs_step_up(user.id, &factor_id).await? {
         require_step_up(&state, &user).await?;
     }
     let client = pipeline.begin_enroll(&u, &factor_id).await?;
@@ -690,6 +684,10 @@ async fn enroll_complete(
 ) -> ApiResult<Json<Value>> {
     let pipeline = AuthPipeline::for_state(&state);
     let u = current_user(&state, &user).await?;
+    // OQ-14: checked again at completion (defence in depth).
+    if pipeline.adding_needs_step_up(user.id, &factor_id).await? {
+        require_step_up(&state, &user).await?;
+    }
     // The first factor also gets recovery codes, shown once.
     let had_any = !pipeline.store().usable_kinds(u.id).await?.is_empty();
     // On success the pipeline closes the grace window and revokes this

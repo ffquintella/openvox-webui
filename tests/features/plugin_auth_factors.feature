@@ -176,6 +176,14 @@ Feature: Plugin second factors
       | 900     | 60   | pass without step-up                                |
       | 900     | 1200 | need step-up because the verification is too old    |
 
+  Scenario: A second credential of a factor needs step-up and every enrolment is published (OQ-14)
+    Given an enabled WASM factor plugin "pe" that echoes its enrolment input
+    Then adding another credential of "pe:key" should not need step-up
+    When alice enrolls the factor "pe:key"
+    Then adding another credential of "pe:key" should need step-up
+    And adding another credential of "totp" should not need step-up
+    And the event "auth.factor.enrolled" should have been published for "pe:key"
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"

@@ -231,13 +231,12 @@ impl<'a> FactorStore<'a> {
         Ok(r.rows_affected())
     }
 
-    pub async fn replace_recovery(&self, user: Uuid, data: &Value) -> Result<()> {
+    pub async fn replace_recovery(&self, user: Uuid, data: &Value) -> Result<StoredRecord> {
         sqlx::query("DELETE FROM user_factors WHERE user_id = ? AND kind = 'recovery'")
             .bind(user.to_string())
             .execute(self.pool)
             .await?;
         self.insert(user, "recovery", "Recovery codes", data, true)
-            .await?;
-        Ok(())
+            .await
     }
 }

@@ -568,9 +568,43 @@ async fn a_plugin_factor_is_served_over_http_while_its_plugin_is_enabled() {
     )
     .await;
     ok.assert_ok();
-    let claims = claims_of(ok.json::<Value>()["access_token"].as_str().unwrap());
+    let raised = ok.json::<Value>()["access_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let claims = claims_of(&raised);
     assert_eq!(claims["acr"], 2);
     assert_eq!(claims["amr"], json!(["pwd", "hwk"]));
+
+    // OQ-14: a second key of the same factor needs step-up; the first one
+    // published `auth.factor.enrolled`.
+    let second = call(
+        &app,
+        Some(&admin),
+        "t",
+        "POST",
+        "/api/v1/users/me/factors/goodkey:key/enroll/begin",
+        json!({}),
+    )
+    .await;
+    second.assert_unauthorized();
+    assert_eq!(second.json::<Value>()["code"], "step_up_required");
+    call(
+        &app,
+        Some(&raised),
+        "ua",
+        "POST",
+        "/api/v1/users/me/factors/goodkey:key/enroll/begin",
+        json!({}),
+    )
+    .await
+    .assert_ok();
+    let enrolled: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM event_outbox WHERE type = 'auth.factor.enrolled'")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(enrolled, 2, "the key and the recovery codes");
 
     // Disabled: no longer listed or offered; recovery codes remain.
     pm.disable("goodkey").await.unwrap();

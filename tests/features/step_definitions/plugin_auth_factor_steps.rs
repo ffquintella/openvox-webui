@@ -656,6 +656,52 @@ async fn when_step_up(world: &mut TestWorld) {
     }
 }
 
+#[when(expr = "alice enrolls the factor {string}")]
+async fn when_enrolls(world: &mut TestWorld, factor: String) {
+    let s = scenario(world);
+    let p = s.pipeline();
+    p.begin_enroll(&s.user, &factor).await.unwrap();
+    p.complete_enroll(&s.user, &factor, json!({"credential": {}}))
+        .await
+        .unwrap();
+}
+
+#[then(regex = r#"^adding another credential of "([^"]+)" should (need|not need) step-up$"#)]
+async fn then_adding_needs_step_up(world: &mut TestWorld, factor: String, need: String) {
+    let s = scenario(world);
+    let got = s
+        .pipeline()
+        .adding_needs_step_up(s.user.id, &factor)
+        .await
+        .unwrap();
+    assert_eq!(got, need == "need", "{factor}");
+}
+
+#[then(expr = "the event {string} should have been published for {string}")]
+async fn then_event_published(world: &mut TestWorld, event: String, factor: String) {
+    let s = scenario(world);
+    let payloads: Vec<String> =
+        sqlx::query_scalar("SELECT payload FROM event_outbox WHERE type = ?")
+            .bind(&event)
+            .fetch_all(&s.pool)
+            .await
+            .unwrap();
+    let payloads: Vec<Value> = payloads
+        .iter()
+        .map(|p| serde_json::from_str(p).unwrap())
+        .collect();
+    let mine: Vec<&Value> = payloads
+        .iter()
+        .filter(|p| p["factor"] == factor.as_str())
+        .collect();
+    assert_eq!(mine.len(), 1, "{payloads:?}");
+    let p = mine[0].as_object().unwrap();
+    let mut keys: Vec<&str> = p.keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, ["factor", "record_id", "user_id"]);
+    assert_eq!(p["user_id"], s.user.id.to_string());
+}
+
 #[given(expr = "step-up freshness is {int} seconds")]
 async fn given_freshness(world: &mut TestWorld, secs: u64) {
     scenario(world).config.auth.step_up.max_age_secs = secs;

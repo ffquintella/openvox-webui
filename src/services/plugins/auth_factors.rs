@@ -1687,6 +1687,50 @@ mod tests {
         ));
     }
 
+    async fn events(e: &Env, event_type: &str) -> Vec<Value> {
+        let rows: Vec<String> = sqlx::query_scalar(
+            "SELECT payload FROM event_outbox WHERE type = ? ORDER BY created_at",
+        )
+        .bind(event_type)
+        .fetch_all(&e.pool)
+        .await
+        .unwrap();
+        rows.iter()
+            .map(|p| serde_json::from_str(p).unwrap())
+            .collect()
+    }
+
+    /// OQ-14: a second credential of a factor needs step-up, and every
+    /// enrolment publishes `auth.factor.enrolled` (the notification hook).
+    #[tokio::test]
+    async fn adding_a_credential_of_a_factor_the_user_has_needs_step_up() {
+        let cap = Arc::new(Capture::default());
+        let e = env(vec![("cap", cap as Arc<dyn BuiltinPlugin>)]).await;
+        let y = factor_yaml("cap", "{ kind: builtin, entry: cap }");
+        let pkg = build_signed_package(&[("plugin.yaml", y.as_bytes())], "cap", "1.0.0", 2, SEED);
+        e.manager.install(&pkg, "admin", None).await.unwrap();
+        e.manager.enable("cap").await.unwrap();
+        let p = e.pipeline();
+        assert!(!p.adding_needs_step_up(e.user.id, "cap:key").await.unwrap());
+        p.begin_enroll(&e.user, "cap:key").await.unwrap();
+        p.complete_enroll(&e.user, "cap:key", json!({}))
+            .await
+            .unwrap();
+        assert!(p.adding_needs_step_up(e.user.id, "cap:key").await.unwrap());
+        assert!(!p.adding_needs_step_up(e.user.id, "totp").await.unwrap());
+        let record = p.store().records(e.user.id, "cap:key", true).await.unwrap()[0]
+            .id
+            .clone();
+        assert_eq!(
+            events(&e, "auth.factor.enrolled").await,
+            vec![json!({"user_id": e.user.id, "factor": "cap:key", "record_id": record})]
+        );
+        // Recovery codes (immediate enrolment) publish it too.
+        p.begin_enroll(&e.user, "recovery").await.unwrap();
+        assert_eq!(events(&e, "auth.factor.enrolled").await.len(), 2);
+        assert!(p.adding_needs_step_up(e.user.id, "recovery").await.unwrap());
+    }
+
     // ---- wire format ---------------------------------------------------------
 
     fn rec(id: &str) -> FactorRecord {

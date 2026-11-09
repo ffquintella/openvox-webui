@@ -53,11 +53,14 @@ use crate::{
         create_auth_session_scoped, create_auth_session_with_levels, create_refresh_token,
         revoke_auth_session, SessionScope, SCOPE_ENROLLMENT,
     },
-    models::{AuthResponse, User},
-    services::AuthService,
+    models::{AuthResponse, EventActor, User},
+    services::{plugins::events::EventBus, AuthService},
 };
 
 pub const AUDIT_AUTH: &str = "auth";
+/// Core events of the catalog (PLUGIN_PLATFORM.md section 9.1).
+pub const EVENT_FACTOR_ENROLLED: &str = "auth.factor.enrolled";
+pub const EVENT_FACTOR_REMOVED: &str = "auth.factor.removed";
 /// Code of a refusal because a policy requires a phishing-resistant factor
 /// and the user has none that can run (OQ-6).
 pub const PHISHING_RESISTANT_REQUIRED: &str = "phishing_resistant_factor_required";
@@ -1429,6 +1432,45 @@ impl<'a> AuthPipeline<'a> {
 
     // ---------------------------------------------------------- enrollment
 
+    /// OQ-14: adding a credential of a factor the user already holds (a
+    /// second key, new recovery codes) needs a step-up, so a session that
+    /// only proved the password cannot add an attacker's key next to the
+    /// user's. The first credential of a factor needs none.
+    pub async fn adding_needs_step_up(
+        &self,
+        user: Uuid,
+        factor_id: &str,
+    ) -> Result<bool, PipelineError> {
+        Ok(self
+            .store()
+            .list(user)
+            .await?
+            .iter()
+            .any(|f| f.verified && f.kind == factor_id))
+    }
+
+    /// Records a new credential: the audit entry and the core event
+    /// `auth.factor.enrolled` `{user_id, factor, record_id}`. The event is
+    /// the hook for telling the user about it; the host sends no
+    /// notification itself while `notify.send` does not exist (OQ-14).
+    async fn factor_enrolled(&self, user: &User, kind: &str, record_id: &str, additional: bool) {
+        self.audit(
+            user.organization_id,
+            Some(user.id),
+            "auth.factor_enrolled",
+            &user.username,
+            json!({"factor": kind, "record": record_id, "additional": additional}),
+        )
+        .await;
+        EventBus::new(self.pool.clone())
+            .emit(
+                EVENT_FACTOR_ENROLLED,
+                json!({"user_id": user.id, "factor": kind, "record_id": record_id}),
+                EventActor::user(user.username.clone()),
+            )
+            .await;
+    }
+
     pub async fn begin_enroll(&self, user: &User, factor_id: &str) -> Result<Value, PipelineError> {
         let factor = self
             .factor(factor_id)
@@ -1455,19 +1497,14 @@ impl<'a> AuthPipeline<'a> {
                 self.store().put_pending(user.id, kind, &data).await?;
             }
             EnrollMode::Immediate(data) => {
-                if kind == "recovery" {
-                    self.store().replace_recovery(user.id, &data).await?;
+                let additional = !existing.is_empty();
+                let record = if kind == "recovery" {
+                    self.store().replace_recovery(user.id, &data).await?
                 } else {
-                    self.store().insert(user.id, kind, "", &data, true).await?;
-                }
-                self.audit(
-                    user.organization_id,
-                    Some(user.id),
-                    "auth.factor_enrolled",
-                    &user.username,
-                    json!({"factor": kind}),
-                )
-                .await;
+                    self.store().insert(user.id, kind, "", &data, true).await?
+                };
+                self.factor_enrolled(user, kind, &record.id, additional)
+                    .await;
                 self.after_enrolled(user, kind).await?;
             }
         }
@@ -1513,14 +1550,8 @@ impl<'a> AuthPipeline<'a> {
         self.store()
             .finalize(&pending, rec.label.as_deref().unwrap_or(""), &rec.data)
             .await?;
-        self.audit(
-            user.organization_id,
-            Some(user.id),
-            "auth.factor_enrolled",
-            &user.username,
-            json!({"factor": kind}),
-        )
-        .await;
+        self.factor_enrolled(user, kind, &pending.id, !existing.is_empty())
+            .await;
         self.after_enrolled(user, kind).await
     }
 }
