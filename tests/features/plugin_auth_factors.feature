@@ -193,6 +193,14 @@ Feature: Plugin second factors
     When alice renames her "fa:key" credential to ""
     Then the answer should be refused with "invalid_label"
 
+  Scenario: Removing and resetting factors publishes auth.factor.removed (H-10)
+    Given alice has enrolled the factor "fa:key" 2 times
+    And alice has enrolled the factor "totp"
+    When alice removes her "fa:key" credential
+    Then 1 "auth.factor.removed" events should name alice's records with the actors "alice"
+    When an administrator resets alice's factors
+    Then 3 "auth.factor.removed" events should name alice's records with the actors "alice,admin,admin"
+
   Scenario: A plugin factor reads the enrolment time from the host (H-3)
     Given an enabled WASM factor plugin "pe" that echoes its enrolment input
     When alice begins enrolling the factor "pe:key"

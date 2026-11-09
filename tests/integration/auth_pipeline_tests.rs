@@ -867,6 +867,21 @@ async fn admin_can_reset_a_users_factors() {
     .await;
     r.assert_ok();
     assert_eq!(r.json::<Value>()["removed"], 2, "totp and recovery codes");
+    // H-10/OQ-20: one `auth.factor.removed` per removed credential.
+    let removed: Vec<String> = sqlx::query_scalar(
+        "SELECT payload FROM event_outbox WHERE type = 'auth.factor.removed' ORDER BY created_at",
+    )
+    .fetch_all(&app.state.db)
+    .await
+    .unwrap();
+    let mut kinds: Vec<String> = removed
+        .iter()
+        .map(|p| serde_json::from_str::<Value>(p).unwrap())
+        .inspect(|p| assert_eq!(p["user_id"], viewer_id.to_string()))
+        .map(|p| p["factor"].as_str().unwrap().to_string())
+        .collect();
+    kinds.sort();
+    assert_eq!(kinds, ["recovery", "totp"]);
     call(
         &app,
         Some(&viewer),

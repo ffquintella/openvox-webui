@@ -732,6 +732,51 @@ async fn then_labelled(world: &mut TestWorld, factor: String, label: String) {
     assert_eq!(rec.label, label);
 }
 
+#[when(expr = "alice removes her {string} credential")]
+async fn when_remove(world: &mut TestWorld, factor: String) {
+    let s = scenario(world);
+    let id = s.records[&factor][0].clone();
+    assert!(s
+        .pipeline()
+        .remove_factor(s.user.id, &id, "alice")
+        .await
+        .unwrap());
+}
+
+#[when("an administrator resets alice's factors")]
+async fn when_reset(world: &mut TestWorld) {
+    let s = scenario(world);
+    s.pipeline()
+        .remove_all_factors(s.user.id, "admin")
+        .await
+        .unwrap();
+}
+
+#[then(expr = "{int} {string} events should name alice's records with the actors {string}")]
+async fn then_removed_events(world: &mut TestWorld, n: usize, event: String, actors: String) {
+    let s = scenario(world);
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT payload, actor_id FROM event_outbox WHERE type = ? ORDER BY created_at",
+    )
+    .bind(&event)
+    .fetch_all(&s.pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), n, "{rows:?}");
+    let ids: HashSet<String> = s.records.values().flatten().cloned().collect();
+    for (payload, _) in &rows {
+        let p: Value = serde_json::from_str(payload).unwrap();
+        let mut keys: Vec<&str> = p.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, ["factor", "record_id", "user_id"]);
+        assert_eq!(p["user_id"], s.user.id.to_string());
+        assert!(ids.contains(p["record_id"].as_str().unwrap()), "{p}");
+    }
+    let got: Vec<String> = rows.into_iter().filter_map(|r| r.1).collect();
+    let want: Vec<String> = actors.split(',').map(|a| a.trim().to_string()).collect();
+    assert_eq!(got, want);
+}
+
 #[given(expr = "step-up freshness is {int} seconds")]
 async fn given_freshness(world: &mut TestWorld, secs: u64) {
     scenario(world).config.auth.step_up.max_age_secs = secs;

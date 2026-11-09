@@ -714,7 +714,8 @@ async fn remove_factor(
 ) -> ApiResult<Json<Value>> {
     require_step_up(&state, &user).await?;
     let pipeline = AuthPipeline::for_state(&state);
-    if !pipeline.store().delete(user.id, &id).await? {
+    // H-10/OQ-20: publishes `auth.factor.removed` with the removal.
+    if !pipeline.remove_factor(user.id, &id, &user.username).await? {
         return Err(AppError::not_found("Factor not found").into());
     }
     pipeline
@@ -763,7 +764,9 @@ async fn reset_factors(
         .await?
         .ok_or_else(|| AppError::not_found("User not found"))?;
     let pipeline = AuthPipeline::for_state(&state);
-    let removed = pipeline.store().delete_all(target.id).await?;
+    let removed = pipeline
+        .remove_all_factors(target.id, &user.username)
+        .await?;
     pipeline
         .audit(
             user.organization_id,

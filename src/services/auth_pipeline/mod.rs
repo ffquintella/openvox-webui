@@ -1449,6 +1449,67 @@ impl<'a> AuthPipeline<'a> {
             .any(|f| f.verified && f.kind == factor_id))
     }
 
+    /// Deletes records of `owner` (one record or all of them) and, in the
+    /// same transaction, publishes `auth.factor.removed`
+    /// `{user_id, factor, record_id}` for each verified one (H-10/OQ-20), so
+    /// the event exists only if the removal commits. Returns how many
+    /// records were deleted.
+    async fn delete_records(
+        &self,
+        owner: Uuid,
+        record_id: Option<&str>,
+        actor: &str,
+    ) -> Result<u64, PipelineError> {
+        let mut tx = self.pool.begin().await?;
+        let rows: Vec<(String, String, i64)> = match record_id {
+            Some(id) => {
+                sqlx::query_as(
+                    "DELETE FROM user_factors WHERE id = ? AND user_id = ? RETURNING id, kind, verified",
+                )
+                .bind(id)
+                .bind(owner.to_string())
+                .fetch_all(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query_as(
+                    "DELETE FROM user_factors WHERE user_id = ? RETURNING id, kind, verified",
+                )
+                .bind(owner.to_string())
+                .fetch_all(&mut *tx)
+                .await?
+            }
+        };
+        for (id, kind, verified) in &rows {
+            if *verified != 0 {
+                EventBus::publish_in_tx(
+                    &mut tx,
+                    EVENT_FACTOR_REMOVED,
+                    json!({"user_id": owner, "factor": kind, "record_id": id}),
+                    EventActor::user(actor),
+                )
+                .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(rows.len() as u64)
+    }
+
+    /// Removes one record of `owner`; `false` when there is none.
+    pub async fn remove_factor(
+        &self,
+        owner: Uuid,
+        record_id: &str,
+        actor: &str,
+    ) -> Result<bool, PipelineError> {
+        Ok(self.delete_records(owner, Some(record_id), actor).await? > 0)
+    }
+
+    /// Removes every record of `owner` (administrator reset).
+    pub async fn remove_all_factors(&self, owner: Uuid, actor: &str) -> Result<u64, PipelineError> {
+        self.delete_records(owner, None, actor).await
+    }
+
     /// Renames one of the user's verified records (OQ-15). The label is
     /// trimmed and must be 1 to 64 characters without control characters
     /// (`invalid_label`, as for a plugin's enrolment label). `None` when the
@@ -1632,6 +1693,60 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    async fn removed_events(pool: &SqlitePool) -> Vec<Value> {
+        let rows: Vec<String> = sqlx::query_scalar(
+            "SELECT payload FROM event_outbox WHERE type = 'auth.factor.removed' ORDER BY created_at",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        rows.iter()
+            .map(|p| serde_json::from_str(p).unwrap())
+            .collect()
+    }
+
+    /// H-10/OQ-20: removal and reset publish `auth.factor.removed` with the
+    /// user, the factor and the record, for verified records only.
+    #[tokio::test]
+    async fn removing_factors_publishes_auth_factor_removed() {
+        let (pool, user) = db_user().await;
+        let cfg = AppConfig::default();
+        let p = AuthPipeline::new(&pool, &cfg);
+        let insert = |kind: &'static str, verified: bool| {
+            let p = &p;
+            let uid = user.id;
+            async move {
+                p.store()
+                    .insert(uid, kind, "", &json!({}), verified)
+                    .await
+                    .unwrap()
+                    .id
+            }
+        };
+        let key = insert("mfa-fido2:security-key", true).await;
+        let totp = insert("totp", true).await;
+        let pending = insert("webauthn", false).await;
+        assert!(p.remove_factor(user.id, &key, "alice").await.unwrap());
+        assert!(!p.remove_factor(user.id, &key, "alice").await.unwrap());
+        assert!(p.remove_factor(user.id, &pending, "alice").await.unwrap());
+        assert_eq!(
+            removed_events(&pool).await,
+            vec![json!({"user_id": user.id, "factor": "mfa-fido2:security-key", "record_id": key})]
+        );
+        insert("recovery", true).await;
+        assert_eq!(p.remove_all_factors(user.id, "admin").await.unwrap(), 2);
+        let events = removed_events(&pool).await;
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().any(|e| e["record_id"] == totp.as_str()));
+        let actors: Vec<String> = sqlx::query_scalar(
+            "SELECT actor_id FROM event_outbox WHERE type = 'auth.factor.removed' ORDER BY created_at",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(actors, ["alice", "admin", "admin"]);
     }
 
     /// OQ-15: owners rename their verified records; labels are 1 to 64
