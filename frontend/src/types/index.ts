@@ -2805,6 +2805,31 @@ export interface PluginCapabilityInfo {
 }
 
 /** A declared capability with the administrator's decision. */
+/** Settings of a plugin: JSON Schema subset, stored values and what blocks enabling it. */
+export interface PluginConfigStatus {
+  schema: PluginConfigSchema | null;
+  config: Record<string, unknown>;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface PluginConfigSchema {
+  type?: string;
+  description?: string;
+  default?: unknown;
+  enum?: unknown[];
+  pattern?: string;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  minItems?: number;
+  maxItems?: number;
+  required?: string[];
+  properties?: Record<string, PluginConfigSchema>;
+  items?: PluginConfigSchema;
+}
+
 export interface PluginCapabilityApproval extends PluginCapabilityInfo {
   granted: boolean;
   /** Denied by `plugins.policy`, so it cannot be approved. */

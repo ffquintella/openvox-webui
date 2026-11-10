@@ -69,6 +69,27 @@ export function useEnablePlugin() {
   });
 }
 
+export function usePluginConfigStatus(id: string | null) {
+  return useQuery({
+    queryKey: ['plugin-config', id],
+    queryFn: () => pluginsApi.configStatus(id as string),
+    enabled: !!id,
+  });
+}
+
+export function useSavePluginConfig() {
+  const invalidate = useInvalidatePlugins();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, config }: { id: string; config: Record<string, unknown> }) =>
+      pluginsApi.saveConfig(id, config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plugin-config'] });
+      invalidate();
+    },
+  });
+}
+
 export function useApprovePluginCapabilities() {
   const invalidate = useInvalidatePlugins();
   return useMutation({

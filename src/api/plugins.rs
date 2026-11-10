@@ -84,6 +84,7 @@ pub fn routes() -> Router<AppState> {
             get(get_capabilities).put(approve_capabilities),
         )
         .route("/{id}/config", get(get_config).put(put_config))
+        .route("/{id}/config/status", get(get_config_status))
         .route("/{id}/storage", get(get_storage))
         // Plugin API routes (H-7): any other path under /{id}/; the static
         // core routes above always take precedence.
@@ -873,6 +874,15 @@ async fn get_config(
     Ok(Json(serde_json::Value::Object(cfg)))
 }
 
+async fn get_config_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    require(&state, &user, Resource::Plugins, Action::Admin).await?;
+    Ok(Json(state.plugin_manager.config_status(&id).await?))
+}
+
 async fn put_config(
     State(state): State<AppState>,
     user: AuthUser,
@@ -889,6 +899,18 @@ async fn put_config(
             "Settings are limited to 64 KB and keys of 1 to 128 characters".into(),
         )
         .into());
+    }
+    let schema = state.plugin_manager.config_schema_of(&id).await;
+    if let Some(schema) = schema {
+        let errors = crate::services::plugins::config_schema::validate_config(&schema, &values);
+        if !errors.is_empty() {
+            return Err(PluginError::Unprocessable {
+                code: "config_invalid",
+                message: format!("The settings are not valid: {}", errors.join("; ")),
+                details: Some(json!(errors)),
+            }
+            .into());
+        }
     }
     crate::db::PluginRepository::new(state.plugin_manager.pool())
         .replace_config(&id, &values, &user.username)

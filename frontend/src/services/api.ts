@@ -180,6 +180,7 @@ import type {
   // Plugin types
   PluginSummary,
   PluginDetail,
+  PluginConfigStatus,
   ApprovePluginCapabilitiesRequest,
   PluginPreflightResult,
   PluginInstallOptions,
@@ -2174,6 +2175,20 @@ export const pluginsApi = {
     request: ApprovePluginCapabilitiesRequest
   ): Promise<PluginDetail> => {
     const response = await client.put(`/plugins/${encodeURIComponent(id)}/capabilities`, request);
+    return response.data;
+  },
+
+  /** Settings schema, stored values and what is missing before the plugin can be enabled. */
+  configStatus: async (id: string): Promise<PluginConfigStatus> => {
+    const response = await client.get(`/plugins/${encodeURIComponent(id)}/config/status`);
+    return response.data;
+  },
+
+  saveConfig: async (
+    id: string,
+    config: Record<string, unknown>
+  ): Promise<Record<string, unknown>> => {
+    const response = await client.put(`/plugins/${encodeURIComponent(id)}/config`, config);
     return response.data;
   },
 

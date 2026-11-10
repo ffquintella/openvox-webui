@@ -1106,6 +1106,133 @@ async fn the_host_runs_the_mfa_fido2_plugin_end_to_end() {
     e.finish();
 }
 
+/// A plugin whose `config_schema` requires settings cannot be enabled without
+/// them, invalid settings are refused, and the status endpoint says what is
+/// missing.
+#[tokio::test]
+async fn a_plugin_that_needs_settings_is_not_enabled_without_them() {
+    let mut e = E2e {
+        app: host().await,
+        log: Vec::new(),
+    };
+    let r = e
+        .call(
+            None,
+            "POST",
+            "/api/v1/auth/login",
+            json!({"username": "admin", "password": ADMIN_PASSWORD}),
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let admin = token_of(&r);
+    let pkg = standin_package(rand::random());
+    let shown = format!("<.ovxp, {} bytes>", pkg.len());
+    let r = e
+        .send(
+            Some(&admin),
+            "POST",
+            "/api/v1/plugins/preflight",
+            Body::from(pkg.clone()),
+            shown.clone(),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let key_id = r.body["signature"]["key_id"].as_str().unwrap().to_string();
+    let r = e
+        .send(
+            Some(&admin),
+            "POST",
+            "/api/v1/plugins",
+            Body::from(pkg),
+            shown,
+            &[
+                ("x-trust-key-confirm", &key_id[..8]),
+                ("x-trust-key-label", "mfa-fido2 settings"),
+                ("x-reauth-password", ADMIN_PASSWORD),
+            ],
+        )
+        .await;
+    assert_eq!(r.status, 201, "{}", r.body);
+    let declared: Vec<String> = r.body["capabilities"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c["name"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let r = e
+        .call(
+            Some(&admin),
+            "PUT",
+            "/api/v1/plugins/mfa-fido2/capabilities",
+            json!({ "capabilities": declared }),
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+
+    let r = e
+        .call(
+            Some(&admin),
+            "GET",
+            "/api/v1/plugins/mfa-fido2/config/status",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert_eq!(r.body["valid"], false, "{}", r.body);
+    assert_eq!(r.body["errors"], json!(["'rp' is required"]), "{}", r.body);
+    assert!(
+        r.body["schema"]["properties"]["rp"].is_object(),
+        "{}",
+        r.body
+    );
+
+    let r = e
+        .call(
+            Some(&admin),
+            "POST",
+            "/api/v1/plugins/mfa-fido2/enable",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.status, 422, "{}", r.body);
+    assert_eq!(r.body["code"], "config_invalid", "{}", r.body);
+
+    let r = e
+        .call(
+            Some(&admin),
+            "PUT",
+            "/api/v1/plugins/mfa-fido2/config",
+            json!({"rp": {"id": "Not A Host", "origins": ["ftp://x"]}}),
+        )
+        .await;
+    assert_eq!(r.status, 422, "{}", r.body);
+    assert_eq!(r.body["code"], "config_invalid", "{}", r.body);
+
+    let config = json!({"rp": {"id": "localhost", "name": "OpenVox WebUI", "origins": [ORIGIN]}});
+    let r = e
+        .call(
+            Some(&admin),
+            "PUT",
+            "/api/v1/plugins/mfa-fido2/config",
+            config,
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let r = e
+        .call(
+            Some(&admin),
+            "POST",
+            "/api/v1/plugins/mfa-fido2/enable",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert_eq!(r.body["state"], "enabled", "{}", r.body);
+}
+
 /// Writes the signed stand-in package for the browser run of
 /// scripts/e2e-mfa-fido2-browser.mjs: `OVX_E2E_EXPORT=<file>`.
 #[tokio::test]

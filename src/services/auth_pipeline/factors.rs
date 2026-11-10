@@ -509,6 +509,24 @@ fn passkeys(records: &[FactorRecord]) -> Vec<(String, Passkey)> {
         .collect()
 }
 
+/// Steers the browser towards a roaming security key (YubiKey and similar)
+/// instead of a password manager or platform passkey. The stored credential
+/// stays a `Passkey`, so keys enrolled earlier keep working.
+fn prefer_security_key(options: &mut Value, registration: bool) {
+    let Some(pk) = options.get_mut("publicKey").and_then(Value::as_object_mut) else {
+        return;
+    };
+    pk.insert("hints".into(), json!(["security-key"]));
+    if registration {
+        let sel = pk
+            .entry("authenticatorSelection")
+            .or_insert_with(|| json!({}));
+        if let Some(sel) = sel.as_object_mut() {
+            sel.insert("authenticatorAttachment".into(), json!("cross-platform"));
+        }
+    }
+}
+
 #[async_trait]
 impl AuthFactor for WebAuthnFactor {
     fn descriptor(&self) -> FactorDescriptor {
@@ -539,9 +557,11 @@ impl AuthFactor for WebAuthnFactor {
                 },
             )
             .map_err(|e| FactorError::Internal(e.to_string()))?;
+        let mut client =
+            serde_json::to_value(options).map_err(|e| FactorError::Internal(e.to_string()))?;
+        prefer_security_key(&mut client, true);
         Ok(EnrollStart {
-            client: serde_json::to_value(options)
-                .map_err(|e| FactorError::Internal(e.to_string()))?,
+            client,
             mode: EnrollMode::Pending(json!({
                 "registration": serde_json::to_value(state)
                     .map_err(|e| FactorError::Internal(e.to_string()))?
@@ -607,9 +627,11 @@ impl AuthFactor for WebAuthnFactor {
         let (options, state) = w
             .start_passkey_authentication(&keys)
             .map_err(|e| FactorError::Internal(e.to_string()))?;
+        let mut client =
+            serde_json::to_value(options).map_err(|e| FactorError::Internal(e.to_string()))?;
+        prefer_security_key(&mut client, false);
         Ok(ChallengeStart {
-            client: serde_json::to_value(options)
-                .map_err(|e| FactorError::Internal(e.to_string()))?,
+            client,
             flow_state: Some(
                 serde_json::to_string(&state).map_err(|e| FactorError::Internal(e.to_string()))?,
             ),

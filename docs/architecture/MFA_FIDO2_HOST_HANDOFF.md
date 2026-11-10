@@ -298,8 +298,11 @@ The package layout the host accepted: `plugin.yaml`, `backend/plugin.wasm` (core
 - SSO excluded from enrollment grace windows (OQ-12): OIDC and SAML sign-ins keep
   `403 mfa_enrollment_required`; the sign-in provider is not recorded on sessions, so step-up applies
   phishing-resistance policies by role whatever their provider condition.
-- Also not done: host validation of `config_schema` (settings are stored as given; the module must
-  validate), a settings form generated from `config_schema`, per-route body limits, request and
+- Settings: the host validates stored settings against `config_schema` (subset in
+  `src/services/plugins/config_schema.rs`) at `PUT /config` and at enable (`422 config_invalid`), and
+  the plugin details dialog has a settings form generated from the schema. The module still validates
+  what it receives.
+- Also not done: per-route body limits, request and
   response schemas, OpenAPI merge, `remote` runtime factors and routes, admin listing of grace windows.
 
 ## 9. Residual risks

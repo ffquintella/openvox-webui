@@ -1183,6 +1183,57 @@ impl PluginManager {
         self.manifest_of(&rec.id, v).await.ok()
     }
 
+    // ---- settings ---------------------------------------------------------
+
+    /// Problems of the stored settings against the manifest `config_schema`
+    /// (empty when there is no schema or the settings satisfy it).
+    pub async fn config_errors(
+        &self,
+        id: &str,
+        schema: Option<&Value>,
+    ) -> Result<Vec<String>, PluginError> {
+        let Some(schema) = schema else {
+            return Ok(Vec::new());
+        };
+        let cfg = self
+            .repo()
+            .get_config(id)
+            .await
+            .map_err(PluginError::Internal)?;
+        Ok(super::config_schema::validate_config(schema, &cfg))
+    }
+
+    /// The `config_schema` of the active version, when it declares one.
+    pub async fn config_schema_of(&self, id: &str) -> Option<Value> {
+        let rec = self.require(id).await.ok()?;
+        self.active_manifest(&rec).await?.config_schema
+    }
+
+    /// The settings of the active version: schema, stored values and the
+    /// problems that keep the plugin from being enabled.
+    pub async fn config_status(&self, id: &str) -> Result<Value, PluginError> {
+        let rec = self.require(id).await?;
+        let schema = self
+            .active_manifest(&rec)
+            .await
+            .and_then(|m| m.config_schema);
+        let config = self
+            .repo()
+            .get_config(id)
+            .await
+            .map_err(PluginError::Internal)?;
+        let errors = match &schema {
+            Some(s) => super::config_schema::validate_config(s, &config),
+            None => Vec::new(),
+        };
+        Ok(json!({
+            "schema": schema,
+            "config": config,
+            "valid": errors.is_empty(),
+            "errors": errors,
+        }))
+    }
+
     // ---- lifecycle --------------------------------------------------------
 
     pub async fn enable(&self, id: &str) -> Result<PluginDetail, PluginError> {
@@ -1215,6 +1266,17 @@ impl PluginManager {
             }
         }
         self.check_interceptor_limit(m).await?;
+        let config_errors = self.config_errors(id, m.config_schema.as_ref()).await?;
+        if !config_errors.is_empty() {
+            return Err(PluginError::Unprocessable {
+                code: "config_invalid",
+                message: format!(
+                    "The plugin needs its settings before it can be enabled: {}",
+                    config_errors.join("; ")
+                ),
+                details: Some(json!(config_errors)),
+            });
+        }
         match m.runtime.kind {
             RuntimeKind::Builtin => {
                 let entry = m.runtime.entry.clone().unwrap_or_default();

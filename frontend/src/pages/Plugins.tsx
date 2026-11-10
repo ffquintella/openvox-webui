@@ -32,12 +32,14 @@ import UpdatesTab from '../components/plugins/UpdatesTab';
 import FactsTab from '../components/plugins/FactsTab';
 import ClassificationTab from '../components/plugins/ClassificationTab';
 import CapabilityApprovalPanel from '../components/plugins/CapabilityApprovalPanel';
+import PluginConfigPanel from '../components/plugins/PluginConfigPanel';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import ModuleTrustPanel from '../components/plugins/ModuleTrustPanel';
 import { ErrorBox, Modal, StateBadge, WarningBox } from '../components/plugins/pluginUi';
 import { lifecycleWarnings } from '../components/plugins/lifecycleWarnings';
 import {
   dangerBtn,
+  getApiErrorCode,
   getApiErrorMessage,
   primaryBtn,
   secondaryBtn,
@@ -80,6 +82,7 @@ function PluginDetailDialog({
             pendingVersion={data.pending_version}
             canAdmin={canAdmin}
           />
+          <PluginConfigPanel pluginId={data.id} canAdmin={canAdmin} />
           <ModuleTrustPanel plugin={data} canTrust={canTrust} canAdmin={canAdmin} />
           <section>
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Versions</h4>
@@ -111,13 +114,15 @@ export default function Plugins() {
   const verify = useVerifyPlugin();
   const uninstall = useUninstallPlugin();
 
-  const run = async (fn: () => Promise<unknown>, fallback: string) => {
+  const run = async (fn: () => Promise<unknown>, fallback: string, pluginId?: string) => {
     setActionError(null);
     setActionWarnings([]);
     try {
       setActionWarnings(lifecycleWarnings(await fn()));
     } catch (e) {
       setActionError(getApiErrorMessage(e, fallback));
+      // The settings form is in the details dialog.
+      if (pluginId && getApiErrorCode(e) === 'config_invalid') setDetailId(pluginId);
     }
   };
 
@@ -280,7 +285,9 @@ export default function Plugins() {
                                 aria-label={`Enable ${p.name}`}
                                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                                 disabled={enable.isPending}
-                                onClick={() => run(() => enable.mutateAsync(p.id), 'Enable failed')}
+                                onClick={() =>
+                                  run(() => enable.mutateAsync(p.id), 'Enable failed', p.id)
+                                }
                               >
                                 <Play className="w-4 h-4" />
                               </button>

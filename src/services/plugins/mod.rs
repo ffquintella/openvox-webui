@@ -4,6 +4,7 @@
 pub mod auth_factors;
 pub mod bootstrap;
 pub mod classification;
+pub mod config_schema;
 pub mod events;
 pub mod facts;
 pub mod filter;

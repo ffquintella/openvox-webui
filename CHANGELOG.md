@@ -11,6 +11,16 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add a settings form to the plugin details dialog, generated from the plugin's `config_schema` (nested settings, lists, choices, numbers and switches; "Use <address>" shortcuts offer this browser's host name or origin where the schema's pattern accepts it), and `GET /api/v1/plugins/{id}/config/status` (schema, stored settings, `valid` and the list of problems)
+
+### Changed
+- Validate plugin settings against `config_schema`: `POST /api/v1/plugins/{id}/enable` answers `422 config_invalid` while required settings are missing or invalid (the Plugins page then opens the settings form), and `PUT /api/v1/plugins/{id}/config` refuses settings that do not satisfy the schema with the list of problems. A plugin that needs settings, such as mfa-fido2 with its relying party, can no longer be enabled and then fail every call with a generic "verification method is unavailable"
+- Show a specific message on the Profile page when a plugin factor answers `config_missing`, `config_invalid` or `not_configured` (an administrator must finish the plugin settings)
+
+### Fixed
+- Fix the browser offering the password manager instead of the YubiKey when registering or using a security key: WebAuthn options now request a roaming authenticator (`authenticatorAttachment: cross-platform`, hint `security-key`); keys enrolled earlier keep working
+
 ## [0.54.1] - 2026-11-10
 
 ### Fixed
