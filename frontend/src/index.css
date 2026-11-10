@@ -165,15 +165,18 @@ body {
   color: #f3f4f6;
 }
 
-.input {
-  display: block;
-  width: 100%;
-  border-radius: 0.375rem;
-  border: 1px solid #d1d5db; /* gray-300 */
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  background-color: #ffffff; /* white background for inputs */
-  color: #111827; /* gray-900 - ensure readable text */
-  padding: 0.5rem 0.75rem;
+/* Layered so utilities like pl-10/pr-10 (icon padding) can override the padding */
+@layer components {
+  .input {
+    display: block;
+    width: 100%;
+    border-radius: 0.375rem;
+    border: 1px solid #d1d5db; /* gray-300 */
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    background-color: #ffffff; /* white background for inputs */
+    color: #111827; /* gray-900 - ensure readable text */
+    padding: 0.5rem 0.75rem;
+  }
 }
 
 .input::placeholder {

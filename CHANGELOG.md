@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.54.1] - 2026-11-10
+
+### Fixed
+- Fix inputs with an icon (such as the password fields on the Profile page) showing their text and placeholder underneath the icon: the base `.input` padding no longer overrides the `pl-10`/`pr-10` utilities
+
 ## [0.54.0] - 2026-11-10
 
 ### Added
