@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-11-10
+
 ### Added
 - Add a settings form to the plugin details dialog, generated from the plugin's `config_schema` (nested settings, lists, choices, numbers and switches; "Use <address>" shortcuts offer this browser's host name or origin where the schema's pattern accepts it), and `GET /api/v1/plugins/{id}/config/status` (schema, stored settings, `valid` and the list of problems)
 
