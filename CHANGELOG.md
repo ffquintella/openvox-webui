@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-11-10
+
+### Added
+- Add capability approval to the Plugins page: the plugin details dialog lists every declared capability with its risk and approval state, and an administrator ticks and approves them with one button (also reachable from a new checklist icon on each row); capabilities blocked by policy cannot be ticked. Previously approval was possible only through `PUT /api/v1/plugins/{id}/capabilities`
+
 ### Changed
 - Add the official plugin platform overview `docs/PLUGINS.md` (extension points, security model, administration, writing plugins and status), link it from the README, the project overview and the architecture index, and mark PLUGIN_PLATFORM.md as implemented; remove the internal hand-off draft notes
 

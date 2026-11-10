@@ -180,6 +180,7 @@ import type {
   // Plugin types
   PluginSummary,
   PluginDetail,
+  ApprovePluginCapabilitiesRequest,
   PluginPreflightResult,
   PluginInstallOptions,
   TrustedKeyView,
@@ -2165,6 +2166,14 @@ export const pluginsApi = {
 
   disable: async (id: string): Promise<PluginDetail> => {
     const response = await client.post(`/plugins/${encodeURIComponent(id)}/disable`);
+    return response.data;
+  },
+
+  approveCapabilities: async (
+    id: string,
+    request: ApprovePluginCapabilitiesRequest
+  ): Promise<PluginDetail> => {
+    const response = await client.put(`/plugins/${encodeURIComponent(id)}/capabilities`, request);
     return response.data;
   },
 

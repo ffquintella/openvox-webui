@@ -7,6 +7,7 @@ import {
   Play,
   Pause,
   ShieldCheck,
+  ListChecks,
   Trash2,
   Info,
   Activity,
@@ -30,9 +31,10 @@ import GovernanceTab from '../components/plugins/GovernanceTab';
 import UpdatesTab from '../components/plugins/UpdatesTab';
 import FactsTab from '../components/plugins/FactsTab';
 import ClassificationTab from '../components/plugins/ClassificationTab';
+import CapabilityApprovalPanel from '../components/plugins/CapabilityApprovalPanel';
 import PluginVersionsPanel from '../components/plugins/PluginVersionsPanel';
 import ModuleTrustPanel from '../components/plugins/ModuleTrustPanel';
-import { ErrorBox, Modal, RiskBadge, StateBadge, WarningBox } from '../components/plugins/pluginUi';
+import { ErrorBox, Modal, StateBadge, WarningBox } from '../components/plugins/pluginUi';
 import { lifecycleWarnings } from '../components/plugins/lifecycleWarnings';
 import {
   dangerBtn,
@@ -69,24 +71,15 @@ function PluginDetailDialog({
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{data.state_reason}</p>
             )}
           </div>
-          <section>
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Capabilities</h4>
-            {data.capabilities.length === 0 ? (
-              <p className="text-sm text-gray-500">None</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {data.capabilities.map((c) => (
-                  <li key={c.name} className="flex items-start gap-2 text-sm">
-                    <RiskBadge risk={c.risk} />
-                    <div>
-                      <span className="font-mono">{c.name}</span>
-                      <p className="text-gray-600 dark:text-gray-300">{c.description}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <CapabilityApprovalPanel
+            pluginId={data.id}
+            approvals={
+              data.approvals ??
+              data.capabilities.map((c) => ({ ...c, granted: false, blocked_by_policy: false }))
+            }
+            pendingVersion={data.pending_version}
+            canAdmin={canAdmin}
+          />
           <ModuleTrustPanel plugin={data} canTrust={canTrust} canAdmin={canAdmin} />
           <section>
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Versions</h4>
@@ -292,6 +285,15 @@ export default function Plugins() {
                                 <Play className="w-4 h-4" />
                               </button>
                             )}
+                            <button
+                              type="button"
+                              title="Review and approve capabilities"
+                              aria-label={`Approve capabilities of ${p.name}`}
+                              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                              onClick={() => setDetailId(p.id)}
+                            >
+                              <ListChecks className="w-4 h-4" />
+                            </button>
                             <button
                               type="button"
                               title="Verify signature"

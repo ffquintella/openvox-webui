@@ -2802,6 +2802,20 @@ export interface PluginCapabilityInfo {
   description: string;
 }
 
+/** A declared capability with the administrator's decision. */
+export interface PluginCapabilityApproval extends PluginCapabilityInfo {
+  granted: boolean;
+  /** Denied by `plugins.policy`, so it cannot be approved. */
+  blocked_by_policy: boolean;
+}
+
+export interface ApprovePluginCapabilitiesRequest {
+  /** Defaults to the pending version, otherwise the active one. */
+  version?: string;
+  /** Capabilities to grant; every other declared one is not granted. */
+  capabilities: string[];
+}
+
 export interface PluginVersionRecord {
   plugin_id: string;
   version: string;
@@ -2819,6 +2833,8 @@ export interface PluginVersionRecord {
 export interface PluginDetail extends PluginSummary {
   manifest: Record<string, unknown> | null;
   capabilities: PluginCapabilityInfo[];
+  /** Approval state of the pending version's capabilities, else the active one's. */
+  approvals?: PluginCapabilityApproval[];
   versions: PluginVersionRecord[];
   /** Trusted module pages of the active version (M31). */
   module_trust?: PluginModuleTrustView | null;

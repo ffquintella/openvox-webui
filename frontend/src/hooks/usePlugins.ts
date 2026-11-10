@@ -9,6 +9,7 @@ import type {
   PluginFactSettingsRequest,
   CreateTemplateInstanceRequest,
   TrustPluginModulesRequest,
+  ApprovePluginCapabilitiesRequest,
 } from '../types';
 
 const UI_SLOTS_STALE_MS = 30_000;
@@ -64,6 +65,15 @@ export function useEnablePlugin() {
   const invalidate = useInvalidatePlugins();
   return useMutation({
     mutationFn: (id: string) => pluginsApi.enable(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApprovePluginCapabilities() {
+  const invalidate = useInvalidatePlugins();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: ApprovePluginCapabilitiesRequest }) =>
+      pluginsApi.approveCapabilities(id, request),
     onSuccess: invalidate,
   });
 }
