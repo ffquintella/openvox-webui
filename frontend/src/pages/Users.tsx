@@ -13,10 +13,12 @@ import {
   Globe,
   BookUser,
   Lock,
+  Pencil,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
-import type { Role, AuthProvider } from '../types';
+import PluginSlot from '../components/plugins/PluginSlot';
+import type { Role, AuthProvider, UpdateUserRequest } from '../types';
 
 interface UserData {
   id: string;
@@ -28,6 +30,7 @@ interface UserData {
   /** Directory that owns username, e-mail and password: shown read-only. */
   directory_id?: string | null;
   active?: boolean;
+  force_password_change?: boolean;
   created_at: string;
 }
 
@@ -40,6 +43,12 @@ export default function Users() {
   const [newAuthProvider, setNewAuthProvider] = useState<AuthProvider>('local');
   const [newExternalId, setNewExternalId] = useState('');
   const [pendingRoleChanges, setPendingRoleChanges] = useState<Set<string>>(new Set());
+  const [isEditing, setIsEditing] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editForceChange, setEditForceChange] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: users = [], isLoading } = useQuery({
@@ -84,6 +93,48 @@ export default function Users() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ userId, data }: { userId: string; data: UpdateUserRequest }) =>
+      api.updateUser(userId, data),
+    onSuccess: (user) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setSelectedUser((prev) => (prev ? { ...prev, ...(user as UserData) } : prev));
+      setIsEditing(false);
+      setEditError(null);
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setEditError(e.response?.data?.message || e.message || 'Failed to update user');
+    },
+  });
+
+  const startEditing = () => {
+    if (!selectedUser) return;
+    setEditUsername(selectedUser.username);
+    setEditEmail(selectedUser.email);
+    setEditPassword('');
+    setEditForceChange(!!selectedUser.force_password_change);
+    setEditError(null);
+    setIsEditing(true);
+  };
+
+  const handleSaveDetails = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    const data: UpdateUserRequest = {};
+    if (editUsername.trim() !== selectedUser.username) data.username = editUsername.trim();
+    if (editEmail.trim() !== selectedUser.email) data.email = editEmail.trim();
+    if (editPassword) data.password = editPassword;
+    if (editForceChange !== !!selectedUser.force_password_change || editPassword) {
+      data.force_password_change = editForceChange;
+    }
+    if (Object.keys(data).length === 0) {
+      setIsEditing(false);
+      return;
+    }
+    updateMutation.mutate({ userId: selectedUser.id, data });
+  };
+
   const resetForm = () => {
     setNewUsername('');
     setNewEmail('');
@@ -122,6 +173,8 @@ export default function Users() {
   const handleSelectUser = (user: UserData) => {
     setSelectedUser(user);
     setPendingRoleChanges(new Set());
+    setIsEditing(false);
+    setEditError(null);
   };
 
   const handleRoleToggle = (roleId: string) => {
@@ -470,6 +523,7 @@ export default function Users() {
                   onClick={() => {
                     setSelectedUser(null);
                     setPendingRoleChanges(new Set());
+                    setIsEditing(false);
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -479,13 +533,119 @@ export default function Users() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-3">
-                  <User className="w-8 h-8 text-primary-600" />
+              {isEditing ? (
+                <form
+                  onSubmit={handleSaveDetails}
+                  className="mb-6 space-y-4"
+                  aria-label="Edit user"
+                >
+                  <div>
+                    <label className="label" htmlFor="edit-username">
+                      Username
+                    </label>
+                    <input
+                      id="edit-username"
+                      className="input"
+                      value={editUsername}
+                      onChange={(e) => setEditUsername(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor="edit-email">
+                      E-mail
+                    </label>
+                    <input
+                      id="edit-email"
+                      type="email"
+                      className="input"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {selectedUser.auth_provider !== 'saml' && (
+                    <>
+                      <div>
+                        <label className="label" htmlFor="edit-password">
+                          Temporary password
+                        </label>
+                        <input
+                          id="edit-password"
+                          type="password"
+                          className="input"
+                          autoComplete="new-password"
+                          minLength={8}
+                          placeholder="Leave empty to keep the current password"
+                          value={editPassword}
+                          onChange={(e) => {
+                            setEditPassword(e.target.value);
+                            if (e.target.value) setEditForceChange(true);
+                          }}
+                        />
+                      </div>
+                      <label className="flex items-start gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          className="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          checked={editForceChange}
+                          onChange={(e) => setEditForceChange(e.target.checked)}
+                        />
+                        <span>Require a password change at next login</span>
+                      </label>
+                    </>
+                  )}
+                  {editError && (
+                    <p role="alert" className="text-sm text-red-600">
+                      {editError}
+                    </p>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="btn btn-secondary text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={updateMutation.isPending}
+                      className="btn btn-primary text-sm flex items-center"
+                    >
+                      {updateMutation.isPending && (
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      )}
+                      Save
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-3">
+                    <User className="w-8 h-8 text-primary-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900">{selectedUser.username}</h3>
+                  <p className="text-gray-500">{selectedUser.email}</p>
+                  {selectedUser.force_password_change && (
+                    <p className="mt-2 inline-block text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                      Password change required at next login
+                    </p>
+                  )}
+                  {!selectedUser.directory_id && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={startEditing}
+                        className="btn btn-secondary text-sm inline-flex items-center"
+                      >
+                        <Pencil className="w-3 h-3 mr-1" />
+                        Edit
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <h3 className="font-semibold text-gray-900">{selectedUser.username}</h3>
-                <p className="text-gray-500">{selectedUser.email}</p>
-              </div>
+              )}
 
               {selectedUser.directory_id && (
                 <div className="mb-6 p-3 rounded-lg bg-teal-50 border border-teal-200 text-sm text-teal-800 flex gap-2">
@@ -578,9 +738,20 @@ export default function Users() {
                   </div>
                 </div>
               </div>
+              <PluginSlot
+                slot="user.detail.panels"
+                params={{ user_id: selectedUser.id }}
+                className="mt-6 space-y-4"
+              />
             </div>
 
-            <div className="p-6 border-t border-gray-200">
+            <div className="p-6 border-t border-gray-200 space-y-3">
+              <PluginSlot
+                slot="user.detail.actions"
+                params={{ user_id: selectedUser.id }}
+                variant="bare"
+                className="flex flex-wrap items-center gap-2"
+              />
               <button
                 onClick={() => deleteMutation.mutate(selectedUser.id)}
                 disabled={deleteMutation.isPending}

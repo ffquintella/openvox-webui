@@ -10,3 +10,4 @@ mod directory_tests;
 mod mfa_fido2_e2e_tests;
 mod plugin_tests;
 mod scim_tests;
+mod user_edit_tests;

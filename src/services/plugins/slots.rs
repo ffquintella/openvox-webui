@@ -109,6 +109,8 @@ pub const SLOT_CATALOG: &[SlotSpec] = &[
         40,
     ),
     slot("group.detail.panels", Panel, &["group_id"], 4, true, 240),
+    slot("user.detail.panels", Panel, &["user_id"], 4, true, 240),
+    slot("user.detail.actions", Action, &["user_id"], 4, true, 40),
     slot(
         "report.detail.panels",
         Panel,
@@ -182,6 +184,8 @@ mod tests {
             "node.detail.tabs",
             "node.detail.actions",
             "group.detail.panels",
+            "user.detail.panels",
+            "user.detail.actions",
             "report.detail.panels",
             "footer.global",
             "settings.sections",

@@ -11,6 +11,15 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-11-10
+
+### Added
+- Add editing of users on the Users page: an Edit action in the user panel changes the username and e-mail, sets an optional temporary password and can require a password change at next login (`PUT /api/v1/users/{id}` gains `force_password_change`; a temporary password implies it). Directory-managed users stay read-only and SSO-only users have no password options. Every change is audited as `user.updated` with the changed field names only (T122)
+- Let plugins extend user editing (T122): the slots `user.detail.panels` and `user.detail.actions` (context `user_id`) are mounted in the user panel, the core event `user.updated` is now also published for administrator edits (`source: admin`, `changed_fields`, no password data), and the interceptable event `before.user.update` can veto a change of username, e-mail or password policy (payload without passwords, 50 ms, **fails open**)
+
+### Security
+- Require `users:admin` for `PUT /api/v1/users/{id}`; before, any signed-in user could change another account. Creating and deleting users and assigning roles through `/api/v1/users` still have no permission check of their own (to be fixed separately)
+
 ## [0.53.0] - 2026-11-10
 
 ### Added

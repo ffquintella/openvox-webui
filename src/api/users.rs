@@ -11,10 +11,21 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::plugins::allowed;
 use crate::{
+    db::AuditRepository,
     middleware::AuthUser,
-    models::{AssignRolesRequest, EffectivePermissions, Role, UserPublic, UserRoleInfo},
-    services::AuthService,
+    models::{
+        Action, AssignRolesRequest, EffectivePermissions, EventActor, Resource, Role, UserPublic,
+        UserRoleInfo,
+    },
+    services::{
+        plugins::{
+            events::EventBus,
+            interceptors::{InterceptActor, InterceptRefusal, BEFORE_USER_UPDATE},
+        },
+        AuthService,
+    },
     utils::error::ErrorResponse,
     AppState,
 };
@@ -60,6 +71,24 @@ pub struct UpdateUserRequest {
     pub auth_provider: Option<String>,
     /// External ID for SAML users
     pub external_id: Option<String>,
+    /// Require the user to choose a new password at next login. Setting a
+    /// temporary `password` implies `true` unless this says otherwise.
+    pub force_password_change: Option<bool>,
+}
+
+/// Shortest password an administrator may set (same rule as user creation).
+const MIN_PASSWORD_LEN: usize = 8;
+
+fn bad_request(code: Option<&str>, message: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: "validation_error".to_string(),
+            message: message.to_string(),
+            details: None,
+            code: code.map(str::to_string),
+        }),
+    )
 }
 
 /// User response with roles
@@ -392,6 +421,35 @@ async fn update_user(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<UserPublic>, (StatusCode, Json<ErrorResponse>)> {
+    // Editing accounts is an administrator action, like the directory and
+    // SCIM screens.
+    match allowed(&state, &auth_user, Resource::Users, Action::Admin).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "forbidden".to_string(),
+                    message: "Requires users:admin".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            ))
+        }
+        Err(e) => {
+            tracing::error!("permission check failed: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "internal_error".to_string(),
+                    message: "Permission check failed".to_string(),
+                    details: None,
+                    code: None,
+                }),
+            ));
+        }
+    }
+
     let auth_service = AuthService::new(state.db.clone());
 
     let requested_org = resolve_org(&auth_user, query.organization_id)?;
@@ -446,7 +504,8 @@ async fn update_user(
             || payload
                 .external_id
                 .as_deref()
-                .is_some_and(|x| Some(x) != existing.external_id.as_deref());
+                .is_some_and(|x| Some(x) != existing.external_id.as_deref())
+            || payload.force_password_change == Some(true);
         if changes_identity {
             return Err((
                 StatusCode::BAD_REQUEST,
@@ -470,15 +529,123 @@ async fn update_user(
             v
         }
     }
+
+    let password = payload.password.as_deref().filter(|p| !p.is_empty());
+    if password.is_some_and(|p| p.chars().count() < MIN_PASSWORD_LEN) {
+        return Err(bad_request(
+            None,
+            "Password must be at least 8 characters long",
+        ));
+    }
+    let effective_provider = payload
+        .auth_provider
+        .clone()
+        .unwrap_or_else(|| existing.auth_provider.to_string());
+    let sso_only = effective_provider == "saml";
+    if sso_only && (password.is_some() || payload.force_password_change == Some(true)) {
+        return Err(bad_request(
+            None,
+            "SSO-only users have no local password to change",
+        ));
+    }
+    let force_password_change = payload
+        .force_password_change
+        .or_else(|| password.map(|_| true));
+
+    // What changes, for the interceptors, the audit trail and the event.
+    let new_username = identity(managed, payload.username.as_deref())
+        .unwrap_or(&existing.username)
+        .to_string();
+    let new_email = identity(managed, payload.email.as_deref())
+        .unwrap_or(&existing.email)
+        .to_string();
+    let mut changed_fields: Vec<&str> = Vec::new();
+    if new_username != existing.username {
+        changed_fields.push("username");
+    }
+    if new_email != existing.email {
+        changed_fields.push("email");
+    }
+    if password.is_some() && !managed {
+        changed_fields.push("password");
+    }
+    if force_password_change.is_some_and(|f| f != existing.force_password_change) {
+        changed_fields.push("force_password_change");
+    }
+    if payload.role.as_deref().is_some_and(|r| r != existing.role) {
+        changed_fields.push("role");
+    }
+    if payload
+        .auth_provider
+        .as_deref()
+        .is_some_and(|a| a != existing.auth_provider.to_string())
+    {
+        changed_fields.push("auth_provider");
+    }
+    if payload
+        .external_id
+        .as_deref()
+        .is_some_and(|x| Some(x) != existing.external_id.as_deref())
+    {
+        changed_fields.push("external_id");
+    }
+
+    // `before.user.update` interceptors see identity and password policy
+    // changes (never a password) before anything is stored. The event fails
+    // open: only a veto stops the update.
+    let guarded = ["username", "email", "password", "force_password_change"];
+    if changed_fields.iter().any(|f| guarded.contains(f))
+        && state.plugin_manager.has_interceptors(BEFORE_USER_UPDATE)
+    {
+        let intercept_payload = serde_json::json!({
+            "organization_id": existing.organization_id,
+            "user_id": id,
+            "actor": {"kind": "user", "id": auth_user.id},
+            "current": {"username": existing.username, "email": existing.email},
+            "proposed": {"username": new_username, "email": new_email},
+            "password_changed": changed_fields.contains(&"password"),
+            "force_password_change": force_password_change,
+        });
+        let actor = InterceptActor {
+            organization_id: existing.organization_id,
+            user_id: Some(auth_user.id),
+        };
+        if let Err(refusal) = state
+            .plugin_manager
+            .intercept(
+                BEFORE_USER_UPDATE,
+                &id.to_string(),
+                actor,
+                intercept_payload,
+            )
+            .await
+        {
+            let status = match refusal {
+                InterceptRefusal::Vetoed { .. } => StatusCode::CONFLICT,
+                _ => StatusCode::SERVICE_UNAVAILABLE,
+            };
+            return Err((
+                status,
+                Json(ErrorResponse {
+                    error: "plugin_refused".to_string(),
+                    message: refusal.to_string(),
+                    details: None,
+                    code: Some("interceptor_refused".to_string()),
+                }),
+            ));
+        }
+    }
+
     let user = auth_service
         .update_user_full(
             &id,
             identity(managed, payload.username.as_deref()),
             identity(managed, payload.email.as_deref()),
-            identity(managed, payload.password.as_deref()),
+            identity(managed, password),
             payload.role.as_deref(),
             identity(managed, payload.auth_provider.as_deref()),
             identity(managed, payload.external_id.as_deref()),
+            force_password_change.filter(|_| !managed),
         )
         .await
         .map_err(|e| {
@@ -525,6 +692,38 @@ async fn update_user(
                 )
             }
         })?;
+
+    if !changed_fields.is_empty() {
+        // Field names only: never a password or its hash.
+        let details = serde_json::json!({"changed_fields": changed_fields});
+        if let Err(e) = AuditRepository::new(&state.db)
+            .insert(
+                user.organization_id,
+                Some(auth_user.id),
+                "user.updated",
+                "users",
+                Some(&id.to_string()),
+                Some(&details),
+                None,
+            )
+            .await
+        {
+            tracing::warn!("Failed to write user audit entry: {}", e);
+        }
+        EventBus::new(state.db.clone())
+            .emit(
+                "user.updated",
+                serde_json::json!({
+                    "user_id": user.id,
+                    "organization_id": user.organization_id,
+                    "username": user.username,
+                    "source": "admin",
+                    "changed_fields": changed_fields,
+                }),
+                EventActor::user(auth_user.username.clone()),
+            )
+            .await;
+    }
 
     Ok(Json(user.into()))
 }

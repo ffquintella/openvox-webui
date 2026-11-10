@@ -1078,6 +1078,8 @@ export interface UpdateUserRequest {
   password?: string;
   auth_provider?: AuthProvider;
   external_id?: string;
+  /** Require a new password at next login (a temporary `password` implies it). */
+  force_password_change?: boolean;
 }
 
 export interface EffectivePermissions {

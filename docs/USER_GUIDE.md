@@ -856,14 +856,19 @@ Manage users and their access.
 - Last login timestamp
 - Account status (active/locked)
 
-**Editing Users:**
-1. Open user detail
+**Editing Users** (requires `users:admin`):
+1. Open the user in the side panel
 2. Click **Edit**
-3. Modify:
-   - Email address
-   - Roles
-   - Authentication provider
-   - Force password change flag
+3. Change the username or e-mail, optionally set a **temporary password**, and
+   tick **Require a password change at next login** to make the user choose a
+   new password when they sign in. A temporary password turns the option on.
+4. Click **Save**
+
+Roles are assigned in the same panel. SSO-only users have no local password,
+so the password options are not offered for them. Users managed by a directory
+or SCIM are read-only: change them in the directory. Every edit is written to
+the audit log with the names of the changed fields (never passwords). Plugins
+can add panels and buttons to the panel, and can refuse a change.
 
 ### User Actions
 

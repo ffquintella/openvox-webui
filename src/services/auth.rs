@@ -212,7 +212,7 @@ impl AuthService {
         password: Option<&str>,
         role: Option<&str>,
     ) -> Result<User> {
-        self.update_user_full(id, username, email, password, role, None, None)
+        self.update_user_full(id, username, email, password, role, None, None, None)
             .await
     }
 
@@ -226,6 +226,7 @@ impl AuthService {
         role: Option<&str>,
         auth_provider: Option<&str>,
         external_id: Option<&str>,
+        force_password_change: Option<bool>,
     ) -> Result<User> {
         let existing = self.get_user_by_id(id).await?.context("User not found")?;
 
@@ -273,7 +274,7 @@ impl AuthService {
         let auth_provider_str = new_auth_provider.to_string();
 
         sqlx::query(
-            "UPDATE users SET username = ?, email = ?, password_hash = ?, role = ?, auth_provider = ?, external_id = ?, updated_at = ? WHERE id = ?"
+            "UPDATE users SET username = ?, email = ?, password_hash = ?, role = ?, auth_provider = ?, external_id = ?, force_password_change = ?, updated_at = ? WHERE id = ?"
         )
         .bind(new_username)
         .bind(new_email)
@@ -281,6 +282,7 @@ impl AuthService {
         .bind(new_role)
         .bind(&auth_provider_str)
         .bind(&new_external_id)
+        .bind(force_password_change.unwrap_or(existing.force_password_change))
         .bind(&updated_at)
         .bind(&id_str)
         .execute(&self.pool)

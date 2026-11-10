@@ -7,7 +7,7 @@ OpenVox WebUI can be extended with signed plugins. This page is the official ove
 | Extension point | What it adds | Reference |
 |---|---|---|
 | Menus and pages | Entries in the navigation and pages rendered declaratively, in a sandboxed frame, or (trusted plugins only) as host modules | PLUGIN_SYSTEM.md §4, PLUGIN_PLATFORM.md §8 |
-| UI slots | Panels in named places of the UI, such as the profile security section and the Authentication tab of Settings | PLUGIN_PLATFORM.md §8, §17.18 |
+| UI slots | Panels in named places of the UI, such as the profile security section, the Authentication tab of Settings and the user panel of the Users page | PLUGIN_PLATFORM.md §8, §17.18 |
 | Authentication | Identity providers (SSO, LDAP/AD), user providers, directory providers, inbound SCIM and second factors | PLUGIN_PLATFORM.md §11, §17.10 to §17.15 |
 | API routes | Routes served by the plugin under `/api/v1/plugins/<plugin-id>/...` | PLUGIN_PLATFORM.md §17.16 |
 | Secret providers | External sources for secret references | PLUGIN_PLATFORM.md §17.9 |

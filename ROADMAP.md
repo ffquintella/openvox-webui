@@ -322,6 +322,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T104 Add restricted interceptors (S21)
 - [x] T105 Add trusted module pages if approved (S21)
 - [x] T106 Add inbound SCIM (S21)
+- [x] T122 Add user editing with a forced password change and plugin extension points (S21)
 
 ## [M32] Stable Production Release
 > outcome: Version 1.0.0 is released as the stable production milestone.

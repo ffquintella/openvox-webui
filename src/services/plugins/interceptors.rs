@@ -35,6 +35,7 @@ pub const MAX_INPUT_BYTES: usize = 512 * 1024;
 
 pub const BEFORE_NODE_CLASSIFY: &str = "before.node.classify";
 pub const BEFORE_GROUP_CHANGE: &str = "before.group.change";
+pub const BEFORE_USER_UPDATE: &str = "before.user.update";
 
 const MAX_REASON_CHARS: usize = 200;
 const MAX_ERROR_CHARS: usize = 300;
@@ -73,7 +74,7 @@ pub struct InterceptableEvent {
     pub alterable: &'static [&'static str],
 }
 
-static CATALOG: [InterceptableEvent; 2] = [
+static CATALOG: [InterceptableEvent; 3] = [
     InterceptableEvent {
         event_type: BEFORE_NODE_CLASSIFY,
         description: "a node is classified for its agent, the node page or a fact export \
@@ -96,6 +97,21 @@ static CATALOG: [InterceptableEvent; 2] = [
                   request (including classes and variables)",
         // A policy gate: without an answer the change does not happen.
         fail_mode: FailMode::Closed,
+        timeout_ms: INTERCEPTOR_TIMEOUT_MS,
+        max_interceptors: MAX_INTERCEPTORS_PER_EVENT,
+        can_veto: true,
+        alterable: &[],
+    },
+    InterceptableEvent {
+        event_type: BEFORE_USER_UPDATE,
+        description: "an administrator changes a user's username, e-mail or password policy \
+                      through the API (it never receives a password)",
+        payload: "{organization_id, user_id, actor, current: {username, email}, \
+                  proposed: {username, email}, force_password_change}; `proposed` holds the \
+                  values after the change and `force_password_change` is the requested flag \
+                  (null when unchanged)",
+        // User administration must stay usable when a plugin is broken or slow.
+        fail_mode: FailMode::Open,
         timeout_ms: INTERCEPTOR_TIMEOUT_MS,
         max_interceptors: MAX_INTERCEPTORS_PER_EVENT,
         can_veto: true,
@@ -880,6 +896,11 @@ mod tests {
         let g = group_event();
         assert_eq!(g.fail_mode, FailMode::Closed);
         assert!(g.alterable.is_empty());
+        // User administration stays usable when a plugin is broken: fail open.
+        let u = find(BEFORE_USER_UPDATE).unwrap();
+        assert_eq!(u.fail_mode, FailMode::Open);
+        assert!(u.can_veto && u.alterable.is_empty());
+        assert!(!u.payload.contains("password\""));
         assert!(find("node.classified").is_none());
         for e in catalog() {
             assert!(super::super::filter::valid_event_type(e.event_type));
