@@ -1,6 +1,6 @@
 # OpenVox WebUI Plugin Platform — Design v2
 
-Status: **Proposal**; phase 1 (plugin manager, signatures, trusted keys, admin API and UI, slot registry) is implemented in M19, see §17.1; sandboxed iframe pages, the TypeScript SDK, theme tokens and the slot catalog (phase 5) are implemented in M23, see §17.4
+Status: **Implemented** (the official overview for operators and plugin authors is [../PLUGINS.md](../PLUGINS.md)); the design below keeps its original proposal wording and §17 records what was built and where it differs. Phase 1 (plugin manager, signatures, trusted keys, admin API and UI, slot registry) is implemented in M19, see §17.1; sandboxed iframe pages, the TypeScript SDK, theme tokens and the slot catalog (phase 5) are implemented in M23, see §17.4
 
 Complements [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md). That document defines the *typed extension points* (auth, users, secrets, menus, pages, API proxy). This document defines the **platform** they run on: sandbox, permissions, mandatory signing, lifecycle, UI slots, event bus, SDK and governance, plus the domain extensions: authentication (MFA, SSO, LDAP/AD, §11), reports and facts (§12) and advanced classification and dynamic groups (§13). Where the two conflict, this document prevails (see §16).
 

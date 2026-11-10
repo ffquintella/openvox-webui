@@ -366,11 +366,12 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 | S18 | Reporting, alerting and multi-tenancy | docs/implemented-features/18-advanced-features.md | approved |
 | S19 | Production readiness | docs/implemented-features/19-production-readiness.md | approved |
 | S20 | Application inventory and update management plan | docs/architecture/INVENTORY_UPDATES.md | approved |
-| S21 | Plugin platform design | docs/architecture/PLUGIN_PLATFORM.md | draft |
-| S22 | Plugin system extension points | docs/architecture/PLUGIN_SYSTEM.md | draft |
+| S21 | Plugin platform design | docs/architecture/PLUGIN_PLATFORM.md | approved |
+| S22 | Plugin system extension points | docs/architecture/PLUGIN_SYSTEM.md | approved |
 | S23 | Plugin platform roadmap notes | docs/architecture/PLUGIN_PLATFORM_ROADMAP.md | draft |
 | S24 | Alert rules conditions | docs/ALERT_RULES_CONDITIONS.md | approved |
 | S25 | CA API reference | docs/api/ca.md | approved |
+| S26 | Plugin platform overview | docs/PLUGINS.md | approved |
 
 ## Phases
 | ID | Title | Outcome | Target |

@@ -24,6 +24,9 @@ This document explains how the application is put together so operators and cont
   - `rbac`: Permission enforcement helpers.
 - `src/models/*`: Shared data structures (RBAC enums, groups, facts, reports, alerting models, orgs, audit entries, API keys).
 
+## Plugin Platform
+Plugins extend the backend and the UI inside a sandbox with deny-by-default capabilities. See [../PLUGINS.md](../PLUGINS.md) for the overview, [PLUGIN_PLATFORM.md](PLUGIN_PLATFORM.md) for the design and per-phase implementation notes, and [PLUGIN_SYSTEM.md](PLUGIN_SYSTEM.md) for the typed extension points.
+
 ## Request Flow
 1. **Public router** handles `/api/v1/health*` and `/api/v1/auth/*` without auth.
 2. **Protected router** applies auth middleware:

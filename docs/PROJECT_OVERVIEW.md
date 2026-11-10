@@ -133,6 +133,7 @@ See [docs/INSTALLATION.md](INSTALLATION.md) for detailed setup instructions.
 | [UPGRADE.md](UPGRADE.md) | Version upgrade procedures |
 | [BACKUP.md](BACKUP.md) | Data backup and recovery |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
+| [PLUGINS.md](PLUGINS.md) | Plugin platform overview, security model and administration |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development setup and guidelines |
 | [architecture/](architecture/) | System design and architecture |
 

@@ -13,6 +13,7 @@ A modern web interface for [OpenVox](https://voxpupuli.org/openvox/) infrastruct
 - **Node Classification**: Puppet Enterprise-style node groups with rule-based classification
 - **Facter Generation**: Generate external facts based on node classification
 - **SAML 2.0 SSO**: Enterprise Single Sign-On integration
+- **Plugin Platform**: Signed, sandboxed plugins that add pages, panels, identity providers, second factors and API routes ([docs/PLUGINS.md](docs/PLUGINS.md))
 - **RBAC**: Role-Based Access Control with custom roles and permissions
 - **Alerting**: Configurable alerts with Webhook, Email, Slack, and Teams notifications
 - **Analytics**: Infrastructure insights with visualizations and reports
@@ -185,6 +186,7 @@ See [docs/api/](docs/api/) for full API documentation.
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Solutions to common problems
 - [Installation Guide](docs/INSTALLATION.md) - Installation instructions
 - [Configuration Guide](docs/CONFIGURATION.md) - Configuration reference
+- [Plugin Platform](docs/PLUGINS.md) - Extending the WebUI with signed plugins
 - [Upgrade Guide](docs/UPGRADE.md) - Upgrade procedures
 - [Backup & Recovery](docs/BACKUP.md) - Backup strategies
 
