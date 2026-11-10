@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-10
+
 ### Added
 - Add an end-to-end check that the host runs the mfa-fido2 module: a test-only stand-in of the module (`tests/fixtures/plugins/mfa-fido2-standin`, Rust for `wasm32-unknown-unknown` with real WebAuthn and ES256 checks) is installed over the API and used for enrolment, step-up, sign-in, a wrong signature and the fail-closed cases, by `cargo test` with a software authenticator (`tests/integration/mfa_fido2_e2e_tests.rs`) and by `scripts/e2e-mfa-fido2-browser.mjs` with the real server, the web UI and Chrome's virtual authenticator. No physical security key is involved. The run is recorded in `docs/architecture/e2e-mfa-fido2-transcript.md`, and `docs/architecture/MFA_FIDO2_HOST_HANDOFF.md` gives the module authors the status and exact contracts of H-1 to H-10 and OQ-1 to OQ-23, the manifest changes the draft needs and the residual risks (T121)
 - Publish the core event `auth.factor.removed` `{user_id, factor, record_id}` when a user removes a second factor (`DELETE /api/v1/users/me/factors/{id}`) and for every credential an administrator reset removes (`POST /api/v1/users/{id}/factors/reset`), in the same transaction as the removal and with the acting user as actor; pending enrolments publish nothing (H-10, OQ-20, T120)
