@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-11-11
+
+### Fixed
+- Fix the browser offering the password manager instead of the YubiKey when registering a security key through a plugin factor (mfa-fido2): when a WebAuthn plugin asks for a roaming authenticator (`authenticatorAttachment: cross-platform`) and sets no `hints`, the host now adds the `security-key` hint to the creation options; the plugin's own hints are kept
+
 ## [0.55.0] - 2026-11-10
 
 ### Added

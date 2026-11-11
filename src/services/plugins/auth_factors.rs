@@ -273,7 +273,11 @@ impl AuthFactor for PluginFactor {
         let out = self
             .call(BEGIN_ENROLL, self.enroll_input(ctx, None))
             .await?;
-        parse_enroll_start(out).map_err(|r| self.reject(BEGIN_ENROLL, r))
+        let mut start = parse_enroll_start(out).map_err(|r| self.reject(BEGIN_ENROLL, r))?;
+        if self.entry.decl.kind == "webauthn" {
+            hint_security_key(&mut start.client);
+        }
+        Ok(start)
     }
 
     async fn complete_enroll(
@@ -315,6 +319,23 @@ fn record_json(r: &FactorRecord) -> Value {
 
 fn records_json(records: &[FactorRecord]) -> Value {
     Value::Array(records.iter().map(record_json).collect())
+}
+
+/// A plugin that asks for a roaming authenticator (`cross-platform`) gets the
+/// `security-key` hint too, so browsers show their security key prompt instead
+/// of a password manager or platform passkey. The plugin's own `hints` win.
+fn hint_security_key(client: &mut Value) {
+    let Some(pk) = client.get_mut("publicKey").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let roaming = pk
+        .get("authenticatorSelection")
+        .and_then(|s| s.get("authenticatorAttachment"))
+        .and_then(Value::as_str)
+        == Some("cross-platform");
+    if roaming && !pk.contains_key("hints") {
+        pk.insert("hints".into(), json!(["security-key"]));
+    }
 }
 
 fn failure_class(e: &InvokeError) -> &'static str {
@@ -2084,5 +2105,25 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn a_roaming_registration_is_hinted_towards_the_security_key() {
+        let mut roaming = json!({"publicKey": {"authenticatorSelection": {"authenticatorAttachment": "cross-platform"}}});
+        hint_security_key(&mut roaming);
+        assert_eq!(roaming["publicKey"]["hints"], json!(["security-key"]));
+
+        let mut any =
+            json!({"publicKey": {"authenticatorSelection": {"userVerification": "preferred"}}});
+        hint_security_key(&mut any);
+        assert!(any["publicKey"].get("hints").is_none());
+
+        let mut own = json!({"publicKey": {"hints": ["hybrid"], "authenticatorSelection": {"authenticatorAttachment": "cross-platform"}}});
+        hint_security_key(&mut own);
+        assert_eq!(own["publicKey"]["hints"], json!(["hybrid"]));
+
+        let mut not_webauthn = json!({"otpauth": "x"});
+        hint_security_key(&mut not_webauthn);
+        assert_eq!(not_webauthn, json!({"otpauth": "x"}));
     }
 }
