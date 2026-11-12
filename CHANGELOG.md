@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-11-12
+
 ### Added
 - Add an API Keys page (user menu) to list, create and revoke your own API keys: optional expiry date, last-used time, and the secret shown only once at creation
 
