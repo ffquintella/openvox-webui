@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Changed
+- Make `make publish-puppet-module` use Regent (`regent validate`, `test`, `build` and `publish`) instead of the Puppet Development Kit; PDK is no longer required
+
 ## [0.56.0] - 2026-11-12
 
 ### Added
