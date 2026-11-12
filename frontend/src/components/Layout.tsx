@@ -74,6 +74,7 @@ const adminNavigation: CoreMenuItem[] = [
 
 const userMenuNavigation: CoreMenuItem[] = [
   { id: 'core:profile', name: 'Profile', href: '/profile', icon: User },
+  { id: 'core:api-keys', name: 'API Keys', href: '/api-keys', icon: KeyRound },
   { id: 'core:about', name: 'About', href: '/about', icon: Info },
 ];
 

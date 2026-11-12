@@ -3458,3 +3458,25 @@ export interface MfaPolicy {
   /** Only a security key or passkey satisfies the policy. */
   require_phishing_resistant: boolean;
 }
+
+export interface ApiKey {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  name: string;
+  role_ids: string[];
+  last_used_at?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export interface CreateApiKeyRequest {
+  name: string;
+  /** RFC 3339 timestamp; omit for a key that does not expire. */
+  expires_at?: string;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  /** Plaintext key, shown only at creation. */
+  key: string;
+}

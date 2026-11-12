@@ -222,6 +222,9 @@ import type {
   DirectoryTestResult,
   ScimStatus,
   MfaPolicy,
+  ApiKey,
+  CreateApiKeyRequest,
+  CreatedApiKey,
   ScimTokenInfo,
   ScimIssuedToken,
   ScimGroupSummary,
@@ -1821,6 +1824,22 @@ export const api = {
       policies: policies.map(({ id: _id, ...rest }) => rest),
     });
     return response.data?.policies ?? [];
+  },
+
+  // API keys
+  getApiKeys: async (): Promise<ApiKey[]> => {
+    const response = await client.get('/api-keys');
+    return response.data;
+  },
+
+  /** The plaintext `key` in the response is returned only once. */
+  createApiKey: async (request: CreateApiKeyRequest): Promise<CreatedApiKey> => {
+    const response = await client.post('/api-keys', request);
+    return response.data;
+  },
+
+  revokeApiKey: async (id: string): Promise<void> => {
+    await client.delete(`/api-keys/${encodeURIComponent(id)}`);
   },
 
   // SCIM provisioning (M31)

@@ -35,6 +35,7 @@ const Scim = lazy(() => import('./pages/Scim'));
 const MfaPolicies = lazy(() => import('./pages/MfaPolicies'));
 const Permissions = lazy(() => import('./pages/Permissions'));
 const Profile = lazy(() => import('./pages/Profile'));
+const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 const CA = lazy(() => import('./pages/CA'));
 const CodeDeploy = lazy(() => import('./pages/CodeDeploy'));
 const Backup = lazy(() => import('./pages/Backup'));
@@ -166,6 +167,7 @@ function App() {
                       <Route path="/alerting" element={<Alerting />} />
                       <Route path="/updates" element={<Updates />} />
                       <Route path="/profile" element={<Profile />} />
+                      <Route path="/api-keys" element={<ApiKeys />} />
                       <Route
                         path="/roles"
                         element={
