@@ -137,6 +137,18 @@
 # @param ca_allow_subject_alt_names
 #   Whether to allow Subject Alternative Names in certificate requests.
 #
+# @param webauthn_rp_id
+#   WebAuthn Relying Party ID (`auth.mfa.webauthn.rp_id`): the hostname users
+#   browse to, without scheme or port. The `auth.mfa.webauthn` block is only
+#   rendered when both `webauthn_rp_id` and `webauthn_origin` are set.
+#
+# @param webauthn_rp_name
+#   WebAuthn Relying Party display name (`auth.mfa.webauthn.rp_name`).
+#
+# @param webauthn_origin
+#   WebAuthn origin (`auth.mfa.webauthn.origin`): `<scheme>://<hostname>[:port]`
+#   exactly as seen in the browser.
+#
 # @param saml_enabled
 #   Whether to enable SAML 2.0 SSO authentication.
 #
@@ -422,6 +434,11 @@ class openvox_webui (
   # Manages ca.conf to enable the certificate_status endpoint (disabled by default)
   Boolean                             $manage_puppetserver_ca_conf = false,
   Boolean                             $ca_allow_subject_alt_names  = true,
+
+  # MFA / WebAuthn settings
+  Optional[Stdlib::Host]              $webauthn_rp_id                  = undef,
+  String[1]                           $webauthn_rp_name                = 'OpenVox WebUI',
+  Optional[Pattern[/\Ahttps?:\/\/[^\/\s]+\z/]] $webauthn_origin        = undef,
 
   # SAML 2.0 SSO settings
   Boolean                             $saml_enabled                    = false,

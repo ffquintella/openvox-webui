@@ -120,6 +120,10 @@ class openvox_webui::config {
         dashboard_page_size     => $openvox_webui::dashboard_page_size,
         dashboard_refresh       => $openvox_webui::dashboard_refresh,
         max_rules_per_group     => $openvox_webui::max_rules_per_group,
+        # MFA / WebAuthn settings
+        webauthn_rp_id                 => $openvox_webui::webauthn_rp_id,
+        webauthn_rp_name               => $openvox_webui::webauthn_rp_name,
+        webauthn_origin                => $openvox_webui::webauthn_origin,
         # SAML settings
         saml_enabled                   => $openvox_webui::saml_enabled,
         saml_sp_entity_id              => $openvox_webui::saml_sp_entity_id,

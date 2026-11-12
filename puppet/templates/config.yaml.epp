@@ -35,6 +35,10 @@
   Integer $dashboard_page_size,
   Integer $dashboard_refresh,
   Integer $max_rules_per_group,
+  # MFA / WebAuthn parameters
+  Optional[Stdlib::Host] $webauthn_rp_id,
+  String $webauthn_rp_name,
+  Optional[String] $webauthn_origin,
   # SAML parameters
   Boolean $saml_enabled,
   Optional[String] $saml_sp_entity_id,
@@ -173,6 +177,13 @@ auth:
   password_min_length: 8
   max_login_attempts: <%= $max_login_attempts %>
   lockout_duration: <%= $lockout_duration %>
+<% if $webauthn_rp_id and $webauthn_origin { -%>
+  mfa:
+    webauthn:
+      rp_id: "<%= $webauthn_rp_id %>"
+      rp_name: "<%= $webauthn_rp_name %>"
+      origin: "<%= $webauthn_origin %>"
+<% } -%>
 <% if $admin_username and $admin_password { -%>
 
 # Initial admin account (only used on first run)

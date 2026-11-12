@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-11-12
+
+### Added
+
+- `webauthn_rp_id`, `webauthn_rp_name` and `webauthn_origin` parameters render `auth.mfa.webauthn` (`rp_id`, `rp_name`, `origin`) in `config.yaml`. The block is emitted only when `webauthn_rp_id` and `webauthn_origin` are both set.
+
 ## [0.49.1] - 2026-11-03
 
 ### Changed
