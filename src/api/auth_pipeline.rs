@@ -647,10 +647,31 @@ async fn my_factors(
 
 async fn enroll_begin(
     State(state): State<AppState>,
+    headers: HeaderMap,
     user: AuthUser,
     scope: Option<Extension<SessionScope>>,
     Path(factor_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    if factor_id == "webauthn" {
+        if let Some(cfg) = &state.config.auth.mfa.webauthn {
+            let seen = headers
+                .get(header::ORIGIN)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+                .or_else(|| {
+                    headers
+                        .get("x-forwarded-host")
+                        .or_else(|| headers.get(header::HOST))
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::to_owned)
+                });
+            if let Some(seen) = seen {
+                if let Some(w) = cfg.mismatch_warning(&seen) {
+                    tracing::warn!("{w}");
+                }
+            }
+        }
+    }
     let pipeline = AuthPipeline::for_state(&state);
     // OQ-12: an enrollment-only session enrolls a factor; recovery codes come
     // with the first one and are never enrolled on their own there.

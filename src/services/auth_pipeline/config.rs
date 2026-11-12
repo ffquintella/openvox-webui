@@ -131,6 +131,44 @@ pub struct WebAuthnConfig {
     pub origin: String,
 }
 
+impl WebAuthnConfig {
+    /// Compares the host the browser used with the configured relying party.
+    /// Returns a warning when a security key registration would be refused by
+    /// the browser (or a password manager extension), for example with
+    /// `OriginRpMissmatch`. `browser_origin` is the `Origin` header, or the
+    /// forwarded host when the browser sent none.
+    pub fn mismatch_warning(&self, browser_origin: &str) -> Option<String> {
+        let host = browser_origin
+            .split("://")
+            .last()?
+            .split('/')
+            .next()?
+            .split(':')
+            .next()?
+            .to_ascii_lowercase();
+        if host.is_empty() {
+            return None;
+        }
+        let rp = self.rp_id.to_ascii_lowercase();
+        let within_rp = host == rp || host.ends_with(&format!(".{rp}"));
+        let origin_matches = browser_origin
+            .split("://")
+            .nth(1)
+            .map(|_| browser_origin.trim_end_matches('/') == self.origin.trim_end_matches('/'))
+            .unwrap_or(true);
+        if within_rp && origin_matches {
+            return None;
+        }
+        Some(format!(
+            "WebAuthn config does not match the browser: it uses '{browser_origin}' but \
+             auth.mfa.webauthn has rp_id '{}' and origin '{}'. Set rp_id to the page host \
+             (or a parent domain) and origin to the exact browser origin; otherwise the \
+             browser or password manager refuses with OriginRpMissmatch",
+            self.rp_id, self.origin
+        ))
+    }
+}
+
 /// One OIDC provider (authorization code flow with PKCE).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OidcProviderConfig {
@@ -219,5 +257,43 @@ mod tests {
             assert!(err.contains("enrollment_grace_secs"), "{bad}: {err}");
         }
         assert!(parse("enrollment_grace_secs: -5").is_err());
+    }
+}
+
+#[cfg(test)]
+mod webauthn_mismatch_tests {
+    use super::*;
+
+    fn cfg(rp: &str, origin: &str) -> WebAuthnConfig {
+        WebAuthnConfig {
+            rp_id: rp.into(),
+            rp_name: "x".into(),
+            origin: origin.into(),
+        }
+    }
+
+    #[test]
+    fn matching_origin_is_silent() {
+        let c = cfg("openvox.esi.fgv.br", "https://openvox.esi.fgv.br");
+        assert!(c.mismatch_warning("https://openvox.esi.fgv.br").is_none());
+    }
+
+    #[test]
+    fn parent_domain_rp_id_is_fine() {
+        let c = cfg("esi.fgv.br", "https://openvox.esi.fgv.br");
+        assert!(c.mismatch_warning("https://openvox.esi.fgv.br").is_none());
+    }
+
+    #[test]
+    fn foreign_host_warns() {
+        let c = cfg("puppet.example.com", "https://puppet.example.com");
+        let w = c.mismatch_warning("https://openvox.esi.fgv.br").unwrap();
+        assert!(w.contains("OriginRpMissmatch"));
+    }
+
+    #[test]
+    fn same_rp_but_wrong_origin_warns() {
+        let c = cfg("esi.fgv.br", "https://other.esi.fgv.br");
+        assert!(c.mismatch_warning("https://openvox.esi.fgv.br").is_some());
     }
 }

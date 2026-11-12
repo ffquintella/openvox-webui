@@ -474,7 +474,8 @@ saml:
   asserts_mfa: false
 ```
 
-Without a policy nothing changes. Administrators define MFA policies with
+Without a policy nothing changes. Administrators define MFA policies on the
+**MFA Policies** page (Administration menu) or with
 `PUT /api/v1/auth/policies` (`{"policies": [{"name": "admins", "conditions":
 {"roles": ["admin"], "providers": ["local"]}, "required_acr": 2}]}`). Changing
 `factor_key` makes enrolled factors unreadable, so users must re-enroll.

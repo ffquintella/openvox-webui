@@ -221,6 +221,7 @@ import type {
   DirectoryRoleMapping,
   DirectoryTestResult,
   ScimStatus,
+  MfaPolicy,
   ScimTokenInfo,
   ScimIssuedToken,
   ScimGroupSummary,
@@ -1806,6 +1807,20 @@ export const api = {
     await client.delete(
       `/directories/${encodeURIComponent(id)}/role-mappings/${encodeURIComponent(mappingId)}`
     );
+  },
+
+  // MFA policies
+  getMfaPolicies: async (): Promise<MfaPolicy[]> => {
+    const response = await client.get('/auth/policies');
+    return response.data?.policies ?? [];
+  },
+
+  /** Replaces the whole policy list; needs step-up. */
+  saveMfaPolicies: async (policies: MfaPolicy[]): Promise<MfaPolicy[]> => {
+    const response = await client.put('/auth/policies', {
+      policies: policies.map(({ id: _id, ...rest }) => rest),
+    });
+    return response.data?.policies ?? [];
   },
 
   // SCIM provisioning (M31)

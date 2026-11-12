@@ -3446,3 +3446,15 @@ export interface ScimRoleMapping {
   created_by?: string | null;
   created_at: string;
 }
+
+/** MFA policy (`/auth/policies`). Empty condition lists match everything. */
+export interface MfaPolicy {
+  id?: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  conditions: { roles: string[]; providers: string[] };
+  required_acr: number;
+  /** Only a security key or passkey satisfies the policy. */
+  require_phishing_resistant: boolean;
+}

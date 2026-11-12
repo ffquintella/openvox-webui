@@ -11,6 +11,10 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add an MFA Policies page (Administration menu, needs `settings:admin`) to define who must present a second factor at sign-in: roles, sign-in providers, priority, and whether any factor or only a security key or passkey is accepted; it warns that without an enabled policy sign-in needs only the password
+- Log a warning when a security key registration starts from a browser origin that does not match `auth.mfa.webauthn` (`rp_id` and `origin`), the cause of the browser or password manager error `OriginRpMissmatch`
+
 ## [0.55.1] - 2026-11-11
 
 ### Fixed

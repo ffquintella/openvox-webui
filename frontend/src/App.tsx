@@ -32,6 +32,7 @@ const Roles = lazy(() => import('./pages/Roles'));
 const Users = lazy(() => import('./pages/Users'));
 const Directories = lazy(() => import('./pages/Directories'));
 const Scim = lazy(() => import('./pages/Scim'));
+const MfaPolicies = lazy(() => import('./pages/MfaPolicies'));
 const Permissions = lazy(() => import('./pages/Permissions'));
 const Profile = lazy(() => import('./pages/Profile'));
 const CA = lazy(() => import('./pages/CA'));
@@ -202,6 +203,16 @@ function App() {
                             requiredPermission={{ resource: 'users', action: 'admin' }}
                           >
                             <Scim />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/mfa-policies"
+                        element={
+                          <ProtectedRoute
+                            requiredPermission={{ resource: 'settings', action: 'admin' }}
+                          >
+                            <MfaPolicies />
                           </ProtectedRoute>
                         }
                       />
