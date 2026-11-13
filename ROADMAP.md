@@ -16,7 +16,7 @@ OpenVox WebUI is a web interface for managing and monitoring OpenVox infrastruct
 
 Detailed documentation for implemented features is in [docs/implemented-features/](docs/implemented-features/). Reference material that used to live in this file (key features, roles and permissions, API reference, installation, development guidelines, version history, references) is now in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md). The format of this file and `CHANGELOG.md` is defined by the Project Tracking Format (PTF) v1.
 
-Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is complete (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks), M22 (telemetry and governance), M23 (plugin UI and SDK), M24 (updates and rollback) and M25 (facts and reports), M26 (advanced classification) and M27 (classification extensions for plugins) and M28 (secret providers) and M29 (authentication pipeline) and M30 (directory providers) and M31 (advanced hooks) are done; next is M32 (stable 1.0.0 release).
+Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inventory and update management) is in progress (M12-M17); Phase 11 (plugin platform) is complete (M18-M31): M18 (proofs of concept), M19 (plugin manager and signatures), M20 (WASM runtime and host API), M21 (events, jobs and webhooks), M22 (telemetry and governance), M23 (plugin UI and SDK), M24 (updates and rollback) and M25 (facts and reports), M26 (advanced classification) and M27 (classification extensions for plugins) and M28 (secret providers) and M29 (authentication pipeline) and M30 (directory providers) and M31 (advanced hooks) are done; Phase 12 (orchestration) is planned as M32 (OpenBolt orchestration, design in docs/architecture/BOLT_INTEGRATION.md), followed by M33 (stable 1.0.0 release).
 
 ## [M1] Foundation
 > outcome: The project builds, runs, has its RBAC foundation in place and is covered by an automated test setup.
@@ -324,7 +324,20 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [x] T106 Add inbound SCIM (S21)
 - [x] T122 Add user editing with a forced password change and plugin extension points (S21)
 
-## [M32] Stable Production Release
+## [M32] OpenBolt Orchestration
+> outcome: Authorized users can run allowlisted OpenBolt tasks and plans against nodes and node groups from the UI and the API, with approval, limits, audit and result history.
+> phase: P4
+> spec: S27
+
+- [ ] T113 Integrate OpenBolt: service, configuration, process control and health (S27)
+- [ ] T123 Generate the Bolt inventory from PuppetDB and node groups (S27)
+- [ ] T124 Add the job model, task and plan discovery, allowlist and run API (S27)
+- [ ] T125 Add the orchestration RBAC resource, approvals, limits, maintenance windows and cancellation (S27)
+- [ ] T126 Add audit entries, events, the before-run interceptor and plugin slots (S27, S21)
+- [ ] T127 Add the Orchestration page and node actions (S27)
+- [ ] T128 Add retention, packaging, Puppet module parameters, documentation and BDD coverage (S27)
+
+## [M33] Stable Production Release
 > outcome: Version 1.0.0 is released as the stable production milestone.
 > version: 1.0.0
 
@@ -336,7 +349,6 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 - [ ] T110 Add mobile app support
 - [ ] T111 Add internationalization
 - [ ] T112 Add attribute-based access control
-- [ ] T113 Integrate OpenBolt orchestration
 - [>] T114 Add multi-tenant plugin scoping (S21)
   - from: M18
   - why: deferred out of the first plugin platform release; the design keeps it reachable
@@ -373,6 +385,7 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 | S24 | Alert rules conditions | docs/ALERT_RULES_CONDITIONS.md | approved |
 | S25 | CA API reference | docs/api/ca.md | approved |
 | S26 | Plugin platform overview | docs/PLUGINS.md | approved |
+| S27 | OpenBolt integration design | docs/architecture/BOLT_INTEGRATION.md | draft |
 
 ## Phases
 | ID | Title | Outcome | Target |
@@ -380,3 +393,4 @@ Status: Phases 1-9 are complete and deployed (M1-M11); Phase 10 (application inv
 | P1 | Core platform | Foundation, authentication, integration, classification, facter, dashboard, configuration, CA, advanced features and production readiness are shipped (old Phases 1-9). |  |
 | P2 | Inventory and update management | Operators inventory and update Windows, Linux and macOS nodes from one console (old Phase 10). |  |
 | P3 | Plugin platform | Administrators extend the application with signed, sandboxed plugins (old Phase 11). |  |
+| P4 | Orchestration | Operators run allowlisted OpenBolt tasks and plans against nodes with approval and audit. |  |

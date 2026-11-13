@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Added
+- Add the OpenBolt integration design (`docs/architecture/BOLT_INTEGRATION.md`) and plan it as milestone M32 (T113, T123 to T128); the stable 1.0.0 release moves to M33
+
 ## [0.57.1] - 2026-11-13
 
 ### Fixed
