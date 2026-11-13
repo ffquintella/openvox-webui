@@ -1039,7 +1039,7 @@ function ServerInfoTab() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 gap-x-4 text-sm">
               {serverInfo.saml.sp_entity_id && (
                 <SettingRow label="SP Entity ID" value={serverInfo.saml.sp_entity_id} mono />
               )}
@@ -1096,12 +1096,12 @@ function SettingRow({ label, value, variant, mono }: SettingRowProps) {
   };
 
   return (
-    <div className="flex justify-between py-2 border-b border-gray-100">
-      <span className="text-gray-500">{label}</span>
+    <div className="flex justify-between gap-4 py-2 border-b border-gray-100 min-w-0">
+      <span className="text-gray-500 shrink-0">{label}</span>
       <span
-        className={`font-medium ${variant ? variantClasses[variant] : 'text-gray-900'} ${
-          mono ? 'font-mono text-xs' : ''
-        }`}
+        className={`font-medium min-w-0 break-all text-right ${
+          variant ? variantClasses[variant] : 'text-gray-900'
+        } ${mono ? 'font-mono text-xs' : ''}`}
       >
         {value}
       </span>

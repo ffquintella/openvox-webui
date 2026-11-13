@@ -11,6 +11,9 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+### Fixed
+- Fix overlapping text in Settings > Server Info: long values such as the SAML SP Entity ID and Login URL now wrap instead of spilling over the neighbouring field
+
 ## [0.57.0] - 2026-11-12
 
 ### Added
