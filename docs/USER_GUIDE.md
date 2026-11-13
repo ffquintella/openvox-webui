@@ -19,6 +19,7 @@ This comprehensive guide covers all features and workflows in OpenVox WebUI.
 - [Roles & Permissions](#roles--permissions)
 - [Settings](#settings)
 - [User Profile](#user-profile)
+- [Orchestration (OpenBolt)](#orchestration-openbolt)
 - [Plugins: Trusted Module Pages](#plugins-trusted-module-pages)
 
 ---
@@ -1185,6 +1186,27 @@ See your effective roles and permissions:
 - Active API keys (if any)
 
 ---
+
+## Orchestration (OpenBolt)
+
+The Orchestration page runs OpenBolt tasks and plans on nodes. It appears when an administrator has enabled the feature and you hold the `orchestration:read` permission.
+
+### Running a task or plan
+
+1. Open **Orchestration > Run**, choose a task or plan and fill in its parameters (sensitive ones are masked).
+2. Choose the nodes, or a node group. You can also start from a node's detail page with **Run task**.
+3. Tick **Dry run (noop)** first when the task supports it, then run for real.
+4. Submit. A run on many nodes, or of a task an administrator marked as needing approval, waits until another user with `orchestration:approve` approves it. You cannot approve your own request.
+
+An optional maintenance window keeps the run queued until it opens.
+
+### Jobs
+
+**Orchestration > Jobs** lists runs with their status. Open one to see, per node, the status, exit code and output. Parameter values you entered are not shown after the run (sensitive values are always hidden). You can cancel a waiting or running job you requested; approvers can cancel any job.
+
+### Allowlist (administrators)
+
+**Orchestration > Allowlist** lists the tasks and plans Bolt finds. Only the ones you allow can be run; mark an item **Requires approval** to always have a second person approve it.
 
 ## Plugins: Trusted Module Pages
 

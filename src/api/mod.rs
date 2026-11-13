@@ -27,6 +27,7 @@ mod inventory;
 mod node_removal;
 mod nodes;
 mod notifications;
+mod orchestration;
 mod organizations;
 mod permissions;
 mod plugin_classification;
@@ -124,6 +125,8 @@ pub fn protected_routes() -> Router<AppState> {
         .nest("/directories", directories::routes())
         // SCIM administration: status, tokens, group mappings (M31)
         .nest("/scim", scim_admin::routes())
+        // OpenBolt orchestration (M32)
+        .nest("/orchestration", orchestration::routes())
 }
 
 /// The SCIM 2.0 service (M31), to mount at `/api/v1/scim/v2`. It has no

@@ -372,6 +372,14 @@ async fn main() -> Result<()> {
         notification_service.clone(),
     );
 
+    // OpenBolt orchestration (M32): recovers interrupted jobs and purges old
+    // results. Does nothing unless `orchestration.bolt.enabled` is set.
+    services::bolt::service::start_maintenance(services::bolt::service::BoltCtx {
+        cfg: config.orchestration.bolt.clone(),
+        pool: db.clone(),
+        puppetdb: puppetdb.clone(),
+    });
+
     // Memory monitor: warns near the cgroup memory limit and exits for a
     // supervised restart instead of lingering throttled and unresponsive.
     let _memory_monitor = services::start_memory_monitor(config.memory_monitor.clone());

@@ -273,3 +273,26 @@ rbac:
 #   # Default: false
 #   # Can also be set via CLASSIFICATION_DISABLE_AUTHENTICATION=true
 #   disable_authentication: false
+
+# OpenBolt orchestration (run allowlisted tasks and plans on nodes from the UI)
+# OpenBolt is not bundled: install it and create a Bolt project first.
+# orchestration:
+#   bolt:
+#     enabled: false
+#     binary_path: "/opt/puppetlabs/bolt/bin/bolt"
+#     project_dir: "/etc/openvox-webui/bolt"
+#     ssh:
+#       user: "bolt"
+#       private_key_path: "/etc/openvox-webui/bolt/id_ed25519"
+#       host_key_check: true
+#     winrm:
+#       user: "bolt"
+#       password: "secret://file/bolt/winrm_password"
+#       ssl: true
+#     timeout_seconds: 900
+#     max_concurrent_runs: 4
+#     max_targets_per_run: 200
+#     approval_target_threshold: 10
+#     allow_arbitrary_commands: false
+#     retention_days: 90
+

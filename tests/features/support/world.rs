@@ -104,6 +104,10 @@ pub struct TestWorld {
     pub enrollment_grace:
         Option<crate::features::step_definitions::enrollment_grace_steps::GraceScenario>,
 
+    /// OpenBolt orchestration scenarios run the real router (M32)
+    pub orchestration:
+        Option<crate::features::step_definitions::orchestration_steps::OrchestrationScenario>,
+
     /// Base URL for API calls
     #[allow(dead_code)]
     pub api_base_url: String,

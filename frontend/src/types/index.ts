@@ -997,10 +997,19 @@ export type Resource =
   | 'facter_templates'
   | 'api_keys'
   | 'plugins'
-  | 'plugin_trust';
+  | 'plugin_trust'
+  | 'orchestration';
 
 export type Action =
-  'read' | 'create' | 'update' | 'delete' | 'admin' | 'export' | 'classify' | 'generate';
+  | 'read'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'admin'
+  | 'export'
+  | 'classify'
+  | 'generate'
+  | 'approve';
 
 export type Scope =
   | { type: 'all' }
@@ -3479,4 +3488,129 @@ export interface CreateApiKeyRequest {
 export interface CreatedApiKey extends ApiKey {
   /** Plaintext key, shown only at creation. */
   key: string;
+}
+
+// OpenBolt orchestration (M32)
+export type BoltStatusState = 'disabled' | 'ok' | 'degraded';
+
+export interface BoltLimits {
+  max_targets_per_run: number;
+  max_concurrent_runs: number;
+  approval_target_threshold: number;
+  timeout_seconds: number;
+  retention_days: number;
+}
+
+export interface BoltStatus {
+  enabled: boolean;
+  state: BoltStatusState;
+  version?: string | null;
+  error?: string | null;
+  /** The remaining fields are absent while orchestration is disabled. */
+  allow_arbitrary_commands?: boolean;
+  limits?: BoltLimits;
+  warnings?: string[];
+}
+
+export type BoltKind = 'task' | 'plan' | 'command';
+
+export type BoltJobStatus =
+  | 'pending_approval'
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'partial'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'rejected';
+
+export interface BoltParameterMeta {
+  type?: string;
+  description?: string | null;
+  sensitive?: boolean;
+  default?: unknown;
+  optional?: boolean;
+}
+
+export interface BoltRunnable {
+  kind: 'task' | 'plan';
+  name: string;
+  description?: string | null;
+  parameters: Record<string, BoltParameterMeta>;
+  supports_noop: boolean;
+  requires_approval: boolean;
+}
+
+export interface BoltDiscoveredItem {
+  kind: 'task' | 'plan';
+  name: string;
+  description?: string | null;
+  allowed: boolean;
+  requires_approval: boolean;
+}
+
+export interface BoltAllowlistEntry {
+  kind: 'task' | 'plan';
+  name: string;
+  requires_approval: boolean;
+  created_by?: string | null;
+  created_at?: string;
+}
+
+export interface BoltAllowlist {
+  entries: BoltAllowlistEntry[];
+}
+
+export interface BoltJob {
+  id: string;
+  kind: BoltKind;
+  name: string;
+  parameters: Record<string, unknown> | null;
+  target_group_id?: string | null;
+  target_count: number;
+  noop: boolean;
+  status: BoltJobStatus;
+  requires_approval: boolean;
+  requested_by: string;
+  requested_by_id: string;
+  approved_by?: string | null;
+  approval_notes?: string | null;
+  maintenance_window_start?: string | null;
+  maintenance_window_end?: string | null;
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface BoltJobTarget {
+  certname: string;
+  status: string;
+  exit_code?: number | null;
+  result?: unknown;
+  output?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface BoltJobDetail extends BoltJob {
+  targets: BoltJobTarget[];
+}
+
+export interface CreateBoltJobRequest {
+  kind: BoltKind;
+  name: string;
+  parameters: Record<string, unknown>;
+  nodes: string[];
+  group_id?: string;
+  noop: boolean;
+  maintenance_window_start?: string;
+  maintenance_window_end?: string;
+}
+
+export interface BoltJobsQuery {
+  status?: BoltJobStatus;
+  certname?: string;
+  limit?: number;
 }

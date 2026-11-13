@@ -215,6 +215,7 @@ pub fn check_permission(
 ///     memory_monitor: Default::default(),
 ///     plugins: Default::default(),
 ///     secrets: Default::default(),
+///     orchestration: Default::default(),
 /// };
 ///
 /// let db = openvox_webui::db::init_pool(&config.database).await.unwrap();

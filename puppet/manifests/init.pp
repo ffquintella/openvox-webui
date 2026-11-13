@@ -137,6 +137,37 @@
 # @param ca_allow_subject_alt_names
 #   Whether to allow Subject Alternative Names in certificate requests.
 #
+# @param bolt_enabled
+#   Enable the OpenBolt orchestration feature (`orchestration.bolt.enabled`).
+#   OpenBolt itself is not installed by this module.
+#
+# @param bolt_binary_path
+#   Path of the `bolt` binary (`orchestration.bolt.binary_path`).
+#
+# @param bolt_project_dir
+#   Bolt project directory (`orchestration.bolt.project_dir`).
+#
+# @param bolt_modulepath
+#   Module path searched for tasks and plans; empty means the project's own.
+#
+# @param bolt_ssh_user
+#   SSH user Bolt connects as (`orchestration.bolt.ssh.user`).
+#
+# @param bolt_ssh_private_key_path
+#   Path of the SSH private key file (`orchestration.bolt.ssh.private_key_path`).
+#
+# @param bolt_ssh_host_key_check
+#   Check SSH host keys. Turning it off logs a warning at startup.
+#
+# @param bolt_winrm_user
+#   WinRM user (`orchestration.bolt.winrm.user`).
+#
+# @param bolt_winrm_password
+#   WinRM password, or a `secret://` reference resolved by the application.
+#
+# @param bolt_allow_arbitrary_commands
+#   Allow `bolt command run` for administrators. Off by default.
+#
 # @param webauthn_rp_id
 #   WebAuthn Relying Party ID (`auth.mfa.webauthn.rp_id`): the hostname users
 #   browse to, without scheme or port. The `auth.mfa.webauthn` block is only
@@ -439,6 +470,18 @@ class openvox_webui (
   Optional[Stdlib::Host]              $webauthn_rp_id                  = undef,
   String[1]                           $webauthn_rp_name                = 'OpenVox WebUI',
   Optional[Pattern[/\Ahttps?:\/\/[^\/\s]+\z/]] $webauthn_origin        = undef,
+
+  # OpenBolt orchestration (M32)
+  Boolean                             $bolt_enabled                    = false,
+  Stdlib::Absolutepath                $bolt_binary_path                = '/opt/puppetlabs/bolt/bin/bolt',
+  Stdlib::Absolutepath                $bolt_project_dir                = '/etc/openvox-webui/bolt',
+  Array[Stdlib::Absolutepath]         $bolt_modulepath                 = [],
+  String[1]                           $bolt_ssh_user                   = 'bolt',
+  Optional[Stdlib::Absolutepath]      $bolt_ssh_private_key_path       = undef,
+  Boolean                             $bolt_ssh_host_key_check         = true,
+  String[1]                           $bolt_winrm_user                 = 'bolt',
+  Optional[String[1]]                 $bolt_winrm_password             = undef,
+  Boolean                             $bolt_allow_arbitrary_commands   = false,
 
   # SAML 2.0 SSO settings
   Boolean                             $saml_enabled                    = false,

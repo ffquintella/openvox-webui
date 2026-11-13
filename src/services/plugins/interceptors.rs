@@ -36,6 +36,7 @@ pub const MAX_INPUT_BYTES: usize = 512 * 1024;
 pub const BEFORE_NODE_CLASSIFY: &str = "before.node.classify";
 pub const BEFORE_GROUP_CHANGE: &str = "before.group.change";
 pub const BEFORE_USER_UPDATE: &str = "before.user.update";
+pub const BEFORE_BOLT_JOB_RUN: &str = "before.bolt.job.run";
 
 const MAX_REASON_CHARS: usize = 200;
 const MAX_ERROR_CHARS: usize = 300;
@@ -74,7 +75,7 @@ pub struct InterceptableEvent {
     pub alterable: &'static [&'static str],
 }
 
-static CATALOG: [InterceptableEvent; 3] = [
+static CATALOG: [InterceptableEvent; 4] = [
     InterceptableEvent {
         event_type: BEFORE_NODE_CLASSIFY,
         description: "a node is classified for its agent, the node page or a fact export \
@@ -112,6 +113,19 @@ static CATALOG: [InterceptableEvent; 3] = [
                   (null when unchanged)",
         // User administration must stay usable when a plugin is broken or slow.
         fail_mode: FailMode::Open,
+        timeout_ms: INTERCEPTOR_TIMEOUT_MS,
+        max_interceptors: MAX_INTERCEPTORS_PER_EVENT,
+        can_veto: true,
+        alterable: &[],
+    },
+    InterceptableEvent {
+        event_type: BEFORE_BOLT_JOB_RUN,
+        description: "an OpenBolt task, plan or command is requested for nodes (it receives \
+                      the name, the targets and the parameter names, never parameter values)",
+        payload: "{organization_id, kind, name, parameter_names, targets, target_count, noop, \
+                  actor}; `kind` is task, plan or command and `targets` the node names",
+        // An action on nodes: without an answer it does not happen.
+        fail_mode: FailMode::Closed,
         timeout_ms: INTERCEPTOR_TIMEOUT_MS,
         max_interceptors: MAX_INTERCEPTORS_PER_EVENT,
         can_veto: true,

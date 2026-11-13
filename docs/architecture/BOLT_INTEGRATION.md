@@ -1,6 +1,6 @@
 # OpenBolt Integration — Design
 
-Status: draft (2026-11-13, M32, T113 and T123 to T129)
+Status: implemented (2026-11-13, M32, T113 and T123 to T128); section 15 lists where the implementation differs from the first draft
 
 ## 1. Intent
 
@@ -27,7 +27,7 @@ This design adds an **Orchestration** area to the WebUI. It lets authorized user
 
 ## 4. Non-goals and anti-goals
 
-- No arbitrary shell. `bolt command run` and `bolt script run` are **off by default** and sit behind a separate, admin-only permission and a configuration switch.
+- No arbitrary shell. `bolt command run` is **off by default** and sits behind a configuration switch, the admin permission, and a mandatory approval. `bolt script run` is not supported.
 - No Bolt project editing, no module installation from the UI (modules come from r10k and the code deploy feature).
 - No Puppet Enterprise orchestrator (PCP) support in the first release; transports are SSH and WinRM.
 - No streaming terminal or interactive sessions.
@@ -164,3 +164,22 @@ Unit tests for inventory rendering, parameter validation and redaction, the job 
 3. Should results be exportable to PuppetDB as facts or events, or stay local to the WebUI?
 4. Is PCP (OpenVox/Puppet Server orchestrator) transport worth a later milestone for agents that cannot be reached over SSH or WinRM?
 5. Where should the Bolt project live in package installs, and who owns its Puppetfile and modules?
+
+## 15. As implemented
+
+Decisions taken while implementing, where they differ from sections 5 to 11 above (the code is `src/services/bolt/`, `src/api/orchestration.rs`, migration `20261113000001_bolt_orchestration.sql`; API reference in [../api/orchestration.md](../api/orchestration.md)):
+
+1. **Secrets.** `secret://` references are resolved when the configuration is loaded, so the config holds resolved values and cannot carry a key file's content. The SSH key is therefore a path (`ssh.private_key_path`); only passwords may be references. `Debug` output of the transport settings redacts passwords.
+2. **Inventory.** The per-run inventory lists only the selected nodes, with the transport chosen by the `kernel` fact (Windows: WinRM, else SSH). Node groups are not exported as Bolt groups and there is no per-group address override; the certname is the address. Names and addresses are validated (`[A-Za-z0-9._-]`) before use.
+3. **Tables.** Three, not four: `bolt_allowlist`, `bolt_jobs` and `bolt_job_targets` (the per-target result and output live in the targets table). The job keeps the real parameters while it waits and runs, because an approved job must still be executable; when it ends (or fails, or the application restarts) they are replaced by their redacted copy, and every API read returns the redacted form.
+4. **Approval.** A run needs approval when the allowlist entry asks for it, when it has more than `approval_target_threshold` targets, and always for commands. Critical-group approval is not implemented (groups have no such flag). Nobody approves their own request.
+5. **Scheduling.** There is no `schedule_at`. A run can carry a maintenance window instead: it stays queued until the window opens and fails if the window ends first. Concurrency is the process-wide `max_concurrent_runs` pool (T63's per-job limits do not apply to Bolt jobs).
+6. **Noop.** A task is run with `--noop` only if it declares `supports_noop`; plans receive the flag as given.
+7. **Cancellation.** Cancelling a running job stops the Bolt process (it is killed when its future is dropped; Bolt's own children are not signalled separately). Unreported targets end `cancelled`.
+8. **Group scope.** A role limited to a group can run against that group (`group_id`, no explicit `nodes`). Every other use of the feature needs an unscoped grant, including reading.
+9. **Node history.** `GET /api/v1/orchestration/nodes/{certname}/jobs` (not under `/nodes`).
+10. **Targets** must be active in PuppetDB; without PuppetDB the feature refuses to run anything, because the nodes cannot be checked.
+11. **Status endpoint.** `GET /api/v1/orchestration/bolt/status` serves the health information (`disabled`, `ok`, `degraded`); it is not part of `/health` yet.
+12. **Plugins.** Interceptor `before.bolt.job.run` (fail closed), events `bolt.job.requested|approved|completed`, slot `orchestration.job.panels`; see PLUGIN_PLATFORM.md §17.21.
+13. **Packaging.** The Puppet module renders the `orchestration.bolt` block (`bolt_enabled` and related parameters); the RPM and DEB packages do not bundle OpenBolt.
+

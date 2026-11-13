@@ -8,6 +8,7 @@ pub mod common_steps;
 pub mod enrollment_grace_steps;
 pub mod group_steps;
 pub mod node_steps;
+pub mod orchestration_steps;
 pub mod plugin_auth_factor_steps;
 pub mod plugin_declarative_ui_steps;
 pub mod plugin_route_steps;

@@ -6,6 +6,7 @@ pub mod auth_pipeline;
 pub mod backup;
 pub mod backup_encryption;
 pub mod backup_scheduler;
+pub mod bolt;
 pub mod cache;
 pub mod classification;
 pub mod classification_expr;

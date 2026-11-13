@@ -124,6 +124,17 @@ class openvox_webui::config {
         webauthn_rp_id                 => $openvox_webui::webauthn_rp_id,
         webauthn_rp_name               => $openvox_webui::webauthn_rp_name,
         webauthn_origin                => $openvox_webui::webauthn_origin,
+        # OpenBolt orchestration settings
+        bolt_enabled                   => $openvox_webui::bolt_enabled,
+        bolt_binary_path               => $openvox_webui::bolt_binary_path,
+        bolt_project_dir               => $openvox_webui::bolt_project_dir,
+        bolt_modulepath                => $openvox_webui::bolt_modulepath,
+        bolt_ssh_user                  => $openvox_webui::bolt_ssh_user,
+        bolt_ssh_private_key_path      => $openvox_webui::bolt_ssh_private_key_path,
+        bolt_ssh_host_key_check        => $openvox_webui::bolt_ssh_host_key_check,
+        bolt_winrm_user                => $openvox_webui::bolt_winrm_user,
+        bolt_winrm_password            => $openvox_webui::bolt_winrm_password,
+        bolt_allow_arbitrary_commands  => $openvox_webui::bolt_allow_arbitrary_commands,
         # SAML settings
         saml_enabled                   => $openvox_webui::saml_enabled,
         saml_sp_entity_id              => $openvox_webui::saml_sp_entity_id,

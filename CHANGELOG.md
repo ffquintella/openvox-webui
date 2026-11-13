@@ -12,7 +12,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 ## [Unreleased]
 
 ### Added
-- Add the OpenBolt integration design (`docs/architecture/BOLT_INTEGRATION.md`) and plan it as milestone M32 (T113, T123 to T128); the stable 1.0.0 release moves to M33
+- Add OpenBolt orchestration (M32, T113, T123 to T128): an Orchestration page and API (`/api/v1/orchestration`) that run allowlisted OpenBolt tasks and plans on nodes or node groups over SSH and WinRM, with a default-deny allowlist, approval by a second user, target and concurrency limits, maintenance windows, noop dry runs, cancellation, redacted per-node results and retention; it is off until `orchestration.bolt.enabled` is set, and OpenBolt is not bundled
+- Add the `orchestration` RBAC resource (`read`, `create`, `approve`, `admin`; group-scoped runs) and the `approve` action
+- Add the plugin hooks `before.bolt.job.run` (fail-closed interceptor), the events `bolt.job.requested`, `bolt.job.approved` and `bolt.job.completed`, and the slot `orchestration.job.panels`
+- Add the OpenBolt design (`docs/architecture/BOLT_INTEGRATION.md`), the API reference (`docs/api/orchestration.md`) and configuration and user guide sections
+- Add `bolt_*` parameters to the Puppet module that render the `orchestration.bolt` block
 
 ## [0.57.1] - 2026-11-13
 

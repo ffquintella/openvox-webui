@@ -402,6 +402,7 @@ pub fn test_config() -> AppConfig {
         memory_monitor: Default::default(),
         plugins: Default::default(),
         secrets: Default::default(),
+        orchestration: Default::default(),
     }
 }
 

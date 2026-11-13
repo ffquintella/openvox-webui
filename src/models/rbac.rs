@@ -113,6 +113,8 @@ pub enum Resource {
     Plugins,
     /// Trusted plugin signing keys (separate from plugin administration)
     PluginTrust,
+    /// Running OpenBolt tasks and plans on nodes (M32)
+    Orchestration,
 }
 
 impl Resource {
@@ -137,6 +139,7 @@ impl Resource {
             Resource::Certificates,
             Resource::Plugins,
             Resource::PluginTrust,
+            Resource::Orchestration,
         ]
     }
 
@@ -156,6 +159,7 @@ impl Resource {
             Resource::Certificates => "certificates",
             Resource::Plugins => "plugins",
             Resource::PluginTrust => "plugin_trust",
+            Resource::Orchestration => "orchestration",
         }
     }
 }
@@ -186,6 +190,8 @@ pub enum Action {
     Reject,
     /// Revoke certificates
     Revoke,
+    /// Approve a request made by another user (orchestration runs)
+    Approve,
 }
 
 impl Action {
@@ -208,6 +214,7 @@ impl Action {
             Action::Sign,
             Action::Reject,
             Action::Revoke,
+            Action::Approve,
         ]
     }
 
@@ -225,6 +232,7 @@ impl Action {
             Action::Sign => "sign",
             Action::Reject => "reject",
             Action::Revoke => "revoke",
+            Action::Approve => "approve",
         }
     }
 }

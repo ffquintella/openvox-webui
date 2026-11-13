@@ -25,6 +25,7 @@ import {
   HardDrive,
   RefreshCw,
   Puzzle,
+  Terminal,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../services/api';
@@ -56,6 +57,7 @@ const navigation: CoreMenuItem[] = [
   { id: 'core:analytics', name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { id: 'core:alerting', name: 'Alerting', href: '/alerting', icon: Bell },
   { id: 'core:updates', name: 'Updates', href: '/updates', icon: RefreshCw },
+  { id: 'core:orchestration', name: 'Orchestration', href: '/orchestration', icon: Terminal },
 ];
 
 const adminNavigation: CoreMenuItem[] = [
@@ -86,6 +88,7 @@ export default function Layout({ children }: LayoutProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const hasPermission = usePermissionsStore((state) => state.hasPermission);
   const canSeePlugins = hasPermission('plugins', 'read');
+  const canSeeOrchestration = hasPermission('orchestration', 'read');
   const canSeeDirectories = hasPermission('users', 'admin');
   const canSeeMfaPolicies = hasPermission('settings', 'admin');
   const { data: pluginSlots } = usePluginSlots();
@@ -104,8 +107,13 @@ export default function Layout({ children }: LayoutProps) {
   }, []);
 
   const mainItems = useMemo(
-    () => mergeMenu(navigation, pluginSlots?.slots['nav.main'], pluginSlots?.menu_ops),
-    [pluginSlots]
+    () =>
+      mergeMenu(
+        navigation.filter((item) => item.id !== 'core:orchestration' || canSeeOrchestration),
+        pluginSlots?.slots['nav.main'],
+        pluginSlots?.menu_ops
+      ),
+    [pluginSlots, canSeeOrchestration]
   );
   const adminItems = useMemo(
     () =>

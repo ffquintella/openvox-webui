@@ -106,6 +106,7 @@ fn format_resource_name(resource: &Resource) -> String {
         Resource::Certificates => "Certificates".to_string(),
         Resource::Plugins => "Plugins".to_string(),
         Resource::PluginTrust => "Plugin Trusted Keys".to_string(),
+        Resource::Orchestration => "Orchestration".to_string(),
     }
 }
 
@@ -124,6 +125,7 @@ fn get_resource_description(resource: &Resource) -> String {
         Resource::Certificates => "Puppet CA certificates".to_string(),
         Resource::Plugins => "Install and manage plugins".to_string(),
         Resource::PluginTrust => "Manage the keys that plugins must be signed with".to_string(),
+        Resource::Orchestration => "Run OpenBolt tasks and plans on nodes".to_string(),
     }
 }
 
@@ -142,6 +144,7 @@ fn get_resource_actions(resource: &Resource) -> Vec<String> {
         Resource::Certificates => vec!["read", "sign", "reject", "revoke", "admin"],
         Resource::Plugins => vec!["read", "admin"],
         Resource::PluginTrust => vec!["admin"],
+        Resource::Orchestration => vec!["read", "create", "approve", "admin"],
     }
     .iter()
     .map(|s| s.to_string())
@@ -161,6 +164,7 @@ fn format_action_name(action: &Action) -> String {
         Action::Sign => "Sign".to_string(),
         Action::Reject => "Reject".to_string(),
         Action::Revoke => "Revoke".to_string(),
+        Action::Approve => "Approve".to_string(),
     }
 }
 
@@ -177,6 +181,7 @@ fn get_action_description(action: &Action) -> String {
         Action::Reject => "Reject certificate requests".to_string(),
         Action::Revoke => "Revoke signed certificates".to_string(),
         Action::Generate => "Generate derived data (e.g., facts)".to_string(),
+        Action::Approve => "Approve requests made by other users".to_string(),
     }
 }
 

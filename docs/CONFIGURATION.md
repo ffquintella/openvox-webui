@@ -705,3 +705,55 @@ plugins:
 - The browser checks each module against the SRI hash the plugin declares and
   the host verifies against the signed package. See
   [PLUGIN_PLATFORM.md section 17.13](architecture/PLUGIN_PLATFORM.md) for details.
+
+## OpenBolt Orchestration
+
+Runs allowlisted OpenBolt tasks and plans on nodes from the WebUI (design: [architecture/BOLT_INTEGRATION.md](architecture/BOLT_INTEGRATION.md), API: [api/orchestration.md](api/orchestration.md)). It is off until enabled, and OpenBolt itself is not bundled: install it, create a Bolt project and a service account with SSH access to the nodes first.
+
+```yaml
+orchestration:
+  bolt:
+    enabled: false
+    binary_path: /opt/puppetlabs/bolt/bin/bolt
+    project_dir: /etc/openvox-webui/bolt
+    modulepath: []                       # empty: the project's own
+    ssh:
+      user: bolt
+      private_key_path: /etc/openvox-webui/bolt/id_ed25519
+      password: "secret://file/bolt/ssh_password"   # optional
+      host_key_check: true
+      run_as: root                       # optional
+    winrm:
+      user: bolt
+      password: "secret://file/bolt/winrm_password"
+      ssl: true
+      ssl_verify: true
+    timeout_seconds: 900
+    max_concurrent_runs: 4
+    max_targets_per_run: 200
+    target_concurrency: 20
+    approval_target_threshold: 10
+    allow_arbitrary_commands: false
+    max_output_bytes: 65536
+    retention_days: 90
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `false` | Turns the feature on |
+| `binary_path`, `project_dir`, `modulepath` | see above | Where Bolt, its project and the task and plan modules are |
+| `ssh.*`, `winrm.*` | host key check and TLS on | Transport settings. Linux and macOS nodes use SSH, Windows nodes WinRM (by the `kernel` fact). Passwords may be `secret://` references |
+| `timeout_seconds` | `900` | Hard limit of one run; Bolt is stopped when it passes |
+| `max_concurrent_runs` | `4` | Bolt processes at the same time; further jobs wait |
+| `max_targets_per_run` | `200` | Largest number of nodes in one run |
+| `target_concurrency` | `20` | Nodes Bolt works on at once inside a run |
+| `approval_target_threshold` | `10` | Runs on more nodes need an approval by another user |
+| `allow_arbitrary_commands` | `false` | Lets administrators run `bolt command run`. Commands always need approval |
+| `max_output_bytes` | `65536` | Stored output per node; longer output is cut |
+| `retention_days` | `90` | Finished jobs and results older than this are deleted daily |
+
+- Credentials are written to a private (mode 0600) inventory file for the duration of one run and deleted afterwards; parameters never appear on the command line.
+- Turning off `ssh.host_key_check`, `winrm.ssl` or `winrm.ssl_verify`, or turning on `allow_arbitrary_commands`, logs a warning at startup.
+- A job that was running when the application restarted is marked failed; queued jobs run again.
+- Grant the `orchestration` permissions (`read`, `create`, `approve`, `admin`) to roles in Roles & Permissions. Which tasks and plans may run is set on the Orchestration page, Allowlist tab (nothing is allowed by default).
+

@@ -223,6 +223,15 @@ import type {
   ScimStatus,
   MfaPolicy,
   ApiKey,
+  BoltStatus,
+  BoltRunnable,
+  BoltDiscoveredItem,
+  BoltAllowlist,
+  BoltAllowlistEntry,
+  BoltJob,
+  BoltJobDetail,
+  BoltJobsQuery,
+  CreateBoltJobRequest,
   CreateApiKeyRequest,
   CreatedApiKey,
   ScimTokenInfo,
@@ -1840,6 +1849,83 @@ export const api = {
 
   revokeApiKey: async (id: string): Promise<void> => {
     await client.delete(`/api-keys/${encodeURIComponent(id)}`);
+  },
+
+  // OpenBolt orchestration (M32)
+  getBoltStatus: async (): Promise<BoltStatus> => {
+    const response = await client.get('/orchestration/bolt/status');
+    return response.data;
+  },
+
+  getBoltTasks: async (): Promise<BoltRunnable[]> => {
+    const response = await client.get('/orchestration/bolt/tasks');
+    return response.data;
+  },
+
+  getBoltPlans: async (): Promise<BoltRunnable[]> => {
+    const response = await client.get('/orchestration/bolt/plans');
+    return response.data;
+  },
+
+  discoverBolt: async (): Promise<BoltDiscoveredItem[]> => {
+    const response = await client.get('/orchestration/bolt/discover');
+    return response.data;
+  },
+
+  getBoltAllowlist: async (): Promise<BoltAllowlist> => {
+    const response = await client.get('/orchestration/bolt/allowlist');
+    return response.data;
+  },
+
+  /** Replaces the whole allowlist. */
+  putBoltAllowlist: async (
+    entries: Array<Pick<BoltAllowlistEntry, 'kind' | 'name' | 'requires_approval'>>
+  ): Promise<BoltAllowlist> => {
+    const response = await client.put('/orchestration/bolt/allowlist', { entries });
+    return response.data;
+  },
+
+  getBoltJobs: async (query: BoltJobsQuery = {}): Promise<BoltJob[]> => {
+    const response = await client.get('/orchestration/bolt/jobs', { params: query });
+    return response.data;
+  },
+
+  getBoltJob: async (id: string): Promise<BoltJobDetail> => {
+    const response = await client.get(`/orchestration/bolt/jobs/${encodeURIComponent(id)}`);
+    return response.data;
+  },
+
+  createBoltJob: async (request: CreateBoltJobRequest): Promise<BoltJob> => {
+    const response = await client.post('/orchestration/bolt/jobs', request);
+    return response.data;
+  },
+
+  approveBoltJob: async (id: string, notes?: string): Promise<BoltJob> => {
+    const response = await client.post(
+      `/orchestration/bolt/jobs/${encodeURIComponent(id)}/approve`,
+      notes ? { notes } : {}
+    );
+    return response.data;
+  },
+
+  rejectBoltJob: async (id: string, notes?: string): Promise<BoltJob> => {
+    const response = await client.post(
+      `/orchestration/bolt/jobs/${encodeURIComponent(id)}/reject`,
+      notes ? { notes } : {}
+    );
+    return response.data;
+  },
+
+  cancelBoltJob: async (id: string): Promise<BoltJob> => {
+    const response = await client.post(`/orchestration/bolt/jobs/${encodeURIComponent(id)}/cancel`);
+    return response.data;
+  },
+
+  getNodeBoltJobs: async (certname: string, limit?: number): Promise<BoltJob[]> => {
+    const response = await client.get(`/orchestration/nodes/${encodeURIComponent(certname)}/jobs`, {
+      params: limit ? { limit } : undefined,
+    });
+    return response.data;
   },
 
   // SCIM provisioning (M31)

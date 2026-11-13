@@ -39,6 +39,17 @@
   Optional[Stdlib::Host] $webauthn_rp_id,
   String $webauthn_rp_name,
   Optional[String] $webauthn_origin,
+  # OpenBolt orchestration parameters
+  Boolean $bolt_enabled,
+  Stdlib::Absolutepath $bolt_binary_path,
+  Stdlib::Absolutepath $bolt_project_dir,
+  Array[Stdlib::Absolutepath] $bolt_modulepath,
+  String $bolt_ssh_user,
+  Optional[Stdlib::Absolutepath] $bolt_ssh_private_key_path,
+  Boolean $bolt_ssh_host_key_check,
+  String $bolt_winrm_user,
+  Optional[String] $bolt_winrm_password,
+  Boolean $bolt_allow_arbitrary_commands,
   # SAML parameters
   Boolean $saml_enabled,
   Optional[String] $saml_sp_entity_id,
@@ -219,6 +230,33 @@ facter:
   templates_dir: "/etc/openvox-webui/templates"
   output_format: "yaml"
 
+<% if $bolt_enabled { -%>
+# OpenBolt orchestration (tasks and plans run from the WebUI)
+orchestration:
+  bolt:
+    enabled: true
+    binary_path: "<%= $bolt_binary_path %>"
+    project_dir: "<%= $bolt_project_dir %>"
+<% if !$bolt_modulepath.empty { -%>
+    modulepath:
+<% $bolt_modulepath.each |$path| { -%>
+      - "<%= $path %>"
+<% } -%>
+<% } -%>
+    allow_arbitrary_commands: <%= $bolt_allow_arbitrary_commands %>
+    ssh:
+      user: "<%= $bolt_ssh_user %>"
+<% if $bolt_ssh_private_key_path { -%>
+      private_key_path: "<%= $bolt_ssh_private_key_path %>"
+<% } -%>
+      host_key_check: <%= $bolt_ssh_host_key_check %>
+    winrm:
+      user: "<%= $bolt_winrm_user %>"
+<% if $bolt_winrm_password { -%>
+      password: "<%= $bolt_winrm_password %>"
+<% } -%>
+
+<% } -%>
 <% if $saml_enabled and $saml_sp_entity_id and $saml_sp_acs_url { -%>
 # SAML 2.0 Single Sign-On configuration
 saml:

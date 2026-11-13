@@ -36,6 +36,10 @@ import { usePluginSlot } from '../hooks/usePlugins';
 import { pluginIdFromSource } from '../components/plugins/factHelpers';
 import PluginSlot, { PluginContributionView } from '../components/plugins/PluginSlot';
 import NodeExplainPanel from '../components/classification/NodeExplainPanel';
+import {
+  NodeOrchestrationHistory,
+  NodeRunTaskButton,
+} from '../components/orchestration/NodeOrchestration';
 import { getDeleteNodeErrorMessage } from './nodeDetailErrors';
 import { usePermissionsStore } from '../stores/permissionsStore';
 import type {
@@ -2247,6 +2251,7 @@ export default function NodeDetail() {
               variant="bare"
               className="flex items-center gap-2"
             />
+            <NodeRunTaskButton certname={node.certname} />
             <button
               onClick={handleRefresh}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -2664,6 +2669,8 @@ export default function NodeDetail() {
           />
         )}
       </div>
+
+      <NodeOrchestrationHistory certname={node.certname} />
     </div>
   );
 }

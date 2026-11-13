@@ -1029,6 +1029,7 @@ fn parse_resource(s: &str) -> Result<Resource> {
         "certificates" => Ok(Resource::Certificates),
         "plugins" => Ok(Resource::Plugins),
         "plugin_trust" => Ok(Resource::PluginTrust),
+        "orchestration" => Ok(Resource::Orchestration),
         _ => anyhow::bail!("Unknown resource: {}", s),
     }
 }
@@ -1046,6 +1047,7 @@ fn parse_action(s: &str) -> Result<Action> {
         "sign" => Ok(Action::Sign),
         "reject" => Ok(Action::Reject),
         "revoke" => Ok(Action::Revoke),
+        "approve" => Ok(Action::Approve),
         _ => anyhow::bail!("Unknown action: {}", s),
     }
 }

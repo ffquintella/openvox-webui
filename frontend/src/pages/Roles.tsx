@@ -487,6 +487,7 @@ export default function Roles() {
                           'certificates',
                           'plugins',
                           'plugin_trust',
+                          'orchestration',
                         ].map((resource) => (
                           <span
                             key={resource}
@@ -498,7 +499,7 @@ export default function Roles() {
                       </div>
                       <p className="text-sm text-amber-600">
                         All actions (read, create, update, delete, admin, export, classify,
-                        generate, sign, reject, revoke)
+                        generate, approve, sign, reject, revoke)
                       </p>
                     </div>
                   ) : selectedRole.permissions && selectedRole.permissions.length > 0 ? (

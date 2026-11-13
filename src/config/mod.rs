@@ -69,6 +69,9 @@ pub struct AppConfig {
     /// Secret providers (`secret://` references in this configuration)
     #[serde(default)]
     pub secrets: crate::services::secrets::SecretsConfig,
+    /// Orchestration (OpenBolt, M32)
+    #[serde(default)]
+    pub orchestration: crate::services::bolt::OrchestrationConfig,
 }
 
 /// Plugin platform configuration
@@ -2161,6 +2164,7 @@ impl Default for AppConfig {
             memory_monitor: MemoryMonitorConfig::default(),
             plugins: PluginsConfig::default(),
             secrets: Default::default(),
+            orchestration: Default::default(),
         }
     }
 }
@@ -2660,6 +2664,8 @@ impl AppConfig {
         crate::services::directory::config::validate_all(&self.auth.directories, &oidc_ids)?;
         // SCIM (M31): limits, base URL and the SSO provider of SCIM users
         self.auth.scim.validate(&oidc_ids)?;
+        // OpenBolt (M32): limits, checked only when enabled
+        self.orchestration.bolt.validate()?;
 
         // Validate TLS configuration if present
         if let Some(ref tls) = self.server.tls {
