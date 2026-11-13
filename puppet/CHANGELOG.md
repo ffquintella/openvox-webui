@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-11-13
+
 ### Added
 - Add the OpenBolt orchestration parameters (`bolt_enabled`, `bolt_binary_path`, `bolt_project_dir`, `bolt_modulepath`, `bolt_ssh_user`, `bolt_ssh_private_key_path`, `bolt_ssh_host_key_check`, `bolt_winrm_user`, `bolt_winrm_password`, `bolt_allow_arbitrary_commands`), rendered as the `orchestration.bolt` block of `config.yaml` only when `bolt_enabled` is set
 

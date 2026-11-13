@@ -11,6 +11,8 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-11-13
+
 ### Added
 - Add OpenBolt orchestration (M32, T113, T123 to T128): an Orchestration page and API (`/api/v1/orchestration`) that run allowlisted OpenBolt tasks and plans on nodes or node groups over SSH and WinRM, with a default-deny allowlist, approval by a second user, target and concurrency limits, maintenance windows, noop dry runs, cancellation, redacted per-node results and retention; it is off until `orchestration.bolt.enabled` is set, and OpenBolt is not bundled
 - Add the `orchestration` RBAC resource (`read`, `create`, `approve`, `admin`; group-scoped runs) and the `approve` action
