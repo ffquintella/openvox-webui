@@ -11,6 +11,11 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.58.1] - 2026-11-23
+
+### Changed
+- Update dependencies: axum-server 0.9, the Rust minor group and the npm minor group
+
 ## [0.58.0] - 2026-11-13
 
 ### Added
