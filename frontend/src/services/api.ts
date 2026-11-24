@@ -1035,6 +1035,14 @@ export const api = {
     return response.data;
   },
 
+  requireUserMfa: async (
+    id: string,
+    kind: 'totp' | 'webauthn'
+  ): Promise<{ kind: string; enrollment_grace: { expires_at: string; reason: string } }> => {
+    const response = await client.post(`/users/${id}/factors/require`, { kind });
+    return response.data;
+  },
+
   getUser: async (id: string): Promise<UserResponse | null> => {
     const response = await client.get(`/users/${id}`);
     return response.data;

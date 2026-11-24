@@ -1069,6 +1069,8 @@ export interface UserResponse {
   /** `false` once a directory sync deactivated the account. */
   active?: boolean;
   deactivated_at?: string | null;
+  /** Active second-factor kinds (`totp`, `webauthn`, plugin factors). */
+  mfa_factors?: string[];
   created_at: string;
 }
 

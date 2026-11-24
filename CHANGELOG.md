@@ -11,6 +11,12 @@ Maintenance: add every user-facing change under `## [Unreleased]` before committ
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-11-24
+
+### Added
+- Users list: new MFA column showing each user's active second factors (authenticator app, FIDO security key)
+- User edit: administrators can require a user to enroll an authenticator app or FIDO key (`POST /api/v1/users/{id}/factors/require`); the user enrolls it at next login in an enrollment window, so the secret never reaches the administrator
+
 ## [0.58.1] - 2026-11-23
 
 ### Changed

@@ -30,8 +30,15 @@ interface UserData {
   /** Directory that owns username, e-mail and password: shown read-only. */
   directory_id?: string | null;
   active?: boolean;
+  mfa_factors?: string[];
   force_password_change?: boolean;
   created_at: string;
+}
+
+function mfaKindLabel(kind: string): string {
+  if (kind === 'totp') return 'Authenticator app';
+  if (kind === 'webauthn') return 'Security key (FIDO)';
+  return kind.includes(':') ? kind.split(':').pop()! : kind;
 }
 
 export default function Users() {
@@ -108,6 +115,25 @@ export default function Users() {
     },
   });
 
+  const [mfaKind, setMfaKind] = useState<'totp' | 'webauthn'>('totp');
+  const [mfaNotice, setMfaNotice] = useState<string | null>(null);
+  const requireMfaMutation = useMutation({
+    mutationFn: ({ userId, kind }: { userId: string; kind: 'totp' | 'webauthn' }) =>
+      api.requireUserMfa(userId, kind),
+    onSuccess: (res) => {
+      setEditError(null);
+      setMfaNotice(
+        `Enrollment requested. ${mfaKindLabel(res.kind)} can be set up by the user until ${new Date(res.enrollment_grace.expires_at).toLocaleString()}.`
+      );
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setMfaNotice(null);
+      setEditError(e.response?.data?.message || e.message || 'Failed to request MFA enrollment');
+    },
+  });
+
   const startEditing = () => {
     if (!selectedUser) return;
     setEditUsername(selectedUser.username);
@@ -115,6 +141,7 @@ export default function Users() {
     setEditPassword('');
     setEditForceChange(!!selectedUser.force_password_change);
     setEditError(null);
+    setMfaNotice(null);
     setIsEditing(true);
   };
 
@@ -404,6 +431,9 @@ export default function Users() {
                 Auth
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                MFA
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Roles
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -475,6 +505,22 @@ export default function Users() {
                       {!user.auth_provider && 'Local'}
                     </span>
                   )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {user.mfa_factors && user.mfa_factors.length > 0 ? (
+                      user.mfa_factors.map((kind) => (
+                        <span
+                          key={kind}
+                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700"
+                        >
+                          {mfaKindLabel(kind)}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-gray-400">None</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -595,6 +641,40 @@ export default function Users() {
                       </label>
                     </>
                   )}
+                  <div className="border-t pt-3">
+                    <label className="label" htmlFor="edit-mfa-kind">
+                      Second factor (MFA)
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Active:{' '}
+                      {selectedUser.mfa_factors && selectedUser.mfa_factors.length > 0
+                        ? selectedUser.mfa_factors.map(mfaKindLabel).join(', ')
+                        : 'none'}
+                      . The user sets the factor up at next login; you never see the secret.
+                    </p>
+                    <div className="flex gap-2">
+                      <select
+                        id="edit-mfa-kind"
+                        className="input"
+                        value={mfaKind}
+                        onChange={(e) => setMfaKind(e.target.value as 'totp' | 'webauthn')}
+                      >
+                        <option value="totp">Authenticator app (TOTP)</option>
+                        <option value="webauthn">Security key (FIDO)</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={requireMfaMutation.isPending}
+                        onClick={() =>
+                          requireMfaMutation.mutate({ userId: selectedUser.id, kind: mfaKind })
+                        }
+                        className="btn btn-secondary text-sm whitespace-nowrap"
+                      >
+                        Require enrollment
+                      </button>
+                    </div>
+                    {mfaNotice && <p className="text-sm text-green-700 mt-2">{mfaNotice}</p>}
+                  </div>
                   {editError && (
                     <p role="alert" className="text-sm text-red-600">
                       {editError}

@@ -294,6 +294,7 @@ pub fn user_routes() -> Router<AppState> {
             delete(remove_factor).patch(rename_factor),
         )
         .route("/users/{id}/factors/reset", post(reset_factors))
+        .route("/users/{id}/factors/require", post(require_enrollment))
 }
 
 // -------------------------------------------------------------- providers
@@ -803,6 +804,60 @@ async fn reset_factors(
     Ok(Json(json!({
         "removed": removed,
         "enrollment_grace": window.map(|w| json!({"expires_at": w.expires_at, "reason": w.reason})),
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequireEnrollmentBody {
+    /// `totp` or `webauthn`: the factor the administrator asks the user to enroll.
+    kind: String,
+}
+
+/// An administrator asks a user to enroll a second factor. Secrets never pass
+/// through the administrator: the user enrolls the factor themselves, in an
+/// enrollment window opened here (OQ-12). Nothing the user already has is
+/// removed. Needs `auth.mfa.enrollment_grace_secs` to be set.
+async fn require_enrollment(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<RequireEnrollmentBody>,
+) -> ApiResult<Json<Value>> {
+    require(&state, &user, Resource::Users, Action::Admin).await?;
+    require_step_up(&state, &user).await?;
+    if body.kind != "totp" && body.kind != "webauthn" {
+        return Err(AppError::BadRequest("kind must be 'totp' or 'webauthn'".into()).into());
+    }
+    let target = AuthService::new(state.db.clone())
+        .get_user_by_id_in_org(user.organization_id, &id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    let pipeline = AuthPipeline::for_state(&state);
+    if pipeline.usable_kinds(target.id).await?.contains(&body.kind) {
+        return Err(AppError::BadRequest("User already has this factor".into()).into());
+    }
+    let window = pipeline
+        .grant_enrollment_grace(&target, user.id)
+        .await?
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Enrollment windows are disabled (auth.mfa.enrollment_grace_secs is not set)"
+                    .into(),
+            )
+        })?;
+    pipeline
+        .audit(
+            user.organization_id,
+            Some(user.id),
+            "auth.factor_enrollment_required",
+            &target.username,
+            json!({"target": target.id, "kind": body.kind}),
+        )
+        .await;
+    Ok(Json(json!({
+        "kind": body.kind,
+        "enrollment_grace": {"expires_at": window.expires_at, "reason": window.reason},
     })))
 }
 

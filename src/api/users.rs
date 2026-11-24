@@ -179,7 +179,14 @@ async fn list_users(
                 display_name: r.display_name,
             })
             .collect();
-        users_with_roles.push(user.with_roles(role_infos));
+        let kinds: Vec<String> = crate::services::auth_pipeline::AuthPipeline::for_state(&state)
+            .usable_kinds(user.id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|k| k != "recovery")
+            .collect();
+        users_with_roles.push(user.with_roles(role_infos).with_mfa_factors(kinds));
     }
 
     Ok(Json(users_with_roles))

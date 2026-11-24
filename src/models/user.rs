@@ -164,6 +164,10 @@ pub struct UserPublic {
     pub active: bool,
     #[serde(default)]
     pub deactivated_at: Option<DateTime<Utc>>,
+    /// Kinds of second factor the user has active (`totp`, `webauthn`, plugin
+    /// factors). Only filled by the user list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mfa_factors: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -194,6 +198,7 @@ impl From<User> for UserPublic {
             active: user.deactivated_at.is_none(),
             directory_id: user.directory_id,
             deactivated_at: user.deactivated_at,
+            mfa_factors: None,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
@@ -204,6 +209,12 @@ impl UserPublic {
     /// Set roles on a UserPublic instance
     pub fn with_roles(mut self, roles: Vec<UserRoleInfo>) -> Self {
         self.roles = Some(roles);
+        self
+    }
+
+    /// Set the active second-factor kinds
+    pub fn with_mfa_factors(mut self, kinds: Vec<String>) -> Self {
+        self.mfa_factors = Some(kinds);
         self
     }
 }
