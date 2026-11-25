@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `enrollment_grace_secs` (`0` = off, otherwise 60 to 604800) and `enrollment_grace_on_policy` (default `false`), rendered as `auth.mfa.enrollment_grace_secs` and `auth.mfa.enrollment_grace_on_policy`. Without them the application refuses an administrator's "Require enrollment" with "Enrollment windows are disabled". The `auth.mfa` block is now also rendered when only the enrollment window is set, without WebAuthn
+
 ## [0.59.0] - 2026-11-24
 
 ## [0.58.1] - 2026-11-23

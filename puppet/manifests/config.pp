@@ -124,6 +124,8 @@ class openvox_webui::config {
         webauthn_rp_id                 => $openvox_webui::webauthn_rp_id,
         webauthn_rp_name               => $openvox_webui::webauthn_rp_name,
         webauthn_origin                => $openvox_webui::webauthn_origin,
+        enrollment_grace_secs          => $openvox_webui::enrollment_grace_secs,
+        enrollment_grace_on_policy     => $openvox_webui::enrollment_grace_on_policy,
         # OpenBolt orchestration settings
         bolt_enabled                   => $openvox_webui::bolt_enabled,
         bolt_binary_path               => $openvox_webui::bolt_binary_path,

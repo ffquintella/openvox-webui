@@ -180,6 +180,18 @@
 #   WebAuthn origin (`auth.mfa.webauthn.origin`): `<scheme>://<hostname>[:port]`
 #   exactly as seen in the browser.
 #
+# @param enrollment_grace_secs
+#   Length in seconds of the second-factor enrollment window
+#   (`auth.mfa.enrollment_grace_secs`): `0` (default) disables windows, otherwise
+#   60 to 604800. Required for an administrator's "Require enrollment" action and
+#   for the window opened by a factor reset. Windows apply to password logins
+#   only; single sign-on logins keep the `mfa_enrollment_required` denial.
+#
+# @param enrollment_grace_on_policy
+#   Also open one enrollment window the first time an MFA policy stops a user
+#   with nothing enrolled (`auth.mfa.enrollment_grace_on_policy`). Needs
+#   `enrollment_grace_secs` to be set.
+#
 # @param saml_enabled
 #   Whether to enable SAML 2.0 SSO authentication.
 #
@@ -469,6 +481,8 @@ class openvox_webui (
   # MFA / WebAuthn settings
   Optional[Stdlib::Host]              $webauthn_rp_id                  = undef,
   String[1]                           $webauthn_rp_name                = 'OpenVox WebUI',
+  Variant[Integer[0, 0], Integer[60, 604800]] $enrollment_grace_secs   = 0,
+  Boolean                             $enrollment_grace_on_policy      = false,
   Optional[Pattern[/\Ahttps?:\/\/[^\/\s]+\z/]] $webauthn_origin        = undef,
 
   # OpenBolt orchestration (M32)
